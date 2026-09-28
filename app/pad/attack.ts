@@ -12,7 +12,7 @@ import type { GameData } from '../src/data';
 import type { Command, CheckResult } from '../src/commands';
 import { boxHands, normaliseTasks } from '../src/tasks';
 import { AttackHelper, combatRoleFor, type MirrorAct } from '../src/combat';
-import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, armorPiercing, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, structureOf, tokenCards, twoHandedUse } from '../src/units';
+import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, armorPiercing, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, structureOf, tokenCards, twoHandedUse, loanedParts } from '../src/units';
 import { statusCount } from '../src/types';
 import type { CardAction, DiceData, DieColor, GameState, PartSlot, Side, Token } from '../src/types';
 import type { RolledDie } from '../src/net';
@@ -195,7 +195,9 @@ export function attackWatching(): boolean {
 function printedActionOf(t: Token, actionId: string): CardAction | undefined {
   const a = api!;
   return tokenCards(a.data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === actionId)
-    ?? a.data.commonActions.find((x) => x.id === actionId);
+    ?? a.data.commonActions.find((x) => x.id === actionId)
+    // A lent Load's, the table having judged the Contact (FAQ O3/O16).
+    ?? loanedParts(a.data, a.state().tokens, t, { anywhere: true }).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === actionId);
 }
 
 // Where each colour's count came from, as the window's own sums run: the
@@ -257,8 +259,7 @@ function brief(side: 'attack' | 'defense', pool: Record<string, number>): RollBr
 
 function attackActionOf(t: Token, actionId: string, verdict?: TableVerdict): CardAction | undefined {
   const a = api!;
-  const printed = tokenCards(a.data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === actionId)
-    ?? a.data.commonActions.find((x) => x.id === actionId);
+  const printed = printedActionOf(t, actionId);
   if (!printed) return undefined;
   const oppNow = a.state().script?.opp;
   // Freeform tracks no Opportunity, so [Stationary] never paid out there; the

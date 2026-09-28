@@ -7,7 +7,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import { installDom, makeEl } from './_combatdrive.mjs';
+import { findButtons, installDom, label, makeEl, settle, textOf } from './_combatdrive.mjs';
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -35,7 +35,7 @@ writeFileSync(entry, [
   "export * as Tk from '../src/tasks';",
   "export * as Sc from '../src/scoring';",
   "export * as Tc from '../src/tactics';",
-  "export { AttackHelper } from '../src/combat';",
+  "export { AttackHelper, ElectronicHelper } from '../src/combat';",
 ].join('\n') + '\n');
 await build({
   entryPoints: [fileURLToPath(entry)], outfile: fileURLToPath(out),
@@ -576,9 +576,6 @@ console.log('Phase 6: the round, missions and squads\n');
   c.tasks = Tk.newTaskState();
   check('E3 and with no Terminal on the table', ok(c, remote(cm)), false);
   check('E3 and it says there is none', /no Terminal on the table/.test(why(c, remote(cm))), true);
-  // I25: the roll in words, the same on every page.
-  const words = Tk.remoteAccessRollText('Hound', 2);
-  check('E3 the roll names both pools and the tie', [/2 Yellow Dice/.test(words), /3 Yellow Dice/.test(words), /no Focus/.test(words), /tie goes to Hound/.test(words)], [true, true, true, true]);
 }
 
 // ================= F. Black Boxes (5.3.1, 3.4.4; FAQ P3, P7-P11, E19; rulings I19, I20, I22, I24) =================
@@ -958,7 +955,7 @@ console.log('Phase 6: the round, missions and squads\n');
   check('C6 an enemy is no ally', ok(s, mend(foe)), false);
   check('C6 an ally beyond Range 2 is out of reach', ok(s, mend(far)), false);
   check('C6 it gives no Repaired Token', ok(s, mend(hurt, { mode: 'repaired' })), false);
-  check('C6 only an Action that mends an ally', ok(s, mend(hurt, { actionId: 'ZYDR-108_A' })), false);
+  check('C6 only an Action that mends an ally', ok(s, mend(hurt, { actionId: 'ZYBP-101_A' })), false);
   check('C6 an ally in Range is mended', send(s, mend(hurt)).ok, true);
   check('C6 its Damaged Part is intact again', hurt.partStates.leftHand, 'intact');
   check('C6 and the SU1 leaves the board', s.tokens.some((x) => x.uid === su1.uid), false);
@@ -1023,6 +1020,150 @@ console.log('Phase 6: the round, missions and squads\n');
   // setup line all three print, and to nothing else on a card.
   check('J the Terminals setup line reaches Remote Access',
     data.mechanicsFor('Place 1 terminal in each of the Bravo, Echo and Hotel tactical zones.').map((m) => m.id), ['remote_access']);
+}
+
+// ================= E5. The Terminal stand-in: Remote Access rolls in the window (ruling I25; OTTO, 2026-09-28) =================
+{
+  // The roll was left to the table: the pages asked how it went. The Terminal
+  // is now the Responder of an ordinary Counter-roll, through a stand-in: EV 3,
+  // never a Focus, its hollow faces never counted, its dice the opponent's.
+  const theft = data.missions.cards.find((c) => c.id === 'terminal-data-extraction');
+  const zones = data.zoneData.zones;
+  const setUp = () => {
+    const s = table();
+    s.mission = theft.id;
+    s.tasks = Tk.taskItemsFor(zones, theft);
+    return s;
+  };
+  const itemIn = (s, zone) => Tk.normaliseTasks(s.tasks).items.find((i) => i.zone === zone);
+  const acted = (uid) => opp(uid, { timing: 'tactical', started: true, action: 1, performed: ['COMMON_REMOTE_ACCESS'] });
+  const open = (s, t, zone, over = {}) => ({ kind: 'startCounterRoll', seat: t.side, uid: t.uid, actionId: 'COMMON_REMOTE_ACCESS', targetUid: Tk.TERMINAL_UID, terminal: itemIn(s, zone).id, ...over });
+  const ra = data.commonActions.find((a) => a.id === 'COMMON_REMOTE_ACCESS');
+
+  const s = setUp();
+  const me = put(s, 's1', L(), 6, 5);
+  put(s, 's2', L(), 9, 9);
+  s.script.opp = acted(me.uid);
+  check('E5 the control: after Remote Access, the roll opens against a Terminal in reach', ok(s, open(s, me, 'bravo')), true);
+  check('E5 never against one out of Range', ok(s, open(s, me, 'golf')), false);
+  check('E5 only a Remote Access rolls against a Terminal', ok(s, open(s, me, 'bravo', { actionId: 'COMMON_SCAN' })), false);
+  const before = setUp();
+  const mb = put(before, 's1', L(), 6, 5);
+  before.script.opp = opp(mb.uid, { timing: 'tactical' });
+  check('E5 nor before the Action is paid', ok(before, open(before, mb, 'bravo')), false);
+  s.tasks.items.find((i) => i.zone === 'hotel').accessed = 's2';
+  check('E5 nor against one already accessed', ok(s, open(s, me, 'hotel')), false);
+
+  // Electronic Value 0 cannot Initiate (4.11.2). Every Torso in the data has
+  // some, so the card is zeroed for the check and put back.
+  const torso = data.byId.get(me.mech.torso);
+  const had = torso.electronic;
+  torso.electronic = 0;
+  try {
+    check('E5 an Electronic Value 0 Mech cannot open it', ok(s, open(s, me, 'bravo')), false);
+    const pay = setUp();
+    const pm = put(pay, 's1', L(), 6, 5);
+    pay.script.opp = opp(pm.uid, { timing: 'tactical' });
+    check('E5 nor pay a Remote Access it cannot roll', ok(pay, { kind: 'performAction', seat: 's1', uid: pm.uid, actionId: 'COMMON_REMOTE_ACCESS' }), false);
+  } finally {
+    torso.electronic = had;
+  }
+
+  // Opened naming anything as the target: the Responder is the stand-in.
+  send(s, open(s, me, 'bravo', { targetUid: 999 }));
+  const c = s.script.counter;
+  check('E5 the Responder is the stand-in, which has declared no Focus', [c.responderUid, c.terminal, c.respDeclare], [Tk.TERMINAL_UID, itemIn(s, 'bravo').id, false]);
+  check('E5 a checkpoint keeps the Terminal', Ty.normaliseScript(JSON.parse(JSON.stringify(s.script))).counter.terminal, itemIn(s, 'bravo').id);
+  // Hotel face-up again, so only the open roll stands in the way.
+  s.tasks.items.find((i) => i.zone === 'hotel').accessed = null;
+  check('E5 a second roll cannot open over it', ok(s, open(s, me, 'hotel')), false);
+
+  // The stand-in's hand.
+  const stand = Tk.terminalStandIn(itemIn(s, 'bravo'), 's1', 'Bravo');
+  check('E5 the stand-in sits with the opponent', [stand.side, stand.label], ['s2', 'Bravo Terminal']);
+  check('E5 its Electronic Value is 3', U.electronicStrength(data, s.tokens, stand, 'responder'), 3);
+  check('E5 its hollow faces never count', U.counterOffensive(data, s.tokens, stand, me, 'responder'), false);
+  check('E5 not even if it were marked Offensive', U.counterOffensive(data, s.tokens, { ...stand, stance: 'offensive' }, me, 'responder'), false);
+  // Only a Terminal's hand is thrown by the table command.
+  const plain = setUp();
+  const pa = put(plain, 's1', L(), 6, 5);
+  const pb = put(plain, 's2', L(), 7, 5);
+  plain.script.counter = { initiatorUid: pa.uid, responderUid: pb.uid, actionId: 'X', initRoll: null, respRoll: null, initFocused: false, respFocused: false, initDeclare: null, respDeclare: null, provoke: null, thenAttack: null };
+  check('E5 an Electronic Attack\'s Responder is not rolled as a Terminal', ok(plain, { kind: 'rollTerminal', seat: 's2', faces: [4, 4, 7] }), false);
+
+  // The Terminal's roll: 3 dice, once, by the table command.
+  check('E5 the Mech rolls as any Initiator', ok(s, { kind: 'rollCounter', seat: 's1', uid: me.uid, faces: [7, 7] }), true);
+  check('E5 the Terminal rolls exactly 3 dice', [ok(s, { kind: 'rollTerminal', seat: 's2', faces: [7, 7] }), ok(s, { kind: 'rollTerminal', seat: 's2', faces: [4, 4, 7] })], [false, true]);
+  M.Lp.setLocalSeat('s1');
+  try {
+    check('E5 across a table, the accessing squad cannot throw the Terminal\'s dice', ok(s, { kind: 'rollTerminal', seat: 's1', faces: [4, 4, 7] }), false);
+    check('E5 the opponent does', ok(s, { kind: 'rollTerminal', seat: 's2', faces: [4, 4, 7] }), true);
+  } finally {
+    M.Lp.setLocalSeat(null);
+  }
+  send(s, { kind: 'rollCounter', seat: 's1', uid: me.uid, faces: [7, 7] });
+  send(s, { kind: 'rollTerminal', seat: 's2', faces: [4, 4, 7] });
+  check('E5 the Terminal rolls once', ok(s, { kind: 'rollTerminal', seat: 's2', faces: [4, 4, 7] }), false);
+  check('E5 and the record holds its hand', s.script.counter.respRoll, [4, 4, 7]);
+  // Focus: the Mech declares, and the Terminal is never asked.
+  check('E5 with both hands in, the Mech declares', U.counterStage(data, s.tokens, s.script.counter), 'declareI');
+  send(s, { kind: 'declareCounterFocus', seat: 's1', uid: me.uid, use: false });
+  check('E5 and then it is settled', U.counterStage(data, s.tokens, s.script.counter), 'done');
+  // The win: the one reading every page applies.
+  const win = U.ewWinCommands(data, me, stand, ra, { terminal: itemIn(s, 'bravo').id });
+  check('E5 a win accesses the Terminal', win.cmds.map((x) => [x.kind, x.itemId]), [['accessTerminal', itemIn(s, 'bravo').id]]);
+  for (const x of win.cmds) send(s, x);
+  check('E5 and the Terminal is taken', itemIn(s, 'bravo').accessed, 's1');
+  send(s, { kind: 'clearCounterRoll', seat: 's1' });
+  check('E5 the record then clears', s.script.counter, null);
+
+  // The window on one screen: the same exchange, rolled and resolved there.
+  // Mech [blank, blank] against the Terminal's [hollow Light Hit x2, blank]:
+  // the Mech wins only if those hollow faces count nothing and the tie goes to
+  // the Initiator.
+  const t = setUp();
+  const tm = put(t, 's1', L(), 6, 5);
+  // A Raven EC Type covering it: a Repeater, which never reaches a Remote
+  // Access (FAQ P12), so the window must not offer it.
+  droneOn(t, 's1', '165', 6, 6);
+  t.script.opp = acted(tm.uid);
+  const sent = [];
+  const root = makeEl('div');
+  const eh = new M.ElectronicHelper(data, dice, root, () => {}, () => {}, () => {}, (cmd) => { sent.push(cmd); return { ok: true }; });
+  eh.tokens = () => t.tokens;
+  eh.roller = async (pool) => [7, 7, 4, 4, 7].slice(0, pool.yellow ?? 0).map((face) => ({ color: 'yellow', face }));
+  eh.start(tm, ra, Tk.terminalStandIn(itemIn(t, 'bravo'), 's1', 'Bravo'), { terminal: itemIn(t, 'bravo').id });
+  const words = () => textOf(root).join(' ');
+  check('E5 the window names the Terminal at EV 3', [/Bravo Terminal/.test(words()), /EV 3/.test(words())], [true, true]);
+  check('E5 and says how its hand is thrown', /thrown by the opponent\. It never Focuses/.test(words()), true);
+  check('E5 and offers no Repeater, which never reaches a Remote Access', /Repeater/.test(words()), false);
+  const press = (name) => {
+    const b = findButtons(root).find((x) => label(x).startsWith(name));
+    for (const fn of b?._h.click ?? []) fn();
+    return !!b;
+  };
+  check('E5 one press rolls both hands', press('Roll 2Y vs 3Y'), true);
+  await settle();
+  check('E5 the Mech may pass its Focus', press('Pass'), true);
+  check('E5 then it resolves', press('Resolve'), true);
+  check('E5 and the win accesses the Terminal', sent.map((x) => [x.kind, x.itemId]), [['accessTerminal', itemIn(t, 'bravo').id]]);
+
+  // Across a table: the record draws on both phones, and the opponent's seat
+  // is asked for the Terminal's 3 dice.
+  const shared = makeEl('div');
+  const acts = [];
+  const sh = new M.ElectronicHelper(data, dice, shared, () => {}, () => {});
+  sh.tokens = () => t.tokens;
+  sh.contestAct = (act, arg) => acts.push([act, arg?.uid]);
+  const rec = { initiatorUid: tm.uid, responderUid: Tk.TERMINAL_UID, actionId: ra.id, initRoll: [7, 7], respRoll: null, initFocused: false, respFocused: false, initDeclare: null, respDeclare: false, provoke: null, thenAttack: null, terminal: itemIn(t, 'bravo').id };
+  sh.showContest(rec, tm, Tk.terminalStandIn(itemIn(t, 'bravo'), 's1', 'Bravo'), ra, 'responder');
+  sh.redraw();
+  const seen = () => textOf(shared).join(' ');
+  check('E5 on a shared table the opponent is asked for the Terminal\'s 3 dice', /Roll 3 Yellow dice/.test(seen()), true);
+  check('E5 and no Repeater is offered there either', /Repeater/.test(seen()), false);
+  const rb = findButtons(shared).find((x) => label(x).startsWith('Roll 3'));
+  for (const fn of rb?._h.click ?? []) fn();
+  check('E5 and its press asks for the Terminal\'s roll', acts, [['roll', Tk.TERMINAL_UID]]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

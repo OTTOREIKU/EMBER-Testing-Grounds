@@ -18,6 +18,7 @@ import { FACTION_LABEL, actionIconUrl, cardName, mechPartUrl, portraitUrl, statI
 import { LENGTH_NAME, TICK_COST, costLabel, lengthOf, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule, type CapsuleShort } from './glyphs';
 import { linkIcon } from './icons';
+import { printsWide } from './images';
 import { matchMechanicBasic } from './refsearch';
 import { type Card, type CardAction } from './types';
 
@@ -738,8 +739,11 @@ export function cardDetail(c: Card): string {
   // NOT FOR PILOTS: their portrait is already a headshot of the same person in
   // the same place, so a card thumbnail beside it is the same picture twice.
   const wantsThumb = c.category !== 'pilot';
+  // What the placeholder shows when the card has no scan (images.ts). An
+  // attribute, so the quotes several card names print are escaped as well.
+  const phAttrs = `data-img-label="${esc(cardName(c)).replace(/"/g, '&quot;')}"${printsWide(c) ? ' data-img-wide="1"' : ''}`;
   return `<div class="dhead">
-    ${wantsThumb ? `<button class="dthumb" data-dtab="photo" title="See the printed card"><span class="ref-cardimg-slot" data-img="${esc(c.id)}"></span></button>` : ''}
+    ${wantsThumb ? `<button class="dthumb" data-dtab="photo" title="See the printed card"><span class="ref-cardimg-slot" data-img="${esc(c.id)}" ${phAttrs}></span></button>` : ''}
     <div class="dhead-t">
       <h2>${esc(cardName(c))}</h2>
       <p class="ref-meta">${esc(
@@ -760,7 +764,7 @@ export function cardDetail(c: Card): string {
       <button data-dtab="boxes" role="tab" aria-selected="false">Boxes</button>
     </div>
     <div class="dpanel" data-dpanel="card">
-      ${c.category === 'pilot' ? `<div class="ref-portrait" data-portrait="${esc(c.id)}"></div>` : ''}
+      ${c.category === 'pilot' ? `<div class="ref-portrait" data-portrait="${esc(c.id)}" data-portrait-label="${esc(cardName(c)).replace(/"/g, '&quot;')}"></div>` : ''}
       ${free ? `<p class="ref-free">Costs 0 points: ${esc(free)}.</p>` : ''}
       ${stats || pilotStats ? `<div class="ref-stats">${stats}${pilotStats}</div>` : ''}
       ${trait}
@@ -799,7 +803,7 @@ export function cardDetail(c: Card): string {
     </div>
     <div class="dpanel" data-dpanel="photo" hidden>
       <figure class="ref-scan">
-        <div class="ref-cardimg-slot" data-img="${esc(c.id)}"></div>
+        <div class="ref-cardimg-slot" data-img="${esc(c.id)}" ${phAttrs}></div>
       </figure>
     </div>
     <div class="dpanel" data-dpanel="boxes" hidden>

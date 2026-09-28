@@ -1,13 +1,14 @@
 // Checks the four Melee Lock conditions and who can be locked (rulebook 4.3.5,
 // with the worked notes on book p.46).
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
 const rStart = rules.indexOf('let GRIDS');
 const rEnd = rules.indexOf('export function rangeBetween');
 writeFileSync(
   new URL('./_meleelock.rules.ts', import.meta.url),
-  'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + rules.slice(rStart, rEnd),
+  FOOTPRINT + 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + rules.slice(rStart, rEnd),
 );
 
 const melee = readFileSync(new URL('../src/melee.ts', import.meta.url), 'utf8');

@@ -4,6 +4,7 @@
 // whole route runs one way, and a turn anywhere caps it at the printed number.
 // FAQ E16 rides the same search: a Crush ends the Movement whatever is left.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
 const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
@@ -11,7 +12,7 @@ const start = rules.indexOf('let GRIDS');
 const end = rules.indexOf('export function losBetween');
 if (start < 0 || end < 0) throw new Error('could not locate the movement search in rules.ts');
 const tmp = new URL('./_straightline.slice.ts', import.meta.url);
-writeFileSync(tmp, 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + rules.slice(start, end));
+writeFileSync(tmp, FOOTPRINT + 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + rules.slice(start, end));
 const { movePath, reachableGrids, extendPath, pathDirection } = await import(tmp.href);
 
 // The reader, sliced from units.ts: standalone, so nothing else comes with it.

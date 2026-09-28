@@ -291,6 +291,13 @@
     "name": "Highlight",
     "value": "If a Unit performs a Firing Action that is able to target an Enemy Unit that has Highlight, it must target that Unit and cannot target other Units with the Attack. Other Attacks are not bound, and neither is Interception (FAQ J18, M26)."
    }
+  },
+  "毁伤": {
+   "en": {
+    "name": "Mutilation",
+    "value": "Surplus Damage may be resolved against the Structure of the hit Part."
+   },
+   "_note": "OTTO 2026-09-28: the company lists win. Every Mutilation line on the five lists (25 rows) says the \"hit part\"; the generated glossary said the \"target Part\", the rulebook's word, which the 2026-09-03 ruling had kept. Play does not change: a Part the defender designates (Shield Up, Designated Defense) becomes the target, so the two words name the same Part."
   }
  }
 }

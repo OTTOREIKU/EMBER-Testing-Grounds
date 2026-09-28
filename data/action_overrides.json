@@ -183,9 +183,11 @@
     },
     "ZHDR-205_A": {
       "description": {
-        "en": "· Electronic Attack\n· Perform Electronic Counter Roll with all Enemy Mechs within range, Strength +1, reduce 1 Link of Target if successful."
+        "en": "· Electronic Attack\n· Perform Electronic Counter Roll with all Enemy Mechs within range, reduce 1 Link of Target if successful.",
+        "zh": "",
+        "jp": ""
       },
-      "_note": "Mechanics audit Phase 3 (2026-09-25): Scream, the printed English; the bundle had only the Chinese. The GoF 1.021 row omits Strength +1 without marking it as a change, and OTTO kept it (ruling F17)."
+      "_note": "Scream, verbatim from the GoF 1.021 list, which has no Strength +1. OTTO kept the printed +1 on 2026-09-25 (audit Phase 3, F17), then ruled on 2026-09-28 that the company's lists outrank the cards for every faction, so the list's row stands. The zh/jp are cleared because strengthOf reads 强度+1 in them."
     },
     "022_A": {
       "description": {
@@ -779,7 +781,10 @@
           "inline": "静默"
         }
       ],
-      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Fire in arc, Silence."
+      "description": {
+        "en": "· Fire in arc · Silence\n· Launch 1 KK9 Snake Eyes Micro Drone."
+      },
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Fire in arc, Silence. English from the UN 1.02 list (2026-09-28): the card it launches is the KK9 Snake Eyes Micro Drone, as the Drones sheet names it."
     },
     "DLSP-2_A": {
       "keywords": [
@@ -861,12 +866,12 @@
           "conditions": [],
           "effects": [
             {
-              "type": "defender_designate_any_part"
+              "type": "defender_designate_self_hit_part"
             }
           ]
         }
       ],
-      "_note": "GoF 1.021 parts list (audit Phase 5, F2; ruling I1 adopted 1.021). The Warrior was N4 Data Link, Command Generation 4; 1.021 prints Designated Defense instead, so it generates the default 1. Read as the defender's own Snipe: this Mech may name ANY of its Parts to resolve the damage (the list prints \"Designate part\", where every shield prints \"this part\"). The zh, the jp and the Command Generation keyword are cleared because we hold no 1.021 Chinese and the readers match the old line."
+      "_note": "GoF 1.021 parts list (audit Phase 5, F2; ruling I1 adopted 1.021). The Warrior was N4 Data Link, Command Generation 4; 1.021 prints Designated Defense instead, so it generates the default 1. The list prints \"Designate part\" where every shield prints \"this part\"; OTTO ruled on 2026-09-28 to match the shields for now (GoF is not yet released, so a later FAQ may change it): the defender may designate this Torso to resolve the damage, in any Stance, as a shield's own rule. The zh, the jp and the Command Generation keyword are cleared because we hold no 1.021 Chinese and the readers match the old line."
     },
     "172_B": {
       "name": {
@@ -1171,6 +1176,32 @@
       "yellowDice": 0,
       "redDice": 0,
       "keywords": []
+    },
+    "ZYDR-108_A": {
+      "remove": true,
+      "_note": "GoF 1.021: the SU1 prints Armor Patch alone. OTTO ruled on 2026-09-28 that the company's lists outrank the cards for every faction, which retires the 2026-09-03 keep ruling (audit Phase 5, I2)."
+    },
+    "ZYBP-101_B": {
+      "remove": true,
+      "_note": "GoF 1.021 prints the DLSP-1 with its launch alone. OTTO, 2026-09-28: the company's lists outrank the cards (retires the 2026-09-03 keep ruling)."
+    },
+    "ZYBP-202_B": {
+      "remove": true,
+      "_note": "GoF 1.021 prints the Eagle Whistle with Convolution algorithm alone. OTTO, 2026-09-28: the company's lists outrank the cards (retires the 2026-09-03 keep ruling)."
+    },
+    "ZHLA-102_B": {
+      "remove": true,
+      "_note": "GoF 1.021 folds Command Coordination into the Missile (ZHLA-102_A). OTTO, 2026-09-28: the company's lists outrank the cards (retires the 2026-09-03 keep ruling)."
+    },
+    "ZHLA-201_B": {
+      "remove": true,
+      "_note": "GoF 1.021 folds Command Coordination into the Mortar (ZHLA-201_A). OTTO, 2026-09-28: the company's lists outrank the cards (retires the 2026-09-03 keep ruling)."
+    },
+    "ZHDR-206_B": {
+      "description": {
+        "en": "· Electronic Support\n· May make an Ally Mech within range switch Stance, except if in Shutdown Stance."
+      },
+      "_note": "Stance feedback, verbatim from the GoF 1.021 list (2026-09-28). The Chinese already said it; stanceFeedbackTargets already leaves out a Shutdown Mech."
     }
   },
   "_notes": {

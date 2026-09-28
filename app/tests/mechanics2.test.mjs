@@ -679,16 +679,36 @@ check('A4 and not on a Shutdown one (4.1: no Passive effects)', await reactionsA
   check('D4 and not from a Shutdown carrier', offensive(near), false);
 }
 {
+  // ZPA-38 Firewatch as GoF 1.021 prints it (OTTO, 2026-09-28: the lists
+  // outrank the cards): 1 Link for a Command Token as the Mech gains its
+  // Action Opportunity. The card's {Eye}-as-{Lightning} is gone.
   const s = table();
   const fw = put(s, 's1', L({ pilot: 'ZPA-38' }), 0, 0, { link: 3 });
-  const foe = put(s, 's2', L({ pilot: 'FPA-01' }), 3, 0);
-  s.script.counter = { initiatorUid: fw.uid, responderUid: foe.uid, actionId: 'EWA', initRoll: null, respRoll: null, initFocused: false, respFocused: false, initDeclare: null, respDeclare: null, provoke: null, thenAttack: null };
+  const other = put(s, 's1', L({ pilot: 'ZPA-38' }), 3, 0, { link: 3 });
   const fwCmd = { kind: 'firewatch', seat: 's1', uid: fw.uid };
-  const unrolled = ok(s, fwCmd);
-  s.script.counter.initRoll = [YEL_EYE];
-  check('D4 Firewatch comes after the roll, for 1 Link', [unrolled, send(s, fwCmd).ok, fw.link, s.script.counter.initFirewatch], [false, true, 2, true]);
-  check('D4 once per Counter-roll', ok(s, fwCmd), false);
-  check('D4 and its {Eye} count as {Lightning}', [M.tallyCounter(dice, [YEL_EYE], false).lightning, M.tallyCounter(dice, [YEL_EYE], false, true).lightning], [0, 1]);
+  check('D4 Firewatch needs the Mech\'s own Opportunity', ok(s, fwCmd), false);
+  s.script.opp = M.newOpportunity(fw.uid, undefined);
+  const commands = (t) => (t.statuses ?? []).filter((x) => x === 'command').length;
+  check('D4 Firewatch: 1 Link for a face-up Command Token',
+    [send(s, fwCmd).ok, fw.link, commands(fw), s.script.opp.firewatch, s.commandTokens.s1], [true, 2, 1, true, 1]);
+  check('D4 once per Action Opportunity', ok(s, fwCmd), false);
+  check('D4 and never another Mech\'s', ok(s, { kind: 'firewatch', seat: 's1', uid: other.uid }), false);
+  const late = table();
+  const lf = put(late, 's1', L({ pilot: 'ZPA-38' }), 0, 0, { link: 3 });
+  late.script.opp = { ...M.newOpportunity(lf.uid, undefined), maneuvered: true };
+  check('D4 on a strict table, as the Opportunity opens: not after a Maneuver', ok(late, { kind: 'firewatch', seat: 's1', uid: lf.uid }), false);
+  late.script.strict = false;
+  check('D4 which a Teaching table lets through', ok(late, { kind: 'firewatch', seat: 's1', uid: lf.uid }), true);
+  const poor = table();
+  const pf = put(poor, 's1', L({ pilot: 'ZPA-38' }), 0, 0, { link: 1 });
+  poor.script.opp = M.newOpportunity(pf.uid, undefined);
+  check('D4 never the last Link (4.10)', ok(poor, { kind: 'firewatch', seat: 's1', uid: pf.uid }), false);
+  const plain = table();
+  const pm = put(plain, 's1', L(), 0, 0, { link: 3 });
+  plain.script.opp = M.newOpportunity(pm.uid, undefined);
+  check('D4 and only under Firewatch', ok(plain, { kind: 'firewatch', seat: 's1', uid: pm.uid }), false);
+  check('D4 the Counter-roll tally reads Lightning alone now', M.tallyCounter(dice, [YEL_EYE], false).lightning, 0);
+  check('D4 a Firewatch Mech is no Command spender (4.15.4)', U.canSpendCommand(data, fw), false);
 }
 {
   const s = table();

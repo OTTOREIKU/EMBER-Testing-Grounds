@@ -2364,6 +2364,8 @@ p.points { white-space: pre-line; }
 /* ---------- card block ---------- */
 .card-block h3 { font-size: 14px; margin: 8px 0 4px; }
 .card-img { width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.5); display: block; }
+/* A card with no scan (ui.css .card-ph), at the width the card would take. */
+.card-shot div.card-ph > span { font-size: 15px; }
 
 /* Flip between a launcher and the Projectile it fires. Arrows stay hidden until
    the art is hovered or a control has keyboard focus. */

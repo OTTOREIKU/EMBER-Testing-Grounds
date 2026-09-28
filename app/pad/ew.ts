@@ -8,8 +8,9 @@ import type { RollGroup } from '../src/combat';
 import type { Command } from '../src/commands';
 import { ElectronicHelper, type EwAct, type EwArg } from '../src/combat';
 import { forSeat } from './attack';
-import { electronicStrength, ewWinCommands, tokenCards } from '../src/units';
-import { type CardAction, type DiceData, type GameState, type Side, type Token } from '../src/types';
+import { electronicStrength, ewWinCommands, tokenCards, loanedParts } from '../src/units';
+import { normaliseTasks, TERMINAL_EV, TERMINAL_UID, terminalStandIn, type TaskItem } from '../src/tasks';
+import { type CardAction, type CounterRoll, type DiceData, type GameState, type Side, type Token } from '../src/types';
 import type { GameData } from '../src/data';
 
 export interface EwApi {
@@ -50,7 +51,9 @@ export function ewWatching(): boolean {
 function actionOf(t: Token, actionId: string): CardAction | undefined {
   const a = api!;
   return tokenCards(a.data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === actionId)
-    ?? a.data.commonActions.find((x) => x.id === actionId);
+    ?? a.data.commonActions.find((x) => x.id === actionId)
+    // A lent Load's, the table having judged the Contact (FAQ O5).
+    ?? loanedParts(a.data, a.state().tokens, t, { anywhere: true }).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === actionId);
 }
 
 export function mountEw(into: HTMLElement): ElectronicHelper | null {
@@ -181,6 +184,42 @@ export function beginBlastScan(proj: Token, defender: Token): boolean {
   return true;
 }
 
+// Remote Access against a Terminal (p.87; ruling I25). The Terminal's stand-in
+// is the Responder: in a room the record draws it on both phones and the
+// opponent's phone rolls the Terminal's dice (rollTerminal); on one phone the
+// local exchange rolls both hands. Either way the dice come from rollFaces, so
+// Table rolls enters them from the table like every other roll, and a win
+// accesses the Terminal (ewWinCommands). The pages used to ask how a roll made
+// off the page had gone (OTTO, 2026-09-28).
+export function beginTerminal(attacker: Token, actionId: string, item: TaskItem, zoneName: string, joined = false): boolean {
+  const a = api!;
+  if (a.state().script && !a.solo) {
+    return a.send({
+      kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId,
+      targetUid: TERMINAL_UID, terminal: item.id, ...(joined ? { chain: 'join' as const } : {}),
+    });
+  }
+  if (!root) return false;
+  const h = mountEw(root);
+  if (!h) { a.toast('No dice data loaded.'); return false; }
+  const action = actionOf(attacker, actionId);
+  if (!action) return false;
+  h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
+  h.start(attacker, action, terminalStandIn(item, attacker.side, zoneName), { terminal: item.id });
+  a.openCombat();
+  return true;
+}
+
+// The record's Responder: a unit, or a Remote Access's Terminal stand-in.
+function responderOf(c: CounterRoll, init: Token | undefined): Token | undefined {
+  const a = api!;
+  const s = a.state();
+  if (c.terminal === undefined) return s.tokens.find((t) => t.uid === c.responderUid);
+  const item = normaliseTasks(s.tasks).items.find((i) => i.id === c.terminal);
+  if (!item || !init) return undefined;
+  return terminalStandIn(item, init.side, a.data.zoneData.zones.find((z) => z.id === item.zone)?.name ?? item.zone);
+}
+
 // Target Tracing (174): "may spend 1 Command Token to perform an Electronic
 // Counter Roll against the Attacker. If successful, the Attacker loses 1
 // Link." In a room the command that opens the record spends the Token and
@@ -214,7 +253,7 @@ export function syncContest(): void {
     return;
   }
   const init = s.tokens.find((t) => t.uid === c.initiatorUid);
-  const resp = s.tokens.find((t) => t.uid === c.responderUid);
+  const resp = responderOf(c, init);
   const action = init ? actionOf(init, c.actionId) : undefined;
   if (!init || !resp || !action) { if (helper?.watching) helper.closeContest(); return; }
   if (!root) { a.openCombat(); return; }
@@ -234,8 +273,18 @@ function contestAct(act: EwAct, arg?: EwArg): void {
   const c = s.script?.counter;
   if (!c) return;
   const init = s.tokens.find((x) => x.uid === c.initiatorUid);
-  const resp = s.tokens.find((x) => x.uid === c.responderUid);
+  const resp = responderOf(c, init);
   if (!init || !resp) { a.send({ kind: 'clearCounterRoll', seat: a.me() }); a.render(); return; }
+  // The Terminal's hand, this phone's to roll as the opponent's: a table
+  // command, since no unit on the board is it (ruling I25).
+  if (act === 'roll' && arg?.uid === TERMINAL_UID && c.terminal !== undefined) {
+    void a.rollFaces(TERMINAL_EV, `${resp.label}: Electronic Counter-roll`).then((faces) => {
+      if (faces.length !== TERMINAL_EV) return;
+      a.send({ kind: 'rollTerminal', seat: a.me(), faces });
+      a.render();
+    });
+    return;
+  }
   const unit = arg?.uid !== undefined ? s.tokens.find((x) => x.uid === arg.uid) : undefined;
   if (act === 'roll' && unit) {
     // The Initiator's pool carries its Action's Strength +X (Scream; audit
@@ -248,12 +297,6 @@ function contestAct(act: EwAct, arg?: EwArg): void {
       a.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces });
       a.render();
     });
-    return;
-  }
-  // ZPA-38 Firewatch, as the Match Centre sends it (audit Phase 2, D4).
-  if (act === 'firewatch' && unit) {
-    a.send({ kind: 'firewatch', seat: unit.side, uid: unit.uid });
-    a.render();
     return;
   }
   if (act === 'declare' && unit) {
@@ -308,7 +351,7 @@ function contestAct(act: EwAct, arg?: EwArg): void {
     // its Charge (audit Phase 3, D1). Target Tracing is the record's own
     // `reaction`, its Command Token already spent.
     if (action) {
-      const win = ewWinCommands(a.data, init, resp, action, { reaction: !!c.reaction, thenAttack: c.thenAttack });
+      const win = ewWinCommands(a.data, init, resp, action, { reaction: !!c.reaction, thenAttack: c.thenAttack, terminal: c.terminal });
       for (const cmd of win.cmds) a.send({ ...cmd, ...join() } as Command);
       if (win.lines.length) a.toast(`${init.label} succeeds: ${win.lines.join('; ')}.`);
     }

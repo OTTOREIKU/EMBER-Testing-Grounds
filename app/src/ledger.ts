@@ -56,7 +56,7 @@ const FOLLOW = new Set(['answerDefense', 'acceptRoll', 'focus', 'focusAnswer', '
   'designate', 'designateHit', 'applyPenetration', 'applyStatus', 'removeStatus', 'ageStatus', 'recordKill',
   'drainLink', 'restoreLink', 'spendAmmo', 'restoreAmmo', 'spendCommand', 'coordinateCommand',
   'kcArmor', 'meleeEvade', 'dodgeEnhance', 'provoke', 'suppress', 'defenseReaction',
-  'resolveReaction', 'resolveIntercept', 'spendIntercept', 'restoreIntercept', 'rollCounter', 'declareCounterFocus', 'forceShutdown', 'onBehalf',
+  'resolveReaction', 'resolveIntercept', 'spendIntercept', 'restoreIntercept', 'rollCounter', 'rollTerminal', 'declareCounterFocus', 'forceShutdown', 'onBehalf',
   'crushSwap', 'forceMove', 'tether', 'disarm', 'destroyTerrain', 'placeSmoke', 'removeSmoke',
   'dissipateSmoke', 'despawn', 'dropBlackBox', 'breakRepaired', 'asterRestore', 'overload',
   'grantExtra', 'layMine', 'recoverBit', 'flyToTarget', 'overwatch', 'attackMode', 'setStance', 'stanceFeedback', 'firewatch', 'handOver', 'placeInGrid']);
@@ -240,6 +240,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'endOpportunity': label = `${who()} ends its activation`; break;
     case 'chooseTied': label = `${who()} takes its squad's tied turn`; break;
     case 'passTurn': label = 'Turn passed'; break;
+    case 'endSwarm': label = 'Swarm Tactics stops'; break;
 
     // ---------- spends and tokens ----------
     case 'setCharge': label = `${who()}: Charge Token ${(c as { on?: boolean }).on ? 'set' : 'spent'}`; break;
@@ -256,7 +257,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'ageStatus': label = `${target()}'s ${c.statusId ?? 'status'} Token ages`; break;
     case 'setStance': label = `${who()} switches to ${c.stance ?? 'a new'} Stance`; break;
     case 'forceShutdown': label = `${target()} goes into Shutdown`; break;
-    case 'firewatch': label = `${who()}: Firewatch, {Eye} count as {Lightning}`; break;
+    case 'firewatch': label = `${who()}: Firewatch, 1 Link for a Command Token`; break;
     case 'stanceFeedback': label = `${who()}: Stance feedback, ${target()} to ${c.stance ?? 'a new'} Stance`; break;
     case 'renameUnit': label = `${who()} is now called ${c.label ?? 'something else'}`; break;
     case 'setLoad': label = c.cardId ? `${who()} takes a Load` : `${who()}: Load taken off`; break;

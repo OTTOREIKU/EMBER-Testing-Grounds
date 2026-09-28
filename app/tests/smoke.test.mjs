@@ -1,5 +1,6 @@
 // Checks Smoke Screen grouping, dissipation and LoS against rulebook 4.16 / 4.2.3.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 // Slice out the smoke helpers — rules.ts's other exports pull in DOM-facing types.
 const srcUrl = new URL('../src/rules.ts', import.meta.url);
@@ -13,7 +14,7 @@ const tmp = new URL('./_smoke.slice.ts', import.meta.url);
 // line between two Bases' sits far below canStandIn, outside the first cut.
 const walker = src.slice(src.indexOf('export function losBetween'), src.indexOf('// Does the line between two Bases'));
 if (!walker) throw new Error('could not locate the line walker in rules.ts');
-writeFileSync(tmp, 'type Side = any;\ntype SmokeScreen = any;\ntype Token = any;\ntype TerrainPiece = any;\n' + src.slice(start, end) + walker);
+writeFileSync(tmp, FOOTPRINT + 'type Side = any;\ntype SmokeScreen = any;\ntype Token = any;\ntype TerrainPiece = any;\n' + src.slice(start, end) + walker);
 const { smokeGroups, dissipationFor, smokeNeighbours, smokeBlocks } = await import(tmp.href);
 
 let pass = 0, fail = 0;

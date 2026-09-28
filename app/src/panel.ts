@@ -4,6 +4,7 @@ import { inspectOnHover, linkMechanics } from './inspector';
 import { ICON_BOLT, ICON_BURST } from './icons';
 import { diceRow, diceText, expandGlyphs } from './glyphs';
 import { groupByFaction, openPartPicker } from './partpicker';
+import { cardPlaceholder, printsWide } from './images';
 import { type ActionWorld, canBeLoad, guidedActions, isCarrier, isElectronicAttack, knockbackOf, linkSupportOf, SLOT_LABEL, tokenCards, tokenCleanupOf } from './units';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 
@@ -756,7 +757,7 @@ export class Panel {
     img.className = 'card-img';
     img.src = cardImageUrl(card.id);
     img.alt = cardName(card);
-    img.addEventListener('error', () => img.remove(), { once: true });
+    img.addEventListener('error', () => img.replaceWith(cardPlaceholder({ label: cardName(card), wide: printsWide(card) }, 'card-img')), { once: true });
     shot.appendChild(img);
 
     const flipTo = (next: Card, backTo?: { card: Card; label: string }) => {

@@ -314,8 +314,10 @@ console.log('Phase 3: stealth and electronic warfare\n');
   put(s, 's2', L({ pilot: 'FPA-01' }), 9, 9);
   const scream = card('ZHDR-205', 'ZHDR-205_A');
   check('D2 Scream names every enemy MECH in Range 4', U.electronicAllTargets(data, s.tokens, eagle, scream).map((x) => x.uid), [a.uid, b.uid]);
-  check('D2 with Strength +1 on the Initiator\'s roll',
-    U.electronicStrength(data, s.tokens, eagle, 'initiator', scream) - U.electronicStrength(data, s.tokens, eagle, 'initiator'), 1);
+  // GoF 1.021 prints no Strength +1, and OTTO ruled on 2026-09-28 that the
+  // lists outrank the card, which retires the F17 keep.
+  check('D2 with no Strength bonus on the Initiator\'s roll (GoF 1.021)',
+    U.electronicStrength(data, s.tokens, eagle, 'initiator', scream) - U.electronicStrength(data, s.tokens, eagle, 'initiator'), 0);
   check('D2 and none on the Responder\'s', U.electronicStrength(data, s.tokens, a, 'responder', scream), U.electronicStrength(data, s.tokens, a, 'responder'));
 }
 {

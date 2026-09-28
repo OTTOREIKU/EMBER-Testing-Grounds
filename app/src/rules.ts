@@ -1,4 +1,5 @@
 import type { Side, SmokeScreen, TerrainPiece, Token } from './types';
+import { baseBox, baseCells } from './types';
 
 // The board's extent in Large Grids.
 //
@@ -109,12 +110,7 @@ export function inSmoke(t: Token, smoke: SmokeScreen[]): boolean {
 }
 
 function standsInSmoke(t: Token, grids: Set<string>): boolean {
-  for (let dc = 0; dc < t.size; dc++) {
-    for (let dr = 0; dr < t.size; dr++) {
-      if (grids.has(`${Math.floor((t.col + dc) / 3)},${Math.floor((t.row + dr) / 3)}`)) return true;
-    }
-  }
-  return false;
+  return baseCells(t).some((c) => grids.has(`${Math.floor(c.col / 3)},${Math.floor(c.row / 3)}`));
 }
 
 export interface LargeGrid {
@@ -126,8 +122,10 @@ export interface LargeGrid {
 // overlapping outright (an Aerial unit over a ground one counts, Supplement
 // "Overlapping"). A corner-only touch is NOT Contact.
 export function inContact(a: Token, b: Token): boolean {
-  const gapX = Math.max(a.col - (b.col + b.size), b.col - (a.col + a.size));
-  const gapY = Math.max(a.row - (b.row + b.size), b.row - (a.row + a.size));
+  const x = baseBox(a);
+  const y = baseBox(b);
+  const gapX = Math.max(x.col - (y.col + y.w), y.col - (x.col + x.w));
+  const gapY = Math.max(x.row - (y.row + y.h), y.row - (x.row + x.h));
   // gap < 0 means overlap on that axis; gap === 0 means edges meet exactly.
   if (gapX < 0 && gapY < 0) return true;
   return (gapX === 0 && gapY < 0) || (gapY === 0 && gapX < 0);
@@ -172,7 +170,7 @@ export function standingSpot(
   for (const p of terrain) for (const cell of p.subCells) blocked.add(`${cell.col},${cell.row}`);
   for (const t of tokens) {
     if (t.uid === ignoreUid || t.aerial) continue;
-    for (let dc = 0; dc < t.size; dc++) for (let dr = 0; dr < t.size; dr++) blocked.add(`${t.col + dc},${t.row + dr}`);
+    for (const cell of baseCells(t)) blocked.add(`${cell.col},${cell.row}`);
   }
   for (const spot of spots) {
     let ok = true;
@@ -185,6 +183,34 @@ export function standingSpot(
       }
     }
     if (ok) return spot;
+  }
+  return null;
+}
+
+// Where a 1x3 line unit (an AS3 wall, the Turtle Shell) stands in Large Grid
+// (c, r) facing `facing`: across the facing, inside the one Grid (terrain is
+// placed wholly within a Grid, p.21), the middle line first, on cells no
+// terrain fills and no ground unit stands on. Null if no line fits.
+export function lineSpot(
+  c: number,
+  r: number,
+  facing: number,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  ignoreUid?: number,
+): { col: number; row: number } | null {
+  if (c < 0 || r < 0 || c >= boardGrids() || r >= boardGrids()) return null;
+  const blocked = new Set<string>();
+  for (const p of terrain) for (const cell of p.subCells) blocked.add(`${cell.col},${cell.row}`);
+  for (const t of tokens) {
+    if (t.uid === ignoreUid || t.aerial) continue;
+    for (const cell of baseCells(t)) blocked.add(`${cell.col},${cell.row}`);
+  }
+  const across = facing === 1 || facing === 3;
+  for (const off of [1, 0, 2]) {
+    const at = across ? { col: c * 3 + off, row: r * 3 } : { col: c * 3, row: r * 3 + off };
+    const cells = [0, 1, 2].map((i) => (across ? { col: at.col, row: at.row + i } : { col: at.col + i, row: at.row }));
+    if (cells.every((x) => !blocked.has(`${x.col},${x.row}`))) return at;
   }
   return null;
 }
@@ -207,7 +233,7 @@ export function spotsInGrid(
     for (const p of terrain) for (const cell of p.subCells) blocked.add(`${cell.col},${cell.row}`);
     for (const o of tokens) {
       if (o.uid === t.uid || o.aerial || o.deployed === false) continue;
-      for (let dc = 0; dc < o.size; dc++) for (let dr = 0; dr < o.size; dr++) blocked.add(`${o.col + dc},${o.row + dr}`);
+      for (const cell of baseCells(o)) blocked.add(`${cell.col},${cell.row}`);
     }
   }
   const out: { col: number; row: number; ok: boolean; here: boolean }[] = [];
@@ -601,9 +627,7 @@ export function crushTargets(
   const units: Token[] = [];
   for (const o of tokens) {
     if (o.uid === t.uid || o.aerial) continue;
-    const cells: { col: number; row: number }[] = [];
-    for (let dc = 0; dc < o.size; dc++) for (let dr = 0; dr < o.size; dr++) cells.push({ col: o.col + dc, row: o.row + dr });
-    if (!covers(cells)) continue;
+    if (!covers(baseCells(o))) continue;
     if (indomitable ? o.size > t.size : o.size >= t.size) return null;
     // A Barricade can neither move nor be Crushed (FAQ E6), so a grid holding
     // one cannot be entered at all. NEWLY REACHABLE for a Large Barricade: the
@@ -921,26 +945,28 @@ function walkLines(
       if (t.uid === a.uid || t.uid === b.uid || t.aerial) continue;
       // A wall stands as 3-inch terrain, which blocks the lines it crosses (E1).
       const wall = standsAsTerrain(t, target);
-      for (let dc = 0; dc < t.size; dc++) {
-        for (let dr = 0; dr < t.size; dr++) {
-          obstructCells.add(`${t.col + dc},${t.row + dr}`);
-          if (wall) losCells.add(`${t.col + dc},${t.row + dr}`);
-        }
+      for (const cell of baseCells(t)) {
+        obstructCells.add(`${cell.col},${cell.row}`);
+        if (wall) losCells.add(`${cell.col},${cell.row}`);
       }
     }
   }
 
   const basePoints = (t: Token): { x: number; y: number }[] => {
+    const b = baseBox(t);
     const pts: { x: number; y: number }[] = [];
     for (let i = 0; i <= 2; i++) {
       for (let j = 0; j <= 2; j++) {
-        pts.push({ x: t.col + 0.08 + (i * (t.size - 0.16)) / 2, y: t.row + 0.08 + (j * (t.size - 0.16)) / 2 });
+        pts.push({ x: b.col + 0.08 + (i * (b.w - 0.16)) / 2, y: b.row + 0.08 + (j * (b.h - 0.16)) / 2 });
       }
     }
     return pts;
   };
 
-  const inBase = (x: number, y: number, t: Token) => x >= t.col && x < t.col + t.size && y >= t.row && y < t.row + t.size;
+  const inBase = (x: number, y: number, t: Token) => {
+    const b = baseBox(t);
+    return x >= b.col && x < b.col + b.w && y >= b.row && y < b.row + b.h;
+  };
 
   let anySight = false;
   let smokeTook = false;
@@ -977,8 +1003,8 @@ function walkLines(
 // (PHASE6-PLAN D-9; audit Phase 5, E1). The ids are the cards' own, as
 // data.ts BARRICADE_CARDS keeps them, because rules.ts reads no card data.
 //
-// FOOTPRINT: the token's own cells. The data's boardProfile prints a 1x3 line
-// for all three, which needs an orientation the board does not yet record.
+// FOOTPRINT: the 1x3 line the data's boardProfile prints for all three, across
+// the unit's facing (types.ts baseCells; OTTO, 2026-09-28).
 const WALL_CARDS = new Set(['PDAM-003', 'PDAM-004']);
 const BARRICADE_TERRAIN_CARDS = new Set(['158']);
 export function standsAsTerrain(t: Token, target: Token | null): boolean {
@@ -989,11 +1015,9 @@ export function standsAsTerrain(t: Token, target: Token | null): boolean {
 
 // The same units as terrain pieces, for the readers that take terrain.
 export function unitTerrain(tokens: Token[], target: Token | null): TerrainPiece[] {
-  return tokens.filter((t) => standsAsTerrain(t, target)).map((t) => {
-    const subCells: { col: number; row: number }[] = [];
-    for (let dc = 0; dc < t.size; dc++) for (let dr = 0; dr < t.size; dr++) subCells.push({ col: t.col + dc, row: t.row + dr });
-    return { id: `unit:${t.uid}`, type: 'high_wall' as const, subCells, height: 3, blocksLos: true, providesProtection: true, isFragile: false };
-  });
+  return tokens.filter((t) => standsAsTerrain(t, target)).map((t) => ({
+    id: `unit:${t.uid}`, type: 'high_wall' as const, subCells: baseCells(t), height: 3, blocksLos: true, providesProtection: true, isFragile: false,
+  }));
 }
 
 // Does the line between two Bases PASS THROUGH this third unit's footprint?
@@ -1018,20 +1042,21 @@ export function unitTerrain(tokens: Token[], target: Token | null): TerrainPiece
 // second, subtly different line-walk would be two answers to one question.
 export function lineCrossesUnit(a: Token, b: Token, unit: Token): boolean {
   if (unit.uid === a.uid || unit.uid === b.uid) return false;
-  const cells = new Set<string>();
-  for (let dc = 0; dc < unit.size; dc++) {
-    for (let dr = 0; dr < unit.size; dr++) cells.add(`${unit.col + dc},${unit.row + dr}`);
-  }
+  const cells = new Set(baseCells(unit).map((c) => `${c.col},${c.row}`));
   const basePoints = (t: Token): { x: number; y: number }[] => {
+    const bx = baseBox(t);
     const pts: { x: number; y: number }[] = [];
     for (let i = 0; i <= 2; i++) {
       for (let j = 0; j <= 2; j++) {
-        pts.push({ x: t.col + 0.08 + (i * (t.size - 0.16)) / 2, y: t.row + 0.08 + (j * (t.size - 0.16)) / 2 });
+        pts.push({ x: bx.col + 0.08 + (i * (bx.w - 0.16)) / 2, y: bx.row + 0.08 + (j * (bx.h - 0.16)) / 2 });
       }
     }
     return pts;
   };
-  const inBase = (x: number, y: number, t: Token) => x >= t.col && x < t.col + t.size && y >= t.row && y < t.row + t.size;
+  const inBase = (x: number, y: number, t: Token) => {
+    const bx = baseBox(t);
+    return x >= bx.col && x < bx.col + bx.w && y >= bx.row && y < bx.row + bx.h;
+  };
   for (const pa of basePoints(a)) {
     for (const pb of basePoints(b)) {
       const len = Math.hypot(pb.x - pa.x, pb.y - pa.y);
@@ -1064,11 +1089,13 @@ export function inArc(a: Token, b: Token, arc: 'forward' | 'rear'): boolean {
     // unit over a ground unit — treat each other as mutually in front
     // (Supplement "Overlapping" via FAQ E15/I24), so Back Attack never
     // triggers between them.
-    const overlap = a.col < b.col + b.size && b.col < a.col + a.size
-      && a.row < b.row + b.size && b.row < a.row + a.size;
+    const x = baseBox(a);
+    const y = baseBox(b);
+    const overlap = x.col < y.col + y.w && y.col < x.col + x.w
+      && x.row < y.row + y.h && y.row < x.row + x.h;
     if (overlap) return arc === 'forward';
-    const dx = (b.col + (b.size - 1) / 2) - (a.col + (a.size - 1) / 2);
-    const dy = (b.row + (b.size - 1) / 2) - (a.row + (a.size - 1) / 2);
+    const dx = (y.col + (y.w - 1) / 2) - (x.col + (x.w - 1) / 2);
+    const dy = (y.row + (y.h - 1) / 2) - (x.row + (x.h - 1) / 2);
     const fv = [ [0, -1], [1, 0], [0, 1], [-1, 0] ][a.facing];
     const dir = arc === 'forward' ? fv : [-fv[0], -fv[1]];
     const dot = dx * dir[0] + dy * dir[1];

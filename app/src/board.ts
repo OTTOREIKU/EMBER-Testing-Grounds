@@ -1,6 +1,6 @@
 import type { TaskItem } from './tasks';
 import type { BoardGrids, Facing, GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
-import { DEFAULT_GRIDS, INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks, tokenFaces } from './types';
+import { baseBox, baseCells, DEFAULT_GRIDS, INTERCEPT_DEF, isLineUnit, SHAPE_NOTE, statusCount, statusStacks, tokenFaces } from './types';
 import { mechArtLayers, squadLabel, squadNumber, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import {
   type BoardTheme, BOARD_FADE_BASE, boardArtUrl, boardTheme, clampBoardArt,
@@ -793,6 +793,40 @@ export class Board {
     this.applySelection();
   }
 
+  // An AS3 wall or the Turtle Shell: a 1x3 bar across its facing, the card art
+  // in the middle, the facing arrow on its front edge and the squad number at
+  // its start (OTTO, 2026-09-28).
+  private buildLineToken(t: Token): SVGGElement {
+    const b = baseBox(t);
+    const w = b.w * CELL;
+    const h = b.h * CELL;
+    const wrecked = t.partStates.main === 'destroyed';
+    const g = el('g', { class: `token side-${t.side} kind-${t.kind} line-unit${wrecked ? ' wrecked' : ''}` });
+    g.dataset.uid = String(t.uid);
+    g.setAttribute('transform', `translate(${t.col * CELL}, ${t.row * CELL})`);
+    g.appendChild(el('rect', { x: 1.5, y: 1.5, width: w - 3, height: h - 3, rx: 4, class: 'token-base' }));
+    const art = Math.min(w, h) - 4;
+    const img = el('image', { x: (w - art) / 2, y: (h - art) / 2, width: art, height: art, class: 'token-art' });
+    img.setAttribute('href', tabImageUrl(t.cardId));
+    img.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    img.addEventListener('error', () => img.remove(), { once: true });
+    g.appendChild(img);
+    const cx = w / 2;
+    const cy = h / 2;
+    const reach = (t.facing === 1 || t.facing === 3 ? w : h) / 2 + 3;
+    g.appendChild(el('path', {
+      d: `M ${cx} ${cy - reach} L ${cx + 8} ${cy - reach + 11} L ${cx - 8} ${cy - reach + 11} Z`,
+      class: 'token-facing',
+      transform: `rotate(${t.facing * 90} ${cx} ${cy})`,
+    }));
+    const badgeR = 6;
+    g.appendChild(el('circle', { cx: badgeR + 3, cy: badgeR + 3, r: badgeR, class: 'token-squad-dot' }));
+    const num = el('text', { x: badgeR + 3, y: badgeR + 6, 'text-anchor': 'middle', class: 'token-squad-n' });
+    num.textContent = String(squadNumber(t.side));
+    g.appendChild(num);
+    return g as SVGGElement;
+  }
+
   setSelected(uid: number | null): void {
     this.selectedUid = uid;
     this.applySelection();
@@ -805,6 +839,7 @@ export class Board {
   }
 
   private buildToken(t: Token): SVGGElement {
+    if (isLineUnit(t)) return this.buildLineToken(t);
     const footPx = t.size * CELL;
     const visPx = Math.max(footPx, 54);
     const cx = footPx / 2;
@@ -1434,8 +1469,8 @@ export function snapPlacement(col: number, row: number, size: 1 | 2 | 3, grids: 
   return { col: c * 3 + 1, row: r * 3 + 1 };
 }
 
-export function footprint(t: { col: number; row: number; size: number }): { col: number; row: number }[] {
-  const out: { col: number; row: number }[] = [];
-  for (let dc = 0; dc < t.size; dc++) for (let dr = 0; dr < t.size; dr++) out.push({ col: t.col + dc, row: t.row + dr });
-  return out;
+// The cells a base covers, a line unit's 1x3 across its facing included
+// (types.ts baseCells).
+export function footprint(t: { col: number; row: number; size: number; cardId?: string; facing?: number }): { col: number; row: number }[] {
+  return baseCells(t);
 }

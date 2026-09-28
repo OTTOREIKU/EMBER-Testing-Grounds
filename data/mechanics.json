@@ -302,17 +302,17 @@
    "basic": "The Roaring Eagle Drone's Electronic Attack against every enemy Mech in Range at once.",
    "points": [
     "Tactical, Automatic, Range 4.",
-    "It makes one Electronic Counter-roll against each enemy Mech in Range, with Strength +1 (one extra die).",
+    "It makes one Electronic Counter-roll against each enemy Mech in Range.",
     "Each win takes 1 Link from that Mech, and a Mech left at 0 Link goes into Shutdown.",
     "Terrain and line of sight do not matter, only Range."
    ],
-   "ref": "Rulebook 4.10, 4.11.2; card ZHDR-205 Roaring Eagle",
+   "ref": "Rulebook 4.10, 4.11.2; card ZHDR-205 Roaring Eagle; GoF 1.021",
    "match": [
     "scream",
     "screech",
     "尖啸"
    ],
-   "text": "Scream is the Action of the ZHDR-205 Roaring Eagle Drone, not a keyword: Tactical, Automatic, Range 4, an Electronic Attack against every enemy Mech within its Range, one Electronic Counter-roll each, with Strength +1 on the Drone's side. Each success takes 1 Link from that Mech.\n\nLike all Electronic Warfare it ignores Terrain and Line of Sight and is limited only by Range. Link lost this way can reach 0, which puts the Mech into Shutdown Stance (4.10)."
+   "text": "Scream is the Action of the ZHDR-205 Roaring Eagle Drone, not a keyword: Tactical, Automatic, Range 4, an Electronic Attack against every enemy Mech within its Range, one Electronic Counter-roll each. Each success takes 1 Link from that Mech. The printed card adds Strength +1; the GoF 1.021 list does not, and the list is the newer source (ruled 2026-09-28).\n\nLike all Electronic Warfare it ignores Terrain and Line of Sight and is limited only by Range. Link lost this way can reach 0, which puts the Mech into Shutdown Stance (4.10)."
   },
   {
    "id": "remote_access",
@@ -574,7 +574,7 @@
     "A Mech's unspent tokens stay for Command Coordination or for Actions that use one, until the End Phase.",
     "The Additional Instructions card gives a Drone one more Command Action, without a token."
    ],
-   "ref": "Rulebook 3.2, 4.15; FAQ A21, N8, O1, O14; GoF 1.021; ruling I1",
+   "ref": "Rulebook 2.5.1, 3.2, 4.15; FAQ A21, N8, O1, O14; GoF 1.021; ruling I1",
    "match": [
     "command token",
     "command generation",
@@ -583,7 +583,7 @@
     "指令生成",
     "指令协调"
    ],
-   "text": "At the start of the Command Phase every Mech generates 1 face-up Command Token on its Torso card, or X if the Torso prints Command Generation X (3.2.1). A Mech in Shutdown still generates its default token (ruled 2026-09-25).\n\nThe GoF Command cards are read at their 1.021 text (ruling I1):\n- the Integrated Data Link Pod gives Command Generation +1;\n- the P24 Chariot's Command Coordination may issue up to 2 Commands;\n- the P28 Dragoon may perform one Command Coordination after a Maneuver;\n- the P7 Warrior's Swarm Tactics takes the token back after it commands a GoF Medium Drone, to issue again to another Drone.\n\nThe players alternate giving Commands (3.2.3), and a player who passes forfeits every remaining Command that phase (FAQ A21). Issuing one takes a token from a Mech of your choice and lays it face-down on an Ally Drone, which immediately moves or performs one Command Action. A Drone holds only one token and takes one Command per Phase (FAQ N8, O1). The Drones' tokens are removed when the Command Phase ends.\n\nA Mech's unspent tokens stay on it. An Action with Command Coordination X hands up to X of them to X different Drones later in the round, each acting at once as on a Command (4.15.3); a Drone that already acted in the Command Phase may take one. An Action that consumes a Command Token flips it face-down (4.15.4). Additional Instructions lets a Drone take one more Command Action without a token, and the Drone keeps its own Command (FAQ O14). The End Phase removes every Command Token wherever it lies."
+   "text": "At the start of the Command Phase every Mech generates 1 face-up Command Token on its Torso card, or X if the Torso prints Command Generation X (3.2.1). A Mech in Shutdown still generates its default token (ruled 2026-09-25).\n\nThe GoF Command cards are read at their 1.021 text (ruling I1):\n- the Integrated Data Link Pod gives Command Generation +1;\n- the P24 Chariot's Command Coordination may issue up to 2 Commands;\n- the P28 Dragoon may perform one Command Coordination after a Maneuver;\n- the P7 Warrior's Swarm Tactics: after it commands a GoF Medium Drone, the same token may go on at once to another Drone that has had no Command this Phase, before the other squad issues, and on again from each GoF Medium Drone it reaches (ruled 2026-09-28);\n- the Firewatch pilot may consume 1 Link to generate a Command Token as its Mech gains an Action Opportunity.\n\nThe players alternate giving Commands (3.2.3), and a player who passes forfeits every remaining Command that phase (FAQ A21). Issuing one takes a token from a Mech of your choice and lays it face-down on an Ally Drone, which immediately moves or performs one Command Action. A Command Token is one token with two faces, face-up while it is available and face-down once used (2.5.1). A Drone holds only one token and takes one Command per Phase (FAQ N8, O1). The Drones' tokens are removed when the Command Phase ends.\n\nA Mech's unspent tokens stay on it. An Action with Command Coordination X hands up to X of them to X different Drones later in the round, each acting at once as on a Command (4.15.3); a Drone that already acted in the Command Phase may take one. An Action that consumes a Command Token flips it face-down (4.15.4). Additional Instructions lets a Drone take one more Command Action without a token, and the Drone keeps its own Command (FAQ O14). The End Phase removes every Command Token wherever it lies."
   },
   {
    "id": "activation_order",

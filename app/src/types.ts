@@ -56,6 +56,10 @@ export interface CardAction {
 export interface Card {
   id: string;
   name: LangText;
+  // Shown in the Reference and nowhere else: never offered by a builder, and an
+  // imported squad naming one is told the card is unknown (OTTO, 2026-09-28,
+  // for the tournament trophies).
+  referenceOnly?: boolean;
   // The number the publisher's own card page is keyed by. For our numeric ids
   // it IS the id; cards held under a serial get theirs from data/qr_ids.json.
   qrId?: number;
@@ -774,6 +778,9 @@ export interface Opportunity {
   // FAQ L2): how many this Opportunity, capped by the trait. Same class of
   // Tick as Overload, so it joins the base pool rather than the Extras.
   linkTicks?: number;
+  // ZPA-38 Firewatch taken this Opportunity (GoF 1.021: 1 Link for a Command
+  // Token as the Mech gains it). Once each.
+  firewatch?: boolean;
   // The Action id of an Extra Action Opportunity grant (Coordinate, the Echo
   // Pack) this Mech has performed and not yet handed to an ally. grantExtra
   // must consume it: before, the command stood on its own and was taken with
@@ -884,6 +891,9 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
     // And the Link-for-Tick trade, for the same reason: dropped here it would
     // be re-takeable after every rejoin, replay and rollback.
     linkTicks: typeof o.linkTicks === 'number' && o.linkTicks > 0 ? o.linkTicks : undefined,
+    // Firewatch, for the same reason: dropped here it would be re-takeable
+    // after every rejoin, and each retake mints another Command Token.
+    firewatch: o.firewatch === true ? true : undefined,
     // The grant debt, for the same reason: dropped here, a rejoin between the
     // Coordinate Action and the pick would refuse the pick it paid for.
     grantOwed: typeof o.grantOwed === 'string' && o.grantOwed ? o.grantOwed : undefined,
@@ -921,6 +931,11 @@ export interface ScriptState {
   revealDue: { uid: number; why: 'act' | 'move' | 'touch'; byUid?: number }[];
   commanded: number[];
   freeCommand: number[];
+  // Swarm Tactics (172_B, GoF 1.021) waiting to go on: `issuer`'s token, just
+  // issued to `from` (a GoF Medium Drone), may move at once to another Ally
+  // Drone with no Command this Phase. The squad keeps the turn until it does,
+  // or declines with `endSwarm` or a Pass. Cleared as a phase opens.
+  swarm?: { issuer: number; from: number } | null;
   passed: Side[];
   stage: string;
   mode: 'hotseat' | 'hidden';
@@ -1180,10 +1195,6 @@ export interface CounterRoll {
   // in units.ts reads these with the rolls to say whose turn it is.
   initDeclare?: boolean | null;
   respDeclare?: boolean | null;
-  // ZPA-38 Firewatch taken by that side (the `firewatch` command paid its
-  // Link): its {Eye} count as {Lightning} in tallyCounter (audit Phase 2, D4).
-  initFirewatch?: boolean;
-  respFirewatch?: boolean;
   // LPA-22 Yoyu's 挑衅 Provoke, and the ONLY answer this exchange holds that is
   // not a die: null while the offer is still open, then how it was answered.
   // The printed "may" is a real decision here — forcing an enemy into Offensive
@@ -1216,6 +1227,10 @@ export interface CounterRoll {
   // (Scream, ZHDR-205_A; Scan Battlefield, 080_A and 522_A): one Counter-roll
   // each, opened in turn as the record clears (audit Phase 3, D2 and A4).
   rest?: number[];
+  // A Remote Access (p.87): the Terminal item it rolls against. Its Responder
+  // is the Terminal's stand-in (tasks.ts TERMINAL_UID), whose dice the
+  // Initiator's opponent rolls with `rollTerminal` (ruling I25).
+  terminal?: string;
 }
 
 export function newScriptState(firstPlayer: Side): ScriptState {
@@ -1227,6 +1242,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     revealDue: [],
     commanded: [],
     freeCommand: [],
+    swarm: null,
     passed: [],
     stage: '',
     mode: 'hotseat',
@@ -1457,8 +1473,6 @@ function normaliseCounter(raw: unknown): CounterRoll | null {
     // tells five times over: a rebuilt record would ask a side to declare again.
     initDeclare: typeof c.initDeclare === 'boolean' ? c.initDeclare : null,
     respDeclare: typeof c.respDeclare === 'boolean' ? c.respDeclare : null,
-    initFirewatch: c.initFirewatch === true ? true : undefined,
-    respFirewatch: c.respFirewatch === true ? true : undefined,
     // The FIFTH field of its class, and the fifth whitelist to be taught the
     // lesson: TOKEN -> migrateState, OPPORTUNITY -> normaliseOpportunity,
     // COMBAT VIEW -> normaliseCombatView, the defender's own questions inside
@@ -1479,6 +1493,10 @@ function normaliseCounter(raw: unknown): CounterRoll | null {
     ...(c.reaction === true ? { reaction: true } : {}),
     ...(Array.isArray(c.rest) && c.rest.some((x) => typeof x === 'number')
       ? { rest: c.rest.filter((x): x is number => typeof x === 'number') } : {}),
+    // The seventh: a Remote Access rolled against a Terminal. Dropped, a
+    // checkpoint would leave a Responder no board could find, and a won roll
+    // would access nothing.
+    ...(typeof c.terminal === 'string' ? { terminal: c.terminal } : {}),
   };
 }
 
@@ -1507,6 +1525,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
       : base.revealDue,
     commanded: list(s.commanded, base.commanded),
     freeCommand: list(s.freeCommand, base.freeCommand),
+    swarm: s.swarm && typeof s.swarm.issuer === 'number' && typeof s.swarm.from === 'number' ? { issuer: s.swarm.issuer, from: s.swarm.from } : null,
     passed: Array.isArray(s.passed) ? s.passed : base.passed,
     stage: typeof s.stage === 'string' ? s.stage : base.stage,
     mode: s.mode === 'hidden' ? 'hidden' : 'hotseat',
@@ -1597,6 +1616,28 @@ export function gridsOf(s: { grids?: number } | null | undefined): BoardGrids {
 // Small Grids (subcells) per side: every position in the game is a subcell,
 // and a Large Grid is 3x3 of them (1.2). This is the number that replaced the
 // old `CELLS = 36` constant.
+// The three units the data prints as a 1x3 line (boardProfile footprint): the
+// AS3 Inflatable Walls and the Turtle Shell. Every other base is a size x size
+// square. The line stands across its facing: facing North or South it runs
+// East-West along its row, facing East or West it runs North-South down its
+// column, and col/row is its west or north end (OTTO, 2026-09-28: build the
+// 1x3 with facing). One reader, so the board, the sight lines, the standing
+// spots and the drawing agree.
+export const LINE_UNIT_CARDS = new Set(['PDAM-003', 'PDAM-004', '158']);
+export function isLineUnit(t: { cardId?: string }): boolean {
+  return !!t.cardId && LINE_UNIT_CARDS.has(t.cardId);
+}
+export function baseBox(t: { col: number; row: number; size: number; cardId?: string; facing?: number }): { col: number; row: number; w: number; h: number } {
+  if (isLineUnit(t)) return t.facing === 1 || t.facing === 3 ? { col: t.col, row: t.row, w: 1, h: 3 } : { col: t.col, row: t.row, w: 3, h: 1 };
+  return { col: t.col, row: t.row, w: t.size, h: t.size };
+}
+export function baseCells(t: { col: number; row: number; size: number; cardId?: string; facing?: number }): { col: number; row: number }[] {
+  const b = baseBox(t);
+  const out: { col: number; row: number }[] = [];
+  for (let dc = 0; dc < b.w; dc++) for (let dr = 0; dr < b.h; dr++) out.push({ col: b.col + dc, row: b.row + dr });
+  return out;
+}
+
 export function cellsOf(s: { grids?: number } | null | undefined): number {
   return gridsOf(s) * 3;
 }

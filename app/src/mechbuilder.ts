@@ -38,12 +38,14 @@ function esc(s: string): string {
 // face of a Part you already own, and a zero-cost Mode face is a state a
 // Harpoon shot puts you in, so neither is a build choice. Both are kept if
 // already chosen, so an old save still shows what it holds. (Moved here from
-// roster.ts: the pad offered both, the board never did.)
+// roster.ts: the pad offered both, the board never did.) A Reference-only card
+// is not a build choice either.
 export function slotPool(data: GameData, slot: BuildSlot, chosen?: string): Card[] {
   return data.cards
     .filter((c) => (slot.key === 'pilot' ? c.category === 'pilot' : c.category === 'mech_part' && c.type === slot.type))
     .filter((c) => !isDiscardCard(c) || c.id === chosen)
     .filter((c) => !isModeFace(c) || c.id === chosen)
+    .filter((c) => !c.referenceOnly || c.id === chosen)
     .sort((a, b) => cardName(a).localeCompare(cardName(b)));
 }
 

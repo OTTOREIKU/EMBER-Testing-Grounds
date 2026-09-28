@@ -166,9 +166,16 @@ check('and is re-measured when the window changes',
   /addEventListener\('resize'[\s\S]{0,600}?holdDetailHeight/.test(ref), true);
 check('the panel CSS reads it', /\.dpanel \{ min-height: var\(--dpanel-h/.test(css), true);
 
-// A tab that opens an empty panel is a dead end, so it goes with its content.
-check('a missing scan hides the Photo tab', /\[data-dtab="photo"\][\s\S]{0,120}?hidden = true/.test(ref), true);
-check('and takes the thumbnail with it', /querySelector\('\.dthumb'\)\?\.remove\(\)/.test(ref), true);
+// A card with no scan shows a placeholder (its outline and its name) in both
+// image slots, so the Photo tab and the thumbnail stay (OTTO, 2026-09-28).
+// They used to be dropped, which left no sign a printed card exists.
+check('a missing scan mounts the placeholder, labelled with the card',
+  /mountCardImage\)\(slot, slot\.dataset\.img!, isThumb \? 'dthumb-img' : 'ref-cardimg', \{\s*label: slot\.dataset\.imgLabel/.test(ref), true);
+check('and no longer drops the Photo tab or the thumbnail', /querySelector\('\.dthumb'\)\?\.remove\(\)/.test(ref), false);
+check('both slots carry the label and the orientation',
+  (ref.match(/data-img="\$\{esc\(c\.id\)\}" \$\{phAttrs\}/g) ?? []).length, 2);
+check('the label is escaped for an attribute: several names print quotes',
+  /esc\(cardName\(c\)\)\.replace\(\/"\/g, '&quot;'\)/.test(ref), true);
 check('an empty Boxes panel hides its tab too', /data-dpanel="boxes"[\s\S]{0,180}?dtab="boxes"/.test(ref), true);
 
 

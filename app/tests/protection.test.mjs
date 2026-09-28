@@ -9,13 +9,14 @@
 //   Units only, and the last section here is that baseline and its one printed
 //   exception.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 const src = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
 const start = src.indexOf('let GRIDS');
 // protectionFor is the last thing in the file, so the slice runs to the end.
 if (start < 0) throw new Error('could not locate the sight rules in rules.ts');
 const tmp = new URL('./_protection.slice.ts', import.meta.url);
-writeFileSync(tmp, 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + src.slice(start));
+writeFileSync(tmp, FOOTPRINT + 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + src.slice(start));
 const { inArc, losBetween, losNote, protectionFor, rangeBetween } = await import(tmp.href);
 
 let pass = 0, fail = 0;

@@ -7,7 +7,7 @@ import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseFreeTicks, nor
 import { incompleteMechWhy, normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf, tetherCap } from './melee';
 import { boardGrids, firingSight, inArc, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
-import { normaliseTasks, type VpRider } from './tasks';
+import { isTerminalStandIn, normaliseTasks, TERMINAL_EV, type VpRider } from './tasks';
 // ticks.ts imports only from types.ts, so this direction carries no cycle.
 import { timingOf, type StartOpts } from './ticks';
 
@@ -862,7 +862,11 @@ export function covertCarryLock(a: CardAction): boolean {
 export function immediateDetonation(card: Card): CardAction | null {
   for (const a of card.actions ?? []) {
     const text = `${a.description?.zh ?? ''} ${a.description?.en ?? ''}`;
-    if (a.type === 'Immediate' || /立即引爆|Undergo Detonation immediately/i.test(text)) return a;
+    // Never a Delayed Action: the folded Pholcus's Unfold (156_A) prints
+    // "must undergo Detonation immediately" for an occupied Grid, and every
+    // page offered its blast as it landed (found in the Phase 5 follow-up's
+    // browser pass). It Unfolds in the Delay Phase (FAQ M18.3).
+    if (a.type === 'Immediate' || (a.type !== 'Delay' && /立即引爆|Undergo Detonation immediately/i.test(text))) return a;
   }
   return null;
 }
@@ -1388,7 +1392,9 @@ const COMMAND_SPEND_ZH = /消耗[^。]{0,10}指令标记/;
 // and the "and", so the tighter class matched only the "Cmmand" typo printed on
 // Aster's card and never the correct spelling. Every English match was coming
 // from a card that happened to be misspelled; the Chinese carried the rest.
-const COMMAND_SPEND_EN = /consume\s+[^.]{0,24}?C[om]{1,3}and Token/i;
+// Never Link spent to MAKE a token: Firewatch (GoF 1.021) reads "consume 1 Link
+// to generate a Command Token", which the loose middle would otherwise take.
+const COMMAND_SPEND_EN = /consume\s+(?!\d+\s+Link\b)[^.]{0,24}?C[om]{1,3}and Token/i;
 export function textConsumesCommand(zh: string | undefined, en: string | undefined): boolean {
   return COMMAND_SPEND_ZH.test(zh ?? '') || COMMAND_SPEND_EN.test(en ?? '');
 }
@@ -3561,10 +3567,11 @@ export interface SelfHitPart {
 export function selfHitParts(data: GameData, t: Token): SelfHitPart[] {
   if (t.kind !== 'mech') return [];
   const out: SelfHitPart[] = [];
-  // ZYTR-101 Warrior, Designated Defense (GoF 1.021): "This Mech may Designate
-  // part to resolve damage". Every shield prints "this part"; this one names
-  // none, so it is read as the defender's own Snipe, ANY live Part (ruling I1,
-  // audit Phase 5, F2). It rides on a live Part like every other Passive.
+  // A card whose rule lets the defender name ANY live Part (the defender's own
+  // Snipe). No card carries it now: the Warrior's Designated Defense (GoF 1.021,
+  // "This Mech may Designate part") was read that way until OTTO ruled on
+  // 2026-09-28 to match the shields, "this part", until GoF's next FAQ says
+  // otherwise. Kept so that ruling is one data line to reverse.
   const anyPart = tokenCards(data, t)
     .filter(({ slot }) => slot !== 'pilot' && (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
     .flatMap(({ card }) => card.actions ?? [])
@@ -3788,12 +3795,16 @@ export function autoShotOwed(data: GameData, tokens: Token[], t: Token, board: {
 export function interceptorsAgainst(data: GameData, tokens: Token[], side: Side): Token[] {
   return tokens.filter((u) => u.side !== side && alive(u) && u.deployed !== false
     && !(u.kind === 'mech' && u.stance === 'shutdown') && statusCount(u.statuses, 'fci') <= 0
-    && Object.entries(u.intercept ?? {}).some(([id, n]) => {
+    && (Object.entries(u.intercept ?? {}).some(([id, n]) => {
       if (n <= 0) return false;
-      const slot = tokenCards(data, u).find(({ card }) => (card.actions ?? []).some((a) => a.id === id))?.slot;
+      // Its own Parts: a Carrier never intercepts with its Load (O4).
+      const slot = ownCards(data, u).find(({ card }) => (card.actions ?? []).some((a) => a.id === id))?.slot;
+      if (!slot && u.kind === 'drone' && u.droneBackpack) return false;
       // A Repaired Part intercepts (FAQ J23; ruling I11; audit Phase 6, C8).
       return !slot || partUsable(u, slot);
-    }));
+    })
+    // A Mech in Contact with a Carrier whose Load intercepts (ruling I25).
+    || loanedParts(data, tokens, u).some((l) => (l.card.actions ?? []).some((a) => interceptCapacity(a) !== undefined && (l.from.intercept?.[a.id] ?? 0) > 0))));
 }
 
 // The Neutral fallback for an automatic attack (FAQ O9/O10).
@@ -4205,7 +4216,8 @@ export function interceptsOwed(
 ): { uid: number; actionId: string; targetUid: number }[] {
   const owed: { uid: number; actionId: string; targetUid: number }[] = [];
   for (const x of tokens) {
-    if (x.side === launcher.side || x.deployed === false || interceptLeft(x) <= 0) continue;
+    const lent = loanedParts(data, tokens, x).filter((l) => (l.card.actions ?? []).some((a) => interceptCapacity(a) !== undefined && (l.from.intercept?.[a.id] ?? 0) > 0));
+    if (x.side === launcher.side || x.deployed === false || (interceptLeft(x) <= 0 && !lent.length)) continue;
     if ((x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') continue;
     if (statusCount(x.statuses, 'fci') > 0) continue;
     // Interception is a Firing Action or a Passive (4.9), and a Shutdown Mech
@@ -4216,11 +4228,16 @@ export function interceptsOwed(
     // destroyed Part performs no Action (3.4.3), which the card door already
     // knew and this queue did not (audit Phase 5, G3 and B6). A Repaired Part
     // still performs its Actions, Interception included (FAQ J23; ruling I11).
-    for (const { slot, card } of ownCards(data, x)) {
-      if (!partUsable(x, slot)) continue;
+    // A Mech in Contact with a Carrier intercepts with its Load too, paying
+    // from the Tokens on the Carrier (ruling I25).
+    const sources: { card: Card; held: (id: string) => number }[] = [
+      ...ownCards(data, x).filter(({ slot }) => partUsable(x, slot)).map(({ card }) => ({ card, held: (id: string) => x.intercept?.[id] ?? 0 })),
+      ...lent.map((l) => ({ card: l.card, held: (id: string) => l.from.intercept?.[id] ?? 0 })),
+    ];
+    for (const { card, held } of sources) {
       for (const a of card.actions ?? []) {
         if (interceptCapacity(a) === undefined) continue;
-        if ((x.intercept?.[a.id] ?? 0) <= 0) continue;
+        if (held(a.id) <= 0) continue;
         for (const p of fresh) {
           const reach = a.range ?? 0;
           const atLanding = rangeBetween(x, p).range <= reach && !smokeBlocks(x, p, smoke);
@@ -4266,6 +4283,24 @@ export function interceptReach(data: GameData, t: Token): number {
 
 export function interceptLeft(t: Token): number {
   return Object.values(t.intercept ?? {}).reduce((s, n) => s + n, 0);
+}
+
+// Whose Interception Tokens pay for this unit's attempt with this Action: its
+// own Part's, or, for a Mech in Contact with a Carrier Tarantula, the Load's,
+// which sit on the Carrier. A lent AMS intercepts as the Mech's own Firing
+// Action (M26, O3/O16), and the Carrier never uses its Load itself (O4; ruling
+// I25). Null when neither carries it.
+export function interceptPayer(data: GameData, tokens: Token[], t: Token, actionId: string, noBoard = false): Token | null {
+  if (t.intercept?.[actionId] !== undefined) return t;
+  for (const l of loanedParts(data, tokens, t, { anywhere: noBoard })) {
+    if ((l.card.actions ?? []).some((a) => a.id === actionId) && l.from.intercept?.[actionId] !== undefined) return l.from;
+  }
+  return null;
+}
+
+// The Tokens left for that attempt, wherever they sit.
+export function interceptHeld(data: GameData, tokens: Token[], t: Token, actionId: string, noBoard = false): number {
+  return interceptPayer(data, tokens, t, actionId, noBoard)?.intercept?.[actionId] ?? 0;
 }
 
 // ---------- Mines (rulebook 4.7, FAQ M3/M6/M7/M19/M22/M24) ----------
@@ -5034,6 +5069,9 @@ export function electronicStrength(
   role: 'initiator' | 'responder',
   action?: CardAction | null,
 ): number {
+  // A Terminal's printed Value (p.87), which no aura or node touches: it is
+  // not a unit, only the Responder of a Remote Access (ruling I25).
+  if (isTerminalStandIn(t)) return TERMINAL_EV;
   const base = electronicValue(data, t, role === 'initiator' ? loanedParts(data, tokens, t) : []);
   // Warfare Node substitutes the BASE, then the Suppression aura lands on
   // whatever is rolled - a node does not shelter the roll from the penalty,
@@ -5489,8 +5527,8 @@ export function pursuesFragile(data: GameData, attacker: Token, defender: Token 
 // Electronic Counter Roll succeeds the INITIATING enemy Mech may be switched to
 // Offensive Stance.
 //
-// 电子对抗投骰 maps exactly onto "Electronic Counter Roll" -- ZPA-38 Firewatch
-// prints the same phrase in zh against the same phrase in en, which fixes the
+// 电子对抗投骰 maps exactly onto "Electronic Counter Roll" -- ZPA-38 Firewatch's
+// printed card has the same phrase in zh against the same phrase in en, which fixes the
 // mapping off a second card rather than off a guess. FAQ O5 then calls it the
 // roll a unit makes "passively ... being targeted by Electronic Warfare", so it
 // is the RESPONDER's roll, and zh's 本机 ("this unit") puts Yoyu there. zh's
@@ -6583,9 +6621,11 @@ export function focusPayer(data: GameData, tokens: Token[], t: Token): Token | n
     && (m.partStates.torso ?? 'intact') !== 'destroyed' && m.stance !== 'shutdown' && pilotIs(data, m, 'ACE-01')) ?? null;
 }
 
-// ZPA-38 Firewatch, 湿件优势: "When performing Electronic Counter Rolls, may
-// consume 1 Link to exchange {Eye} for {Lightning}." A pilot skill, so not in
-// Shutdown (FAQ L3). The pilot card carried no reader (audit Phase 2, D4).
+// ZPA-38 Firewatch, 湿件优势 Wetware Advantages, as GoF 1.021 prints it: "When
+// this Mech gains Action Opportunity, may consume 1 Link to generate a Command
+// Token." The printed card and the 1.02 list exchanged {Eye} for {Lightning} in
+// an Electronic Counter Roll instead; OTTO ruled on 2026-09-28 that the
+// company's lists outrank the cards. A pilot skill, so not in Shutdown (FAQ L3).
 export function firewatchOn(data: GameData, t: Token): boolean {
   return t.kind === 'mech' && t.stance !== 'shutdown' && pilotIs(data, t, 'ZPA-38');
 }
@@ -7011,17 +7051,24 @@ export function highlightTargets(data: GameData, tokens: Token[], a: CardAction,
 // Link", the one Counter-roll here with no Electronic Attack behind it.
 // `thenAttack` is the attack a free Scan earned (FAQ I12), owed to the
 // attacker once the target has Revealed.
+// `terminal` is the Terminal a Remote Access rolled against: a win accesses
+// it, face-down for the rest of the round (5.3.3), and nothing else.
 export function ewWinCommands(
   data: GameData,
   init: Token,
   resp: Token,
   a: CardAction,
-  opts: { reaction?: boolean; thenAttack?: CounterRoll['thenAttack'] } = {},
+  opts: { reaction?: boolean; thenAttack?: CounterRoll['thenAttack']; terminal?: string } = {},
 ): { cmds: Command[]; lines: string[] } {
   const seat = init.side;
   const uid = init.uid;
   const cmds: Command[] = [];
   const lines: string[] = [];
+  if (opts.terminal !== undefined) {
+    cmds.push({ kind: 'accessTerminal', seat, uid, itemId: opts.terminal });
+    lines.push(`${init.label} accesses the ${resp.label}, which is face-down for the rest of the round (5.3.3)`);
+    return { cmds, lines };
+  }
   if (opts.reaction) {
     if (resp.kind === 'mech') {
       cmds.push({ kind: 'drainLink', seat, uid, targetUid: resp.uid, n: 1 });
@@ -7117,6 +7164,8 @@ export function electronicAllTargets(data: GameData, tokens: Token[], t: Token, 
 // (ruled 2026-09-25, audit Phase 3, F18). The shared window read only the
 // Responder's own Stance.
 export function counterOffensive(data: GameData, tokens: Token[], t: Token, other: Token, role: 'initiator' | 'responder'): boolean {
+  // A Terminal has no Stance, so its hollow faces count nothing (ruling I25).
+  if (isTerminalStandIn(t)) return false;
   if (role === 'initiator') return treatedAsOffensive(t, other, data, tokens);
   return t.stance === 'offensive' || (t.kind === 'drone' && !!chargeOrderOn(data, tokens, t));
 }

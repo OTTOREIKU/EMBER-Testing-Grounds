@@ -12,7 +12,7 @@
 // decide: one Mech able to pay, or a free Command from Additional Instructions
 // (FAQ O14), which spends no token at all.
 import { alertDialog, choiceDialog } from './dialog';
-import { asterKey, commandIssuers, heldCommands, readyCommands } from './commands';
+import { asterKey, commandIssuers, heldCommands, readyCommands, swarmFor } from './commands';
 import { cardName } from './data';
 import type { GameData } from './data';
 import { alive } from './loop';
@@ -39,6 +39,10 @@ export async function askIssuer(
   drone: Token,
   free: boolean,
 ): Promise<IssuerChoice> {
+  // Swarm Tactics going on: the token is the Warrior's, already issued, so
+  // there is no Mech to choose (172_B).
+  const going = swarmFor(state, side);
+  if (going) return { uid: going.issuer };
   // A free Command comes off a card, not off a Torso, so there is no Mech to
   // choose and nothing to take.
   if (free) return { uid: 0 };
@@ -208,6 +212,10 @@ export async function askTowFacing(ally: Token, byLabel: string): Promise<Facing
 // Asked one Drone at a time so a player can stop early: X is a ceiling, not a
 // cost, and 4.15.2 is explicit that tokens may be kept back for something else.
 // Shared by both drivers, which differ only in how a command reaches the board.
+//
+// Swarm Tactics (172_B) adds a pick: after a Command to a GoF Medium Drone the
+// same token may go on at once to another Drone, which spends no token and is
+// not one of the X. `stopSwarm` sends `endSwarm` when the player stops there.
 export async function offerCoordination(
   data: GameData,
   state: GameState,
@@ -215,36 +223,50 @@ export async function offerCoordination(
   upTo: number,
   issue: (mechUid: number, droneUid: number) => void,
   note?: (drone: Token, text: string) => void,
+  stopSwarm?: () => void,
 ): Promise<void> {
   void data;
-  for (let i = 0; i < upTo; i++) {
+  let i = 0;
+  for (;;) {
+    const going = swarmFor(state, mech.side)?.issuer === mech.uid;
+    if (!going && i >= upTo) return;
     const left = readyCommands(mech);
-    if (left <= 0) return;
+    if (!going && left <= 0) return;
     // A Drone already bearing a token cannot take a second (4.15.2). The
     // Command Phase's tokens were removed when it ended, which is exactly why a
     // Drone that already acted this round is eligible here.
     const able = state.tokens.filter(
       (d) => d.side === mech.side && d.kind === 'drone' && alive(d) && d.deployed !== false && heldCommands(d) === 0,
     );
-    if (!able.length) return;
+    if (!able.length) {
+      if (going) stopSwarm?.();
+      return;
+    }
     const rounds = upTo - i;
     const picked = await choiceDialog({
-      title: `${mech.label} may command a Drone`,
-      body:
-        `Command Coordination lets ${mech.label} send ${rounds === 1 ? 'a Command' : `up to ${rounds} more Commands`} now (4.15.3). `
-        + 'The Drone that takes one performs 1 Movement Action or 1 Command Action. '
-        + `${left} Command Token${left === 1 ? '' : 's'} left on this Mech.`,
+      title: going ? `Swarm Tactics: ${mech.label}'s token may go on` : `${mech.label} may command a Drone`,
+      body: going
+        ? `${mech.label} commanded a GoF Medium Drone, so the same Command Token may go on to another Ally Drone now, at no cost (Swarm Tactics). If you stop, it stays where it is.`
+        : `Command Coordination lets ${mech.label} send ${rounds === 1 ? 'a Command' : `up to ${rounds} more Commands`} now (4.15.3). `
+          + 'The Drone that takes one performs 1 Movement Action or 1 Command Action. '
+          + `${left} Command Token${left === 1 ? '' : 's'} left on this Mech.`,
       stacked: true,
       choices: [
         ...able.map((d) => ({ id: String(d.uid), label: d.label })),
-        { id: 'stop', label: 'Keep the rest', cancel: true },
+        { id: 'stop', label: going ? 'Stop here' : 'Keep the rest', cancel: true },
       ],
     });
-    if (picked === null || picked === 'stop') return;
+    if (picked === null || picked === 'stop') {
+      if (going) stopSwarm?.();
+      return;
+    }
     issue(mech.uid, Number(picked));
     const drone = state.tokens.find((x) => x.uid === Number(picked));
     if (drone && note) {
-      note(drone, `${mech.label} commands ${drone.label} (Command Coordination, 4.15.3). It may Move or take 1 Command Action.`);
+      note(drone, going
+        ? `${mech.label}'s token goes on to ${drone.label} (Swarm Tactics). It may Move or take 1 Command Action.`
+        : `${mech.label} commands ${drone.label} (Command Coordination, 4.15.3). It may Move or take 1 Command Action.`);
     }
+    if (!going) i++;
   }
 }

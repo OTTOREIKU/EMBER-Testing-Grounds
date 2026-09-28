@@ -1,12 +1,13 @@
 // Checks where a unit actually stands inside a Large Grid it shares with terrain.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 const src = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
 const start = src.indexOf('let GRIDS');
 const end = src.indexOf('export function losBetween');
 if (start < 0 || end < 0) throw new Error('could not locate the placement helpers in rules.ts');
 const tmp = new URL('./_standing.slice.ts', import.meta.url);
-writeFileSync(tmp, 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + src.slice(start, end));
+writeFileSync(tmp, FOOTPRINT + 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + src.slice(start, end));
 const { standingSpot, canStandIn } = await import(tmp.href);
 
 let pass = 0, fail = 0;

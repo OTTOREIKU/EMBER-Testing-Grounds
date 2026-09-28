@@ -531,12 +531,40 @@ export function remoteAccessWhy(
 // A Terminal's Electronic Value (p.87).
 export const TERMINAL_EV = 3;
 
-// The Remote Access roll in words, the same on every page (p.87, 4.11.2;
-// ruling I25): the Mech's Electronic Value against the Terminal's 3 Yellow
-// Dice, which the opponent rolls with no Focus, and whose hollow faces count
-// nothing, as for any unit not in Offensive Stance (4.11.3).
-export function remoteAccessRollText(label: string, ev: number): string {
-  return `${label} rolls its Electronic Value, ${ev} Yellow ${ev === 1 ? 'Die' : 'Dice'}. The opponent rolls the Terminal's ${TERMINAL_EV} Yellow Dice for it, with no Focus, and their hollow faces count nothing. Most Lightning wins, then most Light Hits, and a tie goes to ${label} (4.11.2).`;
+// The Terminal as the RESPONDER of a Remote Access Counter-roll (p.87; ruling
+// I25). A Terminal is not a unit, and the Counter-roll window is built around
+// two, so the roll was left to the table and the pages only asked how it went
+// (OTTO, 2026-09-28: build the stand-in). It gets this sentinel uid, on the
+// Initiator's opponent's side, since the opponent rolls the Terminal's dice.
+// electronicStrength gives it TERMINAL_EV, counterOffensive never counts its
+// hollow faces, and it never Focuses: no unit on the board is it, so
+// counterStage finds nothing that could pay for one.
+export const TERMINAL_UID = -1;
+
+export function isTerminalStandIn(t: { uid: number }): boolean {
+  return t.uid === TERMINAL_UID;
+}
+
+// The stand-in the window draws, where the Terminal's token stands.
+export function terminalStandIn(item: Pick<TaskItem, 'col' | 'row'>, initiatorSide: Side, zoneName: string): Token {
+  return {
+    uid: TERMINAL_UID,
+    side: initiatorSide === 's1' ? 's2' : 's1',
+    kind: 'drone',
+    cardId: '',
+    label: `${zoneName} Terminal`,
+    col: item.col ?? 0,
+    row: item.row ?? 0,
+    size: 1,
+    facing: 0,
+    aerial: false,
+    link: 0,
+    partStates: {},
+    ammo: {},
+    intercept: {},
+    statuses: [],
+    log: [],
+  } as unknown as Token;
 }
 
 // ---------- Low Value Units (book p.82) ----------

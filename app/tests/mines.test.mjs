@@ -3,6 +3,7 @@
 //   The trigger is derived from the board, so a Crush that shoves a Drone onto
 //   a Mine (M7) is caught by the same rule as a Maneuver onto one.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const dataSrc = readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8');
@@ -51,7 +52,7 @@ const auraStub = `export function auraValueOn(_d: any, _t: any, _u: any, _k: str
 const tmp = new URL('./_mines.slice.ts', import.meta.url);
 writeFileSync(
   tmp,
-  'type Card = any;\ntype CardAction = any;\ntype GameData = any;\ntype Token = any;\ntype PartSlot = any;\ntype TerrainPiece = any;\n'
+  FOOTPRINT + 'type Card = any;\ntype CardAction = any;\ntype GameData = any;\ntype Token = any;\ntype PartSlot = any;\ntype TerrainPiece = any;\n'
     + 'function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }\n'
     // Grid-distance and the two lookups autoTargetsFor leans on. Range in this
     // game is MANHATTAN over large Grids - `dc + dr`, matching rangeBetween in

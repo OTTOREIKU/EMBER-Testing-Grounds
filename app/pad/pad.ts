@@ -43,7 +43,7 @@ import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack,
 import { registerOffline } from '../src/offline';
 import { askTablePool, askTableRoll, askTargetPart } from './tabledice';
 import type { RollGroup } from '../src/combat';
-import { beginBlastScan, beginElectronic, beginElectronicAll, beginFreeScan, beginTrace, ewActive, ewWatching, initEw, mountEw, syncContest } from './ew';
+import { beginBlastScan, beginElectronic, beginElectronicAll, beginFreeScan, beginTerminal, beginTrace, ewActive, ewWatching, initEw, mountEw, syncContest } from './ew';
 import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot, type Snapshot } from '../src/history';
 import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
 import { setLocalSeat } from '../src/loop';
@@ -67,7 +67,7 @@ import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updat
 import { boxHands, normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, vipFallen } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from '../src/tactics';
-import { martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop } from '../src/units';
+import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop } from '../src/units';
 import { gameResult } from '../src/tasks';
 import { isMeleeFiring } from '../src/melee';
 import { isSilentAction, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
@@ -1189,6 +1189,10 @@ const guide: GuideApi = {
     render();
     if (!beginTrace(t, actionId, from)) { panel = null; render(); }
   },
+  terminal: (uid, actionId, itemId, zoneName) => {
+    const t = unitOf(uid);
+    if (t) openTerminalRoll(t, actionId, itemId, zoneName, true);
+  },
   attack: (uid, actionId, opts) => {
     const t = unitOf(uid);
     if (!t) return;
@@ -1207,7 +1211,63 @@ const guide: GuideApi = {
     const t = unitOf(uid);
     if (t) void recoverFrom(t, actionId);
   },
+  overwatch: (uid, actionId) => {
+    const t = unitOf(uid);
+    if (t) void callOverwatch(t, actionId);
+  },
 };
+
+// The KK9's Overwatch Strike (LHDR-KK9_B; FAQ K15; audit Phase 5, F8): the
+// enemy it designates, within Range as the table judges it, then the Ally Mech
+// that fires. Guided pays the KK9's Action and records the call, and the Mech's
+// shot is its reaction row; Freeform calls it and opens the shot at once.
+async function callOverwatch(t: Token, actionId: string): Promise<void> {
+  if (!data) return;
+  const a = actionOfUnit(t, actionId);
+  if (!a) return;
+  const what = a.name.en || a.id;
+  const foes = table.tokens.filter((x) => x.side !== t.side && x.deployed !== false && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed');
+  const mechs = table.tokens.filter((x) => x.side === t.side && x.kind === 'mech' && x.deployed !== false && (x.partStates.torso ?? 'intact') !== 'destroyed' && x.stance !== 'shutdown');
+  if (!foes.length || !mechs.length) { toast(!foes.length ? 'No enemy is on the table.' : 'No Ally Mech can fire.'); return; }
+  const aim = await choiceDialog({
+    title: `${what}: which enemy?`,
+    body: `Within Range ${a.range ?? 0} of ${t.label}, on the table.`,
+    choices: [...foes.map((x) => ({ id: String(x.uid), label: x.label })), { id: '__cancel', label: 'Cancel', cancel: true }],
+    stacked: true,
+  });
+  const foe = foes.find((x) => String(x.uid) === aim);
+  if (!foe) return;
+  const who = await choiceDialog({
+    title: `${what}: which Ally Mech fires?`,
+    body: `It performs 1 Firing Action against ${foe.label} at once, of any length, and it costs no Ticks (FAQ K15). Then ${t.label} is removed.`,
+    choices: [...mechs.map((x) => ({ id: String(x.uid), label: x.label })), { id: '__cancel', label: 'Cancel', cancel: true }],
+    stacked: true,
+  });
+  const mech = mechs.find((x) => String(x.uid) === who);
+  if (!mech) return;
+  const call = { kind: 'overwatch' as const, seat: t.side, uid: t.uid, actionId, targetUid: foe.uid, mechUid: mech.uid };
+  if (guidedOn(table)) {
+    if (!send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId })) return;
+    if (send({ ...call, chain: 'join' })) toast(`${t.label} calls an ${what} on ${foe.label}: ${mech.label} fires from its row, and ${t.label} is removed.`);
+    return;
+  }
+  if (!send(call)) return;
+  const guns = tokenCards(data, mech)
+    .filter((x) => x.slot !== 'pilot' && (mech.partStates[x.slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
+    .flatMap(({ card }) => card.actions ?? [])
+    .filter((x) => x.type === 'Firing');
+  if (!guns.length) { toast(`${mech.label} has no Firing Action left to make.`); return; }
+  const gun = guns.length === 1 ? guns[0].id : await choiceDialog({
+    title: `${mech.label}: Overwatch Strike`,
+    body: `1 Firing Action against ${foe.label}, and against no one else.`,
+    choices: guns.map((x) => ({ id: x.id, label: x.name.en ?? x.id })),
+    stacked: true,
+  });
+  if (!gun) return;
+  targetFor = { uid: mech.uid, actionId: gun, mode: 'attack', granted: true, only: foe.uid };
+  panel = 'target';
+  render();
+}
 
 // ---------- the attack window ----------
 //
@@ -1338,6 +1398,18 @@ async function askTableAndIntercept(by: Token, actionId: string, target: Token):
 
 // An Electronic Attack: only Range matters (4.11.1), judged on the table; a
 // Guided game pays the Action first.
+// A lent Load's Action routed into the attack window, the counter-roll or a
+// launch (audit Phase 5 follow-up): the Part it comes from, "actionId@carrier",
+// so the payment records the loan as its own Part (FAQ O7) and the Freeform bar
+// charges it. Set by the lent door, read once by the payment.
+let lentPart: { uid: number; actionId: string; key: string } | null = null;
+function lentPay(t: Token, actionId: string): { partKey?: string } {
+  const l = lentPart;
+  if (!l || l.uid !== t.uid || l.actionId !== actionId) return {};
+  lentPart = null;
+  return { partKey: l.key };
+}
+
 // The Action as this unit carries it, or the Common one.
 function actionOfUnit(t: Token, actionId: string): CardAction | undefined {
   return tokenCards(data!, t).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId)
@@ -1366,12 +1438,25 @@ async function askTableAndElectronicAll(attacker: Token, a: CardAction): Promise
   });
   if (!picked?.length) return;
   const targets = picked.map((id) => unitOf(Number(id))).filter((u): u is Token => !!u);
-  if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId: a.id, ...bothHands(attacker, a.id) })) return;
-  spendFree(attacker, a.id);
+  const lentAll = lentPay(attacker, a.id);
+  if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId: a.id, ...bothHands(attacker, a.id), ...lentAll })) return;
+  spendFree(attacker, a.id, lentAll.partKey);
   panel = 'combat';
   render();
   if (!beginElectronicAll(attacker, a.id, targets, guidedOn(table))) { panel = null; render(); return; }
   freeformSilence(attacker, a);
+}
+
+// A Remote Access's Counter-roll against a Terminal, already paid: the combat
+// panel opens first so the exchange has somewhere to draw (ruling I25).
+// `joined`: the payment was a Guided performAction, so the roll's opening
+// chains to it for Undo.
+function openTerminalRoll(t: Token, actionId: string, itemId: string, zoneName: string, joined: boolean): void {
+  const item = normaliseTasks(table.tasks).items.find((i) => i.id === itemId);
+  if (!item) return;
+  panel = 'combat';
+  render();
+  if (!beginTerminal(t, actionId, item, zoneName, joined)) { panel = null; render(); }
 }
 
 async function askTableAndElectronic(attacker: Token, actionId: string, defender: Token): Promise<void> {
@@ -1382,8 +1467,9 @@ async function askTableAndElectronic(attacker: Token, actionId: string, defender
     stacked: true,
   });
   if (clear !== 'yes') return;
-  if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...bothHands(attacker, actionId) })) return;
-  spendFree(attacker, actionId);
+  const lent = lentPay(attacker, actionId);
+  if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...bothHands(attacker, actionId), ...lent })) return;
+  spendFree(attacker, actionId, lent.partKey);
   panel = 'combat';
   render();
   if (!beginElectronic(attacker, actionId, defender, guidedOn(table))) { panel = null; render(); return; }
@@ -1439,8 +1525,8 @@ async function scanFirst(attacker: Token, actionId: string, defender: Token): Pr
 
 // The table is asked what the board used to read, then the window opens.
 async function askTableAndAttack(attacker: Token, actionId: string, defender: Token, granted = false, resumed = false): Promise<void> {
-  const a = tokenCards(data!, attacker).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId)
-    ?? data!.commonActions.find((x) => x.id === actionId);
+  // Its own Parts, the Common Actions, or a lent Load's (actionOfUnit).
+  const a = actionOfUnit(attacker, actionId);
   // A camouflaged target is Scanned first: one free Scan (4.12.2, FAQ I12). The
   // pad opened the attack straight, on a unit its marker only suspected
   // (audit Phase 3, A2). A granted Riposte answers the attacker it can see.
@@ -1624,10 +1710,11 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
   attackDepth = historyDepth();
   // In a guided game the Action is paid for first; a refusal is the engine's
   // answer and the window stays shut. Freeform opens the window outright.
-  if (guidedOn(table) && !resumed && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : twoHanded ? {} : bothHands(attacker, actionId)) })) return;
+  const lent = lentPay(attacker, actionId);
+  if (guidedOn(table) && !resumed && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : twoHanded ? {} : bothHands(attacker, actionId)), ...lent })) return;
   // Freeform takes the same cost off the bar. A granted attack (a Riposte)
   // costs no Ticks, and a resumed one was paid before its Scan.
-  if (!granted && !resumed) spendFree(attacker, actionId);
+  if (!granted && !resumed) spendFree(attacker, actionId, lent.partKey);
   // The walk recorded as this Action's own Movement, now the Action is paid:
   // a free move rides only an Action already performed. Checked first, so a
   // granted Riposte, which owes no Movement, records nothing and shows no error.
@@ -1659,8 +1746,8 @@ function targetState(u: Token): string {
 function targetPanel(): string {
   const t = targetFor ? unitOf(targetFor.uid) : null;
   if (!t) return `<div class="pad-panel-in">${panelHead('Target')}<p class="pad-status">Nothing to attack with.</p></div>`;
-  const a = tokenCards(data!, t).flatMap((c) => c.card.actions ?? []).find((x) => x.id === targetFor!.actionId)
-    ?? data!.commonActions.find((x) => x.id === targetFor!.actionId);
+  // Its own Parts, the Common Actions, or a lent Load's.
+  const a = actionOfUnit(t, targetFor!.actionId);
   const mode = targetFor?.mode;
   const enemies = table.tokens.filter((u) => u.side !== t.side && u.deployed !== false
     && (u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
@@ -1727,7 +1814,8 @@ async function recoverFrom(t: Token, actionId: string): Promise<void> {
 
 async function launchFrom(t: Token, actionId: string, cardId: string): Promise<void> {
   if (!data) return;
-  const action = tokenCards(data, t).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId);
+  // Its own Parts, or a lent Load's (actionOfUnit).
+  const action = actionOfUnit(t, actionId);
   if (!action) return;
   // Volley X: the repeats are optional (4.7.3 step 3), so a volley may be
   // smaller than printed. Asked BEFORE the Action is paid, so backing out is
@@ -1746,14 +1834,15 @@ async function launchFrom(t: Token, actionId: string, cardId: string): Promise<v
     if (pick === null) return;
     count = Number(pick);
   }
-  if (guidedOn(table) && !send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId, ...bothHands(t, actionId) })) return;
+  const lent = lentPay(t, actionId);
+  if (guidedOn(table) && !send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId, ...bothHands(t, actionId), ...lent })) return;
   const card = data.byId.get(cardId);
   const before = new Set(table.tokens.map((x) => x.uid));
   let n = 0;
   // Every launch after the first command of the tap joins it: the Action
   // that paid (Guided), the Ticks it took off the bar (Freeform), or else the
   // volley's first shot.
-  const paid = guidedOn(table) || spendFree(t, actionId);
+  const paid = guidedOn(table) || spendFree(t, actionId, lent.partKey);
   for (let i = 0; i < count; i++) {
     if (!send({ kind: 'launch', seat: t.side, uid: t.uid, actionId, cardId, to: { col: 0, row: 0 }, facing: t.facing, ...(paid || i > 0 ? { chain: 'join' as const } : {}) })) break;
     n++;
@@ -2221,7 +2310,7 @@ function statStrip(t: Token): string {
 // a card that performs Two-Handed at a shorter length is charged that length.
 function bothHands(t: Token, actionId: string): { twoHanded?: true } {
   if (!data) return {};
-  const a = tokenCards(data, t).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId);
+  const a = actionOfUnit(t, actionId);
   return a && twoHandedUse(data, t, a, boxHands(table.tasks, t.uid)) ? { twoHanded: true } : {};
 }
 
@@ -2418,6 +2507,9 @@ function actionList(t: Token, mine: boolean): string {
         ? `<button class="pad-chip on pad-perform" data-act="transform" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Transform</button>`
         : mine && g.available && formSwitch(g.action)
         ? `<button class="pad-chip on pad-perform" data-act="form-switch" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Change Stance</button>`
+        // The KK9's Overwatch Strike (FAQ K15): its own door, Guided or not.
+        : mine && g.available && overwatchOf(g.action)
+        ? `<button class="pad-chip on pad-perform" data-act="overwatch" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Call the strike</button>`
         // Auto Mine Laying, a Passive the table records (audit Phase 5, C5).
         : mine && g.available && projectileDelivery(g.action) === 'lay' && Array.isArray(g.card.projectile) && g.card.projectile.length
         ? `<button class="pad-chip on pad-perform" data-act="lay-mine" data-uid="${t.uid}" data-id="${esc(g.action.id)}" data-projectile="${esc(g.card.projectile[0])}">Lay a Mine</button>`
@@ -4195,7 +4287,8 @@ function findGroups(q: string, scope: FindScope): FindGroup[] {
   ];
   for (const [id, label, pick] of pools) {
     if (!want(id) || (!q && scope !== id)) continue;
-    const pool = found(d.cards.filter(pick), q, matchCard, nmCard, alpha);
+    // Reference-only cards are for the Reference, not the table.
+    const pool = found(d.cards.filter((c) => !c.referenceOnly && pick(c)), q, matchCard, nmCard, alpha);
     if (pool.length) groups.push({ id, label, total: pool.length, tiles: pool.slice(0, cap).map((c) => cardRow(c)) });
   }
 
@@ -4357,21 +4450,11 @@ function paintDetail(html: string, scrollTop: number): void {
   // mounts - the cache holds one element per id, so the thumb takes a copy.
   content.querySelectorAll<HTMLElement>('[data-img]').forEach((slot) => {
     const isThumb = !!slot.closest('.dthumb');
-    (isThumb ? mountCardImageCopy : mountCardImage)(slot, slot.dataset.img!, isThumb ? 'dthumb-img' : 'ref-cardimg');
-    const img = slot.querySelector('img');
-    // A card with no scan loses its Photo tab and its thumbnail, exactly as on
-    // the reference, rather than promising a picture that is not there.
-    const drop = () => {
-      slot.closest('.ref-scan')?.remove();
-      content.querySelector('.dthumb')?.remove();
-      const tab = content.querySelector<HTMLElement>('[data-dtab="photo"]');
-      const pane = content.querySelector<HTMLElement>('[data-dpanel="photo"]');
-      if (tab) tab.hidden = true;
-      if (pane && !pane.hidden) showTab('card');
-    };
-    if (!img) { drop(); return; }
-    if (img.complete && !img.naturalWidth) drop();
-    else img.addEventListener('error', drop, { once: true });
+    // A card with no scan shows its placeholder, exactly as on the reference.
+    (isThumb ? mountCardImageCopy : mountCardImage)(slot, slot.dataset.img!, isThumb ? 'dthumb-img' : 'ref-cardimg', {
+      label: slot.dataset.imgLabel ?? '',
+      wide: slot.dataset.imgWide === '1',
+    });
   });
   fillPortraits(content, false);
   sheet.hidden = false;
@@ -5022,6 +5105,11 @@ function act(el: HTMLElement, ev: Event): void {
       })();
       return;
     }
+    case 'overwatch': {
+      const by = unitOf(Number(el.dataset.uid));
+      if (by) void callOverwatch(by, el.dataset.id!);
+      return;
+    }
     // C5: a Mine Laid on the route just walked (FAQ M7), 1 Move Range each.
     case 'lay-mine': {
       const by = unitOf(Number(el.dataset.uid));
@@ -5044,6 +5132,31 @@ function act(el: HTMLElement, ev: Event): void {
           stacked: true,
         });
         if (pick !== 'yes') return;
+        // An attack, an Electronic Attack or a launch goes to its own tool, the
+        // loan riding along as the Part it pays for (audit Phase 5 follow-up).
+        const loan = loanedParts(data!, table.tokens, by, { anywhere: true }).find((l) => l.from.uid === carrier.uid);
+        const a = loan ? (loan.card.actions ?? []).find((x) => x.id === actionId) : undefined;
+        if (a && (a.type === 'Firing' || a.type === 'Melee' || isElectronicAttack(a) || isScanAction(a))) {
+          lentPart = { uid: by.uid, actionId, key };
+          const electronic = a.type !== 'Firing' && a.type !== 'Melee';
+          if (electronic && electronicAll(a)) { void askTableAndElectronicAll(by, a); return; }
+          targetFor = { uid: by.uid, actionId, mode: electronic ? 'electronic' : 'attack' };
+          panel = 'target';
+          render();
+          return;
+        }
+        const shots = loan && a && Array.isArray(loan.card.projectile) ? launchableCards(data!, table.tokens, by, actionId, true) ?? [] : [];
+        if (a && shots.length) {
+          const cardId = shots.length === 1 ? shots[0] : await choiceDialog({
+            title: a.name.en ?? a.id,
+            choices: shots.map((id) => ({ id, label: cardName(data!.byId.get(id)!) })),
+            stacked: true,
+          });
+          if (!cardId) return;
+          lentPart = { uid: by.uid, actionId, key };
+          void launchFrom(by, actionId, cardId);
+          return;
+        }
         if (guidedOn(table)) {
           if (send({ kind: 'performAction', seat: by.side, uid: by.uid, actionId, partKey: key })) toast(`${by.label}: resolve it on the table.`);
         } else {
@@ -5139,13 +5252,12 @@ function act(el: HTMLElement, ev: Event): void {
     case 'remote-access': {
       const a = t && data ? actionOfUnit(t, 'COMMON_REMOTE_ACCESS') : undefined;
       if (!t || !data || !a) return;
+      // Paid, then rolled in the window like every other Counter-roll: the
+      // dice follow the Dice setting (ruling I25).
       void askRemoteAccess(data, table, t, a, toast).then((got) => {
         if (!got) return;
         const paid = spendFree(t, 'COMMON_REMOTE_ACCESS');
-        if (!got.won) { toast(`Remote Access on the ${got.name} Terminal failed.`); return; }
-        if (send({ kind: 'accessTerminal', seat: t.side, uid: t.uid, itemId: got.itemId, ...(paid ? { chain: 'join' as const } : {}) })) {
-          toast(`Remote Access: the ${got.name} Terminal is face-down for the rest of the round.`);
-        }
+        openTerminalRoll(t, 'COMMON_REMOTE_ACCESS', got.itemId, got.name, !!paid);
       });
       return;
     }

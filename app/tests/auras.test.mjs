@@ -2,6 +2,7 @@
 // this file exists to catch was invisible to a fixture: an aura's reach, who it
 // may land on, and which Actions it touches all live in the shipped data.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
@@ -35,6 +36,11 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
 // reader sits far outside every cut this file takes. Stubbed false: nothing
 // here fires an Electronic Attack, and amplify.test.mjs owns that half.
 export function isElectronicAttack(_a: any): boolean { return false; }
+// electronicStrength and counterOffensive ask first whether the unit is a
+// Remote Access's Terminal stand-in (tasks.ts); no fixture here is one, so the
+// two are mirrored rather than sliced.
+function isTerminalStandIn(t: any): boolean { return t?.uid === -1; }
+const TERMINAL_EV = 3;
 `
   + cut(rules, 'export function rangeBetween', 'export function inArc', 'rangeBetween')
   + cut(rules, 'export function losBetween', 'export function rangeBetween', 'losBetween')
@@ -73,7 +79,7 @@ export function isElectronicAttack(_a: any): boolean { return false; }
   + units.slice(units.indexOf('// ---------- Mechanics audit Phase 2 readers ----------'));
 
 const tmp = new URL('./_auras.slice.ts', import.meta.url);
-writeFileSync(tmp, body);
+writeFileSync(tmp, FOOTPRINT + body);
 const A = await import(tmp.href);
 
 const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));

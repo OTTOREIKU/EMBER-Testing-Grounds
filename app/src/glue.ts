@@ -35,6 +35,7 @@ export function ensureScript(state: GameState): NonNullable<GameState['script']>
 
 export function enterPhase(data: GameData, s: GameState): void {
   const sc = ensureScript(s);
+  sc.swarm = null;
   if (s.round.phase === 0) {
     seedCommandTokens(data, s);
     sc.commanded = [];

@@ -5,9 +5,9 @@ import { BASE, cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { actionPartWhy, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
+import { actionPartWhy, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, firewatchOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
 import { actionPipCount, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
-import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens, taskDesignations } from './commands';
+import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens, taskDesignations, swarmFor } from './commands';
 import { openActivation, popDeadExtras } from './glue';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
 import { tacticFitsPhase, tacticSpec, tacticUsedRound, tacticWindowWhy } from './tactics';
@@ -179,6 +179,7 @@ export class PlayGuide {
     const now = `${s.round.n}:${s.round.phase}`;
     if (sc.stage === now || sc.stage === `${now}:locked`) return false;
     const leaving = sc.stage.split(':')[1];
+    sc.swarm = null;
     // 3.2.3 clears the DRONES' Command Tokens on the way out, and nothing
     // else: a Mech's reserved tokens are still spendable in the Action Phase
     // (4.15.3/4.15.4) and are swept by the End Phase instead.
@@ -463,6 +464,7 @@ export class PlayGuide {
     this.root.querySelector('[data-overload]')?.addEventListener('click', () => this.tryOverload());
     this.root.querySelector('[data-attackmode]')?.addEventListener('click', () => this.tryAttackMode());
     this.root.querySelector('[data-linktick]')?.addEventListener('click', () => this.tryLinkTick());
+    this.root.querySelector('[data-firewatch]')?.addEventListener('click', () => this.tryFirewatch());
     for (const b of [...this.root.querySelectorAll<HTMLButtonElement>('[data-tactic]')]) {
       b.addEventListener('click', () => {
         const [side, id] = b.dataset.tactic!.split(':');
@@ -633,6 +635,14 @@ export class PlayGuide {
     // used to catch "Did it myself" too, so marking a drone done also passed
     // its whole side and silently skipped the other drones.
     this.root.querySelector('[data-pass]')?.addEventListener('click', () => this.pass());
+    this.root.querySelector('[data-swarmstop]')?.addEventListener('click', () => {
+      const s = this.state;
+      const sw = s?.script?.swarm;
+      const w = sw ? s?.tokens.find((x) => x.uid === sw.issuer) : undefined;
+      if (!s || !w) return;
+      perform(this.data, s, { kind: 'endSwarm', seat: w.side });
+      this.cb.onChanged();
+    });
 
     this.root.querySelector('.pg-rules')?.addEventListener('toggle', (ev) => {
       this.ui.rules = (ev.target as HTMLDetailsElement).open;
@@ -1444,6 +1454,13 @@ export class PlayGuide {
     const ltTip = lt?.ok
       ? `Consume 1 Link for 1 Action Tick (${trait!.label}). Up to ${trait!.maxLink} per Action Opportunity, in Offensive Stance, which is then locked (FAQ L2).`
       : lt?.why ?? '';
+    // ZPA-38 Firewatch (GoF 1.021): 1 Link for a Command Token as the Mech
+    // gains the Opportunity. Shown only on a Firewatch Mech; the command holds
+    // the rule.
+    const fwv = t.kind === 'mech' && firewatchOn(this.data, t) ? check(this.data, s, { kind: 'firewatch', seat: t.side, uid: t.uid }) : null;
+    const fwTip = fwv?.ok
+      ? 'Firewatch: consume 1 Link to generate a Command Token, as this Mech gains its Action Opportunity. Once per Action Opportunity.'
+      : fwv?.why ?? '';
     const maneuverRow = shutdown
       ? ''
       : `<div class="pg-units">
@@ -1451,6 +1468,7 @@ export class PlayGuide {
         ${ovl ? `<button class="pg-unit${ovl.ok ? '' : ' warn'}" data-overload="1" data-tip-title="Overload" data-tip="${esc(ovlTip)}">Overload ${o.overload}/${OVERLOAD_MAX}</button>` : ''}
         ${bon && bonus ? `<button class="pg-unit${bon.ok ? '' : ' warn'}" data-attackmode="1" data-tip-title="${esc(bonus.label)}" data-tip="${esc(bonTip)}">${esc(bonus.label)} ${o.attackMode ? 'taken' : `+${bonus.actionPoints}`}</button>` : ''}
         ${trait && lt ? `<button class="pg-unit${lt.ok ? '' : ' warn'}" data-linktick="1" data-tip-title="${esc(trait.label)}" data-tip="${esc(ltTip)}">${esc(trait.label.replace(/^Hammerhead /, ''))} ${o.linkTicks ?? 0}/${trait.maxLink}</button>` : ''}
+        ${fwv ? `<button class="pg-unit${fwv.ok ? '' : ' warn'}" data-firewatch="1" data-tip-title="Firewatch" data-tip="${esc(fwTip)}">Firewatch ${o.firewatch ? 'taken' : '1 Link → Command'}</button>` : ''}
       </div>`;
     const actionRows = shutdown
       ? ''
@@ -1708,6 +1726,27 @@ export class PlayGuide {
     return overloadPackOn(this.data, t);
   }
 
+  // ZPA-38 Firewatch (GoF 1.021): 1 Link for a Command Token as the Mech gains
+  // its Action Opportunity. The command holds the rule; this only reports it.
+  private tryFirewatch(): void {
+    const s = this.state;
+    if (!s) return;
+    const o = this.opportunity(s);
+    if (!o) return;
+    const t = s.tokens.find((x) => x.uid === o.uid);
+    if (!t) return;
+    const v = check(this.data, s, { kind: 'firewatch', seat: t.side, uid: t.uid });
+    if (!v.ok) {
+      this.warn = v.why ?? null;
+      this.render();
+      return;
+    }
+    this.warn = null;
+    perform(this.data, s, { kind: 'firewatch', seat: t.side, uid: t.uid });
+    this.cb.onNote(t, `Firewatch: consumed 1 Link for a Command Token (Link now ${t.link}).`);
+    this.cb.onChanged();
+  }
+
   // FPA-04-2 Domestic Expert: 1 Link for 1 Action Tick, in Offensive Stance,
   // once an Action Opportunity (FAQ L2). The command holds the rule; this only
   // reports it.
@@ -1894,10 +1933,11 @@ export class PlayGuide {
   // things the two pages do differently — how a command reaches the board, and
   // where a note goes.
   private offerCoordination(s: GameState, mech: Token, upTo: number): Promise<void> {
+    const stop = (): void => { perform(this.data, s, { kind: 'endSwarm', seat: mech.side }); this.cb.onChanged(); };
     return offerCoordination(this.data, s, mech, upTo, (uid, targetUid) => {
       perform(this.data, s, { kind: 'coordinateCommand', seat: mech.side, uid, targetUid });
       this.cb.onChanged();
-    }, (drone, text) => this.cb.onNote(drone, text));
+    }, (drone, text) => this.cb.onNote(drone, text), stop);
   }
 
   private endActivation(): void {
@@ -2126,13 +2166,20 @@ export class PlayGuide {
 
     const verb = phase === 'Command' ? 'command' : 'activate';
     const noun = phase === 'Delay' ? 'projectile' : 'drone';
+    // Swarm Tactics going on (172_B): the Warrior's token moves on now, or stops.
+    const going = phase === 'Command' ? swarmFor(s, turn) : null;
+    const swarmNote = going
+      ? `<p class="pg-intercept-note">Swarm Tactics: ${esc(s.tokens.find((x) => x.uid === going.issuer)?.label ?? 'the Warrior')}'s Command Token may go on to another Drone now, at no cost. Stop, and it stays on ${esc(s.tokens.find((x) => x.uid === going.from)?.label ?? 'that Drone')}.</p>`
+      : '';
     return `${fp}${tokens}
       <p class="pg-active">Now: <b class="side-${turn}">${squadLabel(turn)}</b>
         <small>pick a ${noun} to ${verb}</small></p>
+      ${swarmNote}
       <div class="pg-units">
         ${units
           .map((t) => `<button class="pg-unit" data-designate="${t.uid}">${t.label}</button>`)
           .join('')}
+        ${going ? '<button class="pg-pass" data-swarmstop="1" title="The token stays where it is, and the other squad issues next">Stop here</button>' : ''}
         <button class="pg-pass" data-pass="1" title="This side is done for the phase">Pass</button>
       </div>`;
   }

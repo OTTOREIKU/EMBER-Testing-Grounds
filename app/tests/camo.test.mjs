@@ -17,6 +17,7 @@
 // So a shoved camouflaged unit that lands in Contact DOES Reveal, the
 // board-derived sweep is the correct shape, and the pins below say so.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const dataSrc = readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8');
@@ -30,7 +31,7 @@ const slice = (src, from, to, what) => {
 const tmp = new URL('./_camo.slice.ts', import.meta.url);
 writeFileSync(
   tmp,
-  'type Card = any;\ntype GameData = any;\ntype Token = any;\ntype PartSlot = any;\n'
+  FOOTPRINT + 'type Card = any;\ntype GameData = any;\ntype Token = any;\ntype PartSlot = any;\n'
     // The real statusCount, so "camouflage" is counted the way the app counts
     // it. End marker is ageTokens, NOT addStatus: addStatus sits ABOVE
     // statusCount in types.ts, and an end marker before the start yields an

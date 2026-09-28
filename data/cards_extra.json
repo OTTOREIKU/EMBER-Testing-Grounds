@@ -629,6 +629,364 @@
    "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived.",
    "_keyword_note": "The list's Keyword 1 reads \"Arial 5\" (its own typo for Aerial), which is the flight value our data carries as flyingOrElevated + move. Keywords 2-4 read Small, Low Value and Mobility, which are our type, valueLess and stance fields rather than keywords.",
    "score_note": "Low Value Units cost 0 points."
+  },
+  {
+   "id": "ZPA-72",
+   "_source": "Publisher Part Data GoF 1.021 EN list, GoF Pilots sheet, the row with QR ID 72 and Serial ZPA-72: English Codename Grenadier-72, Chinese Codename 掷弹兵72, Points 4, LV 4, Swift 8, Melee 4, Projectile 5, Firing 3, Move 3, Tactical 2, and the same Trait Description as Grenadier-1 to -4. Every dial matches ZPA-46 to ZPA-49, which is what a generic Grenadier should be. Added 2026-09-28.",
+   "_id_note": "The list's own Serial Number.",
+   "name": {
+    "zh": "掷弹兵72",
+    "en": "Grenadier-72"
+   },
+   "score": 4,
+   "LV": 4,
+   "faction": "GOF",
+   "swift": 8,
+   "melee": 4,
+   "projectile": 5,
+   "firing": 3,
+   "moving": 3,
+   "tactic": 2,
+   "trait": "",
+   "traitDescription": {
+    "zh": "525中队的实习掷弹兵。",
+    "en": "Trainee Grenadiers from 525 Squadron."
+   },
+   "_flavour_note": "The English line is the list's Trait Description for this row. The Chinese is the other Grenadiers' line, since the list is English only.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer.",
+   "category": "pilot",
+   "keywords": []
+  },
+  {
+   "id": "XPA-A76",
+   "_source": "Publisher Part Data PD 1.02 EN list, PD Pilots sheet, the row with QR ID 376: English Codename Combatant A-76, Points 10, LV 5, Swift 8, Melee 4, Projectile 5, Firing 3, Move 3, Tactical 2. The row has no Trait Description, so none is given here. Every dial matches Combatant A-69 to A-71. Added 2026-09-28.",
+   "_id_note": "OUR id, not the publisher's: the PD pilot sheet has no Serial Number column. Our other Combatants are XPA-59 to XPA-61 and follow no pattern this one could extend, so the id names the card instead. Its QR id is 376 on the PD sheet's own numbering (A-69 is 369), but the publisher API still holds a placeholder for 376, so it is NOT in qr_ids.json: that file takes nothing on the sheet's word alone.",
+   "name": {
+    "en": "Combatant A-76"
+   },
+   "score": 10,
+   "LV": 5,
+   "faction": "PD",
+   "swift": 8,
+   "melee": 4,
+   "projectile": 5,
+   "firing": 3,
+   "moving": 3,
+   "tactic": 2,
+   "trait": "",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer.",
+   "category": "pilot",
+   "keywords": []
+  },
+  {
+   "id": "070",
+   "_source": "Publisher Part Data RDL 1.02 EN list, RDL Projectile sheet, QR ID 70, Serial FXAM-001: GA-3 HE Grenade, Dodge 4, Electronic 0, Mobility Stance, Projectile, Grenade; Action A Delayed Detonation, Timing Delayed, Roll 3Y, Range 1. The publisher API record 70 confirms the name (GA-3 高爆榴弹 in Chinese), Dodge 4 and Mobility Stance. Added 2026-09-28.",
+   "_id_note": "The QR id, the way every numbered card here is keyed. Its printed serial is FXAM-001.",
+   "_launch_note": "No Part on any of the five lists launches a GA-3, so no card points at this one yet. The M25 Shrapnel Shell (ZHAM-004) is the closest card and the model for the structured rule below.",
+   "name": {
+    "zh": "GA-3 高爆榴弹",
+    "en": "GA-3 HE Grenade"
+   },
+   "faction": "RDL",
+   "armor": 0,
+   "structure": 0,
+   "parray": 0,
+   "dodge": 4,
+   "electronic": 0,
+   "stance": "mobility",
+   "keywords": [
+    {
+     "inline": "抛射物"
+    },
+    {
+     "inline": "榴弹"
+    }
+   ],
+   "actions": [
+    {
+     "id": "070_A",
+     "name": {
+      "zh": "延时引爆",
+      "en": "Delayed Detonation"
+     },
+     "description": {
+      "en": "· Undergo Detonation at current location.\n· On Detonation, cause Explosion damage to All Adjacent Units."
+     },
+     "gameRules": [
+      {
+       "id": "detonation_area_explosion",
+       "effects": [
+        {
+         "type": "detonation",
+         "target": {
+          "selection": "all",
+          "filter": "any",
+          "scope": "range",
+          "includeFragileTerrain": true
+         },
+         "damage": "explosion",
+         "destroyAfter": true
+        }
+       ]
+      }
+     ],
+     "_rule_note": "\"All Adjacent Units\" is read as everything within Range 1 of the Detonation grid, its own grid included, which is the list's Range column and the same area M25's \"all units within range\" covers at Range 1.",
+     "type": "Delay",
+     "range": 1,
+     "storage": 0,
+     "yellowDice": 3,
+     "redDice": 0,
+     "keywords": []
+    }
+   ],
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer.",
+   "category": "projectile"
+  },
+  {
+   "id": "523",
+   "_source": "Publisher Part Data RDL 1.02 EN list, RDL Drones sheet, QR ID 523: DTG-30Art \"Hyena\" Painting Type, Points 99, Armor 5, Structure 2, Electronic 2, Move 5, Medium, Defensive Stance; Action A Color Carrier, Passive. The publisher API record 523 agrees on every value and gives the Chinese name. Added 2026-09-28.",
+   "_id_note": "The QR id. The row has no Serial Number.",
+   "_novelty_note": "A 99-point collector card: its one Action is flavour with no rule in it.",
+   "name": {
+    "zh": "DTG-30Art“鬣狗”涂装型",
+    "en": "DTG-30Art \"Hyena\" Painting Type"
+   },
+   "faction": "RDL",
+   "score": 99,
+   "armor": 5,
+   "structure": 2,
+   "parray": 0,
+   "dodge": 0,
+   "electronic": 2,
+   "type": "medium",
+   "move": 5,
+   "stance": "defensive",
+   "keywords": [],
+   "actions": [
+    {
+     "id": "523_A",
+     "name": {
+      "en": "Color Carrier"
+     },
+     "description": {
+      "en": "· Carry a bottle of paint onto the battlefield and let your love for painting speak through every stroke."
+     },
+     "type": "Passive",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": []
+    }
+   ],
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer.",
+   "category": "drone"
+  },
+  {
+   "id": "524",
+   "_source": "Publisher Part Data UN 1.02 EN list, UN Drones sheet, QR ID 524: ADK15Art \"Porcupine\" Painting Type, Points 99, Armor 4, Structure 2, Electronic 2, Move 5, Medium, Defensive Stance; Action A Color Carrier, Passive. The publisher API record 524 agrees on every value and gives the Chinese name. Added 2026-09-28.",
+   "_id_note": "The QR id. The row has no Serial Number.",
+   "_novelty_note": "A 99-point collector card: its one Action is flavour with no rule in it.",
+   "name": {
+    "zh": "ADK15Art 涂装型豪猪",
+    "en": "ADK15Art \"Porcupine\" Painting Type"
+   },
+   "faction": "UN",
+   "score": 99,
+   "armor": 4,
+   "structure": 2,
+   "parray": 0,
+   "dodge": 0,
+   "electronic": 2,
+   "type": "medium",
+   "move": 5,
+   "stance": "defensive",
+   "keywords": [],
+   "actions": [
+    {
+     "id": "524_A",
+     "name": {
+      "en": "Color Carrier"
+     },
+     "description": {
+      "en": "You can take a bottle of color onto the battlefield and showcase your passion for painting."
+     },
+     "type": "Passive",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": []
+    }
+   ],
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer.",
+   "category": "drone"
+  },
+  {
+   "id": "576",
+   "_source": "Publisher Part Data GoF 1.021 EN list, GoF Drones sheet, the row after ZHDR-103: N13 Vanguard III \"Claymore\" Civilian Type, Points 99, Armor 1, Structure 4, Electronic 2, Move 5, Middle, Defensive; Action A Gun Salute, Type Firing, Rolls 1Y, Range 1, Ammo 1. Added 2026-09-28.",
+   "_id_note": "The QR id. The list row has no Serial Number and no QR ID, but the publisher API record 576 is this card by name (N13 Vanguard III “Claymore” Civilian Type, 99 points) and agrees on Armor/Structure 1/4, Electronic 2, Maneuver 5 and Defensive Stance. Found 2026-09-28 by walking API ids 500-600; it was ZHDR-103-CIV until then.",
+   "_novelty_note": "A 99-point collector card, the Claymore with a ceremonial gun.",
+   "_open_note": "Two things the row does not settle, left unset rather than guessed. Its Speed column reads \"Firing\", which is not a Drone speed (the Claymore's row reads Auto), so the Action carries no speed. And its Keyword 3 is blank where a Low Value Drone's reads Low Value, so it is not marked Low Value; the API record lists no Low Value either.",
+   "name": {
+    "zh": "N13 先锋III “阔剑” 民用型",
+    "en": "N13 Vanguard III “Claymore” Civilian Type"
+   },
+   "faction": "GOF",
+   "score": 99,
+   "armor": 1,
+   "structure": 4,
+   "parray": 0,
+   "dodge": 0,
+   "electronic": 2,
+   "type": "medium",
+   "move": 5,
+   "stance": "defensive",
+   "keywords": [],
+   "actions": [
+    {
+     "id": "576_A",
+     "name": {
+      "en": "Gun Salute"
+     },
+     "description": {
+      "en": "· \"Fire a salute for our most honored guests!\""
+     },
+     "type": "Firing",
+     "range": 1,
+     "storage": 1,
+     "yellowDice": 1,
+     "redDice": 0,
+     "keywords": []
+    }
+   ],
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer.",
+   "category": "drone"
+  },
+  {
+   "id": "258",
+   "_source": "Publisher Part Data RDL 1.02 EN list, RDL Armaments1.0En sheet: [G&T] Mini Tournament Trophy, Points 99, Armor 4, Keyword 2 R·右; Action A Smash, Timing Melee, Speed L, Roll 1Y, Range Melee. The publisher API record 258 confirms the name, 99 points and Armor 4, and gives the Chinese name. Added 2026-09-28.",
+   "_id_note": "The QR id.",
+   "referenceOnly": true,
+   "_reference_note": "Reference only (OTTO, 2026-09-28): a tournament prize, shown in the Reference and never offered by a builder on the tabletop, the pad or the Match Centre.",
+   "name": {
+    "zh": "[金汤力]小奖赛奖杯",
+    "en": "[G&T] Mini Tournament Trophy"
+   },
+   "type": "rightHand",
+   "category": "mech_part",
+   "faction": "RDL",
+   "armor": 4,
+   "structure": 0,
+   "parray": 0,
+   "dodge": 0,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [],
+   "actions": [
+    {
+     "id": "258_A",
+     "name": {
+      "en": "Smash"
+     },
+     "description": {
+      "en": "· It carries no power, yet it serves as a stark reminder to your opponent that you hold the trophy once more."
+     },
+     "type": "Melee",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 1,
+     "redDice": 0,
+     "keywords": [],
+     "size": "l"
+    }
+   ],
+   "score": 99,
+   "_box_note": "No box: a tournament prize."
+  },
+  {
+   "id": "259",
+   "_source": "Publisher Part Data UN 1.02 EN list, UN Armaments EN sheet: [G&T] Mini Tournament Trophy, Points 99, Armor 4, Keyword 2 R·右; Action A Smash, Timing Melee, Speed L, Roll 1Y, Range Melee. The publisher API record 259 confirms the name, 99 points and Armor 4, and gives the Chinese name. Added 2026-09-28.",
+   "_id_note": "The QR id. The UN sheet leaves the QR column blank; API 259 is the UN copy by name, and its art is the UN card's.",
+   "referenceOnly": true,
+   "_reference_note": "Reference only (OTTO, 2026-09-28): a tournament prize, shown in the Reference and never offered by a builder on the tabletop, the pad or the Match Centre.",
+   "name": {
+    "zh": "[金汤力]小奖赛奖杯",
+    "en": "[G&T] Mini Tournament Trophy"
+   },
+   "type": "rightHand",
+   "category": "mech_part",
+   "faction": "UN",
+   "armor": 4,
+   "structure": 0,
+   "parray": 0,
+   "dodge": 0,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [],
+   "actions": [
+    {
+     "id": "259_A",
+     "name": {
+      "en": "Smash"
+     },
+     "description": {
+      "en": "· It carries no power, yet it serves as a stark reminder to your opponent that you hold the trophy once more."
+     },
+     "type": "Melee",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 1,
+     "redDice": 0,
+     "keywords": [],
+     "size": "l"
+    }
+   ],
+   "score": 99,
+   "_box_note": "No box: a tournament prize."
+  },
+  {
+   "id": "560",
+   "_source": "Publisher Part Data RDL 1.02 EN list, RDL Armaments sheet: Asia Championship Trophy, Points 99, Armor 4, Keyword 2 L·左; Action A Jecting Trophy, Timing Melee, Speed L, Roll 1Y, Range 3. The row has no QR ID; the publisher API record 560 is this card by name, with 99 points, Armor 4 and the same line of text. Added 2026-09-28.",
+   "_id_note": "The QR id, found by walking the API (the list row leaves it blank).",
+   "_typo_note": "\"Jecting\" is the list's own spelling, kept as printed.",
+   "referenceOnly": true,
+   "_reference_note": "Reference only (OTTO, 2026-09-28): a tournament prize, shown in the Reference and never offered by a builder on the tabletop, the pad or the Match Centre.",
+   "name": {
+    "zh": "亚洲锦标赛奖杯",
+    "en": "Asia Championship Trophy"
+   },
+   "type": "leftHand",
+   "category": "mech_part",
+   "faction": "RDL",
+   "armor": 4,
+   "structure": 0,
+   "parray": 0,
+   "dodge": 0,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [],
+   "actions": [
+    {
+     "id": "560_A",
+     "name": {
+      "en": "Jecting Trophy"
+     },
+     "description": {
+      "en": "· Eject the trophy directly in front of your opponent as a reminder—once again.",
+      "zh": "· 将奖杯弹射到对手面前，以再次提醒你的对手。"
+     },
+     "type": "Melee",
+     "range": 3,
+     "storage": 0,
+     "yellowDice": 1,
+     "redDice": 0,
+     "keywords": [],
+     "size": "l"
+    }
+   ],
+   "score": 99,
+   "_box_note": "No box: a tournament prize."
   }
  ]
 }

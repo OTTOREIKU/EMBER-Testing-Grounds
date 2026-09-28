@@ -107,11 +107,16 @@ check('every Action with Chinese rules text has English somewhere', stranded, []
 //     cards, ruling I1; the old zh printed Command Generation 4, Melee Synergy,
 //     the A2 and M2 riders and the Pod's end-of-Opportunity Coordination, and
 //     every one of them was still read; audit Phase 5, F2)
+//   - action ZHDR-205_A (Scream: the 1.021 row has no Strength +1, and
+//     strengthOf read the 强度+1 in the old zh; OTTO, 2026-09-28)
+// The count also fell with the Actions GoF 1.021 no longer prints (SU1's
+// Single Shot and the four Command Coordination Actions), removed on OTTO's
+// 2026-09-28 ruling that the company's lists outrank the cards.
 // Lowering either floor again should mean finding the same kind of reason.
 const keptZh = cards.filter((c) => (c.description?.zh ?? '').trim()).length;
 check('card Chinese text is preserved, not deleted', keptZh >= 44, true);
 const keptActZh = cards.reduce((n, c) => n + (c.actions ?? []).filter((a) => (a.description?.zh ?? '').trim()).length, 0);
-check('and action Chinese text too', keptActZh >= 403, true);
+check('and action Chinese text too', keptActZh >= 401, true);
 
 // The Silence bug itself, pinned: the redesigned Jump must not read as Silent.
 const jump = cards.find((c) => c.id === '180')?.actions?.find((a) => a.id === '180_B');

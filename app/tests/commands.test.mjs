@@ -22,6 +22,13 @@ const interceptParser = unitsSrc.slice(
   unitsSrc.indexOf('// Every card id currently on the board'),
 );
 if (!interceptParser) throw new Error('could not locate interceptCapacity in units.ts');
+// Whose Tokens pay an Interception (ruling I25): the real reader, over the
+// loanedParts stand-in below.
+const interceptPayerSrc = unitsSrc.slice(
+  unitsSrc.indexOf('// Whose Interception Tokens pay'),
+  unitsSrc.indexOf('// ---------- Mines (rulebook 4.7'),
+);
+if (!interceptPayerSrc) throw new Error('could not locate interceptPayer in units.ts');
 // Starts at CHARGE_KEYWORD, not at the function: the regex is a module-level
 // const just above it and slicing from the export leaves it undefined.
 const chargeParser = unitsSrc.slice(
@@ -471,6 +478,7 @@ writeFileSync(
     + smokeRules
     + ticks.replace(/^import[^\n]*\n/gm, '')
     + interceptParser
+    + interceptPayerSrc
     + chargeParser
     + groupParser
     + evReader

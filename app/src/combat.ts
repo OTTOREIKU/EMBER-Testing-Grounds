@@ -6,8 +6,9 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, firewatchOn, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
+import { isTerminalStandIn, TERMINAL_EV } from './tasks';
 import { inArc, largeGridOf, losBetween, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
 import { canBeForceMoved } from './melee';
 import type { Command } from './commands';
@@ -5349,10 +5350,12 @@ export class AttackHelper {
           // so Surplus Damage taking a second Part, and each sequence of a
           // Multi-Target, pays again. The alternative reading is one Link per
           // ACTION; if that is ruled, cap it on the Ctx, not here.
+          //
+          // Any Stance: GoF 1.021 prints the trait without the card's
+          // [Offensive Stance] (OTTO, 2026-09-28: the lists win).
           if (
             c.attacker.kind === 'mech'
             && pilotIs(this.data, c.attacker, 'ZPA-40')
-            && c.attacker.stance === 'offensive'
             && timingOf(c.action) === 'melee'
             && c.defender.side !== c.attacker.side
             && (c.attacker.link ?? 0) < maxLink(this.data, c.attacker)
@@ -6015,22 +6018,17 @@ export class AttackHelper {
 // solid for a unit in Offensive Stance (4.11.3), so validity is per-roller and
 // the two sides can read the same dice differently. Shared, because the whole
 // rule turns on this count agreeing across both clients.
-// `eyeAsLightning`: ZPA-38 Firewatch, "When performing Electronic Counter
-// Rolls, may consume 1 Link to exchange {Eye} for {Lightning}" (audit Phase 2,
-// D4). Set on the side whose pilot paid for it, read here so the verdict and
-// both screens agree.
 export function tallyCounter(
   dice: DiceData,
   faces: number[],
   offensive: boolean,
-  eyeAsLightning = false,
 ): { lightning: number; light: number } {
   let lightning = 0;
   let light = 0;
   for (const f of faces) {
     for (const icon of dice.dice.yellow.faces[f] ?? []) {
       if (icon.hollow && !offensive) continue;
-      if (icon.type === 'lightning' || (eyeAsLightning && icon.type === 'eye')) lightning++;
+      if (icon.type === 'lightning') lightning++;
       else if (icon.type === 'lightHit') light++;
     }
   }
@@ -6059,7 +6057,7 @@ export function resolveCounterRoll(
 // Every press a SHARED Counter-roll window can make. Each is a question one of
 // the two seats owns, so the answer travels as a command and this window never
 // edits the record itself.
-export type EwAct = 'roll' | 'declare' | 'focus' | 'firewatch' | 'apply' | 'provoke' | 'provokepass' | 'close';
+export type EwAct = 'roll' | 'declare' | 'focus' | 'apply' | 'provoke' | 'provokepass' | 'close';
 // What a press carries: the unit it is for, the dice a Focus rerolls, the
 // declare's answer, and the Whistle Mech paying a Drone's reroll (ZYBP-202).
 export interface EwArg { uid?: number; indices?: number[]; use?: boolean; whistleUid?: number }
@@ -6080,6 +6078,9 @@ interface EwCtx {
   // Battlefield), opened when this one closes. The local exchange's queue; a
   // shared table's is the record's `rest` (audit Phase 3, D2).
   after?: () => void;
+  // A Remote Access: the Terminal item rolled against, whose stand-in is the
+  // Responder (ruling I25). A win accesses it.
+  terminal?: string;
   initEv: number;
   respEv: number;
   initRoll: Rolled[] | null;
@@ -6101,8 +6102,6 @@ interface EwCtx {
   // to watch the question close. The command it sends is the same one, and
   // check() in commands.ts is the same gate on both.
   provoked: 'taken' | 'passed' | null;
-  // ZPA-38 Firewatch, taken by that side: its {Eye} count as {Lightning}.
-  firewatch: { init: boolean; resp: boolean };
 }
 
 export class ElectronicHelper {
@@ -6214,12 +6213,13 @@ export class ElectronicHelper {
     // is in the contest (audit Phase 3, D9).
     const board = world.length ? world : [init, resp];
     const done = !!c.initRoll && !!c.respRoll && counterStage(this.data, board, c) === 'done';
-    const a = initRoll ? this.tally(initRoll, counterOffensive(this.data, board, init, resp, 'initiator'), !!c.initFirewatch) : null;
-    const b = respRoll ? this.tally(respRoll, counterOffensive(this.data, board, resp, init, 'responder'), !!c.respFirewatch) : null;
+    const a = initRoll ? this.tally(initRoll, counterOffensive(this.data, board, init, resp, 'initiator')) : null;
+    const b = respRoll ? this.tally(respRoll, counterOffensive(this.data, board, resp, init, 'responder')) : null;
     this.ctx = {
       initiator: init,
       responder: resp,
       action,
+      ...(c.terminal !== undefined ? { terminal: c.terminal } : {}),
       initEv: electronicStrength(this.data, world, init, 'initiator', action),
       respEv: electronicStrength(this.data, world, resp, 'responder'),
       initRoll,
@@ -6231,7 +6231,6 @@ export class ElectronicHelper {
       done,
       initiatorWins: done && a && b ? resolveCounterRoll(a, b).initiatorWins : null,
       provoked: c.provoke ?? null,
-      firewatch: { init: !!c.initFirewatch, resp: !!c.respFirewatch },
     };
   }
 
@@ -6273,7 +6272,7 @@ export class ElectronicHelper {
     return true;
   }
 
-  start(initiator: Token, action: CardAction, responder: Token, opts: { linkLoss?: number; then?: (initiatorWins: boolean) => void; after?: () => void } = {}): void {
+  start(initiator: Token, action: CardAction, responder: Token, opts: { linkLoss?: number; then?: (initiatorWins: boolean) => void; after?: () => void; terminal?: string } = {}): void {
     const world = this.tokens ? this.tokens() : [];
     // Both riders on the rolled pool - the Tarantula Loads only the Initiator
     // counts (FAQ O5) and the EW Suppression aura (ZHDR-202_B / PDTR-202_B) -
@@ -6289,6 +6288,7 @@ export class ElectronicHelper {
       linkLoss: opts.linkLoss,
       then: opts.then,
       after: opts.after,
+      ...(opts.terminal !== undefined ? { terminal: opts.terminal } : {}),
       initEv,
       respEv,
       initRoll: null,
@@ -6300,7 +6300,6 @@ export class ElectronicHelper {
       done: false,
       initiatorWins: null,
       provoked: null,
-      firewatch: { init: false, resp: false },
     };
     const what = action.name.en || action.name.zh || action.id;
     this.note(`${initiator.label} opens ${what} against ${responder.label}.`, [initiator, responder]);
@@ -6363,8 +6362,8 @@ export class ElectronicHelper {
       : counterOffensive(this.data, this.board(), c.responder, c.initiator, 'responder');
   }
 
-  private tally(roll: Rolled[], offensive: boolean, eyeAsLightning = false): { lightning: number; light: number } {
-    return tallyCounter(this.dice, roll.map((d) => d.face), offensive, eyeAsLightning);
+  private tally(roll: Rolled[], offensive: boolean): { lightning: number; light: number } {
+    return tallyCounter(this.dice, roll.map((d) => d.face), offensive);
   }
 
   // The local exchange's win, through the one reading every seam shares
@@ -6378,7 +6377,7 @@ export class ElectronicHelper {
   // queued to its OWN player, who Reveals it and picks where it appears.
   private applyEffects(): string[] {
     const c = this.ctx!;
-    const win = ewWinCommands(this.data, c.initiator, c.responder, c.action, { reaction: !!c.linkLoss });
+    const win = ewWinCommands(this.data, c.initiator, c.responder, c.action, { reaction: !!c.linkLoss, terminal: c.terminal });
     for (const cmd of win.cmds) this.onCommand(cmd);
     return win.lines;
   }
@@ -6386,6 +6385,9 @@ export class ElectronicHelper {
   // An allied Repeater lends its position to an Electronic Attack, and the
   // Action's Range is measured from there instead (FAQ O19).
   private relayNote(c: EwCtx): string {
+    // No Repeater reaches a Remote Access: it is neither an Electronic Attack
+    // nor Support (FAQ P12).
+    if (c.terminal !== undefined) return '';
     const world = this.tokens ? this.tokens() : [];
     if (!world.length) return '';
     const relay = repeatersFor(this.data, world, c.initiator);
@@ -6445,6 +6447,14 @@ export class ElectronicHelper {
     wrap.className = 'ew-side';
     wrap.innerHTML = `<h5>${who === 'init' ? 'Initiator' : 'Responder'} · ${t.label}
       <span class="ew-ev">EV ${ev}</span>${this.offensive(who) ? '<span class="ew-off">OFF: hollow counts</span>' : ''}</h5>`;
+    // A Terminal is not a unit, so its hand is said rather than read off a
+    // card (p.87; ruling I25).
+    if (isTerminalStandIn(t)) {
+      const p = document.createElement('p');
+      p.className = 'ah-note';
+      p.textContent = `A Terminal rolls its Electronic Value of ${TERMINAL_EV}, thrown by the opponent. It never Focuses, and its hollow faces count nothing.`;
+      wrap.appendChild(p);
+    }
     if (roll) {
       const row = document.createElement('div');
       row.className = 'ah-roll';
@@ -6472,7 +6482,7 @@ export class ElectronicHelper {
         delete this.pending[who];
         window.setTimeout(() => this.spins[who].spin(row, roll, only), 0);
       }
-      const n = this.tally(roll, this.offensive(who), c.firewatch[who]);
+      const n = this.tally(roll, this.offensive(who));
       const sum = document.createElement('p');
       sum.className = 'ah-sum';
       sum.innerHTML = `Lightning <b>${n.lightning}</b> · Light Hit <b>${n.light}</b>`;
@@ -6564,35 +6574,6 @@ export class ElectronicHelper {
           this.render();
         });
         wrap.append(keep, rr);
-      }
-      // ZPA-38 Firewatch (audit Phase 2, D4): once the Focus order has run out -
-      // an Exchange comes after the rerolls (4.4.1 step 6) - and before the
-      // verdict is applied, 1 Link turns this side's [Eye] into [Lightning].
-      const eyes = roll.some((d) => (this.dice.dice.yellow.faces[d.face] ?? []).some((i) => i.type === 'eye'));
-      const open = this.shared || c.initiatorWins === null;
-      if (c.firewatch[who]) {
-        const p = document.createElement('p');
-        p.className = 'ah-note';
-        p.textContent = `Firewatch: ${t.label}'s [Eye] count as [Lightning].`;
-        wrap.appendChild(p);
-      } else if (stage === 'done' && open && eyes && firewatchOn(this.data, t) && (t.link ?? 0) >= 2) {
-        const fw = document.createElement('button');
-        fw.className = 'ah-alt';
-        fw.textContent = `Firewatch: spend 1 Link so every [Eye] counts as [Lightning] (${t.link ?? 0} Link)`;
-        fw.disabled = !this.mayPress(who);
-        fw.addEventListener('click', () => {
-          if (this.sendAct('firewatch', { uid: t.uid })) return;
-          if (!accepted(this.onCommand({ kind: 'firewatch', seat: t.side, uid: t.uid }))) {
-            this.note(`${t.label}'s Firewatch was refused, so no Link is spent.`);
-            this.render();
-            return;
-          }
-          c.firewatch[who] = true;
-          this.note(`${t.label}: Firewatch, 1 Link, so its [Eye] count as [Lightning].`);
-          this.onChanged();
-          this.render();
-        });
-        wrap.appendChild(fw);
       }
     }
     return wrap;
@@ -6732,8 +6713,8 @@ export class ElectronicHelper {
       resolve.className = 'ah-primary';
       resolve.textContent = 'Resolve ▸';
       resolve.addEventListener('click', () => {
-        const a = this.tally(c.initRoll!, this.offensive('init'), c.firewatch.init);
-        const b = this.tally(c.respRoll!, this.offensive('resp'), c.firewatch.resp);
+        const a = this.tally(c.initRoll!, this.offensive('init'));
+        const b = this.tally(c.respRoll!, this.offensive('resp'));
         const { initiatorWins: win, why } = resolveCounterRoll(a, b);
         c.done = true;
         c.initiatorWins = win;
@@ -6764,8 +6745,8 @@ export class ElectronicHelper {
     // restarting it mid-flight would resolve the same icons twice. Same rule
     // stepResolve follows for the attack.
     {
-      const a = this.tally(c.initRoll!, this.offensive('init'), c.firewatch.init);
-      const b = this.tally(c.respRoll!, this.offensive('resp'), c.firewatch.resp);
+      const a = this.tally(c.initRoll!, this.offensive('init'));
+      const b = this.tally(c.respRoll!, this.offensive('resp'));
       const strip = document.createElement('div');
       strip.innerHTML = contestHtml({
         initLabel: c.initiator.label,

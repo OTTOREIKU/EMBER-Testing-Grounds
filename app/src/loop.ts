@@ -47,6 +47,13 @@ export function eligibleUnits(state: GameState, phase: LoopPhase, side: Side, da
   const acted = new Set(sc.acted);
   const commanded = new Set(sc.commanded);
   if (phase === 'Command') {
+    // Swarm Tactics going on: the Warrior's token moves to an Ally Drone that
+    // has had no Command this Phase, whatever else the squad holds (172_B).
+    const sw = sc.swarm ? state.tokens.find((x) => x.uid === sc.swarm!.issuer) : undefined;
+    if (sw && sw.side === side && alive(sw)) {
+      return state.tokens.filter((t) => t.side === side && t.kind === 'drone' && alive(t) && t.deployed !== false
+        && !commanded.has(t.uid) && !(t.statuses ?? []).some((x) => x === 'command' || x === 'commandUsed'));
+    }
     // Additional Instructions pays for its own designation, so a side out of
     // Command Tokens can still act on the Drone the card named.
     const free = new Set(sc.freeCommand);
@@ -230,7 +237,7 @@ export function tiedChoiceWhy(state: GameState, init: InitLookup, t: Token): str
   if (!cur || cur.kind !== 'mech' || !o.timing) return 'Only a Mech\'s Action Opportunity can go to a tied Mech.';
   if (t.uid === cur.uid) return `${t.label} already holds the Action Opportunity.`;
   if (t.side !== cur.side) return 'Each squad picks among its own tied Mechs.';
-  if (!untouched(o) || o.overload > 0 || o.attackMode || (o.linkTicks ?? 0) > 0) {
+  if (!untouched(o) || o.overload > 0 || o.attackMode || (o.linkTicks ?? 0) > 0 || o.firewatch) {
     return `${cur.label} has begun its Action Opportunity, so this turn is its.`;
   }
   if (t.kind !== 'mech' || !alive(t) || t.deployed === false) return `${t.label} is not a Mech on the board.`;

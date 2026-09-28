@@ -36,7 +36,7 @@ check('the attacker\'s owed reaction is a kind the record keeps',
 
 // ---------- the command layer ----------
 const cmds = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8');
-const scan = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'startCounterRoll': {") + 4200);
+const scan = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'startCounterRoll': {") + 6000);
 // With the declaration's answers since the Phase 2 audit (C7): a Charge spent
 // for it, the arm of an either/or [Charged] line, a declined [Two-Handed].
 check('startCounterRoll carries the attack', /thenAttack\?: \{ actionId: string; charged\?: boolean; chargeChoice\?: string; twoHandedDeclined\?: boolean \};/.test(cmds), true);
@@ -69,7 +69,7 @@ const apply = hud.slice(hud.indexOf("if (act === 'apply') {"), hud.indexOf("if (
 const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const win = unitsSrc.slice(unitsSrc.indexOf('export function ewWinCommands('), unitsSrc.indexOf('export function electronicAllTargets('));
 check('a successful Scan queues the attack behind the Reveal',
-  /kind: 'scanAttack' as const, fromUid: resp\.uid/.test(win) && /ewWinCommands\(ctx\.data, init, resp, a, \{ reaction: !!c\.reaction, thenAttack: c\.thenAttack \}\)/.test(apply), true);
+  /kind: 'scanAttack' as const, fromUid: resp\.uid/.test(win) && /ewWinCommands\(ctx\.data, init, resp, a, \{ reaction: !!c\.reaction, thenAttack: c\.thenAttack(, terminal: c\.terminal)? \}\)/.test(apply), true);
 // `uid` there is the Initiator's own, the attacker's.
 check('to the ATTACKER\'s seat', /const uid = init\.uid;[\s\S]*?\.\.\.\(then \? \[\{\s*uid, actionId: then\.actionId/.test(win), true);
 check('a Scan closed without applying ends the attack (I11)', /c\.thenAttack && !\(ensureScript\(s\)\.reactions \?\? \[\]\)\.some\(\(r\) => r\.kind === 'scanAttack'/.test(hud) && /any remaining Ticks may still be used \(FAQ I11\)/.test(hud), true);

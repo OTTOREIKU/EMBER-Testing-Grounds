@@ -30,19 +30,20 @@ const dataSrc = readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8')
 check('the merge knows how to remove an action', /if \(fix\.remove === true\) \{\s*\n\s*c\.actions = \(c\.actions \?\? \[\]\)\.filter\(\(x\) => x !== a\);/.test(dataSrc), true);
 check('over a copy of the list, so the walk does not skip the neighbour', /for \(const a of \[\.\.\.\(c\.actions \?\? \[\]\)\]\)/.test(dataSrc), true);
 
-// OTTO's ruling (2026-09-03, afternoon): a GoF card that prints an action the
-// parts list does not carry KEEPS it until the printed GoF cards are in hand.
-// GoF is mid-crowdfunding and these early cards will be reissued. So the four
-// 1.02-shape Command Coordination actions stay and nothing is removed today;
-// the mechanism waits for the day something is.
+// OTTO's ruling (2026-09-28): the company's parts lists are the newest and
+// highest source, for every faction, so where a list and a card disagree the
+// list wins. It retires the 2026-09-03 keep ruling (a GoF card printing an
+// Action the list lacks kept it until the printed cards arrived). GoF 1.021
+// prints none of these five, so they come off at load.
 const patch = JSON.parse(readFileSync(new URL('../../data/action_overrides.json', import.meta.url), 'utf8')).actions ?? {};
-const kept = ['ZYBP-101_B', 'ZYBP-202_B', 'ZHLA-102_B', 'ZHLA-201_B'];
-check('no action is marked for removal today', Object.entries(patch).filter(([, v]) => v.remove === true).map(([k]) => k), []);
+const gone = ['ZYBP-101_B', 'ZYBP-202_B', 'ZHLA-102_B', 'ZHLA-201_B', 'ZYDR-108_A'];
+check('the five Actions GoF 1.021 does not print are removed, and nothing else',
+  Object.entries(patch).filter(([, v]) => v.remove === true).map(([k]) => k).sort(), [...gone].sort());
 const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
 const cards = Array.isArray(raw) ? raw : raw.cards;
 const byId = new Map(cards.map((c) => [c.id, c]));
-check('the four GoF cards keep their Command Coordination action', kept.map((id) => byId.get(id.split('_')[0]).actions.some((a) => a.id === id)), [true, true, true, true]);
-check('and ZYBP-101 is not handed a keyword line on top of it', /Command Coordination/.test(patch['ZYBP-101_A']?.description?.en ?? ''), false);
+check('each is a real Action of its card in the raw data, so the removal lands', gone.map((id) => byId.get(id.split('_')[0]).actions.some((a) => a.id === id)), gone.map(() => true));
+check('and ZYBP-101 is not handed a keyword line in its place', /Command Coordination/.test(patch['ZYBP-101_A']?.description?.en ?? ''), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

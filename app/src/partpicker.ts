@@ -2,6 +2,7 @@ import type { Card } from './types';
 import { BASE_FACTIONS, cardImageUrl, cardName, FACTION_LABEL, traitName, type GameData } from './data';
 import { factionColour, ICON_COMPARE } from './icons';
 import { expandGlyphs } from './glyphs';
+import { printsWide } from './images';
 
 const esc = (s: string): string =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -128,7 +129,7 @@ export function openPartPicker(o: PartPickerOpts): void {
   function makeSlot(): Slot {
     const el = document.createElement('div');
     el.className = 'pp-slot';
-    el.innerHTML = `<div class="pp-art"><img alt=""></div>
+    el.innerHTML = `<div class="pp-art"><img alt=""><div class="card-ph" role="img"><span></span></div></div>
       <div class="pp-cap"><span class="pp-cap-name"></span><span class="pp-cap-meta"></span><span class="pp-cap-trait"></span></div>
       <div class="pp-cap-btns">${o.actions
         .map((a, i) => `<button class="pp-use" data-act="${i}"${
@@ -185,6 +186,11 @@ export function openPartPicker(o: PartPickerOpts): void {
         s.id = id;
         s.el.classList.remove('noart');
         s.img.src = cardImageUrl(id);
+        // Shown only while the card has no scan (partpicker.css .noart).
+        const ph = s.el.querySelector<HTMLElement>('.card-ph')!;
+        ph.classList.toggle('wide', printsWide(card));
+        ph.setAttribute('aria-label', `${cardName(card)}, no card image`);
+        ph.querySelector('span')!.textContent = cardName(card);
       }
       const f = o.data.factionOf(card);
       s.el.classList.toggle('pinned', pinned.includes(id));

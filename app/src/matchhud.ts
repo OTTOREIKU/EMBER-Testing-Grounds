@@ -1,4 +1,4 @@
-import { ammoAvailable, ammoHolder, ammoPay, liveIntercepts, rebootOwed, rebootWhy, clearDroneCommands, missionZones, readyCommands, seedCommandTokens, strictNow, taskDesignations, type Command, type CheckResult } from './commands';
+import { ammoAvailable, ammoHolder, ammoPay, liveIntercepts, rebootOwed, rebootWhy, clearDroneCommands, missionZones, readyCommands, seedCommandTokens, strictNow, taskDesignations, type Command, type CheckResult, swarmFor } from './commands';
 import { choiceDialog } from './dialog';
 import { askIssuer, askTowFacing, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
@@ -6,22 +6,22 @@ import { actionIconUrl, cardName, isAerial, parseGridRef, secondaryImageUrl, squ
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { allyRepairTargets, overwatchOf, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, blastScanState, mineStopIndex, chassisStop, bitPortOf, bitsToRecover, coordinationAfterManeuver, ownCards, electronicTargetWhy, scannable, controlledMoveActions, ewWinCommands, electronicAll, electronicAllTargets, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, interceptOwedAt, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { interceptHeld, allyRepairTargets, overwatchOf, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, blastScanState, mineStopIndex, chassisStop, bitPortOf, bitsToRecover, coordinationAfterManeuver, ownCards, electronicTargetWhy, scannable, controlledMoveActions, ewWinCommands, electronicAll, electronicAllTargets, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, interceptOwedAt, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { ElectronicHelper, type EwAct, type EwArg } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
-import { boxDropCellIn, boxDropCells, inContact, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSight, losNote, smokeBlocks, pathCost, breakAwayLinkDue, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
+import { boxDropCellIn, boxDropCells, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSight, losNote, smokeBlocks, pathCost, breakAwayLinkDue, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
 import { ensureScript, enterPhase, glueAfter as glueCore, makeInit, opportunity } from './glue';
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, ScriptState, Side, Stance, TerrainPiece, Timing, Token, ExtraTick, Opportunity } from './types';
-import { statusCount, gridsOf, newOpportunity, newScriptState, PHASES, removableTokens, STATUSES, TIMINGS, zonesOf } from './types';
+import { isLineUnit, statusCount, gridsOf, newOpportunity, newScriptState, PHASES, removableTokens, STATUSES, TIMINGS, zonesOf } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneLockPhase, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, tiedChoices, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, actionPipCount, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
-import { boxHands, boxPlaceTurn, deployGrids, deployOpenGrids, gameResult, normaliseTasks, remoteAccessRollText, remoteAccessWhy, terminalsInReach, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
+import { boxHands, boxPlaceTurn, deployGrids, deployOpenGrids, gameResult, normaliseTasks, remoteAccessWhy, TERMINAL_EV, TERMINAL_UID, terminalsInReach, terminalStandIn, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, zoneCellsOf } from './scoring';
-import { highlightTargets, targetStatusGrant, targetStatusTargets, linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, isRwsAction, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
+import { firewatchOn, highlightTargets, targetStatusGrant, targetStatusTargets, linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, isRwsAction, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -1673,6 +1673,13 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     ? `<button class="actrow k-tactic${lt.ok ? '' : ' warn'}"${lt.ok ? '' : ` data-why="${esc(lt.why ?? '')}"`} data-act="linktick" title="${esc(lt.ok ? `Consume 1 Link for 1 Action Tick (${trait.label}). Up to ${trait.maxLink} per Action Opportunity, in Offensive Stance, which is then locked (FAQ L2).` : lt.why ?? '')}">
         <span class="dotk"></span><span class="an">${esc(trait.label.replace(/^Hammerhead /, ''))}</span><span class="ac">${o.linkTicks ?? 0}/${trait.maxLink} · Link ${t.link ?? 0}</span></button>`
     : '';
+  // ZPA-38 Firewatch (GoF 1.021): 1 Link for a Command Token as the Mech gains
+  // the Opportunity. Same shelf; the command holds the rule, the row reports it.
+  const fwv = t.kind === 'mech' && !rwsOnly && firewatchOn(ctx.data, t) ? ctx.check({ kind: 'firewatch', seat: t.side, uid: t.uid }) : null;
+  const fireRow = fwv
+    ? `<button class="actrow k-tactic${fwv.ok ? '' : ' warn'}"${fwv.ok ? '' : ` data-why="${esc(fwv.why ?? '')}"`} data-act="firewatch" title="${esc(fwv.ok ? 'Firewatch: consume 1 Link to generate a Command Token, as this Mech gains its Action Opportunity. Once per Action Opportunity.' : fwv.why ?? '')}">
+        <span class="dotk"></span><span class="an">Firewatch</span><span class="ac">${o.firewatch ? 'taken' : `1 Link → Command Token · Link ${t.link ?? 0}`}</span></button>`
+    : '';
   const bonRow = bon && bonus
     ? `<button class="actrow k-tactic${bon.ok ? '' : ' warn'}"${bon.ok ? '' : ` data-why="${esc(bon.why ?? '')}"`} data-act="attackmode" title="${esc(bon.ok
         ? `Take ${bonus.actionPoints} more Action Tick${bonus.actionPoints === 1 ? '' : 's'} for this Action Opportunity. Ordinary Ticks, so they combine with the base pool for a Medium Action, and taking them SETS the Stance (4.1).`
@@ -1736,6 +1743,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       ${goOn(ctx, t, o)}
       ${ovlRow}
       ${linkRow}
+      ${fireRow}
       ${bonRow}
       ${rows}
     </div>`;
@@ -1818,9 +1826,14 @@ function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
   // its Ls197R Autocannon. The chip says so, since "mech" on a Drone list reads
   // as a mistake.
   const rows = units.map((t) => `<button class="rowwide" data-designate="${t.uid}">${esc(t.label)}<span class="ct">${t.kind === 'mech' ? 'RWS' : t.kind}</span></button>`).join('');
+  // Swarm Tactics going on (172_B): the Warrior's token moves on now, or stops.
+  const going = phase === 'Command' ? swarmFor(s, turn) : null;
+  const swarmNote = going
+    ? `<p class="tp-note">Swarm Tactics: ${esc(s.tokens.find((x) => x.uid === going.issuer)?.label ?? 'the Warrior')}'s Command Token may go on to another Drone now, at no cost. Stop, and it stays on ${esc(s.tokens.find((x) => x.uid === going.from)?.label ?? 'that Drone')}.</p>`
+    : '';
   return head('Your move', phase === 'Command' ? 'Command a drone' : phase === 'Delay' ? 'Activate a projectile' : 'Activate a drone', 'Or pass for the phase.', true)
-    + `<div class="tp-body">${tokens}${rows}</div>
-      <div class="tp-foot"><button class="bigbtn ghost2" data-act="pass">Pass</button></div>`;
+    + `<div class="tp-body">${tokens}${swarmNote}${rows}</div>
+      <div class="tp-foot">${going ? '<button class="bigbtn ghost2" data-act="swarmstop">Stop here</button>' : ''}<button class="bigbtn ghost2" data-act="pass">Pass</button></div>`;
 }
 
 // Tied on Timing and Initiative with more of this squad's Mechs: the owner
@@ -2082,6 +2095,7 @@ function panelHtml(ctx: HudCtx): string {
   if (overwatchPick) return overwatchPanel(ctx);
   if (smokePlan) return smokePanel(ctx);
   if (smokeOwedOf(ctx.state).length) return smokeChoicePanel(ctx);
+  pushOnReady(ctx);
   if (shovePlan) return shovePanel(ctx);
   if (detonateNow) return detonatePanel(ctx);
   // Interception fires the instant a Projectile is Launched and is resolved
@@ -2326,6 +2340,9 @@ let launchPlan: {
   // Which magazine paid each placement (the Pod's, or the Ammunition Pack's
   // under 086_B), so a take-back refunds that one.
   paidPools: string[];
+  // A 1x3 line unit's facing (an AS3 wall, the Turtle Shell), picked in the
+  // panel before the Landing Point; the launcher's own until then.
+  facing?: Facing;
 } | null = null;
 
 export function startLaunchPlan(uid: number, actionId: string, cardId: string, label: string): void {
@@ -2401,17 +2418,24 @@ function placeLaunched(ctx: HudCtx, c: number, r: number): void {
   const card = ctx.data.byId.get(m.cardId);
   if (!t || !card) return;
   // Sized off the card rather than a probe token: minting one here would burn a
-  // uid the launch command then cannot reproduce on the other seat.
-  const spot = standingSpot(c, r, unitSize(card), isAerial(card), terrainOf(ctx), ctx.state.tokens, undefined, { col: t.col, row: t.row });
+  // uid the launch command then cannot reproduce on the other seat. A 1x3 line
+  // stands across the facing picked in the panel.
+  const line = isLineUnit({ cardId: card.id });
+  const face = line ? (m.facing ?? t.facing) : t.facing;
+  const spot = line
+    ? lineSpot(c, r, face, terrainOf(ctx), ctx.state.tokens)
+    : standingSpot(c, r, unitSize(card), isAerial(card), terrainOf(ctx), ctx.state.tokens, undefined, { col: t.col, row: t.row });
   if (!spot) {
-    ctx.noteNow(`There is no room in that Grid for ${m.label}. 4.7.2 needs the Projectile's base entirely inside the Landing Point.`);
+    ctx.noteNow(line
+      ? `${m.label} is a 1x3 line: facing ${['North', 'East', 'South', 'West'][face]} it needs a clear ${face % 2 ? 'column' : 'row'} of that Grid, and none is. Pick another Grid or another facing.`
+      : `There is no room in that Grid for ${m.label}. 4.7.2 needs the Projectile's base entirely inside the Landing Point.`);
     ctx.refresh();
     return;
   }
   const shot: Command = {
     kind: 'launch', seat: t.side, uid: t.uid,
     actionId: m.actionId, cardId: m.cardId,
-    to: { col: spot.col, row: spot.row }, facing: t.facing,
+    to: { col: spot.col, row: spot.row }, facing: face,
   };
   // A refused launch must not have cost anything, so the Ticks are only paid
   // once this one is going through. The first Projectile down is the Action;
@@ -2494,12 +2518,18 @@ function launchPanel(ctx: HudCtx): string {
   const total = m.left + m.placed;
   const cands = landingCandidates(ctx);
   const sight = a ? needsSightToLanding(a) : false;
+  // A 1x3 line stands across its facing, inside the Grid (OTTO, 2026-09-28).
+  const lineFace = isLineUnit({ cardId: m.cardId }) ? (m.facing ?? t?.facing ?? 0) : null;
+  const faceRow = lineFace === null ? '' : `<div class="dialrow"><span class="nm">Facing</span><div class="btnrow">${(['N', 'E', 'S', 'W'] as const)
+    .map((lbl, i) => `<button class="rowbtn${lineFace === i ? ' on' : ''}" data-launchface="${i}">${lbl}</button>`).join('')}</div></div>
+    <p class="tp-dim">${esc(m.label)} is a 1x3 line and stands across its facing, inside the Grid: facing ${lineFace % 2 ? 'East or West it runs North-South' : 'North or South it runs East-West'}.</p>`;
   const foot = [
     m.placed ? `<button class="bigbtn ghost2" data-act="launchundo">↺ Take back the last one</button>` : '',
     `<button class="bigbtn${m.placed ? '' : ' ghost2'}" data-act="launchcancel">${m.placed ? 'Stop here' : 'Cancel'}</button>`,
   ].join('');
   return head('Your move', `Launch ${esc(m.label)}`, `${esc(a?.name?.en || m.actionId)}${total > 1 ? ` · ${m.placed} of ${total} launched` : ''}.`, true)
     + `<div class="tp-body">
+        ${faceRow}
         <p class="tp-note">${sight
           ? 'Direct Fire: the Landing Point must be a Grid this unit can see, and one terrain does not fill.'
           : 'Fire in arc, so no line of sight to the Landing Point is needed.'} A Landing Point is a Grid, not a unit. Nothing is targeted yet.</p>
@@ -3064,7 +3094,7 @@ function interceptPanel(ctx: HudCtx): string {
     const by = s.tokens.find((x) => x.uid === interceptNow!.uid);
     const at = s.tokens.find((x) => x.uid === interceptNow!.targetUid);
     const a = by ? actionOn(ctx, by, interceptNow.actionId) : undefined;
-    const left = by?.intercept?.[interceptNow.actionId] ?? 0;
+    const left = by ? interceptHeld(ctx.data, s.tokens, by, interceptNow.actionId) : 0;
     return head('Your move', `Intercepting ${at ? esc(at.label) : 'the target'}`, `${by ? esc(by.label) : ''} · ${esc(a?.name?.en || interceptNow.actionId)}.`, true)
       + `<div class="tp-body">
           <p class="tp-note">No Forward Arc is required, and terrain never blocks a line to an Aerial Unit, though a Smoke Screen does. The target claims no Terrain or Unit Protection dice (4.9, 4.16, FAQ F3).</p>
@@ -3113,7 +3143,7 @@ function interceptPanel(ctx: HudCtx): string {
       const by = s.tokens.find((t) => t.uid === x.uid)!;
       const at = s.tokens.find((t) => t.uid === x.targetUid)!;
       const a = actionOn(ctx, by, x.actionId);
-      const left = by.intercept?.[x.actionId] ?? 0;
+      const left = interceptHeld(ctx.data, s.tokens, by, x.actionId);
       return `<button class="rowwide" data-intercept="${i}">${esc(by.label)} → ${esc(at.label)}<span class="ct">${esc(a?.name?.en || x.actionId)} · ${left} left</span></button>`;
     })
     .join('');
@@ -3235,6 +3265,16 @@ let ewHelper: ElectronicHelper | null = null;
 // rest of the HUD's senders do.
 function seatOf(ctx: HudCtx): Side { return ctx.seat ?? ensureScript(ctx.state).turn ?? 's1'; }
 
+// The record's Responder: a unit, or for a Remote Access the Terminal's
+// stand-in, placed where its token stands (ruling I25).
+function counterResponder(ctx: HudCtx, c: CounterRoll, init: Token | undefined): Token | undefined {
+  if (c.terminal === undefined) return ctx.state.tokens.find((x) => x.uid === c.responderUid);
+  const item = normaliseTasks(ctx.state.tasks).items.find((i) => i.id === c.terminal);
+  if (!item || !init) return undefined;
+  const name = zonesOf(ctx.data.zoneData.zones, ctx.state).find((z) => z.id === item.zone)?.name ?? item.zone;
+  return terminalStandIn(item, init.side, name);
+}
+
 // Every press the window can make, answered in one place. Each is a question
 // one of the two seats owns, so it travels as a command.
 function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
@@ -3242,8 +3282,21 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
   const c = ensureScript(s).counter;
   if (!c) return;
   const init = s.tokens.find((x) => x.uid === c.initiatorUid);
-  const resp = s.tokens.find((x) => x.uid === c.responderUid);
+  const resp = counterResponder(ctx, c, init);
   if (!init || !resp) { ctx.send({ kind: 'clearCounterRoll', seat: seatOf(ctx) }); ctx.refresh(); return; }
+  // The Terminal's hand is the opponent's to roll, as a table command: no
+  // unit on the board is it, and it never Focuses (ruling I25).
+  if (act === 'roll' && arg?.uid === TERMINAL_UID && c.terminal !== undefined) {
+    void ctx.rollHits(TERMINAL_EV, `rolls ${TERMINAL_EV} for the ${resp.label}`).then((res) => {
+      const v = ctx.send({ kind: 'rollTerminal', seat: seatOf(ctx), faces: res.dice.map((d) => d.face) });
+      if (!v.ok && v.why) ctx.noteNow(v.why);
+      ctx.refresh();
+    }).catch(() => {
+      ctx.noteNow('The server did not answer the roll. Press it again.');
+      ctx.refresh();
+    });
+    return;
+  }
   const unit = arg?.uid !== undefined ? s.tokens.find((x) => x.uid === arg.uid) : undefined;
   if (act === 'roll' && unit) {
     // electronicStrength, not electronicValue: the Initiator's Tarantula Loads
@@ -3260,14 +3313,6 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
       ctx.noteNow('The server did not answer the roll. Press it again.');
       ctx.refresh();
     });
-    return;
-  }
-  // ZPA-38 Firewatch: the Link and the [Eye]-as-[Lightning] ride one command,
-  // so both seats tally the same hand (audit Phase 2, D4).
-  if (act === 'firewatch' && unit) {
-    const v = ctx.send({ kind: 'firewatch', seat: unit.side, uid: unit.uid });
-    if (!v.ok && v.why) ctx.noteNow(v.why);
-    ctx.refresh();
     return;
   }
   if (act === 'declare' && unit) {
@@ -3338,7 +3383,7 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
     // behind it (FAQ I12); Target Tracing drains 1 Link, and the record says
     // it was the reaction because its Command Token is already spent.
     if (!a) { ctx.send({ kind: 'clearCounterRoll', seat: init.side }); ctx.refresh(); return; }
-    const win = ewWinCommands(ctx.data, init, resp, a, { reaction: !!c.reaction, thenAttack: c.thenAttack });
+    const win = ewWinCommands(ctx.data, init, resp, a, { reaction: !!c.reaction, thenAttack: c.thenAttack, terminal: c.terminal });
     for (const cmd of win.cmds) ctx.send(cmd);
     ctx.noteNow(win.lines.length
       ? `${init.label} succeeds: ${win.lines.join('; ')}.`
@@ -3367,7 +3412,7 @@ function syncContest(ctx: HudCtx, host: HTMLElement): boolean {
   const body = host.querySelector<HTMLElement>('#combat-body');
   if (!c || !body || !ctx.diceData) { ewHelper?.closeContest(); return false; }
   const init = s.tokens.find((x) => x.uid === c.initiatorUid);
-  const resp = s.tokens.find((x) => x.uid === c.responderUid);
+  const resp = counterResponder(ctx, c, init);
   const action = init ? actionOn(ctx, init, c.actionId) : undefined;
   // A record naming a unit or a card this client cannot resolve draws nothing
   // rather than half a window, the same rule the attack mirror follows.
@@ -3431,12 +3476,12 @@ function offerBoxesOn(ctx: HudCtx, uid: number, path: LargeGrid[], flight = fals
 // Auto Mine Laying, offered on the same signal as the Boxes: the route just
 // walked. `left` is how many more the unspent Move Range can pay for, so it
 // counts down as they go in rather than being asked once (FAQ M7/M29).
-let minePick: (MineLaying & { left: number; flight: boolean }) | null = null;
+let minePick: (MineLaying & { left: number; flight: boolean; route: LargeGrid[] }) | null = null;
 
 function offerMinesOn(ctx: HudCtx, t: Token, path: LargeGrid[], steps: number, flying: boolean): void {
   const spare = steps - pathCost(path, flying || !!t.aerial, moveOptsFor(ctx, t, flying));
   const lay = minesLayable(ctx.data, t, path, spare, flying || !!t.aerial, ctx.state.tokens);
-  if (lay) minePick = { ...lay, left: lay.max, flight: flying || !!t.aerial };
+  if (lay) minePick = { ...lay, left: lay.max, flight: flying || !!t.aerial, route: [...path] };
 }
 
 function minePickPanel(ctx: HudCtx): string {
@@ -3469,9 +3514,14 @@ function layMineAt(ctx: HudCtx, c: number, r: number): void {
   // Online play is always strict, so a refusal really refuses — the offer must
   // survive it or a declined command silently eats a Mine the player still has
   // the Move Range for.
-  if (ctx.send({
+  // The route travels with it, so the engine judges the Grid against the
+  // Movement it was laid along, a flight against its two ends (FAQ M29).
+  const v = ctx.send({
     kind: 'layMine', seat: t.side, uid: t.uid, actionId: m.actionId, cardId: m.cardId, to: { col: c * 3 + 1, row: r * 3 + 1 },
-  }).ok) {
+    route: m.route.map((g) => ({ col: g.c * 3 + 1, row: g.r * 3 + 1 })), ...(m.flight ? { flying: true } : {}),
+  });
+  if (!v.ok && v.why) ctx.noteNow(v.why);
+  if (v.ok) {
     ctx.noteNow(`${t.label} Lays ${cardName(ctx.data.byId.get(m.cardId))} in ${gridName(c, r)}, paid for with 1 Move Range.`);
     m.left -= 1;
     if (m.left <= 0) minePick = null;
@@ -3555,7 +3605,7 @@ function endOpportunityNow(ctx: HudCtx, boxesAsked = false): void {
       const uid = sc.opp.uid;
       void offerCoordination(ctx.data, s, t, owed, (mechUid, targetUid) => {
         ctx.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid });
-      }, (_d, text) => ctx.noteNow(text)).then(() => {
+      }, (_d, text) => ctx.noteNow(text), () => { ctx.send({ kind: 'endSwarm', seat: t.side }); }).then(() => {
         ctx.send({ kind: 'endOpportunity', seat: t.side, uid });
         ctx.refresh();
       });
@@ -4005,10 +4055,11 @@ function crushPanel(ctx: HudCtx): string {
 // the panel asks which unit gets it.
 
 // Remote Access (5.3.3), mirroring performRemoteAccess in freeplay: which
-// unaccessed Terminal within reach, then how the Electronic Counter-roll
-// against its printed Value of 3 came out. `itemId` set means the Terminal is
-// chosen and the second question is up.
-let terminalPick: { uid: number; actionId: string; reach: number; itemId?: string } | null = null;
+// unaccessed Terminal within reach. Choosing one pays the Action and opens the
+// Electronic Counter-roll against it in the shared window, the Terminal's
+// stand-in as the Responder (ruling I25); the players used to roll it off the
+// page and say how it went (OTTO, 2026-09-28).
+let terminalPick: { uid: number; actionId: string; reach: number } | null = null;
 
 let resupplyPick: { uid: number; actionId: string; rule: Resupply } | null = null;
 
@@ -4157,9 +4208,7 @@ function resupplyHolders(ctx: HudCtx, from: Token, rule: Resupply): Token[] {
   });
 }
 
-// The two questions freeplay asks, in the same order: which Terminal, then how
-// the roll went. The verdict is the players' own reading of the dice — the
-// same honesty the freeplay confirm asks for, with the tray in the shared feed.
+// Freeplay's first question: which Terminal. The roll follows in the window.
 function terminalPanel(ctx: HudCtx): string {
   const m = terminalPick!;
   const s = ctx.state;
@@ -4167,17 +4216,6 @@ function terminalPanel(ctx: HudCtx): string {
   if (!t) return head('Remote Access', 'That unit is gone', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="terminalcancel">Close</button></div>';
   const zoneName = (id: string) => zonesOf(ctx.data.zoneData.zones, ctx.state).find((z) => z.id === id)?.name ?? id;
-  if (m.itemId) {
-    const ev = electronicStrength(ctx.data, s.tokens, t, 'initiator', actionOn(ctx, t, m.actionId));
-    return head('Your move', `Remote Access on ${esc(zoneName(normaliseTasks(s.tasks).items.find((i) => i.id === m.itemId)?.zone ?? ''))}`,
-      'Make the Electronic Counter-roll now, against the Terminal\'s Electronic Value of 3.', true)
-      + `<div class="tp-body"><p class="tp-note">${esc(remoteAccessRollText(t.label, ev))}</p><p class="tp-note">Roll your Electronic dice from the panel. Both players see them land in the feed.</p></div>
-         <div class="tp-foot">
-           <button class="bigbtn" data-tverdict="won">It succeeded</button>
-           <button class="bigbtn ghost2" data-tverdict="lost">It failed</button>
-           <button class="bigbtn ghost2" data-act="terminalcancel">Cancel</button>
-         </div>`;
-  }
   // Measured to the nearest Grid of each zone (FAQ P6; audit Phase 6, E1).
   const open = terminalsInReach(normaliseTasks(s.tasks).items, t, m.reach, s.noBoard ? null : zoneCellsOf(ctx.data, s));
   const rows = open
@@ -4407,7 +4445,7 @@ function offerCoordinationFor(ctx: HudCtx, uid: number, actionId: string): void 
   void offerCoordination(ctx.data, ctx.state, t, upTo, (mechUid, targetUid) => {
     ctx.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid });
     ctx.refresh();
-  }, (_drone, text) => ctx.noteNow(text));
+  }, (_drone, text) => ctx.noteNow(text), () => { ctx.send({ kind: 'endSwarm', seat: t.side }); ctx.refresh(); });
 }
 
 // A2K Data Link (GoF 1.021, 175_A): "This Mech may perform one Command
@@ -4425,7 +4463,7 @@ export function offerCoordinationAfterManeuver(cmd: Command): void {
   void offerCoordination(ctx.data, ctx.state, t, upTo, (mechUid, targetUid) => {
     ctx.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid });
     ctx.refresh();
-  }, (_drone, text) => ctx.noteNow(text));
+  }, (_drone, text) => ctx.noteNow(text), () => { ctx.send({ kind: 'endSwarm', seat: t.side }); ctx.refresh(); });
 }
 
 // Backing out. The Extra Action Opportunity an Action would have handed out goes
@@ -4469,6 +4507,7 @@ export function resetHudTools(): void {
   cleanPick = null;
   attackPick = null;
   shovePlan = null;
+  pushOn = null;
   detonateNow = null;
   tacticPlan = null;
   dropAction();
@@ -5142,8 +5181,24 @@ function terrainLabel(ctx: HudCtx, id: string): string {
 // `dir` is a Push's chosen direction (0 north, 1 east, 2 south, 3 west): Push
 // X goes "in any (straight) direction" (GoF 1.021; ruled 2026-09-25, audit
 // Phase 4, I9). Unset, and for Knockback always, it is the attack direction.
-let shovePlan: { uid: number; actionId: string; targetUid: number | null; facing?: Facing; dir?: number } | null = null;
+// `resume`: the rest of a line a Mine stopped (C1b), same direction, the
+// Grids it had left; Push's Link was paid on the first leg.
+let shovePlan: { uid: number; actionId: string; targetUid: number | null; facing?: Facing; dir?: number; resume?: { dir: { dc: number; dr: number }; grids: number } } | null = null;
 const PUSH_DIRS = [{ dc: 0, dr: -1 }, { dc: 1, dr: 0 }, { dc: 0, dr: 1 }, { dc: -1, dr: 0 }];
+// A Knockback or Push a Mine stopped (C1b; ruling I16): the forcing seat holds
+// the rest of the line and opens it once no Mine is owed on the unit, whichever
+// seat resolved the blast.
+let pushOn: { uid: number; actionId: string; targetUid: number; dir: { dc: number; dr: number }; grids: number } | null = null;
+
+function pushOnReady(ctx: HudCtx): void {
+  const p = pushOn;
+  if (!p || shovePlan) return;
+  const victim = ctx.state.tokens.find((x) => x.uid === p.targetUid);
+  if (!victim || !alive(victim)) { pushOn = null; return; }
+  if (minesOwed(ctx.data, ctx.state.tokens).some((x) => x.victims.includes(victim.uid))) return;
+  pushOn = null;
+  shovePlan = { uid: p.uid, actionId: p.actionId, targetUid: p.targetUid, resume: { dir: p.dir, grids: p.grids } };
+}
 
 export function startShove(uid: number, actionId: string, targetUid?: number): void {
   shovePlan = { uid, actionId, targetUid: targetUid ?? null };
@@ -5170,20 +5225,26 @@ function gridName(c: number, r: number): string {
 }
 
 // What the Forced Movement would do, or why it does nothing.
-function shoveOutcome(ctx: HudCtx, by: Token, victim: Token, a: CardAction, pushDir?: number) {
-  const kb = knockbackOf(a);
-  if (!kb) return null;
-  const dir = kb.push && pushDir !== undefined ? PUSH_DIRS[pushDir] : attackDirection(by, victim);
+function shoveOutcome(ctx: HudCtx, by: Token, victim: Token, a: CardAction, pushDir?: number, resume?: { dir: { dc: number; dr: number }; grids: number }) {
+  const printed = knockbackOf(a);
+  if (!printed) return null;
+  const kb = resume ? { ...printed, grids: resume.grids } : printed;
+  const dir = resume?.dir ?? (kb.push && pushDir !== undefined ? PUSH_DIRS[pushDir] : attackDirection(by, victim));
   // The line ends early in an Abyss (the victim falls, resolveShove below
   // resolves the death) or on a Fragile Platform (the settle sweep removes
   // the Card once the victim stands on it).
   // Deployables cannot be Force-Moved (4.3.4; audit Phase 4, B2).
-  const path = canBeForceMoved(ctx.data, victim)
+  const line = canBeForceMoved(ctx.data, victim)
     ? knockbackPath(victim, dir, kb.grids, terrainOf(ctx), ctx.state.tokens, envForcedStop(ctx.data, ctx.state, victim))
     : [];
+  // C1b: a Ground unit forced through a mined Grid stops there and the Mine
+  // goes off; the rest follows once the blast is resolved (ruling I16).
+  const stop = mineStopIndex(ctx.data, ctx.state.tokens, victim, [largeGridOf(victim), ...line], false);
+  const path = stop > 0 ? line.slice(0, stop) : line;
+  const rest = stop > 0 ? kb.grids - stop : 0;
   const heading = ['north', 'east', 'south', 'west'][dir.dr < 0 ? 0 : dir.dc > 0 ? 1 : dir.dr > 0 ? 2 : 3];
   const end = path[path.length - 1];
-  return { kb, path, heading, end, short: path.length < kb.grids };
+  return { kb, path, heading, end, short: path.length < kb.grids, rest, dir, resumed: !!resume };
 }
 
 function shovePanel(ctx: HudCtx): string {
@@ -5215,12 +5276,12 @@ function shovePanel(ctx: HudCtx): string {
   const victim = s.tokens.find((x) => x.uid === m.targetUid);
   if (!victim) return head('Forced Movement', 'That target is gone', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="shovecancel">Close</button></div>';
-  const out = shoveOutcome(ctx, by, victim, a, m.dir);
+  const out = shoveOutcome(ctx, by, victim, a, m.dir, m.resume);
   if (!out) return head('Forced Movement', `${esc(name)} carries none`, '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="shovecancel">Close</button></div>';
   const blocked = !out.path.length;
   // Push picks its own straight line; each button says how far that way goes.
-  const dirRow = out.kb.push
+  const dirRow = out.kb.push && !m.resume
     ? `<div class="dialrow"><span class="nm">Direction</span><div class="btnrow">${(['N', 'E', 'S', 'W'] as const)
       .map((lbl, i) => {
         const n = (shoveOutcome(ctx, by, victim, a, i)?.path.length) ?? 0;
@@ -5234,8 +5295,11 @@ function shovePanel(ctx: HudCtx): string {
         ${dirRow}
         <p class="tp-note">${blocked
           ? `${esc(victim.label)} would be forced ${out.heading}, but a Unit, Terrain or the board edge is in the way, so it does not move. Forced Movement stops the moment it is blocked.`
-          : `${esc(victim.label)} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} to ${gridName(out.end.c, out.end.r)}${out.short ? `, short of the full ${out.kb.grids} because something blocks the rest of the line` : ''}.`}</p>
-        ${out.kb.push && victim.kind === 'mech' ? '<p class="tp-dim">Push also costs it 1 Link, and a Mech on 0 Link Shuts Down.</p>' : ''}
+          : `${esc(victim.label)} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} to ${gridName(out.end.c, out.end.r)}${out.rest > 0
+            ? `, where a Mine stops it: the Mine goes off, then the other ${out.rest} Grid${out.rest === 1 ? '' : 's'} of the line follow if it is still standing (M19)`
+            : out.short ? `, short of the full ${out.kb.grids} because something blocks the rest of the line` : ''}.`}</p>
+        ${m.resume ? '<p class="tp-dim">The rest of the line a Mine stopped.</p>' : ''}
+        ${out.kb.push && victim.kind === 'mech' && !m.resume ? '<p class="tp-dim">Push also costs it 1 Link, and a Mech on 0 Link Shuts Down.</p>' : ''}
         ${out.kb.onHit ? '<p class="tp-dim">This one only triggers On Hit, so skip it if the attack scored none.</p>' : ''}
       ${(() => {
         // The forcing player picks the victim's facing (3.4.4), and a victim
@@ -5259,15 +5323,16 @@ function resolveShove(ctx: HudCtx): void {
   const by = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
   const victim = m?.targetUid !== null && m ? s.tokens.find((x) => x.uid === m.targetUid) : undefined;
   const a = by && m ? actionOn(ctx, by, m.actionId) : undefined;
-  const out = by && victim && a ? shoveOutcome(ctx, by, victim, a, m?.dir) : null;
+  const out = by && victim && a ? shoveOutcome(ctx, by, victim, a, m?.dir, m?.resume) : null;
   shovePlan = null;
   if (!out || !out.path.length || !by || !victim) { flushBoxDrops(); ctx.refresh(); return; }
   const spot = standingSpot(out.end.c, out.end.r, victim.size, victim.aerial, terrainOf(ctx), s.tokens, victim.uid, { col: victim.col, row: victim.row })
     ?? { col: victim.col, row: victim.row };
   const wasShut = victim.stance === 'shutdown';
   const fatal = isGroundUnit(ctx.data, victim) && envCardAt(ctx.state, out.end.c, out.end.r) === 'abyss';
-  ctx.send({ kind: 'forceMove', seat: by.side, uid: by.uid, targetUid: victim.uid, to: spot, push: out.kb.push, facing: m?.facing, via: out.path.map((g) => ({ col: g.c * 3 + 1, row: g.r * 3 + 1 })) });
-  const shut = out.kb.push && victim.kind === 'mech' && !wasShut && victim.stance === 'shutdown';
+  ctx.send({ kind: 'forceMove', seat: by.side, uid: by.uid, targetUid: victim.uid, to: spot, push: out.kb.push && !out.resumed, facing: m?.facing, via: out.path.map((g) => ({ col: g.c * 3 + 1, row: g.r * 3 + 1 })) });
+  if (out.rest > 0 && !fatal && m) pushOn = { uid: by.uid, actionId: m.actionId, targetUid: victim.uid, dir: out.dir, grids: out.rest };
+  const shut = out.kb.push && !out.resumed && victim.kind === 'mech' && !wasShut && victim.stance === 'shutdown';
   // The Abyss: a Ground Unit forced in is immediately Destroyed, and the kill
   // is the forcing player's - which is this seat, so it is resolved here with
   // no panel. A carried Black Box is left where the bearer fell, because the
@@ -5282,7 +5347,8 @@ function resolveShove(ctx: HudCtx): void {
     return;
   }
   ctx.noteNow(`${victim.label} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} to ${gridName(out.end.c, out.end.r)}.${
-    out.kb.push && victim.kind === 'mech' ? ` Push costs 1 Link (now ${victim.link}).` : ''}${shut ? ' Link has reached 0, so it shuts down.' : ''}`);
+    out.kb.push && !out.resumed && victim.kind === 'mech' ? ` Push costs 1 Link (now ${victim.link}).` : ''}${shut ? ' Link has reached 0, so it shuts down.' : ''}${
+    out.rest > 0 ? ` A Mine stops it there: its blast first, then ${out.rest} Grid${out.rest === 1 ? '' : 's'} of the line ${out.rest === 1 ? 'is' : 'are'} left (M19).` : ''}`);
   // The Forced Movement has settled, so a Penetrated bearer's Box question can
   // finally be asked at the position it ended up in (FAQ E19).
   flushBoxDrops();
@@ -6319,6 +6385,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     });
   });
   on('[data-act="pass"]', () => { ctx.send({ kind: 'passTurn', seat: me() }); ctx.refresh(); });
+  on('[data-act="swarmstop"]', () => { ctx.send({ kind: 'endSwarm', seat: me() }); ctx.refresh(); });
   // The defender's Focus, Designate, KC Armor, Melee Evasion and Dodge
   // Enhancement all used to be delegated markup here, because the mirror was
   // markup. They are real controls inside the one renderer now and they send
@@ -6537,6 +6604,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   // Stopping early is still a finished launch, so anything already placed owes
   // its Interceptions; cancelling with nothing down owes none.
   on('[data-act="launchcancel"]', () => finishLaunchPlan(ctx));
+  on('[data-launchface]', (el) => {
+    if (launchPlan) launchPlan = { ...launchPlan, facing: Number(el.dataset.launchface) as Facing };
+    ctx.refresh();
+  });
   on('[data-act="launchundo"]', () => undoLaunched(ctx));
   on('[data-launchpick]', (el) => {
     const m = launchPick;
@@ -6749,26 +6820,20 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-act="resupplycancel"]', () => { resupplyPick = null; dropAction(); ctx.refresh(); });
   on('[data-terminal]', (el) => {
-    if (terminalPick) terminalPick.itemId = el.dataset.terminal;
-    ctx.refresh();
-  });
-  on('[data-tverdict]', (el) => {
     const m = terminalPick;
     terminalPick = null;
-    if (m?.itemId) {
-      const t = s.tokens.find((x) => x.uid === m.uid);
-      const zone = normaliseTasks(s.tasks).items.find((i) => i.id === m.itemId)?.zone ?? '';
-      const name = zonesOf(ctx.data.zoneData.zones, ctx.state).find((z) => z.id === zone)?.name ?? zone;
-      // The attempt was made either way, so the Action pays either way —
-      // freeplay's done(true) on a failed roll spends the Tick too.
-      commitAction(ctx);
-      if (el.dataset.tverdict === 'won' && t) {
-        const v = ctx.send({ kind: 'accessTerminal', seat: t.side, uid: t.uid, itemId: m.itemId });
-        ctx.noteNow(v.ok
-          ? `Remote Access succeeded: the ${name} Terminal is face-down for the rest of the round.`
-          : v.why ?? 'The access was refused.');
+    const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    const itemId = el.dataset.terminal;
+    if (m && t && itemId) {
+      // The attempt is made whatever the roll, so the Action pays first, as
+      // freeplay's does; then the Counter-roll opens in the shared window,
+      // joined to the payment for Undo. A refused opening says why.
+      const paid = commitAction(ctx);
+      if (!paid.ok) {
+        if (paid.why) ctx.noteNow(paid.why);
       } else {
-        ctx.noteNow(`Remote Access on the ${name} Terminal failed.`);
+        const v = ctx.send({ kind: 'startCounterRoll', seat: t.side, uid: t.uid, actionId: m.actionId, targetUid: TERMINAL_UID, terminal: itemId, chain: 'join' });
+        if (!v.ok) ctx.noteNow(v.why ?? 'The Remote Access roll could not open.');
       }
     }
     ctx.refresh();
@@ -7185,7 +7250,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (f) {
       const by = s.tokens.find((x) => x.uid === f.uid);
       const at = s.tokens.find((x) => x.uid === f.targetUid);
-      const left = by?.intercept?.[f.actionId] ?? 0;
+      const left = by ? interceptHeld(ctx.data, s.tokens, by, f.actionId) : 0;
       if (!at) {
         ctx.noteNow(`The target is destroyed, so the chain ends. ${left} Interception Token${left === 1 ? '' : 's'} left on that Part for the rest of the game.`);
       } else if (!by || !alive(by)) {
@@ -7217,6 +7282,15 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const t = s.tokens.find((x) => x.uid === Number(el.dataset.tiepick));
     if (t && ctx.send({ kind: 'chooseTied', seat: t.side, uid: t.uid }).ok) {
       ctx.noteNow(`${t.label} takes the turn: Mechs tied on Timing and Initiative go in the order their squad picks.`);
+    }
+    ctx.refresh();
+  });
+  on('[data-act="firewatch"]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
+    const sc = ensureScript(s);
+    const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+    if (t && ctx.send({ kind: 'firewatch', seat: t.side, uid: t.uid }).ok) {
+      ctx.noteNow(`${t.label}: Firewatch, 1 Link for a Command Token (Link now ${t.link}).`);
     }
     ctx.refresh();
   });

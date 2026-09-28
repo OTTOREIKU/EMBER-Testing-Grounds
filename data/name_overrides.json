@@ -78,8 +78,8 @@
       "source": "translated"
     },
     "S100+R6SS-L-T": {
-      "en": "S100 Shield + R6SS SMG (D)",
-      "source": "derived from 1 official card name(s)"
+      "en": "S100 Shield + R6SS SMG (L) (D)",
+      "source": "UN 1.02 parts list, UN Armaments sheet: the L·左 discard row is named S100 Shield + R6SS SMG (L) (D). Our old name, (D), was the list's name for the RIGHT discard card, 116."
     },
     "R33S": {
       "en": "R33S Sniper Rifle",
@@ -184,6 +184,42 @@
     "FPA-06-2": {
       "en": "Keyhole - Hidden in Plain Sight",
       "source": "publisher card page id 362, reached by the QR code on the RDL Dune card itself. Both KeyHole pilots reach us named just \"KeyHole\" even though they are different cards (FPA-06 has the Aura/Electronic range trait, this one gains Low Profile inside an allied Aura). They were the only two cards in the whole pool sharing a name, which also made this the one card the API sweep could not have matched automatically."
+    },
+    "LPA-27": {
+      "en": "Rifleman-27",
+      "source": "UN 1.02 parts list, UN Pilot sheet, serial LPN-27 (our id LPA-27): EN Full Name Rifleman-27. Points and all six dials match this card exactly."
+    },
+    "LPA-28": {
+      "en": "Rifleman-28",
+      "source": "UN 1.02 parts list, UN Pilot sheet, serial LPN-28 (our id LPA-28): EN Full Name Rifleman-28. Points and all six dials match this card exactly."
+    },
+    "LPA-29": {
+      "en": "Rifleman-29",
+      "source": "UN 1.02 parts list, UN Pilot sheet, serial LPN-29 (our id LPA-29): EN Full Name Rifleman-29. Points and all six dials match this card exactly."
+    },
+    "LPA-30": {
+      "en": "Rifleman-30",
+      "source": "UN 1.02 parts list, UN Pilot sheet, serial LPN-30 (our id LPA-30): EN Full Name Rifleman-30. Points and all six dials match this card exactly."
+    },
+    "LPA-31": {
+      "en": "Charger-31",
+      "source": "UN 1.02 parts list, UN Pilot sheet, serial LPN-31 (our id LPA-31): EN Full Name Charger-31. Points and all six dials match this card exactly."
+    },
+    "LPA-32": {
+      "en": "Charger-32",
+      "source": "UN 1.02 parts list, UN Pilot sheet, serial LPN-32 (our id LPA-32): EN Full Name Charger-32. Points and all six dials match this card exactly."
+    },
+    "LPA-33": {
+      "en": "Charger-33",
+      "source": "UN 1.02 parts list, UN Pilot sheet, serial LPN-33 (our id LPA-33): EN Full Name Charger-33. Points and all six dials match this card exactly."
+    },
+    "LPA-34": {
+      "en": "Charger-34",
+      "source": "UN 1.02 parts list, UN Pilot sheet, serial LPN-34 (our id LPA-34): EN Full Name Charger-34. Points and all six dials match this card exactly."
+    },
+    "LPA-66": {
+      "en": "Rifleman-66",
+      "source": "UN 1.02 parts list, UN Pilot sheet, serial LPN-66 (our id LPA-66): EN Full Name Rifleman-66."
     }
   },
   "actions": {
@@ -332,8 +368,8 @@
       "source": "derived from 2 official action name(s)"
     },
     "TM31RS_B": {
-      "en": "Quick Clear",
-      "source": "translated"
+      "en": "Swift Cleanup",
+      "source": "publisher parts list, UN 1.02 Torso sheet (2026-09-28): the company lists outrank the cards"
     },
     "TM35NA_A": {
       "en": "KC Armor",
@@ -348,12 +384,36 @@
       "source": "derived from 4 official action name(s)"
     },
     "TM39D_B": {
-      "en": "Launch Snake Eye",
-      "source": "translated"
+      "en": "Launch Snake Eyes",
+      "source": "publisher parts list, UN 1.02 Torso sheet (2026-09-28): the company lists outrank the cards"
     },
     "180_B": {
       "en": "Jump",
       "source": "publisher GoF parts list v1.021 - replaced the Stealth Movement passive"
+    },
+    "173_B": {
+      "en": "FCS Control",
+      "source": "publisher parts list, GoF 1.021 (2026-09-28): the company lists outrank the cards"
+    },
+    "ZHRA-101_B": {
+      "en": "Single Shot",
+      "source": "publisher parts list, GoF 1.021 (2026-09-28): the company lists outrank the cards"
+    },
+    "ZHRA-102_B": {
+      "en": "Single Shot",
+      "source": "publisher parts list, GoF 1.021 (2026-09-28): the company lists outrank the cards"
+    },
+    "ZHLA-302_B": {
+      "en": "Single Shot",
+      "source": "publisher parts list, GoF 1.021 (2026-09-28): the company lists outrank the cards"
+    },
+    "ZHRA-201_B": {
+      "en": "Enhanced Single Shot",
+      "source": "publisher parts list, GoF 1.021 (2026-09-28): the company lists outrank the cards"
+    },
+    "ZHRA-202_B": {
+      "en": "Enhanced Single Shot",
+      "source": "publisher parts list, GoF 1.021 (2026-09-28): the company lists outrank the cards"
     }
   },
   "traits": {

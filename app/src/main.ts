@@ -3,7 +3,7 @@ import { Board, footprint, snapPlacement, type BoardDeployment, type BoardZone, 
 import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
 import { lowValueOf } from './scoring';
-import { boxHands, boxPlaceTurn, deployOpenGrids, gameResult, isLowValue, newTaskState, normaliseTasks, remoteAccessRollText, remoteAccessWhy, taskItemsFor, terminalsInReach, zoneCentreGrid, type GameResult, type TaskItem, type TaskState } from './tasks';
+import { boxHands, boxPlaceTurn, deployOpenGrids, gameResult, isLowValue, newTaskState, normaliseTasks, remoteAccessWhy, taskItemsFor, terminalsInReach, terminalStandIn, zoneCentreGrid, type GameResult, type TaskItem, type TaskState } from './tasks';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour, ICON_BURST, squadColour } from './icons';
@@ -46,7 +46,7 @@ import {
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
-import { boxDropCellIn, boxDropCells, inContact, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
+import { boxDropCellIn, boxDropCells, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, lockersOf, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -61,9 +61,9 @@ import { labelFor, namesFrom } from './ledger';
 import { askTowFacing, offerHarpyDrag as sharedHarpyDrag } from './commandpick';
 import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, Opportunity, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
-import { addStatus, cellsOf, DEFAULT_GRIDS, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
+import { addStatus, cellsOf, DEFAULT_GRIDS, isLineUnit, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { allyRepairTargets, boxNoteText, electronicStrength, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { interceptHeld, interceptPayer, allyRepairTargets, boxNoteText, electronicStrength, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -463,7 +463,7 @@ async function init() {
         .flatMap(({ card }) => card.actions ?? [])
         .find((a) => a.id === actionId);
       const max = act ? interceptCapacity(act) : undefined;
-      const left = t.intercept?.[actionId];
+      const left = interceptPayer(data, state.tokens, t, actionId)?.intercept?.[actionId];
       if (left === undefined || max === undefined || left >= max) return;
       // Through the command the Match Centre already sends, so the token comes
       // back on both boards; `intercept` is a fingerprinted field.
@@ -1942,7 +1942,7 @@ async function init() {
   // blocks the line to an Aerial Unit, and no Terrain or Unit Protection may be
   // claimed. A Smoke Screen still takes the line away (4.16, FAQ F3).
   function startIntercept(t: Token, actionId: string, warned = false): void {
-    const left = t.intercept?.[actionId] ?? 0;
+    const left = interceptHeld(data, state.tokens, t, actionId);
     const action = findAction(t, actionId);
     if (!action) return;
     const name = action.name.en || action.name.zh || actionId;
@@ -2055,7 +2055,7 @@ async function init() {
         : (t.partStates.main ?? 'intact') === 'destroyed';
     if (tDead) return;
     const dead = !target || (target.partStates.main ?? 'intact') === 'destroyed';
-    const left = t.intercept?.[f.actionId] ?? 0;
+    const left = interceptHeld(data, state.tokens, t, f.actionId);
     if (dead) {
       showInspect({
         title: 'Interception complete',
@@ -2115,10 +2115,10 @@ async function init() {
   // table's spend nothing to pay (audit Phase 5, B9). Spending a Part's last
   // Token has already swept it (B2).
   function spendIntercept(t: Token, actionId: string, name: string, targetUid?: number): boolean {
-    const left = t.intercept?.[actionId] ?? 0;
+    const left = interceptHeld(data, state.tokens, t, actionId);
     if (left <= 0) return false;
     perform(data, state, { kind: 'spendIntercept', seat: t.side, uid: t.uid, actionId });
-    if ((state.tokens.find((x) => x.uid === t.uid)?.intercept?.[actionId] ?? 0) >= left) return false;
+    if (interceptHeld(data, state.tokens, t, actionId) >= left) return false;
     if (targetUid !== undefined && interceptOwedAt(state, t.uid, actionId, targetUid)) {
       perform(data, state, { kind: 'resolveIntercept', seat: t.side, uid: t.uid, actionId, targetUid });
     }
@@ -2237,13 +2237,29 @@ async function init() {
       board.clearHighlights();
       setHint(`${m.action.name.en || m.action.id}: all launched. Take one back or press Esc to finish.`);
     } else {
-      board.showSmokeTargets(cands, (c, r) => placeLaunched(c, r));
+      board.showSmokeTargets(cands, (c, r) => void placeLaunched(c, r));
       setHint(`${m.action.name.en || m.action.id}: click a Landing Point Grid on the board. Esc stops.`);
     }
     showSideTab('combat');
   }
 
-  function placeLaunched(c: number, r: number): void {
+  async function askLineFacing(card: Card, now: Facing): Promise<Facing | null> {
+    const id = await choiceDialog({
+      title: `Which way does ${cardName(card)} face?`,
+      body: `${cardName(card)} is a 1x3 line and stands across its facing, inside the Grid: facing North or South it runs East-West, facing East or West it runs North-South.`,
+      choices: [
+        ...(['North', 'East', 'South', 'West'] as const).map((label, i) => ({
+          id: String(i),
+          label: `${label}: runs ${i % 2 ? 'North-South' : 'East-West'}${i === now ? ' (the launcher\'s facing)' : ''}`,
+        })),
+        { id: '', label: 'Cancel', cancel: true },
+      ],
+      stacked: true,
+    });
+    return id ? (Number(id) as Facing) : null;
+  }
+
+  async function placeLaunched(c: number, r: number): Promise<void> {
     const m = launching;
     if (!m) return;
     // The belt to the grace state's braces: even if a stale target layer fires,
@@ -2251,13 +2267,22 @@ async function init() {
     if (m.left <= 0) return;
     const t = state.tokens.find((x) => x.uid === m.uid);
     if (!t) return;
+    // A 1x3 line (an AS3 wall, the Turtle Shell) stands across the facing its
+    // owner picks, inside the Grid (OTTO, 2026-09-28).
+    const line = isLineUnit({ cardId: m.card.id });
+    const face = line ? await askLineFacing(m.card, t.facing) : t.facing;
+    if (face === null) return;
     // Sizing the landing check off the card rather than a probe token: minting
     // one here would burn a uid the launch command then cannot reproduce.
-    const spot = standingSpot(c, r, unitSize(m.card), isAerial(m.card), currentTerrain(), state.tokens, undefined, { col: t.col, row: t.row });
+    const spot = line
+      ? lineSpot(c, r, face, currentTerrain(), state.tokens)
+      : standingSpot(c, r, unitSize(m.card), isAerial(m.card), currentTerrain(), state.tokens, undefined, { col: t.col, row: t.row });
     if (!spot) {
       void alertDialog({
         title: 'Nothing fits there',
-        body: `There is no room in that Grid for ${cardName(m.card)}. Rulebook 4.7.2 needs the projectile's base to sit entirely inside the Landing Point Grid, so pick another one.`,
+        body: line
+          ? `${cardName(m.card)} is a 1x3 line: facing ${['North', 'East', 'South', 'West'][face]} it needs a clear ${face % 2 ? 'column' : 'row'} of that Grid, and none is. Pick another Grid or another facing.`
+          : `There is no room in that Grid for ${cardName(m.card)}. Rulebook 4.7.2 needs the projectile's base to sit entirely inside the Landing Point Grid, so pick another one.`,
       });
       return;
     }
@@ -2269,7 +2294,7 @@ async function init() {
     // alone cannot say whether anything landed. The board growing can.
     const before = state.tokens.length;
     const pool = ammoPay(data, state, t, id).poolId;
-    perform(data, state, { kind: 'launch', seat: t.side, uid: t.uid, actionId: id, cardId: m.card.id, to: { col: spot.col, row: spot.row }, facing: t.facing });
+    perform(data, state, { kind: 'launch', seat: t.side, uid: t.uid, actionId: id, cardId: m.card.id, to: { col: spot.col, row: spot.row }, facing: face });
     if (state.tokens.length === before) return;
     m.paidPools.push(pool);
     const placed = state.tokens[state.tokens.length - 1];
@@ -3255,9 +3280,14 @@ async function init() {
       // Through the command layer so a mirrored seat mints the same uid, which
       // is also what lets minesOwed tell a Mine that just arrived from one that
       // was already there (M6).
-      if (!perform(data, state, {
+      // The route travels with it: this board Lays before the guide records
+      // the Maneuver, so the engine judges the Grid against the Movement it was
+      // laid along, a flight against its two ends (FAQ M29).
+      const v = perform(data, state, {
         kind: 'layMine', seat: t.side, uid: t.uid, actionId: lay.actionId, cardId: lay.cardId, to: { col: c * 3 + 1, row: r * 3 + 1 },
-      }).ok) return;
+        route: path.map((g) => ({ col: g.c * 3 + 1, row: g.r * 3 + 1 })), ...(flying || t.aerial ? { flying: true } : {}),
+      });
+      if (!v.ok && (state.script?.strict || getLocalSeat())) return;
       logTo(t, `Laid ${what} in ${gridRef(c, r)}, paid for with 1 Move Range.`);
       onChanged();
     }
@@ -3531,7 +3561,10 @@ async function init() {
   // Remote Access (5.3.3): an Electronic Counter-roll against a Terminal whose
   // Tactical Zone is within Range 4, measured to its nearest Grid (FAQ P6). A
   // Terminal is only worth accessing once a round, so one already taken is not
-  // offered again.
+  // offered again. The roll runs in the Counter-roll window like any other,
+  // against the Terminal's stand-in (EV 3, no Focus, hollow faces count
+  // nothing; ruling I25), and a win accesses it. The players used to roll it
+  // off the page and say how it went (OTTO, 2026-09-28).
   async function performRemoteAccess(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
     const tasks = normaliseTasks(state.tasks);
     const reach = action.range ?? 4;
@@ -3556,39 +3589,13 @@ async function init() {
       if (!found) return done(false);
       pick = found;
     }
-    const ev = electronicStrength(data, state.tokens, t, 'initiator', action);
-    const verdict = await choiceDialog({
-      title: `Remote Access on ${zoneName(pick.zone)}`,
-      body: `${remoteAccessRollText(t.label, ev)} How did it go?`,
-      choices: [
-        { id: 'won', label: 'It succeeded' },
-        { id: 'lost', label: 'It failed' },
-        { id: 'cancel', label: 'Cancel', cancel: true },
-      ],
-    });
-    if (verdict !== 'won' && verdict !== 'lost') return done(false);
     // Paid first, as the Match Centre does: the attempt is made either way,
     // and a refused Action must not leave a Terminal accessed (audit Phase 6,
-    // E2). The access is the Action's success, and the check asks for it.
+    // E2). The access is the roll's success, sent through the command by the
+    // window (ewWinCommands), so the check asks for it there.
     done(true);
-    if (verdict === 'lost') {
-      logTo(t, `Remote Access on the ${zoneName(pick.zone)} Terminal failed.`);
-      onChanged();
-      return;
-    }
-    // Through the command: a Terminal turned face-down is worth VP at the End
-    // Phase, so setting `accessed` in place scored a different board on the
-    // other client. A refused access is not applied.
-    const access = { kind: 'accessTerminal' as const, seat: t.side, uid: t.uid, itemId: pick.id };
-    const v = check(data, state, access);
-    if (!v.ok) {
-      await alertDialog({ title: 'Remote Access', body: v.why ?? 'The access was refused.' });
-      onChanged();
-      return;
-    }
-    perform(data, state, access);
-    logTo(t, `Remote Access succeeded on the ${zoneName(pick.zone)} Terminal, which is now face-down for the rest of the round.`);
-    onChanged();
+    showSideTab('combat');
+    electronicHelper.start(t, action, terminalStandIn(pick, t.side, zoneName(pick.zone)), { terminal: pick.id });
   }
 
   // Charge (4.14). The token starts face-down; the Charge Action flips one Part's
@@ -3785,20 +3792,23 @@ async function init() {
   // Knockback X and Push X (appendix). The victim is Force-Moved in a straight
   // line away from the attacker and stops early on a Unit or Terrain, so there is
   // nothing for the player to pick; the dialog only exists to show the working.
-  async function resolveKnockback(attacker: Token, victim: Token, action: CardAction, hits: number): Promise<void> {
-    const kb = knockbackOf(action, data.actionTranslation(action.id)?.english ?? undefined);
-    if (!kb) return;
+  // `resume`: the rest of a line a Mine stopped (C1b), in the same direction,
+  // with the Grids it had left. Push's Link was paid on the first leg.
+  async function resolveKnockback(attacker: Token, victim: Token, action: CardAction, hits: number, resume?: { dir: { dc: number; dr: number }; grids: number }): Promise<void> {
+    const printed = knockbackOf(action, data.actionTranslation(action.id)?.english ?? undefined);
+    if (!printed) return;
+    const kb = resume ? { ...printed, grids: resume.grids } : printed;
     if (!state.tokens.some((t) => t.uid === victim.uid)) return;
     const what = action.name.en || action.name.zh || action.id;
-    const name = kb.push ? `Push ${kb.grids}` : `Knockback ${kb.grids}`;
-    if (kb.onHit && hits === 0) {
+    const name = printed.push ? `Push ${printed.grids}` : `Knockback ${printed.grids}`;
+    if (!resume && kb.onHit && hits === 0) {
       await alertDialog({
         title: `${name} does not trigger`,
         body: `${what} only knocks back On Hit, and this attack scored no Hits (a Parry that held stops every On Hit effect, FAQ C5), so ${victim.label} stays where it is.`,
       });
       return;
     }
-    let dir = attackDirection(attacker, victim);
+    let dir = resume?.dir ?? attackDirection(attacker, victim);
     // The line ends early in an Abyss (the victim falls) or on a Fragile
     // Platform (the floor goes) - entered, then resolved below and by the
     // settle sweep respectively.
@@ -3812,7 +3822,7 @@ async function init() {
     // Push X goes "in any (straight) direction" the pushing player picks: the
     // GoF 1.021 list, the Chinese 推动X and the Japanese all say so (ruled
     // 2026-09-25, audit Phase 4, I9). Knockback keeps the attack direction.
-    if (kb.push && movable) {
+    if (kb.push && movable && !resume) {
       const ways = ([['0', 'North', 0, -1], ['1', 'East', 1, 0], ['2', 'South', 0, 1], ['3', 'West', -1, 0]] as const)
         .map(([id, label, dc, dr]) => ({ id, label, d: { dc, dr }, n: lineFor({ dc, dr }).length }));
       const id = await choiceDialog({
@@ -3823,7 +3833,13 @@ async function init() {
       const way = ways.find((w) => w.id === id);
       if (way) dir = way.d;
     }
-    const path = lineFor(dir);
+    const line = lineFor(dir);
+    // C1b: a Ground unit forced through a mined Grid stops there and the Mine
+    // goes off; the rest of the line follows once the blast is resolved, if
+    // the unit is still standing (ruling I16; audit Phase 5, C1b).
+    const stop = mineStopIndex(data, state.tokens, victim, [{ c: Math.floor(victim.col / 3), r: Math.floor(victim.row / 3) }, ...line], false);
+    const path = stop > 0 ? line.slice(0, stop) : line;
+    const rest = stop > 0 ? kb.grids - stop : 0;
     const heading = ['north', 'east', 'south', 'west'][dir.dr < 0 ? 0 : dir.dc > 0 ? 1 : dir.dr > 0 ? 2 : 3];
     // The player causing a Forced Movement picks the victim's facing, and a
     // victim that cannot move may still be turned — or left alone, since the
@@ -3859,8 +3875,10 @@ async function init() {
     const go = await confirmDialog({
       title: `${name} on ${victim.label}`,
       body: `${what} forces ${victim.label} ${path.length} Grid${path.length === 1 ? '' : 's'} ${heading} to ${gridRef(end.c, end.r)}${
-        short ? `, short of the full ${kb.grids} because something blocks the rest of the line` : ''
-      }.${kb.push && victim.kind === 'mech' ? ' Push also costs it 1 Link.' : ''}`,
+        rest > 0
+          ? `, where a Mine stops it: the Mine goes off, then the other ${rest} Grid${rest === 1 ? '' : 's'} of the line follow if it is still standing (M19)`
+          : short ? `, short of the full ${kb.grids} because something blocks the rest of the line` : ''
+      }.${kb.push && victim.kind === 'mech' && !resume ? ' Push also costs it 1 Link.' : ''}`,
       confirmLabel: 'Force the move',
       cancelLabel: 'Skip',
     });
@@ -3869,11 +3887,16 @@ async function init() {
       ?? { col: victim.col, row: victim.row };
     const wasShut = victim.stance === 'shutdown';
     const fatal = isGroundUnit(data, victim) && envCardAt(state, end.c, end.r) === 'abyss';
-    // A victim about to fall is not asked which way it faces at the bottom.
-    const facing = fatal ? undefined : await askFacing(`${victim.label} is forced ${heading} to ${gridRef(end.c, end.r)}.`);
-    perform(data, state, { kind: 'forceMove', seat: attacker.side, uid: attacker.uid, targetUid: victim.uid, to: { col: spot.col, row: spot.row }, push: kb.push, facing, via: path.map((g) => ({ col: g.c * 3 + 1, row: g.r * 3 + 1 })) });
+    // A victim about to fall is not asked which way it faces at the bottom,
+    // nor one a Mine stops short: its facing is asked where the line ends.
+    const facing = fatal || rest > 0 ? undefined : await askFacing(`${victim.label} is forced ${heading} to ${gridRef(end.c, end.r)}.`);
+    perform(data, state, { kind: 'forceMove', seat: attacker.side, uid: attacker.uid, targetUid: victim.uid, to: { col: spot.col, row: spot.row }, push: kb.push && !resume, facing, via: path.map((g) => ({ col: g.c * 3 + 1, row: g.r * 3 + 1 })) });
     logTo(victim, `${name} from ${attacker.label}: forced ${path.length} Grid${path.length === 1 ? '' : 's'} ${heading} to ${gridRef(end.c, end.r)}.`);
-    if (kb.push && victim.kind === 'mech') {
+    if (rest > 0 && !fatal) {
+      pushOn = { by: attacker, victimUid: victim.uid, action, dir, grids: rest };
+      logTo(victim, `A Mine stops ${victim.label} in ${gridRef(end.c, end.r)}: its blast first, then ${rest} Grid${rest === 1 ? '' : 's'} of the ${name} ${rest === 1 ? 'is' : 'are'} left (M19).`);
+    }
+    if (kb.push && victim.kind === 'mech' && !resume) {
       logTo(victim, `Push costs 1 Link (now ${victim.link}).`);
       if (!wasShut && victim.stance === 'shutdown') logTo(victim, `Link has reached 0, so ${victim.label} SHUTS DOWN.`);
     }
@@ -6773,7 +6796,22 @@ async function init() {
   // which the engine knows by the Grids it kept back; a Movement Action's walk
   // is this board's own and sends nothing, like the rest of it.
   let goOn: { uid: number; left: number } | null = null;
+  // The rest of a Knockback or Push line a Mine stopped (C1b): forced, so it
+  // goes on with no question, in the same direction, once the blast is resolved
+  // and while the unit still stands.
+  // The attacker is kept whole: a Forced Movement may outlive its actor.
+  let pushOn: { by: Token; victimUid: number; action: CardAction; dir: { dc: number; dr: number }; grids: number } | null = null;
+  function offerPushOn(): void {
+    const p = pushOn;
+    if (!p) return;
+    pushOn = null;
+    const by = state.tokens.find((x) => x.uid === p.by.uid) ?? p.by;
+    const victim = state.tokens.find((x) => x.uid === p.victimUid);
+    if (!victim || !alive(victim)) return;
+    void resolveKnockback(by, victim, p.action, 1, { dir: p.dir, grids: p.grids });
+  }
   function offerGoOn(): void {
+    offerPushOn();
     const g = goOn;
     if (!g) return;
     goOn = null;

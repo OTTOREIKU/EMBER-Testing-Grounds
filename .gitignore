@@ -28,6 +28,9 @@ app/tests/_*.mjs
 # The one negation that is real. Nothing deeper ignores .mjs, so this is the
 # line that decides it.
 !app/tests/_combatdrive.mjs
+# The footprint reader fifteen slice harnesses prepend (types.ts baseCells):
+# source, not an artefact.
+!app/tests/_footprint.mjs
 
 # Cached responses from the publisher's card API (tools/sync_official.mjs).
 .cache/

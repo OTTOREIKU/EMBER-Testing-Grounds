@@ -13,6 +13,7 @@
 // The dice faces are the shipped ones: red face 7 and yellow face 6 are a solid
 // {Eye}, which is what makes these rolls reachable in a real game at all.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
 const combat = src('combat.ts'), units = src('units.ts'), types = src('types.ts'), ticks = src('ticks.ts');
@@ -112,7 +113,7 @@ ${tally}
 `;
 
 const tmp = new URL('./_pilottraits.slice.ts', import.meta.url);
-writeFileSync(tmp, body);
+writeFileSync(tmp, FOOTPRINT + body);
 const A = await import(tmp.href);
 
 const rawCards = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
@@ -417,7 +418,11 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   check('the emit sits on the ONE line where a Penetration becomes a destruction',
     /c\.killedPart = true;/.test(emit), true);
   check('it is gated on the pilot', /pilotIs\(this\.data, c\.attacker, 'ZPA-40'\)/.test(emit), true);
-  check('on Offensive Stance', /c\.attacker\.stance === 'offensive'/.test(emit), true);
+  // GoF 1.021 drops the card's [Offensive Stance] (OTTO, 2026-09-28: the
+  // lists outrank the cards), and stat_overrides carries the list's line.
+  check('in any Stance now', /c\.attacker\.stance === 'offensive'/.test(emit), false);
+  const stat = JSON.parse(readFileSync(new URL('../../data/stat_overrides.json', import.meta.url), 'utf8')).cards;
+  check('as the 1.021 line reads', stat['ZPA-40']?.traitDescription?.en, '· When this Mech Destroys enemy Parts with Melee Actions, restore 1 Link.');
   check('on a Melee Action', /timingOf\(c\.action\) === 'melee'/.test(emit), true);
   check('and on the Part being an ENEMY Part', /c\.defender\.side !== c\.attacker\.side/.test(emit), true);
   check('and it sends the command rather than writing the token',

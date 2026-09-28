@@ -2,6 +2,7 @@
 //   Every card printing the Intercept keyword must yield a token count, and the
 //   count must come from the card's own action, not a default.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 import { pathToFileURL } from 'node:url';
 
 // Slice out just the parser — units.ts's other imports need the DOM.
@@ -81,12 +82,15 @@ const cut = (src, from, to, what) => {
 const tmp2 = new URL('./_intercept.owed.ts', import.meta.url);
 writeFileSync(
   tmp2,
-  'type Card = any;\ntype CardAction = any;\ntype GameData = any;\ntype Token = any;\ntype SmokeScreen = any;\ntype PartSlot = any;\n'
+  FOOTPRINT + 'type Card = any;\ntype CardAction = any;\ntype GameData = any;\ntype Token = any;\ntype SmokeScreen = any;\ntype PartSlot = any;\n'
     + 'const PART_SLOTS = ["torso","chasis","leftHand","rightHand","backpack"];\n'
     + 'function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }\n'
     + 'function rangeBetween(a: any, b: any): any { const p = largeGridOf(a), q = largeGridOf(b);\n'
     + '  return { range: Math.abs(p.c - q.c) + Math.abs(p.r - q.r) }; }\n'
     + 'function statusCount(list: any, id: string): number { return (list ?? []).filter((x: any) => x === id).length; }\n'
+    // No Carrier stands in these scenes, so nothing is lent (ruling I25 is
+    // driven for real in mechanics5.test.mjs).
+    + 'function loanedParts(..._: any[]): any[] { return []; }\n'
     // The real smoke reader, not a stand-in: it is the thing under test.
     + cut(rulesSrc, 'export function smokeKey', 'export function smokeBlocks', 'smokeKey')
     // Ends on the next DECLARATION, not on a "\n}\n" brace. rules.ts is a CRLF

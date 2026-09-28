@@ -21,10 +21,10 @@ globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 const entry = new URL('./_mechanics5.entry.ts', import.meta.url);
 const out = new URL('./_mechanics5.bundle.mjs', import.meta.url);
 writeFileSync(entry, [
-  "export { check, apply, ammoPay, ammoAvailable, liveIntercepts, strictNow } from '../src/commands';",
+  "export { check, apply, ammoPay, ammoAvailable, liveIntercepts, strictNow, swarmFor } from '../src/commands';",
   "export { loadData } from '../src/data';",
   "export { glueAfter } from '../src/glue';",
-  "export { newScriptState, PHASES } from '../src/types';",
+  "export { newScriptState, PHASES, baseCells, baseBox, isLineUnit } from '../src/types';",
   "export * as U from '../src/units';",
   "export * as D from '../src/data';",
   "export * as R from '../src/rules';",
@@ -33,6 +33,8 @@ writeFileSync(entry, [
   "export * as Su from '../src/setup';",
   "export { AttackHelper } from '../src/combat';",
   "export { guideAct } from '../pad/guided';",
+  "export { slotPool, BUILD_SLOTS } from '../src/mechbuilder';",
+  "export { parseSquadJson } from '../src/importer';",
 ].join('\n') + '\n');
 await build({
   entryPoints: [fileURLToPath(entry)], outfile: fileURLToPath(out),
@@ -171,6 +173,20 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   check('G3 the control: a Mech wearing the AMS-190 is owed one', owedAms(wearer), true);
   wearer.partStates.backpack = 'destroyed';
   check('G3 and not once that Backpack is destroyed (B6)', owedAms(wearer), false);
+
+  // I25: a Mech in Contact with the Carrier intercepts with the lent AMS, as its
+  // own Firing Action (M26, O3/O16), paying from the Tokens on the Carrier.
+  // Its own hands intercept too (041_A); emptied, so only the Load answers.
+  const lentTo = put(t, 's2', L(), 5, 4, { intercept: {} });
+  check('I25 a Mech touching the Carrier is owed an attempt with the lent AMS', owedAms(lentTo), true);
+  check('I25 and is among the units that could intercept, the Carrier not', [U.interceptorsAgainst(data, t.tokens, 's1').some((x) => x.uid === lentTo.uid), U.interceptorsAgainst(data, t.tokens, 's1').some((x) => x.uid === ams.uid)], [true, false]);
+  check('I25 its Tokens are the Carrier\'s', [U.interceptPayer(data, t.tokens, lentTo, '003_A')?.uid, U.interceptHeld(data, t.tokens, lentTo, '003_A')], [ams.uid, 3]);
+  const far = put(t, 's2', L(), 9, 9);
+  check('I25 out of Contact it is not', owedAms(far), false);
+  t.script.intercepts = [{ uid: lentTo.uid, actionId: '003_A', targetUid: missile.uid }];
+  check('I25 the owed attempt is spent from the Carrier\'s pool', [send(t, { kind: 'spendIntercept', seat: 's2', uid: lentTo.uid, actionId: '003_A' }).ok, ams.intercept['003_A']], [true, 2]);
+  ams.intercept['003_A'] = 0;
+  check('I25 and with the pool spent, it has nothing to intercept with', ok(t, { kind: 'spendIntercept', seat: 's2', uid: lentTo.uid, actionId: '003_A' }), false);
 
   // Freehand and the Cloak.
   const arm = carrierOn(s, 's2', '087', 7, 5);
@@ -390,20 +406,28 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   check('F2 the Dragoon Coordinates once after a Maneuver, the others do not',
     [dragoon, chariot, warrior].map((t) => U.coordinationAfterManeuver(data, t)), [1, 0, 0]);
 
-  // Designated Defense: the defender names ANY of its live Parts.
-  const hurt = put(f, 's1', L({ torso: '172' }), 1, 3);
+  // Designated Defense matches the shields, "this part" (OTTO, 2026-09-28):
+  // the Warrior may take the damage on its own Torso, in any Stance.
+  const hurt = put(f, 's1', L({ torso: '172' }), 1, 3, { stance: 'offensive' });
   hurt.partStates.leftHand = 'destroyed';
-  check('F2 the Warrior may designate any live Part', U.selfHitParts(data, hurt).map((x) => [x.slot, x.label]),
-    [['torso', 'Designated Defense'], ['chasis', 'Designated Defense'], ['rightHand', 'Designated Defense']]);
+  check('F2 the Warrior may designate its own Torso, in any Stance', U.selfHitParts(data, hurt).map((x) => [x.slot, x.label]),
+    [['torso', 'Designated Defense']]);
+  hurt.partStates.torso = 'destroyed';
+  check('F2 and nothing once the Torso is destroyed', U.selfHitParts(data, hurt), []);
   check('F2 the control: the Dragoon may designate none', U.selfHitParts(data, dragoon), []);
 }
 
-// ================= F2. Swarm Tactics hands the Command Token back =================
+// ================= F2. Swarm Tactics: the token goes on, each Drone once =================
 {
   // "After this Mech issues a Command to a GoF Medium Drone, may remove this
-  // Command Token and continue issuing a Command to another Ally Drone." Ruling
-  // I1: back to the Warrior, to be issued again; each Drone still one per Phase.
+  // Command Token and continue issuing a Command to another Ally Drone." Read
+  // with 3.2.2 and FAQ O1 (OTTO asked for this reading, 2026-09-28): the one
+  // token goes on AT ONCE, before the other squad issues, to an Ally Drone that
+  // has had no Command this Phase, and on again from each GoF Medium Drone it
+  // reaches. Every Drone still takes one Command per Phase; read the other way,
+  // one token commanded two Hounds endlessly.
   const faceUp = (t) => (t.statuses ?? []).filter((x) => x === 'command').length;
+  const bears = (t) => (t.statuses ?? []).filter((x) => x === 'command' || x === 'commandUsed').length;
   const commandPhase = () => {
     const s = table();
     s.round.phase = M.PHASES.indexOf('Command');
@@ -413,29 +437,123 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   const s = commandPhase();
   const warrior = put(s, 's1', L({ torso: '172' }), 1, 1, { statuses: ['command'] });
   const hound = droneOn(s, 's1', 'ZHDR-201', 3, 3);
+  const hound2 = droneOn(s, 's1', 'ZHDR-202', 5, 3);
   const valkyrie = droneOn(s, 's1', 'ZHDR-303', 6, 3);
-  s.commandTokens = { s1: 1, s2: 0 };
+  const bob = put(s, 's1', L(), 9, 9, { statuses: ['command'] });
+  put(s, 's2', L(), 20, 20, { statuses: ['command'] });
+  droneOn(s, 's2', '160', 22, 22);
+  s.commandTokens = { s1: 2, s2: 1 };
   check('F2 the Hound is a GoF Medium Drone, the Valkyrie is not', [U.isGofMediumDrone(data, hound), U.isGofMediumDrone(data, valkyrie)], [true, false]);
   check('F2 and neither is a UN medium Drone', U.isGofMediumDrone(data, droneOn(table(), 's1', '160', 1, 1)), false);
   const v1 = send(s, { kind: 'designate', seat: 's1', uid: hound.uid, fromUid: warrior.uid });
-  check('F2 the Warrior commands the Hound', [v1.ok, v1.why ?? ''], [true, '']);
-  check('F2 and its token comes straight back', faceUp(warrior), 1);
-  check('F2 the Hound keeps a face-down token, so it takes no second Command', (hound.statuses ?? []).includes('commandUsed'), true);
+  check('F2 the Warrior commands the Hound, paying its token', [v1.ok, faceUp(warrior), bears(hound)], [true, 0, 1]);
+  check('F2 Swarm Tactics waits to go on, and the turn stays with the squad', [s.script.swarm, s.script.turn], [{ issuer: warrior.uid, from: hound.uid }, 's1']);
+  check('F2 the Hound has had its Command this Phase', s.script.commanded.includes(hound.uid), true);
   // One activation at a time (F9): the Hound's ends before the next Drone's.
   send(s, { kind: 'endOpportunity', seat: 's1', uid: hound.uid });
-  s.script.turn = 's1';
+  check('F2 the token may go on only to a Drone with no Command yet', M.Lp.eligibleUnits(s, 'Command', 's1', data).map((x) => x.uid).sort(), [hound2.uid, valkyrie.uid].sort());
+  check('F2 never the Hound again', ok(s, { kind: 'designate', seat: 's1', uid: hound.uid, fromUid: warrior.uid }), false);
+  check('F2 nor another Mech\'s Command in between', /Swarm Tactics is going on/.test(M.check(data, s, { kind: 'designate', seat: 's1', uid: hound2.uid, fromUid: bob.uid }).why ?? ''), true);
+  check('F2 and in the Command Phase it moves by designation, not Coordination', ok(s, { kind: 'coordinateCommand', seat: 's1', uid: warrior.uid, targetUid: hound2.uid }), false);
+  const v2 = send(s, { kind: 'designate', seat: 's1', uid: hound2.uid, fromUid: warrior.uid });
+  check('F2 it goes on to the second Hound, the Warrior paying nothing more', [v2.ok, faceUp(warrior), bears(hound2), faceUp(bob)], [true, 0, 1, 1]);
+  check('F2 and from that GoF Medium Drone on again', s.script.swarm, { issuer: warrior.uid, from: hound2.uid });
+  send(s, { kind: 'endOpportunity', seat: 's1', uid: hound2.uid });
   send(s, { kind: 'designate', seat: 's1', uid: valkyrie.uid, fromUid: warrior.uid });
-  check('F2 a Large Drone spends it as usual', faceUp(warrior), 0);
+  check('F2 a Large Drone ends it: the turn passes', [s.script.swarm ?? null, bears(valkyrie), s.script.turn], [null, 1, 's2']);
+  check('F2 one token, three Drones, each once', [hound, hound2, valkyrie].map((d) => s.script.commanded.includes(d.uid)), [true, true, true]);
+
+  // The endless chain the other reading allowed: two Hounds, one token.
+  const loop = commandPhase();
+  const w2 = put(loop, 's1', L({ torso: '172' }), 1, 1, { statuses: ['command'] });
+  const a = droneOn(loop, 's1', 'ZHDR-201', 3, 3);
+  const b = droneOn(loop, 's1', 'ZHDR-202', 5, 3);
+  put(loop, 's2', L(), 20, 20);
+  droneOn(loop, 's2', '160', 22, 22);
+  loop.commandTokens = { s1: 1, s2: 0 };
+  const taken = [];
+  const offered = [];
+  for (const d of [a, b, a, b]) {
+    const v = send(loop, { kind: 'designate', seat: 's1', uid: d.uid, fromUid: w2.uid });
+    taken.push(v.ok);
+    offered.push(M.Lp.eligibleUnits(loop, 'Command', 's2', data).length);
+    send(loop, { kind: 'endOpportunity', seat: 's1', uid: d.uid });
+  }
+  check('F2 two Hounds and one token make two Commands, never an endless chain', taken, [true, true, false, false]);
+  check('F2 and the other squad, out of tokens, is never offered the Warrior\'s', offered, [0, 0, 0, 0]);
+  check('F2 and with no Drone left to take it, nothing waits', loop.script.swarm ?? null, null);
+
+  // Stopping: the token stays spent where it is, and the other squad issues.
+  const st = commandPhase();
+  const w3 = put(st, 's1', L({ torso: '172' }), 1, 1, { statuses: ['command'] });
+  const h3 = droneOn(st, 's1', 'ZHDR-201', 3, 3);
+  droneOn(st, 's1', 'ZHDR-202', 5, 3);
+  const foeDrone = droneOn(st, 's2', '160', 20, 20);
+  put(st, 's2', L(), 22, 22, { statuses: ['command'] });
+  st.commandTokens = { s1: 1, s2: 1 };
+  send(st, { kind: 'designate', seat: 's1', uid: h3.uid, fromUid: w3.uid });
+  send(st, { kind: 'endOpportunity', seat: 's1', uid: h3.uid });
+  check('F2 only the waiting squad may stop it', [ok(st, { kind: 'endSwarm', seat: 's2' }), ok(st, { kind: 'endSwarm', seat: 's1' })], [false, true]);
+  send(st, { kind: 'endSwarm', seat: 's1' });
+  check('F2 stopped: nothing waits, the Hound keeps the token, the turn passes', [st.script.swarm ?? null, bears(h3), faceUp(w3), st.script.turn], [null, 1, 0, 's2']);
+  check('F2 and the other squad issues next', ok(st, { kind: 'designate', seat: 's2', uid: foeDrone.uid }), true);
+
+  // A Pass declines it too, and a destroyed Warrior has no token to move on.
+  const pt = commandPhase();
+  const wp = put(pt, 's1', L({ torso: '172' }), 1, 1, { statuses: ['command'] });
+  const hp = droneOn(pt, 's1', 'ZHDR-201', 3, 3);
+  const hp2 = droneOn(pt, 's1', 'ZHDR-202', 5, 3);
+  const bp = put(pt, 's1', L(), 9, 9, { statuses: ['command'] });
+  put(pt, 's2', L(), 20, 20, { statuses: ['command'] });
+  droneOn(pt, 's2', '160', 22, 22);
+  pt.commandTokens = { s1: 2, s2: 1 };
+  const dw = structuredClone(pt);
+  send(pt, { kind: 'designate', seat: 's1', uid: hp.uid, fromUid: wp.uid });
+  send(pt, { kind: 'endOpportunity', seat: 's1', uid: hp.uid });
+  send(pt, { kind: 'passTurn', seat: 's1' });
+  check('F2 a Pass declines it too', [pt.script.swarm ?? null, pt.script.turn], [null, 's2']);
+  send(dw, { kind: 'designate', seat: 's1', uid: hp.uid, fromUid: wp.uid });
+  send(dw, { kind: 'endOpportunity', seat: 's1', uid: hp.uid });
+  dw.tokens.find((x) => x.uid === wp.uid).partStates.torso = 'destroyed';
+  check('F2 a destroyed Warrior has no token to move on', [M.swarmFor(dw, 's1'), ok(dw, { kind: 'designate', seat: 's1', uid: hp2.uid, fromUid: bp.uid })], [null, true]);
+
+  // 3.2.2 is per Phase, not per token: a Drone commanded this Phase whose
+  // token came off by hand (removeStatus) still cannot take another.
+  const hand = commandPhase();
+  const wh = put(hand, 's1', L({ torso: '172' }), 1, 1, { statuses: ['command'] });
+  const bh = put(hand, 's1', L(), 9, 9, { statuses: ['command'] });
+  const ha = droneOn(hand, 's1', 'ZHDR-201', 3, 3);
+  const hb = droneOn(hand, 's1', 'ZHDR-202', 5, 3);
+  put(hand, 's2', L(), 20, 20);
+  hand.commandTokens = { s1: 2, s2: 0 };
+  send(hand, { kind: 'designate', seat: 's1', uid: hb.uid, fromUid: bh.uid });
+  send(hand, { kind: 'endOpportunity', seat: 's1', uid: hb.uid });
+  hb.statuses = [];
+  send(hand, { kind: 'designate', seat: 's1', uid: ha.uid, fromUid: wh.uid });
+  check('F2 a Drone commanded this Phase is nowhere to go on to, token or none', hand.script.swarm ?? null, null);
+
+  // Only a GoF Medium Drone passes it on: a Large one first starts nothing.
+  const lg = commandPhase();
+  const wg = put(lg, 's1', L({ torso: '172' }), 1, 1, { statuses: ['command'] });
+  const vg = droneOn(lg, 's1', 'ZHDR-303', 3, 3);
+  droneOn(lg, 's1', 'ZHDR-201', 5, 3);
+  put(lg, 's2', L(), 20, 20, { statuses: ['command'] });
+  droneOn(lg, 's2', '160', 22, 22);
+  lg.commandTokens = { s1: 1, s2: 1 };
+  send(lg, { kind: 'designate', seat: 's1', uid: vg.uid, fromUid: wg.uid });
+  check('F2 a Command to a Large Drone starts nothing, and the turn passes', [lg.script.swarm ?? null, lg.script.turn], [null, 's2']);
 
   // The control: a Mech without Swarm Tactics.
   const t = commandPhase();
   const dragoon = put(t, 's1', L({ torso: '175' }), 1, 1, { statuses: ['command'] });
-  const hound2 = droneOn(t, 's1', 'ZHDR-201', 3, 3);
+  const hound4 = droneOn(t, 's1', 'ZHDR-201', 3, 3);
+  droneOn(t, 's1', 'ZHDR-202', 5, 3);
   t.commandTokens = { s1: 1, s2: 0 };
-  send(t, { kind: 'designate', seat: 's1', uid: hound2.uid, fromUid: dragoon.uid });
-  check('F2 the control: the Dragoon\'s token stays on the Hound', faceUp(dragoon), 0);
+  send(t, { kind: 'designate', seat: 's1', uid: hound4.uid, fromUid: dragoon.uid });
+  check('F2 the control: the Dragoon\'s token stays on the Hound, and nothing waits', [faceUp(dragoon), t.script.swarm ?? null], [0, null]);
 
-  // Command Coordination, later in the round, the same way.
+  // Command Coordination, later in the round, the same way: the token goes
+  // on at once, beyond the Coordination X, and each Drone once.
   // In its Opportunity, off an Action that carries Coordination (F9).
   const c = table();
   c.round.phase = M.PHASES.indexOf('Action');
@@ -443,11 +561,36 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   const h1 = droneOn(c, 's1', 'ZHDR-201', 3, 3);
   const h2 = droneOn(c, 's1', 'ZHDR-202', 6, 3);
   c.script.opp = opp(w.uid, { timing: 'projectile', performed: ['ZHLA-102_A'] });
-  check('F2 Coordination to a Hound is taken', send(c, { kind: 'coordinateCommand', seat: 's1', uid: w.uid, targetUid: h1.uid }).ok, true);
-  check('F2 and the token comes back for another Drone', faceUp(w), 1);
-  check('F2 but not to the same Hound again this Phase', ok(c, { kind: 'coordinateCommand', seat: 's1', uid: w.uid, targetUid: h1.uid }), false);
+  check('F2 Coordination to a Hound is taken, paying the token', [send(c, { kind: 'coordinateCommand', seat: 's1', uid: w.uid, targetUid: h1.uid }).ok, faceUp(w), bears(h1)], [true, 0, 1]);
+  check('F2 and Swarm Tactics waits to go on', c.script.swarm, { issuer: w.uid, from: h1.uid });
   send(c, { kind: 'endOpportunity', seat: 's1', uid: h1.uid });
-  check('F2 a different Drone takes it', send(c, { kind: 'coordinateCommand', seat: 's1', uid: w.uid, targetUid: h2.uid }).ok, true);
+  check('F2 never back to the same Hound', ok(c, { kind: 'coordinateCommand', seat: 's1', uid: w.uid, targetUid: h1.uid }), false);
+  check('F2 a different Drone takes it with no token left on the Warrior', [send(c, { kind: 'coordinateCommand', seat: 's1', uid: w.uid, targetUid: h2.uid }).ok, bears(h2)], [true, 1]);
+  check('F2 and with no Drone left to take it, nothing waits', c.script.swarm ?? null, null);
+
+  // A Drone already bearing a token cannot take it (4.15.2), so it does not
+  // count as somewhere to go on to.
+  const hd = table();
+  hd.round.phase = M.PHASES.indexOf('Action');
+  const wd = put(hd, 's1', L({ torso: '172', leftHand: 'ZHLA-102' }), 1, 1, { statuses: ['command'] });
+  const d1 = droneOn(hd, 's1', 'ZHDR-201', 3, 3);
+  droneOn(hd, 's1', 'ZHDR-202', 6, 3, { statuses: ['commandUsed'] });
+  hd.script.opp = opp(wd.uid, { timing: 'projectile', performed: ['ZHLA-102_A'] });
+  send(hd, { kind: 'coordinateCommand', seat: 's1', uid: wd.uid, targetUid: d1.uid });
+  check('F2 a Drone already bearing a token is nowhere to go on to', hd.script.swarm ?? null, null);
+
+  // At once or not at all: the Warrior's Opportunity ending lets it lapse.
+  const lp = table();
+  lp.round.phase = M.PHASES.indexOf('Action');
+  const wl = put(lp, 's1', L({ torso: '172', leftHand: 'ZHLA-102' }), 1, 1, { statuses: ['command'] });
+  const l1 = droneOn(lp, 's1', 'ZHDR-201', 3, 3);
+  const l2 = droneOn(lp, 's1', 'ZHDR-202', 6, 3);
+  lp.script.opp = opp(wl.uid, { timing: 'projectile', performed: ['ZHLA-102_A'] });
+  send(lp, { kind: 'coordinateCommand', seat: 's1', uid: wl.uid, targetUid: l1.uid });
+  send(lp, { kind: 'endOpportunity', seat: 's1', uid: l1.uid });
+  check('F2 the Hound\'s own activation ending keeps it waiting', lp.script.swarm, { issuer: wl.uid, from: l1.uid });
+  send(lp, { kind: 'endOpportunity', seat: 's1', uid: wl.uid });
+  check('F2 the Warrior\'s Opportunity ending lets it lapse', [lp.script.swarm ?? null, ok(lp, { kind: 'coordinateCommand', seat: 's1', uid: wl.uid, targetUid: l2.uid })], [null, false]);
 }
 
 // ================= F1. a Coordinated Drone acts now (4.15.3) =================
@@ -542,12 +685,61 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   await settle();
   check('D1 the folded Pholcus Unfolds rather than detonating', calls, ['performAction', 'unfold']);
   check('D1 into the Unfolded Drone', [pholcus.cardId, pholcus.kind], ['167', 'drone']);
+  // Its Unfold prints "must undergo Detonation immediately" for an occupied
+  // Grid, which read as an Immediate Detonation: every page offered its blast
+  // as it landed. A Delayed Action is never Immediate (found in the Phase 5
+  // follow-up's browser pass).
+  check('D1 the folded Pholcus is no Immediate Projectile, the M7 Grenade is', [U.immediateDetonation(data.byId.get('156'))?.id ?? null, U.immediateDetonation(data.byId.get('154'))?.id], [null, '154_A']);
   s.round.phase = M.PHASES.indexOf('Automatic');
   s.script.opp = opp(pholcus.uid);
   calls.length = 0;
   press('167_A');
   await settle();
   check('D1 its Automatic Attack is paid and goes to the detonation resolver', calls, ['performAction', 'detonate:167_A']);
+}
+
+// ================= F8p, G4p. the pad's Overwatch Strike and lent attacks (Phase 5 follow-up) =================
+{
+  // The KK9's Overwatch Strike had no pad flow, and a lent Load's attack or
+  // launch was only "resolve it on the table". Driven through the pad's own
+  // click handler with a page that records what it is asked; pad.ts's own
+  // halves are pinned by source.
+  const s = table();
+  s.round.phase = M.PHASES.indexOf('Command');
+  const kk9 = droneOn(s, 's1', 'LHDR-KK9', 5, 5);
+  const mech = put(s, 's1', L(), 5, 7);
+  const foe = put(s, 's2', L(), 5, 2);
+  s.script.opp = opp(kk9.uid);
+  const calls = [];
+  const base = {
+    data, state: () => s, me: () => 's1',
+    send: (cmd) => { calls.push(cmd.kind); const v = M.check(data, s, cmd); if (v.ok) { M.apply(data, s, cmd); M.glueAfter(data, s, cmd); } return v.ok; },
+    check: (cmd) => M.check(data, s, cmd),
+    overwatch: (uid, actionId) => calls.push(`overwatch:${uid}:${actionId}`),
+    attack: (uid, actionId, opts) => calls.push(`attack:${uid}:${actionId}:${opts?.granted ? 'granted' : ''}:${opts?.only ?? ''}`),
+  };
+  const api = new Proxy(base, { get: (o, k) => (k in o ? o[k] : () => undefined) });
+  M.guideAct(api, 'g-perform', { dataset: { uid: String(kk9.uid), id: 'LHDR-KK9_B' } });
+  await settle();
+  check('F8p the pad\'s Perform on the Overwatch Strike asks its enemy and Mech', calls, [`overwatch:${kk9.uid}:LHDR-KK9_B`]);
+  s.script.reactions = [{ uid: mech.uid, actionId: 'LHDR-KK9_B', count: 0, range: 0, kind: 'overwatch', fromUid: foe.uid }];
+  calls.length = 0;
+  M.guideAct(api, 'g-overwatch', { dataset: { uid: String(mech.uid), id: 'LHDR-KK9_B', gun: '058_A' } });
+  check('F8p the Mech\'s row fires a granted Firing Action at that enemy only', calls, [`attack:${mech.uid}:058_A:granted:${foe.uid}`]);
+  const pad = readFileSync(new URL('../pad/pad.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const guided = readFileSync(new URL('../pad/guided.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  check('F8p a Guided call pays the KK9, then calls the strike', /if \(!send\(\{ kind: 'performAction', seat: t\.side, uid: t\.uid, actionId \}\)\) return;\s*if \(send\(\{ \.\.\.call, chain: 'join' \}\)\)/.test(pad), true);
+  check('F8p and the reaction row is named for it', /r\.kind === 'overwatch' \? 'Overwatch Strike'/.test(guided), true);
+  check('F8p Freeform has its own door on the KK9\'s row', /overwatchOf\(g\.action\)\s*\? `<button class="pad-chip on pad-perform" data-act="overwatch"/.test(pad), true);
+  // G4p: the lent door routes an attack, an Electronic Attack or a launch to its
+  // tool, and each payment takes the loan as its Part (O7).
+  check('G4p the lent door opens the target pick for a lent attack', /lentPart = \{ uid: by\.uid, actionId, key \};\s*const electronic = /.test(pad), true);
+  check('G4p and the launch for a lent launcher', /lentPart = \{ uid: by\.uid, actionId, key \};\s*void launchFrom\(by, actionId, cardId\);/.test(pad), true);
+  check('G4p every payment on the way takes the loan', [(pad.match(/= lentPay\(/g) ?? []).length, (pad.match(/\.\.\.lent(All)?\b/g) ?? []).length], [4, 4]);
+  check('G4p the attack and launch find a lent Action', [/async function askTableAndAttack[\s\S]{0,200}const a = actionOfUnit\(attacker, actionId\);/.test(pad), /async function launchFrom[\s\S]{0,200}const action = actionOfUnit\(t, actionId\);/.test(pad)], [true, true]);
+  const attackSrc = readFileSync(new URL('../pad/attack.ts', import.meta.url), 'utf8');
+  const ewSrc = readFileSync(new URL('../pad/ew.ts', import.meta.url), 'utf8');
+  check('G4p and so do the attack window and the counter-roll', [/loanedParts\(a\.data, a\.state\(\)\.tokens, t, \{ anywhere: true \}\)/.test(attackSrc), /loanedParts\(a\.data, a\.state\(\)\.tokens, t, \{ anywhere: true \}\)/.test(ewSrc)], [true, true]);
 }
 
 // ================= E1. walls stand as 3-inch terrain (AS3; Barricade, p.92) =================
@@ -582,6 +774,45 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   check('E1 a Turtle Shell guarding its ally is 3-inch terrain', cover(guard).white, 2);
   const foe = scene('158', 's1');
   check('E1 but not for a Firing Action at its enemy: it is only a small unit then', [cover(foe).white, /not Large/.test(cover(foe).note)], [0, true]);
+}
+
+// ================= E1b. a wall is a 1x3 line, across its facing (OTTO, 2026-09-28) =================
+{
+  // The data prints the AS3 walls and the Turtle Shell as a 1x3 line
+  // (boardProfile footprint), and terrain stands wholly inside one Grid (p.21).
+  // Facing North or South it runs East-West, East or West it runs North-South.
+  const cellsOf = (x) => M.baseCells(x).map((c) => `${c.col},${c.row}`);
+  check('E1b a wall facing North runs East-West along its row', cellsOf({ col: 15, row: 16, size: 1, cardId: 'PDAM-003', facing: 0 }), ['15,16', '16,16', '17,16']);
+  check('E1b facing East it runs North-South down its column', cellsOf({ col: 16, row: 15, size: 1, cardId: 'PDAM-004', facing: 1 }), ['16,15', '16,16', '16,17']);
+  check('E1b the Turtle Shell is one too, and a Drone stays square', [M.isLineUnit({ cardId: '158' }), cellsOf({ col: 4, row: 4, size: 2, cardId: '159', facing: 0 })], [true, ['4,4', '4,5', '5,4', '5,5']]);
+  // Sight: a line one cell off the old single cell. A 1x1 wall at (15,16)
+  // let a shooter at row 17 through; the line across (15..17, 16) does not.
+  const n = table();
+  const near = droneOn(n, 's1', '159', 0, 0, { col: 16, row: 12 });
+  const far = droneOn(n, 's2', '159', 0, 0, { col: 17, row: 20 });
+  const sight = () => R.firingSight(near, far, [], n.tokens, []);
+  const open = sight();
+  const wall = droneOn(n, 's2', 'PDAM-003', 0, 0, { col: 15, row: 16, facing: 0 });
+  check('E1b the whole line blocks what it crosses', [open, sight()], ['clear', 'blocked']);
+  wall.facing = 1;
+  check('E1b turned, the same wall leaves the line clear', sight(), 'clear');
+  wall.facing = 0;
+  check('E1b and stands as terrain on all three cells', R.unitTerrain(n.tokens, null).find((p) => p.id === `unit:${wall.uid}`).subCells.map((c) => `${c.col},${c.row}`), ['15,16', '16,16', '17,16']);
+  check('E1b nothing stands on it: the Grid\'s middle row is taken', R.spotsInGrid(droneOn(table(), 's1', '159', 0, 0, { col: 16, row: 17 }), [], n.tokens).filter((x) => x.row === 16).map((x) => x.ok), [false, false, false]);
+  check('E1b Contact is the line\'s edge', [R.inContact(wall, { ...near, col: 17, row: 15, size: 1 }), R.inContact(wall, { ...near, col: 18, row: 15, size: 1 })], [true, false]);
+  // Placement: the middle line of the Grid first, then another, never across Grids.
+  check('E1b a line in an empty Grid takes the middle', R.lineSpot(5, 5, 0, [], []), { col: 15, row: 16 });
+  const busy = table();
+  droneOn(busy, 's1', '159', 0, 0, { col: 16, row: 16 });
+  check('E1b one in the way, it takes another row', R.lineSpot(5, 5, 0, [], busy.tokens), { col: 15, row: 15 });
+  check('E1b and across, a column', R.lineSpot(5, 5, 1, [], busy.tokens), { col: 15, row: 15 });
+  // The launch check holds the line to one Grid and a facing, on any board.
+  const l = freeTable();
+  const reaper = droneOn(l, 's1', 'PRDR-105', 5, 5);
+  const deploy = (to, facing) => ({ kind: 'launch', seat: 's1', uid: reaper.uid, actionId: 'PRDR-105_B', cardId: 'PDAM-003', to, facing });
+  check('E1b a wall launched inside one Grid is taken', ok(l, deploy({ col: 15, row: 16 }, 0)), true);
+  check('E1b one that would cross into the next Grid is refused', ok(l, deploy({ col: 16, row: 16 }, 0)), false);
+  check('E1b and down a column it starts on the Grid\'s top row', [ok(l, deploy({ col: 16, row: 15 }, 1)), ok(l, deploy({ col: 16, row: 16 }, 1))], [true, false]);
 }
 
 // ================= C1. a Mine in a Grid the walk enters stops it (ruling I16) =================
@@ -619,6 +850,35 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   check('C1 it goes on with the rest, on the Tick already paid', [v.ok, v.why ?? '', s.script.opp?.mineHalt], [true, '', undefined]);
   check('C1 and the Maneuver Tick is still unspent: the walk belonged to the Movement Action', s.script.opp?.maneuvered, false);
   check('C1 once: nothing is left to go on with', ok(s, on), false);
+}
+
+// ================= C1b. a Knockback through a Mine stops there too (ruling I16) =================
+{
+  // Forced Movement enters the Grids of its line like any walk, so a mined Grid
+  // on the way stops the victim, the Mine goes off, and the rest of the line
+  // follows once the blast is resolved, if the unit still stands. Both boards
+  // cut the line with the same reader the walk uses (audit Phase 5, C1b).
+  const s = table();
+  const victim = put(s, 's2', L(), 5, 5);
+  droneOn(s, 's1', '074', 0, 0, { col: 16, row: 19 });
+  const line = [{ c: 5, r: 6 }, { c: 5, r: 7 }, { c: 5, r: 8 }];
+  const start = { c: 5, r: 5 };
+  check('C1b a Knockback 3 line with a Mine in its first Grid stops there, 2 Grids left',
+    (() => { const stop = U.mineStopIndex(data, s.tokens, victim, [start, ...line], false); return [stop, line.slice(0, stop).length, 3 - stop]; })(), [1, 1, 2]);
+  check('C1b a Mine in the Grid the line ends in is the landing\'s, and stops nothing', U.mineStopIndex(data, s.tokens, victim, [start, ...line.slice(0, 1)], false), -1);
+  const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  check('C1b the tabletop cuts its Knockback line at the first Mine',
+    /const stop = mineStopIndex\(data, state\.tokens, victim, \[\{ c: Math\.floor\(victim\.col \/ 3\), r: Math\.floor\(victim\.row \/ 3\) \}, \.\.\.line\], false\);\s*const path = stop > 0 \? line\.slice\(0, stop\) : line;/.test(main), true);
+  check('C1b with the Grids the line had left', /const rest = stop > 0 \? kb\.grids - stop : 0;/.test(main) && /const rest = stop > 0 \? kb\.grids - stop : 0;/.test(hud), true);
+  check('C1b and holds the rest for after the blast', /if \(rest > 0 && !fatal\) \{\s*pushOn = \{ by: attacker, victimUid: victim\.uid, action, dir, grids: rest \};/.test(main), true);
+  check('C1b which goes on from the blast\'s own Go on door', /function offerGoOn\(\): void \{\s*offerPushOn\(\);/.test(main), true);
+  check('C1b and pays Push\'s Link once', /push: kb\.push && !resume, facing/.test(main), true);
+  check('C1b the Match Centre cuts it with the same reader',
+    /const stop = mineStopIndex\(ctx\.data, ctx\.state\.tokens, victim, \[largeGridOf\(victim\), \.\.\.line\], false\);\s*const path = stop > 0 \? line\.slice\(0, stop\) : line;/.test(hud), true);
+  check('C1b holds the rest on the forcing seat', /if \(out\.rest > 0 && !fatal && m\) pushOn = \{/.test(hud), true);
+  check('C1b opens it once no Mine is owed on the unit', /if \(minesOwed\(ctx\.data, ctx\.state\.tokens\)\.some\(\(x\) => x\.victims\.includes\(victim\.uid\)\)\) return;/.test(hud), true);
+  check('C1b and pays Push\'s Link once there too', /push: out\.kb\.push && !out\.resumed, facing/.test(hud), true);
 }
 
 // ================= A3. an Explosion and Optical Camouflage (p.71; ruling I13) =================
@@ -704,12 +964,17 @@ console.log('Phase 5: drones, projectiles and deployables\n');
 // ================= F5. the Tactic Actions named "Command Coordination" =================
 {
   // "Give 1 Command Token to 1 Ally Drone", the keyword in the NAME alone: all
-  // eight read Coordination 0, so the offer never came.
-  const ids = ['ZYBP-101_B', 'ZYBP-202_B', 'ZHLA-102_B', 'ZHLA-201_B', 'ZHLA-102-T_A', 'ZHLA-201-T_A', 'ZHRA-201-T_A', 'ZHRA-202-T_A'];
-  check('F5 all eight Coordinate one Drone', ids.map((id) => U.commandCoordination(actionOf(id.replace(/_[AB]$/, ''), id))), ids.map(() => 1));
+  // of them read Coordination 0, so the offer never came. The four front-face
+  // ones went with GoF 1.021 (OTTO, 2026-09-28: the lists outrank the cards);
+  // the four Discard faces stay.
+  const ids = ['ZHLA-102-T_A', 'ZHLA-201-T_A', 'ZHRA-201-T_A', 'ZHRA-202-T_A'];
+  check('F5 the four Discard faces Coordinate one Drone', ids.map((id) => U.commandCoordination(actionOf(id.replace(/_[AB]$/, ''), id))), ids.map(() => 1));
+  check('F5 and the four front faces are gone',
+    ['ZYBP-101', 'ZYBP-202', 'ZHLA-102', 'ZHLA-201'].map((id) => (data.byId.get(id).actions ?? []).map((a) => a.id)),
+    [['ZYBP-101_A'], ['ZYBP-202_A'], ['ZHLA-102_A'], ['ZHLA-201_A']]);
   const f = freeTable();
   const m = put(f, 's1', L({ leftHand: 'ZHLA-102' }), 5, 5);
-  check('F5 and on the Mech that performs it', U.coordinationFor(data, m, actionOf('ZHLA-102', 'ZHLA-102_B')), 1);
+  check('F5 and the Missile carries it on the Mech that performs it', U.coordinationFor(data, m, actionOf('ZHLA-102', 'ZHLA-102_A')), 1);
   check('F5 the control: a Missile Action is still its own Coordination 1', U.commandCoordination(actionOf('ZHLA-102', 'ZHLA-102_A')), 1);
 }
 
@@ -1008,10 +1273,10 @@ console.log('Phase 5: drones, projectiles and deployables\n');
 // ================= F9. the smaller Drone and Command findings (LOW) =================
 {
   // SU1 and SU2 (ruling I2): the DLSP-2 launches SU2, which it could never do.
-  // SU1 keeps the Single Shot GoF 1.021 moved to SU2: OTTO's standing ruling
-  // (2026-09-03) keeps a printed GoF Action the parts list lacks until the
-  // printed cards are in hand, and rulings.test.mjs pins it.
-  check('F9 SU1 keeps its printed Single Shot, by the standing ruling', (data.byId.get('ZYDR-108').actions ?? []).map((a) => a.id), ['ZYDR-108_A', 'ZYDR-108_B']);
+  // SU1 loses the Single Shot GoF 1.021 moved to SU2: OTTO ruled on 2026-09-28
+  // that the company's lists outrank the cards, retiring the 2026-09-03 keep.
+  check('F9 SU1 prints Armor Patch alone (GoF 1.021)', (data.byId.get('ZYDR-108').actions ?? []).map((a) => a.id), ['ZYDR-108_B']);
+  check('F9 and its Omni-direction Firing chip went with the Single Shot', data.byId.get('ZYDR-108').keywords, []);
   const r = freeTable();
   const pack = put(r, 's1', L({ backpack: 'DLSP-2' }), 5, 5);
   check('F9 the DLSP-2 launches SU2', U.guidedActions(data, pack).find((g) => g.action.id === 'DLSP-2_A')?.projectiles.map((c) => c.id), ['SU2']);
@@ -1232,6 +1497,18 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   const walker = put(own, 's1', L({ backpack: '006' }), 5, 5);
   send(own, { kind: 'layMine', seat: 's1', uid: walker.uid, actionId: '006_A', cardId: '074', to: G(5, 5) });
   check('C3 a Mine Laid in the layer\'s own end Grid goes off as it enters (M7)', owedUids(own).length, 1);
+  // Laid or launched alike, a unit already standing in the Grid is spared
+  // (OTTO, 2026-09-28, for consistency); the layer is not, as M7 Lays before it
+  // enters.
+  const laidOn = freeTable();
+  const layer2 = put(laidOn, 's1', L({ backpack: '006' }), 5, 6);
+  const standing = put(laidOn, 's1', L(), 5, 5);
+  send(laidOn, { kind: 'layMine', seat: 's1', uid: layer2.uid, actionId: '006_A', cardId: '074', to: G(5, 5) });
+  const laidMine = laidOn.tokens.find((x) => x.cardId === '074');
+  check('C3 a Mine Laid where an ally stands spares it', [owedUids(laidOn), (laidMine.mine?.spared ?? []).map((x) => x.uid)], [[], [standing.uid]]);
+  send(laidOn, { kind: 'forceMove', seat: 's1', uid: standing.uid, targetUid: standing.uid, to: { col: standing.col, row: standing.row - 3 } });
+  send(laidOn, { kind: 'forceMove', seat: 's1', uid: standing.uid, targetUid: standing.uid, to: { col: standing.col, row: standing.row + 3 } });
+  check('C3 until it moves and comes back', owedUids(laidOn), [laidMine.uid]);
 
   // Spared only until it moves: back onto the very cell it stood on is an
   // entry like any other, over two commands or in one walk out of the Grid.
@@ -1293,12 +1570,30 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   const mover = put(g, 's1', L({ backpack: '006' }), 5, 5);
   const lay = (c, r) => ({ kind: 'layMine', seat: 's1', uid: mover.uid, actionId: '006_A', cardId: '074', to: G(c, r) });
   check('C6 no Lay outside the layer\'s own Movement', ok(g, lay(5, 4)), false);
-  g.script.opp = opp(mover.uid, { moved: true, maneuvered: true, movedFrom: { col: 15, row: 21 } });
+  g.script.opp = opp(mover.uid, { moved: true, maneuvered: true, movedFrom: { col: 15, row: 21 }, route: ['5,7', '5,6', '5,5'] });
   check('C6 on the route it walked, the Lay is taken', ok(g, lay(5, 6)), true);
   check('C6 a Grid no route of that Movement passes is refused', ok(g, lay(1, 1)), false);
+  check('C6 nor one beside the route, however near', ok(g, lay(4, 6)), false);
   mover.partStates.backpack = 'destroyed';
   check('C6 and a destroyed GLP-15 Lays nothing', ok(g, lay(5, 6)), false);
   mover.partStates.backpack = 'intact';
+
+  // The route travels with the Lay (the tabletop Lays before its Maneuver is
+  // recorded), and a Flight Move's path is only its two ends (FAQ M29).
+  const r = table();
+  const flier = put(r, 's1', L({ backpack: '006' }), 5, 5);
+  r.script.opp = opp(flier.uid);
+  const walked = [G(5, 8), G(5, 7), G(5, 6), G(5, 5)];
+  const rlay = (c, rr, extra = {}) => ({ kind: 'layMine', seat: 's1', uid: flier.uid, actionId: '006_A', cardId: '074', to: G(c, rr), route: walked, ...extra });
+  check('C6 a carried walk: any Grid on it, before the Maneuver is recorded', [ok(r, rlay(5, 7)), ok(r, rlay(5, 8)), ok(r, rlay(5, 5))], [true, true, true]);
+  check('C6 but not off it', ok(r, rlay(6, 7)), false);
+  check('C6 a carried flight: its start and landing only (M29)', [ok(r, rlay(5, 8, { flying: true })), ok(r, rlay(5, 5, { flying: true })), ok(r, rlay(5, 7, { flying: true }))], [true, true, false]);
+  check('C6 and the route ends where the layer stands', ok(r, { ...rlay(5, 7), route: [G(5, 8), G(5, 7), G(5, 6)] }), false);
+  check('C6 no longer than its Movement', ok(r, { ...rlay(5, 7), route: [G(5, 11), G(5, 10), G(5, 9), G(5, 8), G(5, 7), G(5, 6), G(5, 5)] }), false);
+  r.script.opp = opp(flier.uid, { moved: true, movedFrom: G(5, 8), route: ['5,8', '5,5'] });
+  check('C6 once recorded, its start is one the Movement had', [ok(r, rlay(5, 7)), ok(r, { ...rlay(4, 5), route: [G(4, 5), G(5, 5)] })], [true, false]);
+  r.script.opp = opp(flier.uid, { route: ['5,5'] });
+  check('C6 and with none carried, a Grid the Opportunity holds is no Movement until it moved', ok(r, { kind: 'layMine', seat: 's1', uid: flier.uid, actionId: '006_A', cardId: '074', to: G(5, 5) }), false);
   check('C6 the control: the sandbox Lays anywhere by hand', (() => {
     const t = freeTable();
     const x = put(t, 's1', L({ backpack: '006' }), 5, 5);
@@ -1520,6 +1815,42 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   put(lock, 's2', L(), 5, 4);
   check('F3 a Melee Locked Drone owes no Firing Action', owes(lock, reaper), null);
   check('F3 so a Melee Locked squad may pass', ok(lock, { kind: 'passTurn', seat: 's1' }), true);
+}
+
+// ================= the cards the company lists have and we lacked (OTTO, 2026-09-28) =================
+{
+  const card = (id) => data.byId.get(id);
+  const row = (id) => {
+    const c = card(id);
+    return c ? [c.name?.en, c.category, c.faction, c.score ?? null] : null;
+  };
+  check('LC Grenadier-72, a GoF pilot of 4 points', row('ZPA-72'), ['Grenadier-72', 'pilot', 'GOF', 4]);
+  check('LC and its dial is every other Grenadier\'s', ['swift', 'melee', 'projectile', 'firing', 'moving', 'tactic'].map((k) => card('ZPA-72')?.[k]),
+    ['swift', 'melee', 'projectile', 'firing', 'moving', 'tactic'].map((k) => card('ZPA-46')?.[k]));
+  check('LC Combatant A-76, a PD pilot of 10 points', row('XPA-A76'), ['Combatant A-76', 'pilot', 'PD', 10]);
+  check('LC the GA-3 HE Grenade, an RDL Projectile', row('070'), ['GA-3 HE Grenade', 'projectile', 'RDL', null]);
+  const ga3 = card('070')?.actions?.[0];
+  check('LC and its Delayed Detonation, 3Y at Range 1', [ga3?.name?.en, ga3?.type, ga3?.yellowDice, ga3?.range], ['Delayed Detonation', 'Delay', 3, 1]);
+  check('LC the two Painting Type Drones', [row('523'), row('524')], [['DTG-30Art "Hyena" Painting Type', 'drone', 'RDL', 99], ['ADK15Art "Porcupine" Painting Type', 'drone', 'UN', 99]]);
+  check('LC and the Claymore Civilian Type', row('576'), ['N13 Vanguard III “Claymore” Civilian Type', 'drone', 'GOF', 99]);
+  check('LC the UN trainees carry the list\'s names', ['LPA-27', 'LPA-30', 'LPA-31', 'LPA-34', 'LPA-66'].map((id) => card(id)?.name?.en),
+    ['Rifleman-27', 'Rifleman-30', 'Charger-31', 'Charger-34', 'Rifleman-66']);
+  check('LC and the left discard S100 no longer shares the right one\'s name', [card('S100+R6SS-L-T')?.name?.en, card('116')?.name?.en],
+    ['S100 Shield + R6SS SMG (L) (D)', 'S100 Shield + R6SS SMG (R) (D)']);
+
+  // The tournament trophies: in the Reference, and nowhere a squad is built
+  // (OTTO, 2026-09-28).
+  check('LC the three trophies, reference-only', ['258', '259', '560'].map((id) => [row(id), card(id)?.referenceOnly]),
+    [[['[G&T] Mini Tournament Trophy', 'mech_part', 'RDL', 99], true], [['[G&T] Mini Tournament Trophy', 'mech_part', 'UN', 99], true],
+      [['Asia Championship Trophy', 'mech_part', 'RDL', 99], true]]);
+  const slot = (type) => M.BUILD_SLOTS.find((x) => x.type === type);
+  const offered = (type) => M.slotPool(data, slot(type)).map((c) => c.id);
+  check('LC no builder offers one', [offered('rightHand').filter((id) => id === '258' || id === '259'), offered('leftHand').includes('560')], [[], false]);
+  check('LC while the hands still offer everything else', offered('rightHand').includes('115') && offered('leftHand').includes('S100+R6SS-L'), true);
+  const imported = M.parseSquadJson({ mechs: [{ parts: { torso: '012', rightHand: '258', leftHand: '560' } }] }, data.byId);
+  check('LC an imported squad naming one is told the card is unknown', [imported.unknownIds.sort(), imported.mechs[0].loadout.rightHand ?? null], [['258', '560'], null]);
+  check('LC and the pad\'s Find leaves them out',
+    /d\.cards\.filter\(\(c\) => !c\.referenceOnly && pick\(c\)\)/.test(readFileSync(new URL('../pad/pad.ts', import.meta.url), 'utf8')), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

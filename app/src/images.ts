@@ -1,4 +1,5 @@
 import { assetUrl, cardImageUrl } from './data';
+import type { Card } from './types';
 
 const CARD_CACHE_MAX = 40;
 
@@ -129,12 +130,46 @@ export function isCardImageReady(id: string): boolean {
   return !!img && img.complete && img.naturalWidth > 0;
 }
 
-export function mountCardImage(slot: HTMLElement, id: string, className: string): void {
+// A card with no official image shows its outline with its name in the middle,
+// and nothing else (OTTO, 2026-09-28). It is drawn where the scan would be and
+// never stored, so every tool that counts the scans we hold still sees the gap.
+// Drones and Projectiles print on their side, so theirs lies the same way.
+export interface CardPlaceholder {
+  label: string;
+  wide?: boolean;
+}
+
+export function printsWide(card: Pick<Card, 'category'>): boolean {
+  return card.category === 'drone' || card.category === 'projectile';
+}
+
+export function cardPlaceholder(ph: CardPlaceholder, className = ''): HTMLElement {
+  const el = document.createElement('div');
+  el.className = ['card-ph', ph.wide ? 'wide' : '', className].filter(Boolean).join(' ');
+  el.setAttribute('role', 'img');
+  el.setAttribute('aria-label', `${ph.label}, no card image`);
+  el.appendChild(document.createElement('span')).textContent = ph.label;
+  return el;
+}
+
+// Without a placeholder a missing scan just leaves the slot empty. A cached
+// image that already failed fires no second error, so that case is read off
+// the element directly.
+function showOrStandIn(slot: HTMLElement, img: HTMLImageElement, className: string, ph?: CardPlaceholder): void {
+  const fail = () => {
+    if (ph) img.replaceWith(cardPlaceholder(ph, className));
+    else img.remove();
+  };
+  img.onerror = fail;
+  slot.replaceChildren(img);
+  if (img.complete && !img.naturalWidth) fail();
+}
+
+export function mountCardImage(slot: HTMLElement, id: string, className: string, ph?: CardPlaceholder): void {
   const img = loadCardImage(id);
   img.className = className;
   img.alt = '';
-  img.onerror = () => img.remove();
-  slot.replaceChildren(img);
+  showOrStandIn(slot, img, className, ph);
 }
 
 // THE CACHE HOLDS ONE ELEMENT PER ID, which is the whole point of it: the
@@ -147,13 +182,12 @@ export function mountCardImage(slot: HTMLElement, id: string, className: string)
 // So a second view of an already-shown card mounts its own element. The bytes
 // are already in the browser's HTTP cache, so this costs a decode and not a
 // download, and it is the ONLY safe way to show one card twice at once.
-export function mountCardImageCopy(slot: HTMLElement, id: string, className: string): void {
+export function mountCardImageCopy(slot: HTMLElement, id: string, className: string, ph?: CardPlaceholder): void {
   const img = new Image();
   img.src = cardImageUrl(id);
   img.className = className;
   img.alt = '';
-  img.onerror = () => img.remove();
-  slot.replaceChildren(img);
+  showOrStandIn(slot, img, className, ph);
 }
 
 export function preloadCardImages(ids: string[]): void {

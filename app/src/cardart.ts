@@ -1,4 +1,5 @@
 import { mechPartUrl, portraitUrl, tabImageUrl } from './data';
+import { cardPlaceholder } from './images';
 
 // ---------- portraits and part art, filled after a paint ----------
 //
@@ -13,7 +14,13 @@ export function fillPortraits(root: HTMLElement, lazy: boolean): void {
     img.src = portraitUrl(slot.dataset.portrait!);
     img.alt = '';
     if (lazy) img.loading = 'lazy';
-    img.addEventListener('error', () => slot.classList.add('portrait-missing'), { once: true });
+    // No portrait: the placeholder a missing card scan gets (images.ts), in the
+    // portrait's own square (OTTO, 2026-09-28). It left a broken image before.
+    // Only a slot big enough to read one carries a label.
+    img.addEventListener('error', () => {
+      slot.classList.add('portrait-missing');
+      img.replaceWith(cardPlaceholder({ label: slot.dataset.portraitLabel ?? '' }, 'portrait-ph'));
+    }, { once: true });
     slot.appendChild(img);
   });
   root.querySelectorAll<HTMLElement>('[data-partart]').forEach((slot) => {

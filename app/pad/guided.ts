@@ -12,14 +12,14 @@
 import { gameEndsThisRound } from '../src/scoring';
 import type { GameData } from '../src/data';
 import { actionIconUrl, cardName } from '../src/data';
-import { readyCommands, rebootOwed, taskDesignations, missionZones, type CheckResult, type Command } from '../src/commands';
+import { readyCommands, rebootOwed, taskDesignations, missionZones, type CheckResult, type Command, swarmFor } from '../src/commands';
 import { asterBlockers, offerCoordination, runAster } from '../src/commandpick';
 import { alive, canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn, tiedChoices, type LoopPhase } from '../src/loop';
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
-import { allyRepairTargets, electronicStrength, interceptorsAgainst, bitPortOf, coordinationAfterManeuver, canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
-import { boxHands, normaliseTasks, remoteAccessRollText, remoteAccessWhy, terminalsInReach } from '../src/tasks';
+import { allyRepairTargets, overwatchOf, firewatchOn, electronicStrength, interceptorsAgainst, bitPortOf, coordinationAfterManeuver, canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
+import { boxHands, normaliseTasks, remoteAccessWhy, terminalsInReach } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
 import { PHASES, removableTokens, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Stance, type Timing, type Token, type TokenPick } from '../src/types';
 import { choiceDialog, pickManyDialog } from '../src/dialog';
@@ -52,6 +52,9 @@ export interface GuideApi {
   // Target Tracing's Counter-roll back at the attacker (174): the record in a
   // room, the local exchange solo, with its Command Token and its 1 Link.
   trace?(uid: number, actionId: string, attackerUid: number): void;
+  // A Remote Access's Counter-roll against a Terminal, already paid (ruling
+  // I25): the window, with the Terminal's stand-in as the Responder.
+  terminal?(uid: number, actionId: string, itemId: string, zoneName: string): void;
   // The engine's verdict without performing, for a chip that shows why not.
   check(cmd: Command): CheckResult;
   // The Tactics Cards this side could play in the phase that is on, and the
@@ -81,6 +84,9 @@ export interface GuideApi {
   launch?(uid: number, actionId: string, cardId: string): void;
   // 292_A with an empty Port: Recover a Bit instead (ruling I23).
   recover?(uid: number, actionId: string): void;
+  // The KK9's Overwatch Strike (LHDR-KK9_B; FAQ K15): names the enemy and the
+  // Ally Mech, pays, and calls it (pad.ts).
+  overwatch?(uid: number, actionId: string): void;
 }
 
 const other = (s: Side): Side => (s === 's1' ? 's2' : 's1');
@@ -256,7 +262,7 @@ function reactionHtml(api: GuideApi, owed: { t: Token; r: Owed }): string {
   const s = api.state();
   // The Action may sit on any of the unit's Parts, not only its core card.
   const what = tokenCards(api.data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === r.actionId);
-  const name = r.kind === 'control' ? 'The Red Shoes' : what?.name?.en
+  const name = r.kind === 'control' ? 'The Red Shoes' : r.kind === 'overwatch' ? 'Overwatch Strike' : what?.name?.en
     || (r.kind === 'stance' ? 'Defense Reaction' : r.kind === 'riposte' ? 'Riposte' : r.kind === 'trace' ? 'Target Tracing'
       : r.kind === 'manifest' ? 'Scanned' : r.kind === 'scanAttack' ? 'Attack resumes' : 'Emergency Smoke');
   const key = `data-uid="${t.uid}" data-id="${api.esc(r.actionId)}"`;
@@ -288,6 +294,13 @@ function reactionHtml(api: GuideApi, owed: { t: Token; r: Owed }): string {
       : stop ? api.esc(stop)
         : `Take control of ${api.esc(from.label)}: make one of its own Maneuvers or Move Actions on the table. It costs its player no Tick.`;
     buttons = from && !stop ? btn(api, 'g-react-go', 'Move it', key, 'pad-chip on') : '';
+  } else if (r.kind === 'overwatch') {
+    // The KK9's Overwatch Strike: 1 Firing Action at the designated enemy, and
+    // no other, for no Ticks (FAQ K15; audit Phase 5, F8).
+    const guns = guidedActions(api.data, t).filter((g) => g.action.type === 'Firing').map((g) => g.action);
+    body = !from ? 'The designated enemy has left the table.'
+      : `${api.esc(t.label)} may perform 1 Firing Action against ${api.esc(from.label)} at once, and against no one else. It costs no Ticks (FAQ K15).`;
+    buttons = from ? guns.map((a) => btn(api, 'g-overwatch', a.name.en ?? a.id, `${key} data-gun="${api.esc(a.id)}"`, 'pad-chip on')).join('') : '';
   } else if (r.kind === 'scanAttack') {
     body = `${api.esc(t.label)}'s attack on ${api.esc(from?.label ?? 'the target')} resumes (FAQ I12).`;
     buttons = btn(api, 'g-react-go', 'Attack', key, 'pad-chip on');
@@ -485,8 +498,13 @@ function loopHtml(api: GuideApi, phase: LoopPhase): string {
   const units = eligibleUnits(s, phase, turn, api.data);
   const tokens = phase === 'Command' ? `<span class="pad-turn-val">Command Tokens · ${s.commandTokens?.[turn] ?? 0}</span>` : '';
   const rows = units.map((u) => btn(api, 'g-designate', u.label, `data-uid="${u.uid}" data-side="${turn}"`)).join('');
+  // Swarm Tactics going on (172_B): the Warrior's token moves on now, or stops.
+  const going = phase === 'Command' ? swarmFor(s, turn) : null;
+  const swarmNote = going
+    ? `<p class="pad-turn-note">Swarm Tactics: ${api.esc(s.tokens.find((x) => x.uid === going.issuer)?.label ?? 'the Warrior')}'s Command Token may go on to another Drone now, at no cost. Stop, and it stays on ${api.esc(s.tokens.find((x) => x.uid === going.from)?.label ?? 'that Drone')}.</p>`
+    : '';
   return head(api, phase === 'Command' ? 'Command a Drone' : `Activate ${noun}`, `${phase} Phase · ${api.sideName(turn)}`, true)
-    + `<div class="pad-chips">${rows}${btn(api, 'g-pass', 'Pass', `data-side="${turn}"`)}</div>${tokens}${phase === 'Command' ? asterHtml(api, turn) : ''}`;
+    + `${swarmNote}<div class="pad-chips">${rows}${going ? btn(api, 'g-swarmstop', 'Stop here', `data-side="${turn}"`) : ''}${btn(api, 'g-pass', 'Pass', `data-side="${turn}"`)}</div>${tokens}${phase === 'Command' ? asterHtml(api, turn) : ''}`;
 }
 
 function planningHtml(api: GuideApi): string {
@@ -582,6 +600,12 @@ function extrasHtml(api: GuideApi, t: Token, opp: NonNullable<GameState['script'
   if (trait) {
     const v = api.check({ kind: 'linkTick', seat: t.side, uid: t.uid });
     chips.push(btn(api, 'g-linktick', `${trait.label.replace(/^Hammerhead /, '')} ${opp.linkTicks ?? 0}/${trait.maxLink}`, `${v.ok ? '' : ' disabled'} title="${api.esc(v.ok ? 'Consume 1 Link for 1 Action Tick (FAQ L2).' : v.why ?? '')}"`));
+  }
+  // ZPA-38 Firewatch (GoF 1.021): 1 Link for a Command Token as the Mech gains
+  // the Opportunity.
+  if (firewatchOn(api.data, t)) {
+    const v = api.check({ kind: 'firewatch', seat: t.side, uid: t.uid });
+    chips.push(btn(api, 'g-firewatch', opp.firewatch ? 'Firewatch taken' : 'Firewatch: 1 Link → Command', `${v.ok ? '' : ' disabled'} title="${api.esc(v.ok ? 'Consume 1 Link to generate a Command Token, as this Mech gains its Action Opportunity.' : v.why ?? '')}"`));
   }
   const bonus = opportunityBonusOn(api.data, t);
   if (bonus) {
@@ -691,18 +715,18 @@ export async function askTokenCleanup(api: GuideApi, t: Token, a: CardAction, ru
 }
 
 // Remote Access (p.87, 5.3.3). The pad has no board, so the table judges the
-// Range: the pad names the Terminals still face-up and asks how the roll went.
-// It paid the Tick and said "Remote Access." with no Terminal recorded (audit
-// Phase 6, E3). Both questions come before any Tick, so a Cancel costs nothing.
-// Shared by Guided and Freeform; null on a Cancel, or with nothing to access
-// (said in a toast).
+// Range: the pad names the Terminals still face-up. It paid the Tick and said
+// "Remote Access." with no Terminal recorded (audit Phase 6, E3). The question
+// comes before any Tick, so a Cancel costs nothing; the Counter-roll against
+// the Terminal follows in the window (ew.ts beginTerminal). Shared by Guided and
+// Freeform; null on a Cancel, or with nothing to access (said in a toast).
 export async function askRemoteAccess(
   d: GameData,
   s: GameState,
   t: Token,
   a: CardAction,
   toast: (text: string) => void,
-): Promise<{ itemId: string; name: string; won: boolean } | null> {
+): Promise<{ itemId: string; name: string } | null> {
   const reach = a.range ?? 4;
   const items = normaliseTasks(s.tasks).items;
   const nothing = remoteAccessWhy(items, t, reach, null);
@@ -717,26 +741,16 @@ export async function askRemoteAccess(
   });
   const pick = open.find((i) => i.id === id);
   if (!pick) return null;
-  const ev = electronicStrength(d, s.tokens, t, 'initiator', a);
-  const verdict = await choiceDialog({
-    title: `Remote Access on ${zoneName(pick.zone)}`,
-    body: remoteAccessRollText(t.label, ev),
-    choices: [{ id: 'won', label: 'It succeeded' }, { id: 'lost', label: 'It failed' }, { id: '__no', label: 'Cancel', cancel: true }],
-    stacked: true,
-  });
-  if (verdict !== 'won' && verdict !== 'lost') return null;
-  return { itemId: pick.id, name: zoneName(pick.zone), won: verdict === 'won' };
+  return { itemId: pick.id, name: zoneName(pick.zone) };
 }
 
-// Guided pays the Action, then accesses the Terminal through the engine.
+// Guided pays the Action, then the Counter-roll against the Terminal opens in
+// the window; a win accesses it through the engine (ruling I25).
 async function remoteAccess(api: GuideApi, t: Token, a: CardAction): Promise<void> {
   const got = await askRemoteAccess(api.data, api.state(), t, a, api.toast);
   if (!got) return;
   if (!api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id })) return;
-  if (!got.won) { api.toast(`Remote Access on the ${got.name} Terminal failed.`); return; }
-  if (api.send({ kind: 'accessTerminal', seat: t.side, uid: t.uid, itemId: got.itemId, chain: 'join' })) {
-    api.toast(`Remote Access: the ${got.name} Terminal is face-down for the rest of the round.`);
-  }
+  api.terminal?.(t.uid, a.id, got.itemId, got.name);
 }
 
 // Performing an Action that is not an attack: what the Match Centre's
@@ -943,7 +957,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   if (upTo > 0) {
     await offerCoordination(d, api.state(), t, upTo, (mechUid, targetUid) => {
       api.send({ kind: 'coordinateCommand', seat, uid: mechUid, targetUid, chain });
-    }, (_drone, text) => api.toast(text));
+    }, (_drone, text) => api.toast(text), () => { api.send({ kind: 'endSwarm', seat, chain }); });
   }
   const extra = extraActivationOf(a);
   if (extra) {
@@ -1129,6 +1143,12 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       if (!t) return true;
       const phase = PHASES[s.round.phase];
       if (phase === 'Command' && t.kind === 'drone') {
+        // Swarm Tactics going on: the Warrior's token, already issued (172_B).
+        const going = swarmFor(s, side);
+        if (going) {
+          if (api.send({ kind: 'designate', seat: side, uid, fromUid: going.issuer })) api.selectUnit(uid);
+          return true;
+        }
         // Which Mech issues the Command (4.15.2). One issuer needs no question.
         const issuers = s.tokens.filter((x) => x.side === side && x.kind === 'mech' && readyCommands(x) > 0);
         if (issuers.length > 1) {
@@ -1146,6 +1166,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       return true;
     }
     case 'g-pass': api.send({ kind: 'passTurn', seat: (el.dataset.side as Side) ?? me }); return true;
+    case 'g-swarmstop': api.send({ kind: 'endSwarm', seat: (el.dataset.side as Side) ?? me }); return true;
     case 'g-moved': {
       const act = activeOpp(api);
       if (!act) return true;
@@ -1241,6 +1262,9 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         }).then((pick) => { if (pick !== null) launch(t.uid, a.action.id, pick); });
         return true;
       }
+      // The KK9's Overwatch Strike asks its enemy and its Mech, then pays and
+      // calls it (audit Phase 5 follow-up).
+      if (a && overwatchOf(a.action) && api.overwatch) { api.overwatch(t.uid, a.action.id); return true; }
       if (a) { void performRouted(api, t, a.action); return true; }
       // A Common Action (6.1) is not among the Parts' Actions: paid the same
       // way, then its own tool. The Punch is a Melee Attack and Scan an
@@ -1289,6 +1313,12 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       if (t) api.send({ kind: 'overload', seat: t.side, uid: t.uid });
       return true;
     }
+    case 'g-firewatch': {
+      const act = activeOpp(api);
+      const t = act ? s.tokens.find((x) => x.uid === act.uid) : undefined;
+      if (t) api.send({ kind: 'firewatch', seat: t.side, uid: t.uid });
+      return true;
+    }
     case 'g-linktick': {
       const act = activeOpp(api);
       const t = act ? s.tokens.find((x) => x.uid === act.uid) : undefined;
@@ -1315,6 +1345,14 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
     }
     case 'g-react-go': answerReaction(api, Number(el.dataset.uid), el.dataset.id!, true); return true;
     case 'g-react-skip': answerReaction(api, Number(el.dataset.uid), el.dataset.id!, false); return true;
+    case 'g-overwatch': {
+      const uid = Number(el.dataset.uid);
+      const r = (ensureScript(s).reactions ?? []).find((x) => x.uid === uid && x.kind === 'overwatch');
+      // The granted Firing Action spends the debt through its own apply, and
+      // its one target is the enemy the KK9 designated.
+      if (r && el.dataset.gun) api.attack?.(uid, el.dataset.gun, { granted: true, only: r.fromUid });
+      return true;
+    }
     case 'g-riposte': {
       const uid = Number(el.dataset.uid);
       const t = s.tokens.find((x) => x.uid === uid);

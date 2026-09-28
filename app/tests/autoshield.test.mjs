@@ -13,6 +13,7 @@
 // Five cards carry it: ZHDR-101 Scutum, ZHDR-301 Apologist, 295 "White Dwarf"
 // Bit, and the 552/553 Mech arms, which gain it in Defensive Stance only.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
 const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
@@ -42,7 +43,7 @@ const body = 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntyp
   + cut(units, 'export function isElectronicAttack', '// `loans` is passed ONLY where', 'isElectronicAttack')
   + cut(units, '// ---------- 自动盾牌 Automatic Shield', '// 503 Close Assault', 'the Automatic Shield block');
 const tmp = new URL('./_autoshield.slice.ts', import.meta.url);
-writeFileSync(tmp, body);
+writeFileSync(tmp, FOOTPRINT + body);
 const { automaticShieldFor, automaticShieldOn, lineCrossesUnit, losBetween, protectionFor, rangeBetween } = await import(tmp.href);
 
 const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));

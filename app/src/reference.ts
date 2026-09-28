@@ -1,4 +1,5 @@
 import './reference.css';
+import './ui.css';
 import { actionIconUrl, battlefieldCardUrl, boxCoverUrl, cardName, environmentImageUrl, HELP_CARDS, helpCardUrl, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type EnvironmentCard, type FactionDef, type GameData, type KeywordDef } from './data';
 import { mountCardImage, mountCardImageCopy, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
@@ -1387,30 +1388,13 @@ function paintDetail(html: string, scrollTop: number): void {
     const isThumb = !!slot.closest('.dthumb');
     // The thumbnail takes a COPY: the image cache holds one element per id, so
     // two slots sharing it would leave whichever mounted first empty.
-    (isThumb ? mountCardImageCopy : mountCardImage)(slot, slot.dataset.img!, isThumb ? 'dthumb-img' : 'ref-cardimg');
-    // 25 cards have no scan. mountCardImage drops the broken image but not the
-    // caption beside it, which left those cards captioning a scan that is not
-    // there. Cached images have already failed by now and fire no fresh event,
-    // so the completed-but-empty case has to be tested directly.
-    const img = slot.querySelector('img');
-    // 25 cards have no scan. With the photo behind a tab, dropping the figure
-    // is no longer enough: the TAB would still be there, promising a picture
-    // and opening an empty panel. So the tab goes with it, and if the reader is
-    // standing on that tab when the image fails they are put back on the Card.
-    const drop = () => {
-      slot.closest('.ref-scan')?.remove();
-      // The thumbnail is a BUTTON that opens the Photo tab, so it has to go
-      // with the tab it opens; left behind it would be a picture-shaped hole
-      // leading nowhere.
-      content.querySelector('.dthumb')?.remove();
-      const tab = content.querySelector<HTMLElement>('[data-dtab="photo"]');
-      const panel = content.querySelector<HTMLElement>('[data-dpanel="photo"]');
-      if (tab) tab.hidden = true;
-      if (panel && !panel.hidden) showDetailTab(content, 'card');
-    };
-    if (!img) { drop(); return; }
-    if (img.complete && !img.naturalWidth) drop();
-    else img.addEventListener('error', drop, { once: true });
+    // A card with no scan shows its placeholder in both places instead, so the
+    // thumbnail and the Photo tab stay (OTTO, 2026-09-28). They used to be
+    // dropped, which left no sign that a printed card exists at all.
+    (isThumb ? mountCardImageCopy : mountCardImage)(slot, slot.dataset.img!, isThumb ? 'dthumb-img' : 'ref-cardimg', {
+      label: slot.dataset.imgLabel ?? '',
+      wide: slot.dataset.imgWide === '1',
+    });
   });
   // A card in no box at all still has a Boxes tab saying so in a sentence, but
   // an EMPTY panel would be a dead end, so that one is dropped outright.

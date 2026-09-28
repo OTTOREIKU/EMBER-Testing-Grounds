@@ -1,12 +1,13 @@
 // Checks Knockback X and Push X: the direction taken, how far the victim
 // travels, and where it stops (appendix K and P, and Forced Movement 4.3.4).
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
 const rStart = rules.indexOf('let GRIDS');
 const rEnd = rules.indexOf('export function losBetween');
 const tmp = new URL('./_knockback.slice.ts', import.meta.url);
-writeFileSync(tmp, 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + rules.slice(rStart, rEnd));
+writeFileSync(tmp, FOOTPRINT + 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + rules.slice(rStart, rEnd));
 const { attackDirection, knockbackPath } = await import(tmp.href);
 
 const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');

@@ -79,11 +79,11 @@ check('the Match Centre drains a Link instead of applying Fire Control Interfere
   /if \(opts\.reaction\) \{\s*\n\s*if \(resp\.kind === 'mech'\) \{\s*\n\s*cmds\.push\(\{ kind: 'drainLink', seat, uid, targetUid: resp\.uid, n: 1 \}\);/.test(win)
     && /ewWinCommands\(ctx\.data, init, resp, a, \{ reaction: !!c\.reaction/.test(hud), true);
 check('and freeplay drains it from the contest itself',
-  /ewWinCommands\(this\.data, c\.initiator, c\.responder, c\.action, \{ reaction: !!c\.linkLoss \}\)/.test(combat), true);
+  /ewWinCommands\(this\.data, c\.initiator, c\.responder, c\.action, \{ reaction: !!c\.linkLoss(, terminal: c\.terminal)? \}\)/.test(combat), true);
 check('the helper carries the loss rather than reading a card that has no rules',
   // `then` beside it is the free Scan's callback (FAQ I12), `after` the next
   // exchange of an Action on every enemy in Range; neither is a card rule.
-  /start\(initiator: Token, action: CardAction, responder: Token, opts: \{ linkLoss\?: number; then\?: \(initiatorWins: boolean\) => void; after\?: \(\) => void \} = \{\}\)/.test(combat), true);
+  /start\(initiator: Token, action: CardAction, responder: Token, opts: \{ linkLoss\?: number; then\?: \(initiatorWins: boolean\) => void; after\?: \(\) => void(; terminal\?: string)? \} = \{\}\)/.test(combat), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

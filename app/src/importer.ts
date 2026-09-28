@@ -16,7 +16,9 @@ export function parseSquadJson(raw: unknown, byId: Map<string, Card>): ImportedS
   const unknownIds: string[] = [];
   const check = (id: string | undefined): string | undefined => {
     if (!id) return undefined;
-    if (!byId.has(id)) {
+    // A Reference-only card is not one a squad can field, so it is reported the
+    // way an id we have never heard of is.
+    if (!byId.has(id) || byId.get(id)!.referenceOnly) {
       unknownIds.push(id);
       return undefined;
     }

@@ -27,6 +27,7 @@
 // Every assertion here is driven: the real resolveCrush, the real advanceCrush,
 // the real crushPanel string, against the real rules.ts geometry.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FOOTPRINT } from './_footprint.mjs';
 
 // Read as LF whatever the checkout wrote: the gridRef cut below ends on a blank
 // line, and a working copy saved with LF endings failed it with CRLF in the marker.
@@ -45,7 +46,7 @@ const cut = (s, a, b, what) => {
 // carries crushTargets, crushExchangeSpots and crushExchange. Mirroring
 // standingSpot's occupancy walk here instead would let this file agree with a
 // copy while the app puts a Mech on top of a Drone.
-const geometry = cut(rules, 'let GRIDS', 'export function smokeKey', 'the board size')
+const geometry = FOOTPRINT + cut(rules, 'let GRIDS', 'export function smokeKey', 'the board size')
   + cut(rules, 'export function largeGridOf', '// Where inside Large Grid', 'largeGridOf')
   + cut(rules, '// Where inside Large Grid', 'export function spotsInGrid', 'standingSpot')
   + cut(rules, 'export interface CrushVictims', 'export function reachableGrids', 'the Crush geometry');

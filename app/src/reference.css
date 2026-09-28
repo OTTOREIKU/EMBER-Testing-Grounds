@@ -270,7 +270,7 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
   overflow: hidden; background: var(--surface2);
 }
 .pilot-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
-.pilot-thumb.portrait-missing { background: var(--surface3); }
+.pilot-thumb.portrait-missing { background: none; }
 .ref-portrait {
   width: 132px; height: 132px; border-radius: 10px; overflow: hidden;
   background: var(--surface2); margin: 12px 0;
@@ -1017,6 +1017,19 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
   max-width: 100%; max-height: calc(var(--dpanel-h, 70vh) - 30px);
   border-radius: 8px;
 }
+/* A card with no scan (ui.css .card-ph). A fixed width, because an auto one in
+   this shrink-to-fit panel would be as narrow as the name. */
+[data-dpanel="photo"] div.card-ph.ref-cardimg { display: grid; width: 300px; max-height: none; }
+[data-dpanel="photo"] div.card-ph.ref-cardimg > span { font-size: 18px; }
+/* The thumbnail's own frame is the card's outline, drawn in the placeholder's
+   colour, with the name small inside it (OTTO, 2026-09-28). */
+.dthumb:has(.card-ph):not(:hover) { border-color: var(--text3); }
+.dthumb div.card-ph { border: none; border-radius: 0; padding: 4px 3px; overflow: hidden; }
+.dthumb div.card-ph > span {
+  font-size: 7.5px; line-height: 1.15;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden;
+}
+.dthumb div.card-ph.wide > span { -webkit-line-clamp: 3; }
 
 /* Environment Cards (5.4.1). The printed card is square and doubled, so the
    shipped art is its upright half: a wide strip that wants the full column. */
