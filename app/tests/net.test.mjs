@@ -38,7 +38,7 @@ const beat = () => { for (const fn of [...beats.values()]) fn(); };
 
 const src = readFileSync(new URL('../src/net.ts', import.meta.url), 'utf8');
 const tmp = new URL('./_net.slice.ts', import.meta.url);
-writeFileSync(tmp, 'type Command = any;\ntype Side = any;\n' + src.replace(/^import[^\n]*\n/gm, ''));
+writeFileSync(tmp, 'type Command = any;\ntype Side = any;\n' + readFileSync(new URL('../src/safetext.ts', import.meta.url), 'utf8') + src.replace(/^import[^\n]*\n/gm, ''));
 const { Relay } = await import(tmp.href);
 
 let pass = 0, fail = 0;
@@ -354,6 +354,32 @@ check('and carries the samples', Array.isArray(rep.samples), true);
 check('and the lifecycle trace', Array.isArray(rep.lifecycle), true);
 check('and counts commands dropped as stale', rep.staleDropped, 0);
 check('but never the board', 'state' in rep || 'snapshot' in rep, false);
+
+// HTML injection (2026-09-28): everything the other side says is cleaned
+// before any page sees it - a command, a board, a roll.
+const t4 = seated('s1');
+t4.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', cmd: { kind: 'renameUnit', seat: 's2', uid: 7, label: '<img src=x onerror=alert(1)>Bob', '<k>': ['<b>'] } });
+check('a delivered command reaches the page with no angle brackets anywhere',
+  t4.applied[0], { kind: 'renameUnit', seat: 's2', uid: 7, label: 'img src=x onerror=alert(1)Bob', k: ['b'] });
+t4.ws.deliver({ t: 'checkpoint', rev: 1, state: { tokens: [{ label: '<svg onload=alert(1)>' }] } });
+check('and so does a delivered board', t4.boards.at(-1), { tokens: [{ label: 'svg onload=alert(1)' }] });
+const rolls = [];
+const t5 = new Relay('http://localhost:3002', {
+  onCommand: () => {}, onCheckpoint: () => {}, onCatchUp: () => {}, onNeedCheckpoint: () => {}, onChange: () => {},
+  onRolled: (dice, seat, label) => rolls.push({ dice, seat, label }),
+  snapshot: () => ({}),
+});
+t5.host();
+const ws5 = FakeSocket.instances.at(-1);
+ws5.onopen?.();
+ws5.deliver({ t: 'room', you: { seat: 's1', host: true }, room: ROOM });
+ws5.deliver({ t: 'rolled', seat: 's3" class="x', dice: [{ color: 'red', face: 1 }], label: 'x' });
+check('a roll from no real seat is not drawn', rolls.length, 0);
+ws5.deliver({ t: 'rolled', seat: 's2', dice: [{ color: 'red', face: 1 }, { color: 5, face: 'x' }, null], label: { html: '<b>' } });
+check('a roll keeps its well-formed dice, and a label that is not text is dropped',
+  rolls[0], { dice: [{ color: 'red', face: 1 }], seat: 's2', label: null });
+ws5.deliver({ t: 'rolled', seat: 's1', dice: [], label: 'Attack <b>roll</b>' });
+check('a label arrives without brackets', rolls[1]?.label, 'Attack broll/b');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

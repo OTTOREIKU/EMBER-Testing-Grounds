@@ -1,5 +1,5 @@
 import type { BoardGrids, CardAction, CombatView, Facing, FreeTicks, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
-import { addStatus, ageTokens, cellsOf, isLineUnit, gridsOf, newOpportunity, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
+import { addStatus, ageTokens, cellsOf, isLineUnit, gridsOf, newOpportunity, normaliseCatalog, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
 import { cardName, isUnfolded, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
 import { interceptPayer, repairSpec, fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
@@ -10,6 +10,7 @@ import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, inc
 import { applyKill, boxHands, boxPlaceTurn, cellToGrid, deployGrids, deployOpenGrids, leaveBoxes, newTaskState, normaliseTasks, taskItemsFor, type TaskItem, type TaskState, pendingDesignations, rangeToZone, recordPartLoss, recordUnitLoss, remoteAccessWhy, settleControl, TERMINAL_EV, TERMINAL_UID, type Designation, retractKill, unrecordPartLoss } from './tasks';
 import { alive, canAct, dialHidden, droneActionWhy, droneLockPhase, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity, tiedChoiceWhy } from './loop';
 import { boxDropCells, dissipationFor, losNote, rangeBetween, spotsInGrid } from './rules';
+import { cleanName } from './safetext';
 
 // ---------- the command layer (multiplayer phase 1) ----------
 
@@ -1153,6 +1154,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'setRollbackCatalog': {
       if (!state.script) return no('There is no game running.');
+      if (!Array.isArray(cmd.entries)) return no('That is not a rollback list.');
       return ok;
     }
     case 'callDefense': {
@@ -1685,7 +1687,12 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'queueReactions': {
       if (!state.script) return no('There is no guided game running.');
+      if (!Array.isArray(cmd.items)) return no('That is not a list of reactions.');
       for (const it of cmd.items) {
+        // Checked field by field, like a loaded script's: the counts are
+        // printed straight into the defender's panel.
+        if (!it || typeof it.uid !== 'number' || typeof it.actionId !== 'string'
+          || !Number.isFinite(it.count) || !Number.isFinite(it.range)) return no('That reaction is not well formed.');
         const who = state.tokens.find((x) => x.uid === it.uid);
         if (!who) return no('That unit is not on the board.');
         // A Shutdown defender owes no reaction: each is its own Passive or
@@ -2090,7 +2097,7 @@ function checkActed(
       return ok;
     }
     case 'renameUnit': {
-      const label = typeof cmd.label === 'string' ? cmd.label.trim() : '';
+      const label = typeof cmd.label === 'string' ? cleanName(cmd.label) : '';
       if (!label) return no('A unit needs a name.');
       if (label.length > 40) return no('That name is too long to fit on a sheet (40 characters).');
       return ok;
@@ -4324,8 +4331,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     const staging = !!su && su.stage !== 'done';
     // The first list a side brings names it. Topping up afterwards leaves the
     // name alone — adding one mech should not rename the whole squad.
-    if (cmd.name && !state.sideNames?.[cmd.seat]) {
-      state.sideNames = { ...(state.sideNames ?? {}), [cmd.seat]: cmd.name };
+    const squadName = typeof cmd.name === 'string' ? cleanName(cmd.name) : '';
+    if (squadName && !state.sideNames?.[cmd.seat]) {
+      state.sideNames = { ...(state.sideNames ?? {}), [cmd.seat]: squadName };
     }
     const facing: Facing = cmd.seat === 's1' ? 2 : 0;
     const arrive = (tok: Token) => {
@@ -4439,7 +4447,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   }
   if (cmd.kind === 'setRollbackCatalog') {
     const sc = state.script;
-    if (sc) sc.rollbackCatalog = cmd.entries.map((p) => ({ ...p }));
+    // Through the same normaliser a loaded script uses: the entries come from
+    // the other side, and the undo menu prints their fields.
+    if (sc) sc.rollbackCatalog = normaliseCatalog(cmd.entries);
     return;
   }
   if (cmd.kind === 'callDefense') {
@@ -4500,7 +4510,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'rollbackRequest') {
     // check() already refused this without a script, so it exists by here.
     const sc = state.script;
-    if (sc) sc.rollback = { by: cmd.seat, round: cmd.round, phase: cmd.phase, label: cmd.label, ...(cmd.seq !== undefined ? { seq: cmd.seq } : {}) };
+    if (sc) sc.rollback = { by: cmd.seat, round: cmd.round, phase: cmd.phase, label: cleanName(String(cmd.label ?? '')) || 'an action', ...(cmd.seq !== undefined ? { seq: cmd.seq } : {}) };
     return;
   }
   if (cmd.kind === 'rollbackAnswer') {
@@ -4918,7 +4928,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       t.row = cmd.to.row;
       return;
     case 'renameUnit': {
-      t.label = cmd.label.trim();
+      t.label = cleanName(cmd.label);
       return;
     }
     case 'setLoad': {

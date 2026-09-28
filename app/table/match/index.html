@@ -2,6 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <!-- Scripts run only from this site (plus the inline base line below, by its hash), so markup that
+         slips into the page through a name or a log line can never execute. -->
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'sha256-xownSHIVBf2roKfxZTZgpBOfBQyF1TtylEdwBF6ryw8='; object-src 'none'; base-uri 'self'; form-action 'self'" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <title>Match Centre · EMBER Testing Grounds</title>

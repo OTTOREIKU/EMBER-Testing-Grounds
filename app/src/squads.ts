@@ -27,10 +27,11 @@ import { perform } from './commands';
 import { dialHidden, getLocalSeat } from './loop';
 import { defaultUnitLabel, emptyCarriers, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, structureOf, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
+import { cleanName } from './safetext';
 import { inSmoke } from './rules';
 import { factionColour, ICON_EDIT, ICON_LOCK, linkIcon, squadColour } from './icons';
 
-const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 const DOUBLE_CLICK_MS = 500;
 
@@ -105,7 +106,8 @@ export class SquadTracker {
     });
     if (name === null) return;
     const next = { ...(s.sideNames ?? {}) };
-    if (name.trim()) next[side] = name.trim();
+    const clean = cleanName(name);
+    if (clean) next[side] = clean;
     else delete next[side];
     s.sideNames = next;
     setSquadNames(next);
@@ -159,7 +161,7 @@ export class SquadTracker {
         .sort((a, b) => (a.init ?? 99) - (b.init ?? 99));
       const counts = new Map<number, number>();
       for (const g of scored) if (g.init !== undefined) counts.set(g.init, (counts.get(g.init) ?? 0) + 1);
-      rows.push(`<div class="ao-timing" style="--t-tint:var(--t-${def.id})">${def.name}</div>`);
+      rows.push(`<div class="ao-timing" style="--t-tint:var(--t-${def.id})">${esc(def.name)}</div>`);
       for (const g of scored) {
         n++;
         const tie = g.init !== undefined && (counts.get(g.init) ?? 0) > 1;
@@ -279,7 +281,7 @@ export class SquadTracker {
         const headline = p.kind === 'mixed-squad' ? 'mixed factions'
           : p.kind === 'duplicate-pilot' ? `${p.label} seated twice`
             : `${p.label} mixes factions`;
-        bad.innerHTML = `<b>Illegal: ${headline}</b><br>${p.detail}`;
+        bad.innerHTML = `<b>Illegal: ${esc(headline)}</b><br>${esc(p.detail)}`;
         inspectOnHover(bad, {
           title: p.kind === 'mixed-squad' ? 'Squad mixes factions'
             : p.kind === 'duplicate-pilot' ? 'The same Pilot twice'
@@ -506,7 +508,7 @@ export class SquadTracker {
         confirmLabel: 'Rename',
       });
       if (next === null) return;
-      const trimmed = next.trim();
+      const trimmed = cleanName(next);
       t.label = trimmed ? tidyUnitLabel(trimmed) || fallback : fallback;
       this.cb.onChanged();
     } finally {
@@ -546,7 +548,7 @@ export class SquadTracker {
     const name = document.createElement('button');
     name.className = 'squad-unit-name';
     const kind = t.kind === 'mech' ? 'MECH' : t.kind === 'drone' ? 'DRONE' : 'PROJ';
-    name.innerHTML = `<span class="pt-kind kind-${t.kind}">${kind}</span><span class="su-label">${t.label}</span>`;
+    name.innerHTML = `<span class="pt-kind kind-${esc(t.kind)}">${kind}</span><span class="su-label">${esc(t.label)}</span>`;
     const parts = Object.entries(t.partStates);
     inspectOnHover(name, {
       title: t.label,
@@ -639,7 +641,7 @@ export class SquadTracker {
       const maskedLabel = online ? (committed ? 'Committed' : 'Choosing…') : (t.timing ? 'Set · hidden' : 'Dial');
       trig.innerHTML = masked
         ? `<span>${maskedLabel}</span>`
-        : `${icon ? `<img src="${icon}" alt="">` : ''}<span>${cur ? cur.name : 'Dial'}</span>${
+        : `${icon ? `<img src="${icon}" alt="">` : ''}<span>${esc(cur ? cur.name : 'Dial')}</span>${
           init !== undefined ? `<b>${init}</b>` : ''
         }<i>▾</i>`;
       inspectOnHover(trig, masked
@@ -669,9 +671,12 @@ export class SquadTracker {
       // board would never hear of it), so it does not render at all there.
       const minusBtn = this.handsOff(t) ? '' : '<button class="lk-minus" title="Spend/lose 1 Link">−</button>';
       const plusBtn = this.online() ? '' : '<button class="lk-plus" title="Recover 1 Link">+</button>';
-      link.innerHTML = `${minusBtn}<b class="lk-val">${bolt}${t.link ?? 0}${maxLink ? `<small>/${maxLink}</small>` : ''}</b>${plusBtn}`;
+      link.innerHTML = `${minusBtn}<b class="lk-val">${bolt}${Number(t.link ?? 0)}${maxLink ? `<small>/${maxLink}</small>` : ''}</b>${plusBtn}`;
+      // The title carries the Link mark's own markup, so this hover draws HTML;
+      // everything else in it is a number or fixed text.
       inspectOnHover(link, {
-        title: `${bolt}Link ${t.link ?? 0}${maxLink ? ` / ${maxLink}` : ''}`,
+        html: true,
+        title: `${bolt}Link ${Number(t.link ?? 0)}${maxLink ? ` / ${maxLink}` : ''}`,
         sub: 'Pilot and machine sync, not hit points',
         lines: [
           'Spend 1 to Focus: reroll dice on an attack or defence roll.',
@@ -791,15 +796,17 @@ export class SquadTracker {
       return { title: 'Stance', sub: t.stance.toUpperCase(), lines: ['No stance details loaded.'] };
     }
     const noun = t.kind === 'drone' ? 'Drone' : t.kind === 'projectile' ? 'Projectile' : 'unit';
+    // Bold lead-ins, so this hover draws HTML; the rulebook text in it is escaped.
     return {
-      title: def.name,
-      sub: `${def.short}${fixed ? ' · printed on the card, locked' : ' · change it each Action Opportunity'}`,
+      html: true,
+      title: esc(def.name),
+      sub: `${esc(def.short)}${fixed ? ' · printed on the card, locked' : ' · change it each Action Opportunity'}`,
       lines: [
-        def.effect,
-        `<b>Use it when</b> ${def.good}`,
-        `<b>Trade-off</b> ${def.cost}`,
+        esc(def.effect),
+        `<b>Use it when</b> ${esc(def.good)}`,
+        `<b>Trade-off</b> ${esc(def.cost)}`,
         fixed
-          ? `Every Drone, Projectile and Deployable card prints one Stance and stays in it for the whole game, so there is nothing to choose here. This ${noun} is ${def.short}.`
+          ? `Every Drone, Projectile and Deployable card prints one Stance and stays in it for the whole game, so there is nothing to choose here. This ${noun} is ${esc(def.short)}.`
           : 'A Mech may pick its Stance every time it gets an Action Opportunity, before deciding whether to Maneuver.',
       ],
     };
@@ -1040,7 +1047,7 @@ export class SquadTracker {
         const ic = actionIconUrl(def.pilotKey);
         return `<button class="dial-opt${def.id === t.timing ? ' sel' : ''}" data-t="${def.id}" style="--t-tint:var(--t-${def.id})">
           ${ic ? `<img src="${ic}" alt="">` : '<span class="dial-noicon"></span>'}
-          <span>${def.name}</span><b>${v ?? '-'}</b>
+          <span>${esc(def.name)}</span><b>${v ?? '-'}</b>
         </button>`;
       }).join('') +
       `<button class="dial-opt dial-clear" data-t="">Clear the dial</button>`;

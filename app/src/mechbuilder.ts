@@ -138,7 +138,7 @@ export function mechBuilderHtml(data: GameData, m: MechLoadout, view: { name: st
     return `<div class="mb-rowwrap">
       <button type="button" class="mb-row${s.key === 'pilot' ? ' mb-pilot' : ''}"${f ? ` data-fac="${esc(f)}"` : ''} data-act="build-slot" data-slot="${s.key}">
         ${art}
-        <span class="mb-slot">${s.label}</span>
+        <span class="mb-slot">${esc(s.label)}</span>
         <span class="mb-part${card ? '' : ' mb-empty'}">${card ? esc(cardName(card)) : 'empty'}</span>
         <span class="mb-cost">${card?.score ? `${card.score}p` : ''}</span>
       </button>

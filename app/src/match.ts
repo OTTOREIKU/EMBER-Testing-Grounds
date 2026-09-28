@@ -1767,11 +1767,11 @@ function statsHtml(): string {
   const recent = record?.recent ?? [];
   const t = tableStats;
   const chip = (id: StatCat, label: string): string =>
-    `<button class="chipf${statCat === id ? ' on' : ''}" data-cat="${id}">${label}</button>`;
+    `<button class="chipf${statCat === id ? ' on' : ''}" data-cat="${id}">${esc(label)}</button>`;
   const list = (id: StatCat, rows: CardStat[], empty: string): string =>
     `<div data-catlist="${id}"${statCat === id ? '' : ' hidden'}>${statRows(rows, empty)}</div>`;
   const lead = (id: LeadCat, label: string): string =>
-    `<button class="chipf${leadCat === id ? ' on' : ''}" data-lead="${id}">${label}</button>`;
+    `<button class="chipf${leadCat === id ? ' on' : ''}" data-lead="${id}">${esc(label)}</button>`;
   return `<div class="mc-col wide" data-tip-side="right">
     <h1 class="mc-h">Stats</h1>
     <div class="mc-row fill">
@@ -1794,8 +1794,8 @@ function statsHtml(): string {
             ? `<div class="statlist">${recent.map((g) => `<div class="statrow">
                 <span class="sl-name">${esc(g.mission || 'Free battle')}</span>
                 <span class="sl-date">${esc(shortDate(g.played_at))}</span>
-                <span class="sl-n">${g.vp} VP</span>
-                <span class="sl-res ${g.result}">${g.result}</span>
+                <span class="sl-n">${Number(g.vp)} VP</span>
+                <span class="sl-res ${esc(String(g.result))}">${esc(String(g.result))}</span>
               </div>`).join('')}</div>`
             : '<p class="hint">Games you record from a finished match land here.</p>'}
         </div>
@@ -1855,7 +1855,7 @@ function statsHtml(): string {
 
 function doorTabs(): string {
   const tab = (id: Door, label: string): string =>
-    `<button class="doortab${door === id ? ' on' : ''}" data-door="${id}">${label}</button>`;
+    `<button class="doortab${door === id ? ' on' : ''}" data-door="${id}">${esc(label)}</button>`;
   return `<div class="doortabs">${tab('play', 'Play')}${tab('stats', 'Stats')}${
     account?.role === 'admin' ? tab('admin', 'Admin') : ''
   }</div>`;
@@ -1941,7 +1941,7 @@ function applyListFilters(): void {
 function adminHtml(): string {
   const a = admin;
   const chip = (id: CodeFilter, label: string, title: string): string =>
-    `<button class="chipf${codeFilter === id ? ' on' : ''}" data-codefilter="${id}" title="${title}">${label}</button>`;
+    `<button class="chipf${codeFilter === id ? ' on' : ''}" data-codefilter="${id}" title="${esc(title)}">${esc(label)}</button>`;
   const searchable = (...parts: (string | null)[]): string =>
     esc(parts.filter(Boolean).join(' ').toLowerCase());
   return `<div class="mc-col wide">
@@ -1976,12 +1976,12 @@ function adminHtml(): string {
           ${a
             ? a.invites.length
               ? `<div class="statlist" id="mc-codelist">${a.invites.map((i) => `<div class="statrow"
-                  data-status="${i.status}" data-q="${searchable(i.code, i.label, i.used_by)}">
+                  data-status="${esc(String(i.status))}" data-q="${searchable(i.code, i.label, i.used_by)}">
                   <code class="sl-code">${esc(i.code)}</code>
                   <span class="sl-name">${esc(i.label || '—')}${i.used_by ? ` → ${esc(i.used_by)}` : ''}</span>
-                  <span class="sl-status ${i.status}" title="Minted ${esc(shortDate(i.created_at))}">${i.status}</span>
+                  <span class="sl-status ${esc(String(i.status))}" title="Minted ${esc(shortDate(i.created_at))}">${esc(String(i.status))}</span>
                   ${i.status === 'open'
-                    ? `<button class="mini" data-revoke="${i.id}" title="Revoke this code">Revoke</button>`
+                    ? `<button class="mini" data-revoke="${Number(i.id)}" title="Revoke this code">Revoke</button>`
                     : '<span class="sl-pad"></span>'}
                 </div>`).join('')}</div>`
               : '<p class="hint">No codes minted yet.</p>'
@@ -2002,13 +2002,13 @@ function adminHtml(): string {
                 <span class="sl-name">${esc(u.username)}${
                   u.role !== 'player' ? ` <b class="sl-role">${esc(u.role)}</b>` : ''
                 }${u.is_active ? '' : ' <b class="sl-role off">disabled</b>'}</span>
-                <span class="sl-n" title="Games played">${u.games}</span>
+                <span class="sl-n" title="Games played">${Number(u.games)}</span>
                 <span class="sl-date" title="Joined ${esc(shortDate(u.created_at))}${
                   u.joined_with ? ` with ${esc(u.joined_with)}` : ''
                 }">${esc(shortDate(u.last_seen_at || u.last_login_at))}</span>
                 ${u.id === account?.id
                   ? '<span class="sl-pad you">you</span>'
-                  : `<button class="mini${u.is_active ? '' : ' unban'}" data-active="${u.id}" data-to="${
+                  : `<button class="mini${u.is_active ? '' : ' unban'}" data-active="${Number(u.id)}" data-to="${
                       u.is_active ? '0' : '1'
                     }" title="${u.is_active ? 'Disable this account' : 'Let this account back in'}">${
                       u.is_active ? 'Disable' : 'Enable'
@@ -2175,7 +2175,7 @@ function railHtml(): string {
   const steps = stepMeta()
     .map(
       (s) => `<div class="step${step === s.id ? ' on' : ''}${s.locked ? ' locked' : ''}" data-step="${s.id}">
-        <span class="label">${s.label}${s.locked ? ' <small>host</small>' : ''}<span class="sub">${esc(s.sub)}</span></span>
+        <span class="label">${esc(s.label)}${s.locked ? ' <small>host</small>' : ''}<span class="sub">${esc(s.sub)}</span></span>
         <span class="dot ${s.dot}"></span>
       </div>`,
     )
@@ -2194,7 +2194,7 @@ function railHtml(): string {
   // The host cannot start while the guest is still reading the battlefield.
   const canLaunch = isHost() && !running() && seatsFull && squadsIn && guestReady && !away;
   const why = !seatsFull ? 'Waiting for the other player to sit down.'
-    : away ? `${squadLabel(away)} is away.<br>The match waits for them.`
+    : away ? `${esc(squadLabel(away))} is away.<br>The match waits for them.`
       : !squadsIn ? 'Both squads have to be brought in.'
         : !guestReady ? 'Waiting for the other player to press Ready.'
           : 'Both squads are in and ready.';
@@ -2215,7 +2215,7 @@ function railHtml(): string {
       // as the table fills. Above, because the foot is pinned to the bottom of
       // the rail: text that grows and shrinks then never moves the button.
       ? `<div class="foot">
-          <span class="quiet">${esc(why)}</span>
+          <span class="quiet">${why}</span>
           <button class="btn wide" id="mc-launch" style="margin-top:0"${canLaunch ? '' : ' disabled'}>Launch match</button>
         </div>`
       : `<div class="foot">

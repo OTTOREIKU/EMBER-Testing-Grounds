@@ -132,6 +132,8 @@ function resetTable(): void {
   clearHistory();
 }
 let data: GameData | null = null;
+// The other phone's board, when it arrived before the card data (onCheckpoint).
+let waitingBoard: unknown = null;
 let dataError: string | null = null;
 
 // A snapshot read back in, MIGRATED the way the Match Centre migrates its
@@ -188,8 +190,13 @@ const relay = new Relay(api.base, {
   // net.ts refuses to care what a board is - and it is MIGRATED, exactly as the
   // Match Centre migrates its checkpoints: a raw cast silently drops any field
   // migrateState knows about that the sender's build did not.
+  // A board that will not migrate is never drawn raw: its fields are only
+  // trusted once migrateState has checked them. Before the card data has loaded
+  // it waits for it; a board no build can read is dropped.
   onCheckpoint: (s) => {
-    table = migrated(s) ?? ((s && typeof s === 'object') ? (s as GameState) : table);
+    const m = migrated(s);
+    if (m) table = m;
+    else if (!data) waitingBoard = s;
     render();
   },
   onCatchUp: (active) => {
@@ -642,7 +649,7 @@ function lobbyLists(): string {
   const gameRows = games.map((g) => `<div class="pad-seat pad-resume">
       <button class="pad-resume-b" data-act="resume" data-id="${esc(g.id)}">
         <span class="pad-seat-name">${esc(g.name)}</span>
-        <span class="pad-seat-sub">Round ${g.table.round?.n ?? 1} · ${ago(g.at)}</span>
+        <span class="pad-seat-sub">Round ${Number(g.table.round?.n ?? 1) || 1} · ${ago(g.at)}</span>
       </button>
       <span class="ui-go" aria-hidden="true">›</span>
       <button class="ui-x" data-act="game-x" data-id="${esc(g.id)}" aria-label="Delete this game">✕</button>
@@ -2914,7 +2921,7 @@ function dockHtml(): string {
   const them = otherSeat();
   const lit: string = panel ?? (shownSide() === me ? 'yours' : 'theirs');
   const item = (id: string, label: string, extra = '') =>
-    `<button class="pad-dock-b${lit === id ? ' on' : ''}" data-act="dock" data-dock="${id}" aria-pressed="${lit === id}">${extra}<span>${label}</span></button>`;
+    `<button class="pad-dock-b${lit === id ? ' on' : ''}" data-act="dock" data-dock="${id}" aria-pressed="${lit === id}">${extra}<span>${esc(label)}</span></button>`;
   const dot = (s: Side) => `<span class="pad-dock-dot" style="background:${sideColour(s)}"></span>`;
   return item('yours', seatTag(me), dot(me))
     + item('theirs', seatTag(them), dot(them))
@@ -3285,7 +3292,7 @@ function tasksPanel(): string {
 
   const slot = (label: string, card: { id: string; name: string } | undefined,
                 art: (id: string) => string, imgAttr: string, act: string | null, pointed = '') => `
-    <p class="pad-label pad-sec">${label}</p>
+    <p class="pad-label pad-sec">${esc(label)}</p>
     ${card
       ? `<div class="pad-task chosen">
           <span class="pad-task-row">
@@ -3300,9 +3307,9 @@ function tasksPanel(): string {
         : '<p class="pad-note">Not chosen.</p>'}`;
 
   const vpSide = (s: Side, label: string) => `<div class="pad-vp-side">
-      <button class="pad-step" data-act="vp" data-by="-1" data-side="${s}" aria-label="${label}: one less">−</button>
+      <button class="pad-step" data-act="vp" data-by="-1" data-side="${s}" aria-label="${esc(label)}: one less">−</button>
       <span class="pad-vp-n" style="color:${sideColour(s)}">${tasks.vp[s]}</span>
-      <button class="pad-step" data-act="vp" data-by="1" data-side="${s}" aria-label="${label}: one more">+</button>
+      <button class="pad-step" data-act="vp" data-by="1" data-side="${s}" aria-label="${esc(label)}: one more">+</button>
       <span class="pad-label">${esc(label)}</span>
     </div>`;
 
@@ -4330,7 +4337,7 @@ function findGroups(q: string, scope: FindScope): FindGroup[] {
 function findScopesHtml(groups: FindGroup[]): string {
   const counts = new Map<string, number>();
   for (const g of groups) counts.set(g.id, (counts.get(g.id) ?? 0) + g.total);
-  return SCOPES.map((s) => `<button class="pad-chip${find.scope === s.id ? ' on' : ''}" data-act="find-scope" data-scope="${s.id}">${s.label}${
+  return SCOPES.map((s) => `<button class="pad-chip${find.scope === s.id ? ' on' : ''}" data-act="find-scope" data-scope="${s.id}">${esc(s.label)}${
     s.id !== 'all' && find.q.trim() && counts.has(s.id) ? `<span class="fc-n">${counts.get(s.id)}</span>` : ''}</button>`).join('');
 }
 
@@ -5982,6 +5989,11 @@ registerOffline();
     // The shared card renderers keep their own reference to it. No boxRow is
     // lent: the pad has no Boxes tab to open.
     useCardData(data);
+    if (waitingBoard) {
+      const m = view.room ? migrated(waitingBoard) : null;
+      waitingBoard = null;
+      if (m) table = m;
+    }
   } catch {
     dataError = 'The card database could not be loaded. Check the signal and reload.';
   }

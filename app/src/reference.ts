@@ -1,7 +1,7 @@
 import './reference.css';
 import './ui.css';
 import { actionIconUrl, battlefieldCardUrl, boxCoverUrl, cardName, environmentImageUrl, HELP_CARDS, helpCardUrl, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type EnvironmentCard, type FactionDef, type GameData, type KeywordDef } from './data';
-import { mountCardImage, mountCardImageCopy, preloadCardImages, warmAllImagesWhenIdle } from './images';
+import { mountCardImage, mountCardImageCopy, preloadCardImages, warmAllImagesWhenIdle, watchImageFallbacks } from './images';
 import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
 import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef, type TerrainMap } from './types';
@@ -218,7 +218,7 @@ function boxDetail(key: string): string | null {
         ? '<p class="ref-note ref-unsold">No shop has been seen selling this box, so its cards are listed here but cannot be bought yet.</p>'
         : ''
     }
-    ${box.hasImage ? `<div class="box-cover"><img src="${boxCoverUrl(box.id)}" alt="" loading="lazy" onerror="this.closest('.box-cover').remove()"></div>` : ''}
+    ${box.hasImage ? `<div class="box-cover"><img src="${boxCoverUrl(box.id)}" alt="" loading="lazy" data-gone=".box-cover"></div>` : ''}
     <div class="ref-box-tools">
       ${exclusiveToggle('ref-box-excl', boxExclusive)}<span class="fc-n">${exclusive.length} of ${all.length}</span>
       ${isListedBox(box) ? `<button class="inv-cmp-btn" data-compare="${esc(box.key)}">Compare with another box</button>` : ''}
@@ -276,7 +276,7 @@ function factionDetail(key: string): string | null {
   const f = data.factions.find((x) => x.key === key);
   if (!f) return null;
   const owned = data.cards.filter((c) => data.factionOf(c) === f.key);
-  const count = (label: string, n: number) => (n ? `<span class="tag mono">${n} ${label}${n === 1 ? '' : 's'}</span>` : '');
+  const count = (label: string, n: number) => (n ? `<span class="tag mono">${n} ${esc(label)}${n === 1 ? '' : 's'}</span>` : '');
   const boxes = data.boxes
     .filter((b) => isListedBox(b) && (b.faction ?? []).includes(f.key))
     .sort((a, b) => a.id - b.id);
@@ -317,7 +317,7 @@ function boxRow(b: BoxDef): string {
   } data-box="${esc(b.key)}">
     ${
       b.hasImage
-        ? `<div class="box-bleed" aria-hidden="true"><img src="${boxCoverUrl(b.id)}" alt="" loading="lazy" onerror="this.closest('.box-card').classList.remove('has-cover'); this.closest('.box-bleed').remove()"></div>
+        ? `<div class="box-bleed" aria-hidden="true"><img src="${boxCoverUrl(b.id)}" alt="" loading="lazy" data-gone=".box-bleed" data-uncover=".box-card"></div>
            <span class="box-scrim" aria-hidden="true"></span>`
         : ''
     }
@@ -1072,7 +1072,7 @@ function render(): void {
           (x) =>
             `<button class="ref-facet${chosen?.id === x.id ? ' active' : ''}${x.n ? '' : ' empty'}" data-rules="${x.id}"${
               x.n ? '' : ' disabled'
-            }>${x.label} <span class="fc-n">${x.n}</span></button>`,
+            }>${esc(x.label)} <span class="fc-n">${x.n}</span></button>`,
         )
         .join('')}
     </div>`;
@@ -1468,6 +1468,7 @@ function showCardImage(src: string, label: string): void {
 }
 
 async function init(): Promise<void> {
+  watchImageFallbacks();
   data = await loadData();
   // The shared renderers hold their own reference to the database, and this
   // page lends them its Boxes tab so a card can still say which boxes hold it.

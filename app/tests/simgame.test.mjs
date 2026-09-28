@@ -308,6 +308,8 @@ let sliceSrc =
   + grants
   + chargeParser
   + grantBlock
+  // The name cleaner commands.ts imports (renameUnit, importSquad, rollbackRequest).
+  + readFileSync(new URL('../src/safetext.ts', import.meta.url), 'utf8')
   + commands.replace(/^import[^\n]*\n/gm, '');
 // The driver builds real script states and opportunities, which live outside
 // the ranges above; pull them (and asSide, which normaliseScript leans on) in

@@ -5,6 +5,7 @@ import { ICON_BOLT, ICON_BURST } from './icons';
 import { diceRow, diceText, expandGlyphs } from './glyphs';
 import { groupByFaction, openPartPicker } from './partpicker';
 import { cardPlaceholder, printsWide } from './images';
+import { escapeHtml } from './safetext';
 import { type ActionWorld, canBeLoad, guidedActions, isCarrier, isElectronicAttack, knockbackOf, linkSupportOf, SLOT_LABEL, tokenCards, tokenCleanupOf } from './units';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 
@@ -23,7 +24,7 @@ const ACTION_TINT: Record<string, string> = {
 
 function pipRow(kind: string, label: string, left: number, max: number, attrs: string): string {
   const dots = Array.from({ length: max }, (_, i) => `<i class="pip${i < left ? '' : ' off'}"></i>`).join('');
-  return `<span class="pips pips-${kind}${left ? '' : ' spent'}" ${attrs}><b class="pip-label">${label}</b>${dots}<b class="pip-n">${left}/${max}</b></span>`;
+  return `<span class="pips pips-${kind}${left ? '' : ' spent'}" ${attrs}><b class="pip-label">${escapeHtml(label)}</b>${dots}<b class="pip-n">${left}/${max}</b></span>`;
 }
 
 // A mechanic named rather than explained. linkMechanics finds these by their
@@ -32,7 +33,7 @@ function pipRow(kind: string, label: string, left: number, max: number, attrs: s
 function mechChips(mechs: { id: string; name: string }[]): string {
   // data-no-cardtip for the same reason the keyword chips carry it: the chip's
   // answer is its rule text, and the card image would land on top of it.
-  return mechs.map((m) => `<span class="trait-mech mech-chip" data-mech="${m.id}" data-no-cardtip="1">${m.name}</span>`).join('');
+  return mechs.map((m) => `<span class="trait-mech mech-chip" data-mech="${m.id}" data-no-cardtip="1">${escapeHtml(m.name)}</span>`).join('');
 }
 
 function projectileTag(name: string): string {
@@ -441,8 +442,8 @@ export class Panel {
         ${intercept ? pipRow('intercept', 'INT', intercept.left, intercept.max, `data-restore-int="${a.id}"`) : ''}
         ${charge ? pipRow('charge', 'CHG', charge.charged ? 1 : 0, 1, `data-charge="${ga.slot}"`) : ''}
       </div>
-      ${!available && reason ? `<span class="reason">${reason}</span>` : ''}
-      ${available && intercept && !intercept.can && intercept.reason ? `<span class="reason">${intercept.reason}</span>` : ''}`;
+      ${!available && reason ? `<span class="reason">${escapeHtml(reason)}</span>` : ''}
+      ${available && intercept && !intercept.can && intercept.reason ? `<span class="reason">${escapeHtml(intercept.reason)}</span>` : ''}`;
     const actName = a.name.en || a.name.zh || a.id;
     const rawEn = a.description?.en?.trim();
     const en = rawEn && !/[぀-ヿ一-鿿]/.test(rawEn) ? rawEn : undefined;
@@ -451,24 +452,27 @@ export class Panel {
     const mechs = this.data.mechanicsFor(actName, a.name.zh, en, orig);
     const lines: string[] = [];
     if (en) {
-      lines.push(...rulesLines(en));
+      lines.push(...rulesLines(en).map(escapeHtml));
     } else if (tr?.english) {
-      const caveat = tr.confidence !== 'high' ? ` <em>(${tr.confidence}-confidence translation, so verify it against the card)</em>` : '';
-      lines.push(`${tr.english}${caveat}`);
+      const caveat = tr.confidence !== 'high' ? ` <em>(${escapeHtml(tr.confidence)}-confidence translation, so verify it against the card)</em>` : '';
+      lines.push(`${escapeHtml(tr.english)}${caveat}`);
       lines.push('<em>Translated from the Chinese card text, not official English.</em>');
     } else if (orig) {
-      lines.push(...rulesLines(orig));
+      lines.push(...rulesLines(orig).map(escapeHtml));
       lines.push('<em>(the card data has no English for this action)</em>');
     } else {
       lines.push('<em>No rules text on this card in the data; the values above come from the card.</em>');
     }
     // The action's own tip still spells the mechanics out in full: it is
     // already a hover, so there is nothing further to hover into.
-    for (const m of mechs) lines.push(`<b>${m.name}</b>${m.ref ? ` <em>(${m.ref})</em>` : ''}: ${m.text}`);
+    for (const m of mechs) lines.push(`<b>${escapeHtml(m.name)}</b>${m.ref ? ` <em>(${escapeHtml(m.ref)})</em>` : ''}: ${escapeHtml(m.text)}`);
+    // The one hover in the app that carries its own markup (the <em> notes and
+    // the bold mechanic names), so every piece of text in it is escaped above.
     const tip = {
-      title: actName,
-      sub: [SLOT_LABEL[ga.slot], a.type, range, dice.join('+')].filter(Boolean).join(' · '),
+      title: escapeHtml(actName),
+      sub: escapeHtml([SLOT_LABEL[ga.slot], a.type, range, dice.join('+')].filter(Boolean).join(' · ')),
       lines,
+      html: true,
     };
     // The action row already answers a hover with the card image, which in the
     // Match Centre would sit on top of the popout. The board page shows both
@@ -800,7 +804,7 @@ export class Panel {
       const v = card[key];
       if (typeof v !== 'number') continue;
       const s = document.createElement('span');
-      s.innerHTML = `<b>${v}</b>${label}`;
+      s.innerHTML = `<b>${v}</b>${escapeHtml(label)}`;
       stats.appendChild(s);
     }
     if (card.category === 'pilot') {

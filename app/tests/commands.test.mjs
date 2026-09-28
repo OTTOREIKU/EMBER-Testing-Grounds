@@ -524,6 +524,8 @@ writeFileSync(
     + phase2
     + grants
     + grantBlock
+    // The name cleaner commands.ts imports (renameUnit, importSquad, rollbackRequest).
+    + readFileSync(new URL('../src/safetext.ts', import.meta.url), 'utf8')
     + commands.replace(/^import[^\n]*\n/gm, ''),
 );
 const C = await import(tmp.href);

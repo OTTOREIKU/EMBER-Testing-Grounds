@@ -51,7 +51,7 @@ import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, loc
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
 import { SquadTracker } from './squads';
-import { warmAllImagesWhenIdle } from './images';
+import { warmAllImagesWhenIdle, watchImageFallbacks } from './images';
 import { runFirstVisitPreload } from './preload';
 import { syncUpdateNotice, watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
@@ -76,6 +76,7 @@ installDiagnostics(window);
 const SAVE_KEY = 'ember-testing-grounds-v1';
 
 async function init() {
+  watchImageFallbacks();
   const data = await loadData();
   const dice = (await fetch(dataUrl('dice.json')).then((r) => r.json())) as DiceData;
 
@@ -5373,7 +5374,7 @@ async function init() {
     const wanted = taskZoneNames(editor.task);
     const armed = (z: CustomZone) => editor.paint?.kind === 'zone' && editor.paint.zoneId === z.id;
     const row = (z: CustomZone, need: boolean) =>
-      `<button class="ed-row ed-zone${armed(z) ? ' active' : ''}${need && !z.cells.length ? ' ed-unbound' : ''}" data-zone="${z.id}" data-tip-title="Paint ${escapeHtml(z.name)}" data-tip-sub="Large grids, 3x3 cells each" data-tip="Drag to fill a block of grids.|Right-click a painted grid to remove it.|A single click on a painted grid removes it too.">${escapeHtml(z.name)}<small>${z.cells.length ? `${z.cells.length} grid${z.cells.length === 1 ? '' : 's'}` : 'not painted'}</small></button>`;
+      `<button class="ed-row ed-zone${armed(z) ? ' active' : ''}${need && !z.cells.length ? ' ed-unbound' : ''}" data-zone="${escapeHtml(z.id)}" data-tip-title="Paint ${escapeHtml(z.name)}" data-tip-sub="Large grids, 3x3 cells each" data-tip="Drag to fill a block of grids.|Right-click a painted grid to remove it.|A single click on a painted grid removes it too.">${escapeHtml(z.name)}<small>${z.cells.length ? `${z.cells.length} grid${z.cells.length === 1 ? '' : 's'}` : 'not painted'}</small></button>`;
     const byName = (n: string) => editor.zones.find((z) => z.name.toLowerCase() === n.toLowerCase());
     const out: string[] = [];
     for (const name of wanted) {
@@ -5436,7 +5437,7 @@ async function init() {
         ${editorNote ? `<p class="ed-warn">${escapeHtml(editorNote)}</p>` : ''}
         <p class="ed-glabel">Terrain${editor.task ? ' <small>(Base)</small>' : ''}</p>
         <div class="ed-grid">
-          ${PALETTE.map((p) => `<button class="ed-piece${editor.item?.id === p.id ? ' active' : ''}" data-piece="${p.id}" title="${p.label}">
+          ${PALETTE.map((p) => `<button class="ed-piece${editor.item?.id === p.id ? ' active' : ''}" data-piece="${p.id}" title="${escapeHtml(p.label)}">
             ${piecePreview(p)}
             <span class="ed-pname">${escapeHtml(p.label.split(' (')[0].replace(/\s\d+×\d+$/, ''))}</span>
             <span class="ed-pnote">${escapeHtml((/\(([^)]*)\)/.exec(p.label)?.[1] ?? '').split(', ')[1] ?? '')}</span>
@@ -5474,7 +5475,7 @@ async function init() {
         <button id="ed-dz-black" class="ed-row ed-dz-black${editor.paint?.kind === 'deploy' && editor.paint.side === 'black' ? ' active' : ''}" title="Paint the Black deployment zone. Drag to fill a block.">Black<small>${editor.deploy.black.length} grid${editor.deploy.black.length === 1 ? '' : 's'}</small></button>
         <button id="ed-dz-white" class="ed-row ed-dz-white${editor.paint?.kind === 'deploy' && editor.paint.side === 'white' ? ' active' : ''}" title="Paint the White deployment zone. Drag to fill a block.">White<small>${editor.deploy.white.length} grid${editor.deploy.white.length === 1 ? '' : 's'}</small></button>
 
-        <p class="ed-status">${editorStatus()}</p>
+        <p class="ed-status">${escapeHtml(editorStatus())}</p>
       </div>
       <div class="ed-foot">
         <button id="ed-save" class="ed-primary">Save map…</button>
@@ -7173,7 +7174,7 @@ async function init() {
     const rows = entries
       .map((e, i) => ({ e, i }))
       .reverse()
-      .map(({ e }) => `<div class="ul-row"><span class="ul-round">R${e.round}</span><span>${e.text}</span></div>`)
+      .map(({ e }) => `<div class="ul-row"><span class="ul-round">R${Number(e.round)}</span><span>${escapeHtml(String(e.text))}</span></div>`)
       .join('');
     host.innerHTML = `<h4 class="ul-head">Combat log <span class="ul-who">${escapeHtml(t.label)}</span>
         ${entries.length ? '<button id="ul-clear" title="Clear this unit\'s log">Clear</button>' : ''}</h4>
@@ -7331,10 +7332,10 @@ async function init() {
         const inUse = state.map === `custom:${n}`;
         return `<div class="map-row">
           <div class="map-info">
-            <b>${scn ? n.slice(6) : n}</b>
+            <b>${escapeHtml(scn ? n.slice(6) : n)}</b>
             <span class="dim">${scn ? 'from a scenario' : 'saved by you'} · ${pieces} piece${pieces === 1 ? '' : 's'}${extra.length ? ` · ${extra.join(' · ')}` : ''}${inUse ? ' · in use now' : ''}</span>
           </div>
-          <button class="map-del" data-name="${n.replace(/"/g, '&quot;')}">Delete</button>
+          <button class="map-del" data-name="${escapeHtml(n)}">Delete</button>
         </div>`;
       })
       .join('');
@@ -7970,7 +7971,7 @@ async function init() {
         const dep = data.zoneData.deployments.find((d) => d.id === data.zoneData.missionDeployment[m.id]);
         const live = state.zoneSet === `mission:${m.id}`;
         return `<div class="scn-row${live ? ' current' : ''}" data-mis="${escapeHtml(m.id)}">
-          <div class="scn-info"><b>${m.name}</b><br><span class="dim">${(m.zones ?? []).join(', ') || 'no tactical zones'} · ${dep?.name ?? 'deployment not known'}</span></div>
+          <div class="scn-info"><b>${escapeHtml(m.name)}</b><br><span class="dim">${(m.zones ?? []).join(', ') || 'no tactical zones'} · ${escapeHtml(dep?.name ?? 'deployment not known')}</span></div>
           <button data-i="${i}" class="scn-load">${live ? 'On the board' : 'Use it'}</button>
         </div>`;
       })
@@ -8189,8 +8190,8 @@ async function init() {
     box.className = 'mis-lightbox';
     box.innerHTML = `<div class="mis-lightbox-inner">
         <button class="dlg-close" title="Close">✕</button>
-        <img src="${missionImageUrl(m.id)}" alt="${m.name} card">
-        <p>${m.name}</p>
+        <img src="${missionImageUrl(m.id)}" alt="${escapeHtml(m.name)} card">
+        <p>${escapeHtml(m.name)}</p>
       </div>`;
     const close = () => {
       box.remove();
@@ -8212,14 +8213,14 @@ async function init() {
     const dep = data.zoneData.deployments.find((d) => d.id === data.zoneData.missionDeployment[m.id]);
     const div = document.createElement('div');
     div.className = 'scn-brief';
-    div.innerHTML = `<h3>${m.name}</h3>
+    div.innerHTML = `<h3>${escapeHtml(m.name)}</h3>
       <button class="mis-card-thumb" title="Tap for the full card">
-        <img src="${missionImageUrl(m.id)}" alt="${m.name} card" loading="lazy">
+        <img src="${missionImageUrl(m.id)}" alt="${escapeHtml(m.name)} card" loading="lazy">
         <span>Tap to enlarge</span>
       </button>
       <p><b>Setup.</b> ${m.setup}</p>
       <p><b>Scoring.</b> ${m.scoring}</p>
-      ${dep ? `<p><b>Deployment.</b> ${dep.name}. ${dep.note ?? ''}</p>` : ''}
+      ${dep ? `<p><b>Deployment.</b> ${escapeHtml(dep.name)}. ${escapeHtml(dep.note ?? '')}</p>` : ''}
       ${(m.zones ?? []).length ? `<h4>Tactical zones</h4><ul>${(m.zones ?? []).map((z) => `<li>${z}</li>`).join('')}</ul>` : ''}
       <p class="dim">The overlay shows these zones on the board. Terrain is not part of a Main Task card, so place it from a Battlefield Card or your own map.</p>`;
     div.querySelector('.mis-card-thumb')!.addEventListener('click', () => showMissionCard(m));
@@ -8235,13 +8236,13 @@ async function init() {
   function scenarioBriefing(scn: Scenario): HTMLElement {
     const div = document.createElement('div');
     div.className = 'scn-brief';
-    div.innerHTML = `<h3>${scn.name}</h3>
+    div.innerHTML = `<h3>${escapeHtml(scn.name)}</h3>
       ${scn.subtitle ? `<p class="dim">${scn.subtitle}</p>` : ''}
       ${scn.description ? `<p>${scn.description}</p>` : ''}
       ${scn.rounds ? `<p><b>${scn.rounds} rounds.</b></p>` : ''}
       ${
         scn.scoring?.length
-          ? `<h4>Scoring</h4><ul>${scn.scoring.map((s) => `<li><b>${s.points}</b> ${s.name}${s.note ? ` <span class="dim">(${s.note})</span>` : ''}</li>`).join('')}</ul>`
+          ? `<h4>Scoring</h4><ul>${scn.scoring.map((s) => `<li><b>${s.points}</b> ${escapeHtml(s.name)}${s.note ? ` <span class="dim">(${escapeHtml(s.note)})</span>` : ''}</li>`).join('')}</ul>`
           : ''
       }
       ${scn.simplifications?.length ? `<h4>First-run simplifications</h4><ul>${scn.simplifications.map((s) => `<li>${s}</li>`).join('')}</ul>` : ''}
@@ -8426,7 +8427,7 @@ async function init() {
       <div class="scn-list">${scenarios
         .map(
           (s, i) => `<div class="scn-row">
-            <div class="scn-info"><b>${s.name}</b><br><span class="dim">${s.subtitle ?? ''}</span></div>
+            <div class="scn-info"><b>${escapeHtml(s.name)}</b><br><span class="dim">${escapeHtml(s.subtitle ?? '')}</span></div>
             ${replays.some((r) => r.scenarioId === s.id) ? `<button data-i="${i}" class="scn-watch" title="Watch this game played out step by step">▶ Watch</button>` : ''}
             <button data-i="${i}" class="scn-load">Load</button>
           </div>`,
@@ -9274,5 +9275,8 @@ async function init() {
 }
 
 init().catch((e) => {
-  document.body.innerHTML = `<pre style="padding:2rem;color:#f87171">Failed to start: ${e}</pre>`;
+  const pre = document.createElement('pre');
+  pre.style.cssText = 'padding:2rem;color:#f87171';
+  pre.textContent = `Failed to start: ${e}`;
+  document.body.replaceChildren(pre);
 });

@@ -139,6 +139,24 @@ export interface CardPlaceholder {
   wide?: boolean;
 }
 
+// A cover image that fails to load takes its frame with it. That used to be an
+// inline onerror on each <img>, which the pages' Content-Security-Policy now
+// refuses to run, so one capturing listener does it for every image marked
+// data-gone (the frame to remove) and, where the card was styled around the
+// cover, data-uncover (the ancestor that loses its has-cover class). Error
+// events do not bubble, hence the capture.
+let fallbacksWatched = false;
+export function watchImageFallbacks(): void {
+  if (fallbacksWatched || typeof document === 'undefined') return;
+  fallbacksWatched = true;
+  document.addEventListener('error', (e) => {
+    const img = e.target;
+    if (!(img instanceof HTMLImageElement) || !img.dataset.gone) return;
+    if (img.dataset.uncover) img.closest(img.dataset.uncover)?.classList.remove('has-cover');
+    img.closest(img.dataset.gone)?.remove();
+  }, true);
+}
+
 export function printsWide(card: Pick<Card, 'category'>): boolean {
   return card.category === 'drone' || card.category === 'projectile';
 }

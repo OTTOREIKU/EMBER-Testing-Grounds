@@ -516,8 +516,8 @@ function duelHtml(duel: Duel): string {
       </div>
       <div class="duel-grid">${cols || '<p class="dim">No damage icons in the attack roll.</p>'}</div>
       ${spare.length ? `<div class="duel-spare">${spare
-        .map((s) => `<span class="duel-icon k-${s.kind} unused shown" title="${s.why}">${glyph(s.kind, 18)}</span>`)
-        .join('')}<small>unused, because ${spare[0].why}</small></div>` : ''}
+        .map((s) => `<span class="duel-icon k-${s.kind} unused shown" title="${esc(s.why)}">${glyph(s.kind, 18)}</span>`)
+        .join('')}<small>unused, because ${esc(spare[0].why)}</small></div>` : ''}
       ${triggers.length ? `<div class="duel-trig">${triggers
         .map((t) => `<span class="duel-icon k-${kindOf(t.kind)}" title="${nameOf(t.kind)}">${glyph(t.kind, 18)}</span>`)
         .join('')}<small>trigger icons: these fire "on ${triggers.map((t) => nameOf(t.kind)).filter((v, i, a) => a.indexOf(v) === i).join('/')}" card effects unless a Dodge offsets them</small></div>` : ''}
@@ -3294,7 +3294,7 @@ export class AttackHelper {
     // board until the attacker finished.
     const watching = !!this.mirroring;
     el.innerHTML = `<div class="ah-head">
-      <b>${aName}</b> → <b>${dName}</b>
+      <b>${esc(aName)}</b> → <b>${esc(dName)}</b>
       <span class="dim">${c.action.name.en || c.action.name.zh} (${c.action.type ?? ''})${modeNote ? ` · ${modeNote}` : ''}</span>
       <button class="ah-cancel" title="${watching ? 'Put this window away. The attack keeps going.' : 'Cancel attack'}">✕</button>
     </div>
@@ -3314,7 +3314,7 @@ export class AttackHelper {
         // bonus the dice are not getting.
         if (c.action.twoHandedDeclined) return `<p class="ah-los">${ICON_BLOCKED} [Two-Handed] declined: performed one-handed, with none of the rider (FAQ A16).</p>`;
         const use = twoHandedUse(this.data, c.attacker, c.action, this.boxHands?.(c.attacker.uid) ?? [], this.loansFor(c.attacker));
-        if (use) return `<p class="ah-los">${ICON_BLOCKED} ${use.note}.</p>`;
+        if (use) return `<p class="ah-los">${ICON_BLOCKED} ${esc(use.note)}.</p>`;
         // Only when the Action wants a hand and there is none to give.
         const sup = freehandSupportNote(this.data, c.attacker, c.action);
         return sup ? `<p class="ah-los">${ICON_BLOCKED} ${sup}.</p>` : '';
@@ -3387,7 +3387,7 @@ export class AttackHelper {
         if (open) {
           const past = document.createElement('div');
           past.className = 'ah-card-b ah-card-past';
-          past.innerHTML = mine.map((l) => `<div>${l}</div>`).join('');
+          past.innerHTML = mine.map((l) => `<div>${esc(l)}</div>`).join('');
           card.appendChild(past);
         }
       }
@@ -3440,7 +3440,7 @@ export class AttackHelper {
         if (open) {
           const body2 = document.createElement('div');
           body2.className = 'ah-tg-b';
-          body2.innerHTML = g.lines.map((l) => `<div>${l}</div>`).join('');
+          body2.innerHTML = g.lines.map((l) => `<div>${esc(l)}</div>`).join('');
           row.appendChild(body2);
         }
         log.appendChild(row);
@@ -3865,7 +3865,7 @@ export class AttackHelper {
       for (const e of setup.effects) {
         const b = document.createElement('button');
         b.className = 'chip chip-intact';
-        b.innerHTML = `<b>${e.name}</b> ${e.targets}`;
+        b.innerHTML = `<b>${esc(e.name)}</b> ${esc(e.targets)}`;
         b.disabled = !this.mayDrive('attacker');
         b.addEventListener('click', () => this.chooseSurplus(e));
         row.appendChild(b);
@@ -3878,17 +3878,17 @@ export class AttackHelper {
     // nothing standing but the original Part would reroll for ever.
     const otherPart = this.otherPartFor(c.surplusOriginalPart);
     wrap.innerHTML = `<h4><span class="ah-n">2</span>Cleaving: where does the Surplus go?</h4>
-      <p class="dim">${otherPart ? `Another Part of ${c.defender.label} (never the same Part), or another` : 'Another'} Unit within the Action's range.${
+      <p class="dim">${otherPart ? `Another Part of ${esc(c.defender.label)} (never the same Part), or another` : 'Another'} Unit within the Action's range.${
         c.defender.kind !== 'mech' ? ' A Drone target cannot be chosen again, so only another Unit will do (FAQ D4).'
-          : !this.aliveNow(c.defender) ? ` ${c.defender.label} is destroyed, so only another Unit will do.`
-            : !otherPart ? ` ${c.defender.label} has no other Part left to take it.` : ''
+          : !this.aliveNow(c.defender) ? ` ${esc(c.defender.label)} is destroyed, so only another Unit will do.`
+            : !otherPart ? ` ${esc(c.defender.label)} has no other Part left to take it.` : ''
       }</p>`;
     const row = document.createElement('div');
     row.className = 'ah-partpick';
     if (otherPart) {
       const b = document.createElement('button');
       b.className = 'chip chip-intact';
-      b.innerHTML = `<b>Another Part</b> of ${c.defender.label}`;
+      b.innerHTML = `<b>Another Part</b> of ${esc(c.defender.label)}`;
       b.disabled = !this.mayDrive('attacker');
       b.addEventListener('click', () => {
         const cc = this.ctx!;
@@ -3900,7 +3900,7 @@ export class AttackHelper {
     for (const u of this.cleaveTargets()) {
       const b = document.createElement('button');
       b.className = 'chip chip-intact';
-      b.innerHTML = `<b>${u.label}</b> ${u.kind}`;
+      b.innerHTML = `<b>${esc(u.label)}</b> ${esc(u.kind)}`;
       b.disabled = !this.mayDrive('attacker');
       b.addEventListener('click', () => this.cleaveInto(u.uid));
       row.appendChild(b);
@@ -4414,10 +4414,10 @@ export class AttackHelper {
     const asks = [offers.length ? 'a Part to designate' : '', kc ? 'KC Armor' : ''].filter(Boolean).join(' or ');
     wrap.innerHTML = `<h4><span class="ah-n">1</span>Defender declares</h4>
       <p class="ah-note">${mine
-        ? `Before the Part Die is rolled, ${c.defender.label} may declare ${asks}.`
-        : `Waiting for ${c.defender.label}'s player, who may declare ${asks} before the Part Die is rolled.`}</p>
+        ? `Before the Part Die is rolled, ${esc(c.defender.label)} may declare ${asks}.`
+        : `Waiting for ${esc(c.defender.label)}'s player, who may declare ${asks} before the Part Die is rolled.`}</p>
       ${offers.length ? `<p class="dim">${atkMay
-        ? `${snipeOn(c.action) ? `${c.attacker.label}'s Snipe` : `The Pursuit Token on ${c.defender.label}`} lets the attacker designate too. If ${c.defender.label} designates as well, neither choice stands and the Part Die decides (FAQ A14), and a Parry then adds its dice only if the die finds its Part (4.6.3).`
+        ? `${snipeOn(c.action) ? `${esc(c.attacker.label)}'s Snipe` : `The Pursuit Token on ${esc(c.defender.label)}`} lets the attacker designate too. If ${esc(c.defender.label)} designates as well, neither choice stands and the Part Die decides (FAQ A14), and a Parry then adds its dice only if the die finds its Part (4.6.3).`
         : `A designated Part takes the hit with no Part Die rolled. A Parry is declared now or not at all (FAQ C6).`}</p>` : ''}`;
     for (const opt of offers) {
       const b = document.createElement('button');
@@ -4588,7 +4588,7 @@ export class AttackHelper {
     for (const [label, color] of pools) {
       const item = document.createElement('span');
       item.className = `pool-die die-${color}`;
-      item.innerHTML = `<button>−</button><b>${get(color)}</b><button>+</button> <small>${label}</small>`;
+      item.innerHTML = `<button>−</button><b>${get(color)}</b><button>+</button> <small>${esc(label)}</small>`;
       const [minus, plus] = item.querySelectorAll('button');
       minus.disabled = !live;
       plus.disabled = !live;
@@ -4715,8 +4715,8 @@ export class AttackHelper {
       ${treatedAsOffensive(c.attacker, c.defender, this.data, this.tokens?.()) ? `<p class="dim">${c.attacker.stance === 'offensive'
         ? 'OFF stance: hollow attack icons count as solid.'
         : statusCount(c.defender.statuses ?? [], 'targetTracer') > 0
-          ? `Target Tracer on ${c.defender.label}: this Drone attacks as if in Offensive Stance, so hollow icons count (glossary).`
-          : `Charge Order from ${chargeOrderOn(this.data, this.tokens?.() ?? [], c.attacker)?.label ?? 'an ally'}: this Drone attacks as if in Offensive Stance, so hollow icons count (ECP10).`}</p>` : ''}`;
+          ? `Target Tracer on ${esc(c.defender.label)}: this Drone attacks as if in Offensive Stance, so hollow icons count (glossary).`
+          : `Charge Order from ${esc(chargeOrderOn(this.data, this.tokens?.() ?? [], c.attacker)?.label ?? 'an ally')}: this Drone attacks as if in Offensive Stance, so hollow icons count (ECP10).`}</p>` : ''}`;
     wrap.appendChild(
       this.poolEditor(
         [['Red', 'red'], ['Yellow', 'yellow']],
@@ -4845,11 +4845,11 @@ export class AttackHelper {
         // table when the losses are silent.
         c.defender.stance === 'shutdown' ? ' · SHUTDOWN: the Armor still rolls, but hollow icons never count, there are no Dodge dice, and the attacker chose the Part (4.1)' : ''
       }.</p>
-      ${prot ? `<p class="ah-protect">${ICON_SHIELD} ${c.protectionNote}. <b>+${prot} White</b> is already added to the pool below.</p>` : ''}
+      ${prot ? `<p class="ah-protect">${ICON_SHIELD} ${esc(c.protectionNote)}. <b>+${prot} White</b> is already added to the pool below.</p>` : ''}
       ${(() => {
         const frg = statusCount(c.defender.statuses, 'fragile');
         return frg
-          ? `<p class="ah-fragile">${ICON_BURST} ${c.defender.label} bears ${frg} Fragile Token${frg === 1 ? '' : 's'}, so ${removal('Fragile', frg)}.</p>`
+          ? `<p class="ah-fragile">${ICON_BURST} ${esc(c.defender.label)} bears ${frg} Fragile Token${frg === 1 ? '' : 's'}, so ${removal('Fragile', frg)}.</p>`
           : '';
       })()}
       ${(() => {
@@ -4864,7 +4864,7 @@ export class AttackHelper {
         // Said rather than silently dropped: a Surplus roll inherits no Action
         // effects (4.8), and a player who knows the weapon pierces will look.
         if (c.surplusRound) return `<p class="dim">${ICON_PIERCE} Armor Piercing does not carry into Surplus Damage, which inherits no Action effects (4.8).</p>`;
-        return `<p class="ah-fragile ah-pierce">${ICON_PIERCE} ${armorPiercingNote(ap, c.defender.label)} So ${removal('Armor Piercing', ap.total)}.</p>`;
+        return `<p class="ah-fragile ah-pierce">${ICON_PIERCE} ${esc(armorPiercingNote(ap, c.defender.label))} So ${removal('Armor Piercing', ap.total)}.</p>`;
       })()}
       ${(() => {
         // 164 Early Warning Observation. Said out loud for the same reason the
@@ -4872,7 +4872,7 @@ export class AttackHelper {
         // unexplained die is indistinguishable from an arithmetic bug.
         const scout = statusCount(c.defender.statuses, 'immobilized') > 0 ? undefined : this.earlyWarning();
         return scout
-          ? `<p class="ah-protect">${ICON_SIGNAL} ${scout.label} has line of sight to ${c.attacker.label}, so Early Warning Observation adds <b>+1 Blue</b> to the pool below. This effect does not stack.</p>`
+          ? `<p class="ah-protect">${ICON_SIGNAL} ${esc(scout.label)} has line of sight to ${esc(c.attacker.label)}, so Early Warning Observation adds <b>+1 Blue</b> to the pool below. This effect does not stack.</p>`
           : '';
       })()}
       ${c.explosion ? '<p class="dim">Explosion damage allows no Terrain or Unit Protection, so the pool below is Armour and Dodge only.</p>' : ''}
@@ -4890,7 +4890,7 @@ export class AttackHelper {
         // which. Claiming "line of sight is clear" over an obstructed board is
         // worse guidance than the missing dice it was explaining.
         !c.protection && !c.explosion && !c.intercept && c.action.type === 'Firing'
-          ? `<p class="dim">${c.protectionNote || 'No Terrain or Unit Protection applies here. Obstructed firing by a Large unit or 3" terrain would add +2 White.'}</p>`
+          ? `<p class="dim">${esc(c.protectionNote || 'No Terrain or Unit Protection applies here. Obstructed firing by a Large unit or 3" terrain would add +2 White.')}</p>`
           : ''
       }`;
     wrap.appendChild(
@@ -4910,7 +4910,7 @@ export class AttackHelper {
     for (const d of designate) {
       const p = document.createElement('p');
       p.className = 'ah-protect';
-      p.innerHTML = `<b>${d.name}</b> Designates ${d.count} White die: set ${
+      p.innerHTML = `<b>${esc(d.name)}</b> Designates ${d.count} White die: set ${
         d.count === 1 ? 'its face' : 'their faces'
       } now, before anything is rolled (FAQ A25). Take ${d.count} off the White above, roll the rest, and count the Designated ${
         d.count === 1 ? 'die' : 'dice'
@@ -5225,9 +5225,9 @@ export class AttackHelper {
       : (res?.duel.icons ?? []).filter((i) => !i.offset).length;
     wrap.innerHTML = `<h4><span class="ah-n">4</span><span data-mech="penetration">Resolution</span>${
       c.surplusRound
-        ? ` (<span data-mech="surplus_damage">${c.surplusKeyword?.name ?? 'Surplus'} Damage, no Attack Roll</span>)`
+        ? ` (<span data-mech="surplus_damage">${esc(c.surplusKeyword?.name ?? 'Surplus')} Damage, no Attack Roll</span>)`
         : ''
-    }</h4>${res ? (atTable ? `<p class="ah-sum">${res.text[0]}</p>` : resolutionHtml(res)) : '<p class="dim">Waiting for the attacking player to settle the damage.</p>'}`;
+    }</h4>${res ? (atTable ? `<p class="ah-sum">${esc(res.text[0])}</p>` : resolutionHtml(res)) : '<p class="dim">Waiting for the attacking player to settle the damage.</p>'}`;
     linkMechanics(wrap, this.data.mechanics);
     if (!this.mirroring && !c.penetrated && this.mayDrive('attacker')) {
       // A table result entered by mistake, before anything was applied.
@@ -5264,7 +5264,7 @@ export class AttackHelper {
         const row = document.createElement('div');
         row.className = 'ah-dodgepick';
         const n = Math.min(c.dodgeOnLightning ?? 0, this.lightningChoice);
-        row.innerHTML = `<span>${c.defender.label}: Dodges held for [Lightning]</span>`;
+        row.innerHTML = `<span>${esc(c.defender.label)}: Dodges held for [Lightning]</span>`;
         const mk = (label: string, to: number, off: boolean): HTMLButtonElement => {
           const b = document.createElement('button');
           b.className = 'ah-alt';
@@ -5696,9 +5696,9 @@ export class AttackHelper {
         ? `<p class="ah-sum">${name} holds at <b>${label(r.after)}</b>.</p>`
         : `<p class="ah-sum">${name}: ${label(r.before)} to <b>${label(r.after)}</b>.</p>`;
     }).join('');
-    el.innerHTML = `<div class="ah-head"><b>Attack resolved</b> <span class="dim">${c.attacker.label} to ${struck.label}, ${c.action.name?.en ?? ''}</span></div>
+    el.innerHTML = `<div class="ah-head"><b>Attack resolved</b> <span class="dim">${esc(c.attacker.label)} to ${esc(struck.label)}, ${esc(c.action.name?.en ?? '')}</span></div>
       ${tally}${partLines}
-      <div class="ah-log">${c.log.map((l) => `<div>${l}</div>`).join('')}</div>`;
+      <div class="ah-log">${c.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>`;
     // "{Lightning} may make Target Mech switch into Shutdown Stance
     // immediately" (ZHDR-303, ZHDR-304). A may, so it is offered, and on the
     // terminal screen whichever way it ends, so the locals it needs are taken now.
@@ -6417,17 +6417,17 @@ export class ElectronicHelper {
     el.className = 'attack-helper ew-contest';
     const what = c.action.name.en || c.action.name.zh || c.action.id;
     el.innerHTML = `<div class="ah-head">
-      <b>${c.initiator.label}</b> <span class="vs-bolt">${ICON_BOLT}</span> <b>${c.responder.label}</b>
+      <b>${esc(c.initiator.label)}</b> <span class="vs-bolt">${ICON_BOLT}</span> <b>${esc(c.responder.label)}</b>
       <span class="dim">${what}</span>
       <button class="ah-cancel" title="Cancel">✕</button>
     </div>
-    <p class="ah-los" data-mech="electronic_counter_roll">Electronic Warfare ignores terrain and line of sight. Range only.${this.relayNote(c)}</p>`;
+    <p class="ah-los" data-mech="electronic_counter_roll">Electronic Warfare ignores terrain and line of sight. Range only.${esc(this.relayNote(c))}</p>`;
 
     el.appendChild(this.stepRoll());
     if (c.log.length) {
       const log = document.createElement('div');
       log.className = 'ah-log';
-      log.innerHTML = c.log.map((l) => `<div>${l}</div>`).join('');
+      log.innerHTML = c.log.map((l) => `<div>${esc(l)}</div>`).join('');
       el.appendChild(log);
     }
     // The X ends the exchange for BOTH players on a shared table: the record is
@@ -6445,7 +6445,7 @@ export class ElectronicHelper {
     const roll = who === 'init' ? c.initRoll : c.respRoll;
     const wrap = document.createElement('div');
     wrap.className = 'ew-side';
-    wrap.innerHTML = `<h5>${who === 'init' ? 'Initiator' : 'Responder'} · ${t.label}
+    wrap.innerHTML = `<h5>${who === 'init' ? 'Initiator' : 'Responder'} · ${esc(t.label)}
       <span class="ew-ev">EV ${ev}</span>${this.offensive(who) ? '<span class="ew-off">OFF: hollow counts</span>' : ''}</h5>`;
     // A Terminal is not a unit, so its hand is said rather than read off a
     // card (p.87; ruling I25).
@@ -6527,7 +6527,7 @@ export class ElectronicHelper {
         if (funder) {
           const whistle = document.createElement('button');
           whistle.className = 'ah-cancel';
-          whistle.innerHTML = `Whistle<small>${funder.label}'s Command Token</small>`;
+          whistle.innerHTML = `Whistle<small>${esc(funder.label)}'s Command Token</small>`;
           whistle.disabled = !this.mayPress(who);
           whistle.addEventListener('click', () => this.declareCounter(who, true, funder));
           wrap.appendChild(whistle);
@@ -6636,7 +6636,7 @@ export class ElectronicHelper {
 
     if (c.initEv === 0) {
       wrap.innerHTML = `<h4><span class="ah-n">!</span>Cannot initiate</h4>
-        <p class="dim">${c.initiator.label} has Electronic Value 0, so it cannot start an Electronic Counter-roll. A unit at 0 may still respond to one.</p>`;
+        <p class="dim">${esc(c.initiator.label)} has Electronic Value 0, so it cannot start an Electronic Counter-roll. A unit at 0 may still respond to one.</p>`;
       const done = document.createElement('button');
       done.className = 'ah-primary';
       done.textContent = 'Close';
@@ -6791,7 +6791,7 @@ export class ElectronicHelper {
       const other = yoyuWho === 'init' ? c.responder : c.initiator;
       const ask = document.createElement('p');
       ask.className = 'ah-sum';
-      ask.innerHTML = `<b>${yoyu.label}</b> won the Counter-roll, so Yoyu may switch <b>${other.label}</b> to Offensive Stance (LPA-22).`;
+      ask.innerHTML = `<b>${esc(yoyu.label)}</b> won the Counter-roll, so Yoyu may switch <b>${esc(other.label)}</b> to Offensive Stance (LPA-22).`;
       wrap.appendChild(ask);
       const take = document.createElement('button');
       take.className = 'ah-primary';

@@ -10,6 +10,7 @@ import { boardGrids, firingSight, inArc, inContact, largeGridOf, lineCrossesUnit
 import { isTerminalStandIn, normaliseTasks, TERMINAL_EV, type VpRider } from './tasks';
 // ticks.ts imports only from types.ts, so this direction carries no cycle.
 import { timingOf, type StartOpts } from './ticks';
+import { cleanName, cleanStrings } from './safetext';
 
 export const PART_SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
 export const SLOT_LABEL: Record<PartSlot | 'pilot' | 'main', string> = {
@@ -4917,7 +4918,8 @@ export function makeMechToken(state: GameState, data: GameData, loadout: MechLoa
 }
 
 function mechLabel(data: GameData, loadout: MechLoadout, name?: string): string {
-  if (name) return tidyUnitLabel(name);
+  const typed = name ? cleanName(name) : '';
+  if (typed) return tidyUnitLabel(typed);
   const torso = loadout.torso ? data.byId.get(loadout.torso) : undefined;
   return torso ? compactName(torso) : 'Mech';
 }
@@ -6383,7 +6385,10 @@ function normaliseEnvironments(raw: unknown): GameState['environments'] {
 }
 
 export function migrateState(rawIn: unknown, data: GameData): GameState | null {
-  const raw = migrateSideIds(rawIn);
+  // Every board this client did not build itself comes through here - a save,
+  // a replay, a file, the other side's checkpoint - so no string in it keeps
+  // an angle bracket (safetext.ts).
+  const raw = migrateSideIds(cleanStrings(rawIn));
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as {
     v?: number;
@@ -6395,19 +6400,39 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
   };
   if (!Array.isArray(s.tokens)) return null;
   if (s.v !== 1 && s.v !== 2 && s.v !== 3) return null;
+  // Types from outside are checked here, not assumed. A board from a file or
+  // the other side can carry a string wherever the types say number or Side,
+  // and the pages print these fields straight into their markup.
+  const int = (v: unknown, dflt: number): number => (typeof v === 'number' && Number.isInteger(v) ? v : dflt);
+  const sideOr = (v: unknown, dflt: Side): Side => (v === 's1' || v === 's2' ? v : dflt);
+  const countsOnly = (v: unknown): Record<string, number> => {
+    const out: Record<string, number> = {};
+    if (v && typeof v === 'object') {
+      for (const [k, n] of Object.entries(v)) if (typeof n === 'number' && Number.isFinite(n)) out[k] = n;
+    }
+    return out;
+  };
+  const r = (s.round && typeof s.round === 'object' ? s.round : {}) as Partial<GameState['round']>;
+  const ct = (s.commandTokens && typeof s.commandTokens === 'object' ? s.commandTokens : {}) as Partial<GameState['commandTokens']>;
+  const listOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
+  const names = (s as { sideNames?: unknown }).sideNames as Record<string, unknown> | undefined;
   const state: GameState = {
     v: 3,
     map: s.map ?? '',
     tokens: [],
-    nextUid: s.nextUid ?? 1,
-    round: s.round ?? { n: 1, phase: 0, firstPlayer: 's1' },
-    commandTokens: s.commandTokens ?? { s1: 0, s2: 0 },
-    markers: (s as { markers?: GameState['markers'] }).markers ?? [],
-    smoke: (s as { smoke?: GameState['smoke'] }).smoke ?? [],
+    nextUid: int(s.nextUid, 1),
+    round: { n: int(r.n, 1), phase: int(r.phase, 0), firstPlayer: sideOr(r.firstPlayer, 's1') },
+    commandTokens: { s1: int(ct.s1, 0), s2: int(ct.s2, 0) },
+    markers: listOf((s as { markers?: unknown }).markers)
+      .filter((m) => typeof m.kind === 'string' && Number.isInteger(m.col) && Number.isInteger(m.row))
+      .map((m) => ({ kind: m.kind as string, col: m.col as number, row: m.row as number })),
+    smoke: listOf((s as { smoke?: unknown }).smoke)
+      .filter((m) => Number.isInteger(m.col) && Number.isInteger(m.row) && (m.side === 's1' || m.side === 's2'))
+      .map((m) => ({ col: m.col as number, row: m.row as number, side: m.side as Side })),
     // The round whose smoke has dissipated, on the whitelist rule: absent stays
     // absent (audit Phase 4, G7).
     ...(typeof (s as { smokeRound?: unknown }).smokeRound === 'number' ? { smokeRound: (s as { smokeRound: number }).smokeRound } : {}),
-    script: normaliseScript((s as { script?: unknown }).script, (s.round ?? { firstPlayer: 's1' }).firstPlayer ?? 's1'),
+    script: normaliseScript((s as { script?: unknown }).script, sideOr(r.firstPlayer, 's1')),
     // The board size, and it is written ONLY when it is a larger board.
     // migrateState rebuilds the state from a whitelist, so a field missing from
     // here is silently dropped on every load -- which is exactly how a saved
@@ -6439,8 +6464,10 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     ...((s as { tableDice?: boolean }).tableDice ? { tableDice: true } : {}),
     ...((s as { guidedPlay?: boolean }).guidedPlay ? { guidedPlay: true } : {}),
     ...((s as { unlocked?: boolean }).unlocked ? { unlocked: true } : {}),
-    roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,
-    sideNames: (s as { sideNames?: GameState['sideNames'] }).sideNames ?? {},
+    roundLimit: int((s as { roundLimit?: unknown }).roundLimit, 5),
+    sideNames: Object.fromEntries((['s1', 's2'] as const)
+      .map((k) => [k, typeof names?.[k] === 'string' ? cleanName(names[k] as string) : ''])
+      .filter(([, v]) => v)) as GameState['sideNames'],
     ready: (s as { ready?: GameState['ready'] }).ready ?? {},
     mission: (s as { mission?: string | null }).mission ?? null,
     tasks: (s as { tasks?: unknown }).tasks ? normaliseTasks((s as { tasks?: unknown }).tasks) : null,
@@ -6477,13 +6504,16 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
   };
   for (const rawTok of s.tokens) {
     const t = rawTok as Partial<Token>;
-    if (t.uid === undefined || t.col === undefined || t.row === undefined) continue;
+    if (!t || typeof t !== 'object' || !Number.isInteger(t.uid) || !Number.isFinite(t.col) || !Number.isFinite(t.row)) continue;
+    if (t.cardId !== undefined && typeof t.cardId !== 'string') continue;
     const card = t.cardId ? data.byId.get(t.cardId) : undefined;
     const cards =
       t.kind === 'mech' && t.mech ? mechCards(data, t.mech) : card ? [card] : [];
     const pilot = t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
     const partStates =
-      t.partStates ??
+      (t.partStates && typeof t.partStates === 'object'
+        ? Object.fromEntries(Object.entries(t.partStates).filter(([, v]) => v === 'intact' || v === 'damaged' || v === 'destroyed'))
+        : undefined) ??
       (t.kind === 'mech' && t.mech
         ? Object.fromEntries(PART_SLOTS.filter((sl) => t.mech![sl]).map((sl) => [sl, 'intact']))
         : { main: 'intact' });
@@ -6494,7 +6524,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
         && (x.role === 'initiator' || x.role === 'tethered'))
       .map((x) => ({ uid: x.uid, range: x.range, role: x.role }))
       .sort((a, b) => a.uid - b.uid);
-    let label = t.label ?? '?';
+    let label = typeof t.label === 'string' && t.label ? t.label : '?';
     if (/[぀-ヿ一-鿿]/.test(label) || label.includes('…')) {
       const nameSource = t.kind === 'mech' && t.mech?.torso ? data.byId.get(t.mech.torso) : card;
       if (nameSource) label = compactName(nameSource);
@@ -6504,18 +6534,18 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     }
 
     state.tokens.push({
-      uid: t.uid,
-      side: t.side ?? 's1',
-      kind: t.kind ?? 'drone',
+      uid: t.uid!,
+      side: sideOr(t.side, 's1'),
+      kind: t.kind === 'mech' || t.kind === 'projectile' ? t.kind : 'drone',
       cardId: t.cardId ?? '',
       mech: t.mech,
       parentUid: t.parentUid,
       droneBackpack: t.droneBackpack,
       label,
-      col: t.col,
-      row: t.row,
-      size: t.size ?? 1,
-      facing: t.facing ?? 0,
+      col: t.col!,
+      row: t.row!,
+      size: t.size === 2 || t.size === 3 ? t.size : 1,
+      facing: t.facing === 1 || t.facing === 2 || t.facing === 3 ? t.facing : 0,
       // Re-derived from the card rather than trusted: saves from before the
       // FAQ audit hold walls as aerial and the elevated drones as grounded.
       aerial: card ? isAerial(card) : (t.aerial ?? false),
@@ -6532,8 +6562,10 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
         : undefined,
       lastDamagedBy: t.lastDamagedBy,
       repairedSlots: Array.isArray(t.repairedSlots) && t.repairedSlots.length ? t.repairedSlots : undefined,
-      stance: t.stance ?? ((card?.stance as Stance) || 'offensive'),
-      link: t.link ?? (t.kind === 'mech' ? pilot?.LV ?? 3 : undefined),
+      stance: t.stance === 'offensive' || t.stance === 'defensive' || t.stance === 'mobility' || t.stance === 'shutdown'
+        ? t.stance
+        : ((card?.stance as Stance) || 'offensive'),
+      link: typeof t.link === 'number' && Number.isFinite(t.link) ? t.link : (t.kind === 'mech' ? pilot?.LV ?? 3 : undefined),
       timing: t.timing,
       // A free table's hand-marked Ticks (3.4.5), through their own whitelist.
       freeTicks: normaliseFreeTicks(t.freeTicks),
@@ -6545,10 +6577,10 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       // before Ammo existed holds, could never gain a count and every launcher
       // on it silently spent nothing. A key already present always wins, so a
       // magazine spent down to 0 is not refilled.
-      ammo: { ...initAmmo(cards), ...(t.ammo ?? {}) },
-      intercept: { ...initIntercept(cards), ...(t.intercept ?? {}) },
+      ammo: { ...initAmmo(cards), ...countsOnly(t.ammo) },
+      intercept: { ...initIntercept(cards), ...countsOnly(t.intercept) },
       charge: Array.isArray(t.charge) && t.charge.length ? t.charge.filter((x: unknown) => typeof x === 'string') : undefined,
-      log: t.log ?? [],
+      log: listOf(t.log).filter((e) => typeof e.text === 'string').map((e) => ({ round: int(e.round, 0), text: e.text as string })),
       // migrateState rebuilds a token FIELD BY FIELD, so anything not named
       // here is dropped on load. Both of these are rules-bearing and both are
       // in boardFingerprint, so losing them silently desyncs a reloaded game.
@@ -6569,7 +6601,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       lockedProjectile: t.lockedProjectile && typeof t.lockedProjectile === 'object'
         ? { ...(t.lockedProjectile as Record<string, string>) }
         : undefined,
-      statuses: (t.statuses ?? []).filter((s: string) => s !== 'interception'),
+      statuses: (Array.isArray(t.statuses) ? t.statuses : []).filter((x: unknown): x is string => typeof x === 'string' && x !== 'interception'),
     });
   }
   return state;

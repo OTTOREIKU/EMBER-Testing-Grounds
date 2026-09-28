@@ -152,6 +152,7 @@ const applyFn = commands.slice(applyStart, commands.indexOf('\n  }', commands.in
 if (!applyFn.includes('rollback = null')) throw new Error('could not locate the rollback applies in commands.ts');
 
 writeFileSync(tmp, `type Side = any;
+${readFileSync(new URL('../src/safetext.ts', import.meta.url), 'utf8')}
 const ok = { ok: true } as any;
 const no = (why: string) => ({ ok: false, why }) as any;
 export function checkRollback(state: any, cmd: any): any {

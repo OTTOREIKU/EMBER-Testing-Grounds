@@ -182,7 +182,7 @@ export function compareGrid(
     const owned = chrome.owned?.(key);
     return `<div class="inv-cmp-col">
         <div class="inv-cmp-head">${chrome.picker(side)}${sold}</div>
-        ${box?.hasImage ? `<div class="inv-cmp-cover"><img src="${boxCoverUrl(box.id)}" alt="" loading="lazy" onerror="this.closest('.inv-cmp-cover').remove()"></div>` : ''}
+        ${box?.hasImage ? `<div class="inv-cmp-cover"><img src="${boxCoverUrl(box.id)}" alt="" loading="lazy" data-gone=".inv-cmp-cover"></div>` : ''}
         <div class="inv-cmp-tally">${all.length} card${all.length === 1 ? '' : 's'} · ${all.reduce((s, i) => s + i.n, 0)} pieces · ${uniq} in no other box${owned === undefined ? '' : ` · you own ${owned}`}</div>
         <ul class="inv-parts inv-cmp-list">${
           rows.length

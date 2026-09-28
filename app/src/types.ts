@@ -1267,7 +1267,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
 
 // A half-written entry is dropped rather than shown as a choice: every one of
 // these is a button that promises to return the board to a named moment.
-function normaliseCatalog(raw: unknown): RollbackPoint[] {
+export function normaliseCatalog(raw: unknown): RollbackPoint[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter((p): p is RollbackPoint => !!p

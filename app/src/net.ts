@@ -1,4 +1,5 @@
 import type { Command } from './commands';
+import { cleanStrings } from './safetext';
 import type { Side } from './types';
 
 // The client half of the relay. It owns the socket and the ordering, and knows
@@ -512,7 +513,10 @@ export class Relay {
   private receive(raw: string): void {
     let msg: { t?: string; [k: string]: unknown };
     try {
-      msg = JSON.parse(raw) as typeof msg;
+      // Everything the other side can say - a command, a whole board, a roll's
+      // label, a seat's name - arrives here, so this is where markup is taken
+      // out of it, for every page that plays online (safetext.ts).
+      msg = cleanStrings(JSON.parse(raw) as typeof msg);
     } catch {
       return;
     }
@@ -669,7 +673,11 @@ export class Relay {
       }
 
       case 'rolled': {
-        const dice = (msg.dice ?? []) as RolledDie[];
+        // A roll's faces, seat and label are drawn on the other screen, so
+        // they are held to their shapes here.
+        const dice = (Array.isArray(msg.dice) ? msg.dice : [])
+          .filter((d): d is RolledDie => !!d && typeof (d as RolledDie).color === 'string' && Number.isInteger((d as RolledDie).face));
+        if (msg.seat !== 's1' && msg.seat !== 's2') return;
         const seat = msg.seat as Side;
         const id = typeof msg.id === 'string' ? msg.id : null;
         const waiting = id ? this.rolls.get(id) : undefined;
@@ -682,7 +690,7 @@ export class Relay {
         // what puts the dice on screen, and both players get them from the
         // same message rather than one drawing its own.
         const kind: RollKind = msg.kind === 'hits' ? 'hits' : 'pool';
-        this.hooks.onRolled(dice, seat, (msg.label as string) ?? null, seat === this.view.seat, kind);
+        this.hooks.onRolled(dice, seat, typeof msg.label === 'string' ? msg.label : null, seat === this.view.seat, kind);
         return;
       }
 

@@ -1,5 +1,6 @@
 import type { DiceData, DiceIcon, DieColor, Side } from './types';
 import { assetUrl, squadLabel } from './data';
+import { escapeHtml } from './safetext';
 
 interface RolledDie {
   color: DieColor;
@@ -157,7 +158,7 @@ export class DiceTray {
       }
       const totals = [...counts.entries()].map(([k, v]) => `<span class="total-chip">${v}× ${k}</span>`).join('');
       return `<div class="tray-group">
-        <div class="tray-group-head">${g.label}</div>
+        <div class="tray-group-head">${escapeHtml(g.label)}</div>
         <div class="tray-results">${dice}</div>
         ${totals ? `<div class="totals">${totals}</div>` : ''}
       </div>`;
@@ -266,8 +267,8 @@ export class DiceTray {
       ${
         this.rolled.length
           ? `<div class="rerolls">
-              <button id="rr-s1" ${this.rerollUsed.s1 ? 'disabled' : ''}>${squadLabel('s1')} reroll</button>
-              <button id="rr-s2" ${this.rerollUsed.s2 ? 'disabled' : ''}>${squadLabel('s2')} reroll</button>
+              <button id="rr-s1" ${this.rerollUsed.s1 ? 'disabled' : ''}>${escapeHtml(squadLabel('s1'))} reroll</button>
+              <button id="rr-s2" ${this.rerollUsed.s2 ? 'disabled' : ''}>${escapeHtml(squadLabel('s2'))} reroll</button>
              </div>
              <p class="tray-hint">Select dice above, then reroll (once per player).</p>`
           : ''

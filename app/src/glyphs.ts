@@ -46,14 +46,14 @@ const PLACEHOLDER = /\{([^{}]{1,12})\}([.,;:!?)]*)/g;
 function render(raw: string): string | null {
   const key = raw.trim().toLowerCase();
   const speed = SPEED[key];
-  if (speed) return `<span class="act-speed ${speed.cls}" title="${speed.label}">${key}</span>`;
+  if (speed) return `<span class="act-speed ${speed.cls}" title="${attr(speed.label)}">${attr(key)}</span>`;
   const icon = ICONS[key];
   if (icon) {
     const label = icon === 'heavyHit' ? 'Heavy Hit' : icon === 'lightHit' ? 'Light Hit' : raw.trim();
-    return `<span class="glyph-ico" title="${label}">${iconSvg({ type: icon } as never, 14)}</span>`;
+    return `<span class="glyph-ico" title="${attr(label)}">${iconSvg({ type: icon } as never, 14)}</span>`;
   }
   const die = DICE[key];
-  if (die) return `<span class="glyph-die die-${die.colour}" title="${die.label}"></span>`;
+  if (die) return `<span class="glyph-die die-${die.colour}" title="${attr(die.label)}"></span>`;
   // Cards write a die count as {1Y} or {3R} as often as they write {Y}, and a
   // bare colour table leaves those printed as literal braces.
   const counted = /^(\d{1,2})\s*([byrw])$/.exec(key);
@@ -63,7 +63,7 @@ function render(raw: string): string | null {
     if (d && n > 0 && n <= 9) {
       const label = n === 1 ? `1 ${d.label}` : `${n} ${d.label.replace(/die$/, 'dice')}`;
       const pips = `<span class="glyph-die die-${d.colour}"></span>`.repeat(n);
-      return `<span class="glyph-dice" title="${label}">${pips}</span>`;
+      return `<span class="glyph-dice" title="${attr(label)}">${pips}</span>`;
     }
   }
   return null;
@@ -193,7 +193,7 @@ export function tickCapsule(filled: number, title = '', short: CapsuleShort = {}
     const gone = isManeuver ? !!short.maneuver : action < lacking;
     return gone ? '<i class="on short"></i>' : '<i class="on"></i>';
   }).join('');
-  return `<span class="tick-cap${n ? '' : ' none'}"${title ? ` title="${title}"` : ''} aria-hidden="true">${slots}</span>`;
+  return `<span class="tick-cap${n ? '' : ' none'}"${title ? ` title="${attr(title)}"` : ''} aria-hidden="true">${slots}</span>`;
 }
 
 // ---------- the Opportunity's Ticks, as the book draws them ----------

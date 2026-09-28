@@ -264,9 +264,11 @@ const TOKEN_B = { title: 'D7 Tarantula', sub: 'UN · Carrier Drone', lines: ['Ca
   // compile, would flow through every call site, and no behavioural assertion
   // above could see it arrive until something rendered it.
   const iface = cut(inspectorSrc, 'export interface InspectInfo {', '}', 'the InspectInfo interface');
+  // `html` (2026-09-28) is not a channel: it says the three text fields hold
+  // markup the producer built, where by default the box escapes them.
   check('InspectInfo still carries exactly title, sub and lines, with no image channel',
-    iface.split('\n').slice(1).map((l) => l.trim().replace(/\??:.*$/, '')).filter(Boolean),
-    ['title', 'sub', 'lines']);
+    iface.split('\n').slice(1).map((l) => l.trim()).filter((l) => l && !l.startsWith('//')).map((l) => l.replace(/\??:.*$/, '')),
+    ['title', 'sub', 'lines', 'html']);
 }
 
 // ---------- 2. the board page: index.html has a docked #inspect-box ----------

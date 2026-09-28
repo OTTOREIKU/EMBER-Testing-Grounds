@@ -266,7 +266,7 @@ export class Inventory {
         ${this.factionFacets()
           .map(
             (f) =>
-              `<button class="inv-facet${this.facChoice === f.id ? ' on' : ''}"${f.id ? ` data-fac-filter="${f.id}"` : ' data-fac-filter=""'}>${f.label}<span class="inv-facet-n">${f.n}</span></button>`,
+              `<button class="inv-facet${this.facChoice === f.id ? ' on' : ''}"${f.id ? ` data-fac-filter="${f.id}"` : ' data-fac-filter=""'}>${esc(f.label)}<span class="inv-facet-n">${f.n}</span></button>`,
           )
           .join('')}
         <label class="inv-filter"><input type="checkbox" id="inv-filter" ${this.filterEnabled ? 'checked' : ''}><span class="inv-tick"></span> Only show what I own</label>
@@ -277,7 +277,7 @@ export class Inventory {
             const n = owned[b.key] ?? 0;
             const fac = (b.faction ?? [])[0] ?? '';
             return `<div class="inv-box${n > 0 ? ' owned' : ''}"${fac ? ` data-fac="${fac}"` : ''}>
-              ${b.hasImage ? `<div class="inv-cover" aria-hidden="true"><img src="${boxCoverUrl(b.id)}" alt="" loading="lazy" onerror="this.closest('.inv-cover').remove()"><span class="inv-scrim"></span></div>` : ''}
+              ${b.hasImage ? `<div class="inv-cover" aria-hidden="true"><img src="${boxCoverUrl(b.id)}" alt="" loading="lazy" data-gone=".inv-cover"><span class="inv-scrim"></span></div>` : ''}
               <div class="inv-box-main">
                 ${
                   (b.faction ?? []).length

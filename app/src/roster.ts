@@ -10,7 +10,7 @@ import { groupByFaction, openPartPicker } from './partpicker';
 import { BUILD_SLOTS, buildDefaultName, buildFactions, confirmLegalBuild, mechBuilderHtml, openMechSlot, slotPool, type BuildSlot } from './mechbuilder';
 import { fillPortraits } from './cardart';
 
-const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // Options for a saved-thing dropdown, with the builds that ship with the app
 // held apart from the player's own under a heading of their own. They were

@@ -1239,7 +1239,7 @@ function boxPlacePanel(ctx: HudCtx, turn: Side): string {
   const zoneName = (id: string) => zonesOf(ctx.data.zoneData.zones, s).find((z) => z.id === id)?.name ?? id;
   if (!mine(ctx, turn)) {
     boxPlace = null;
-    return head('Waiting', `${squadLabel(turn)} places a Black Box`, 'Alternately, from the First Player (5.2.1).', false)
+    return head('Waiting', `${esc(squadLabel(turn))} places a Black Box`, 'Alternately, from the First Player (5.2.1).', false)
       + `<div class="tp-body">${waiting(turn, 'placing a Black Box')}</div><div class="tp-foot"></div>`;
   }
   const rows = normaliseTasks(s.tasks).items.filter((i) => i.kind === 'blackbox')
@@ -1272,7 +1272,7 @@ function placeBoxOn(ctx: HudCtx, c: number, r: number): void {
 }
 
 function waiting(side: Side, doing: string): string {
-  return `<div class="waitbox"><div class="spin">◐</div><div class="msg">Waiting for <b class="${side}">${squadLabel(side)}</b></div><div class="sub">${esc(doing)}</div></div>`;
+  return `<div class="waitbox"><div class="spin">◐</div><div class="msg">Waiting for <b class="${side}">${esc(squadLabel(side))}</b></div><div class="sub">${esc(doing)}</div></div>`;
 }
 
 function mine(ctx: HudCtx, side: Side): boolean {
@@ -1308,12 +1308,12 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
             : tie
               ? `<button class="rowbtn" data-roll="${side}">Re-roll</button>`
               : '<span class="tp-dim">rolled</span>';
-        return `<div class="dialrow"><span class="nm ${side}">${squadLabel(side)}</span>${btn}<span class="pickchip${r.length ? ' set' : ''}">${r.length ? `${rollTotal(r)} Hits` : '—'}</span></div>`;
+        return `<div class="dialrow"><span class="nm ${side}">${esc(squadLabel(side))}</span>${btn}<span class="pickchip${r.length ? ' set' : ''}">${r.length ? `${rollTotal(r)} Hits` : '—'}</span></div>`;
       })
       .join('');
     const verdict = tie
       ? `<p class="tp-note">A tie on ${rollTotal(su.rolls.s1)}. No tie procedure in the rulebook, so both roll again.<br>The first re-roll clears the other total.</p>`
-      : winner ? `<p class="tp-note">${squadLabel(winner)} rolls higher.</p>` : '';
+      : winner ? `<p class="tp-note">${esc(squadLabel(winner))} rolls higher.</p>` : '';
     return head('Setup', 'Roll for First Player', 'Two dice each, most Hits goes first (3.1.2).', true)
       + `<div class="tp-body">${rows}${verdict}</div>
         <div class="tp-foot">${winner ? '<button class="bigbtn" data-act="accept">Continue</button>' : ''}</div>`;
@@ -1325,7 +1325,7 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
     const edge = mine(ctx, fp)
       ? `<div class="btnrow"><button class="rowbtn" data-edge="white">Take the White Deployment Zone</button><button class="rowbtn" data-edge="black">Take the Black Deployment Zone</button></div>`
       : waiting(fp, 'picking a table edge');
-    return head(mine(ctx, fp) ? 'Your move' : 'Setup', `${squadLabel(fp)} picks an edge`, 'The other side takes the opposite edge (3.1.2). The Secondary Tasks come next (3.1.3).', mine(ctx, fp))
+    return head(mine(ctx, fp) ? 'Your move' : 'Setup', `${esc(squadLabel(fp))} picks an edge`, 'The other side takes the opposite edge (3.1.2). The Secondary Tasks come next (3.1.3).', mine(ctx, fp))
       + `<div class="tp-body">${edge}</div><div class="tp-foot"></div>`;
   }
   if (su.stage === 'tasks') {
@@ -1338,7 +1338,7 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
     if (!both) {
       const meNow = !taskState.secondary[fp] ? mine(ctx, fp) : mine(ctx, fp === 's1' ? 's2' : 's1');
       return head(meNow ? 'Your move' : 'Setup', 'Choose Secondary Tasks',
-        `${squadLabel(fp)} goes first and reveals their Secondary Task first (FAQ P1).`, meNow)
+        `${esc(squadLabel(fp))} goes first and reveals their Secondary Task first (FAQ P1).`, meNow)
         + `<div class="tp-body">${secondaryRows(ctx, fp)}</div><div class="tp-foot"></div>`;
     }
     const owed = taskDesignations(ctx.data, s);
@@ -1389,7 +1389,7 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
       const otherReady = !!s.ready?.[otherSeat];
       sub = meReady && otherReady ? 'Both squads confirmed.' : 'Both squads confirm before Round 1.<br>Moves stay open until then.';
       if (!meReady) foot.push(`<button class="bigbtn${pending !== null ? ' ghost2' : ''}" data-act="deployready">My deployment is final</button>`);
-      else if (!otherReady) foot.push(`<button class="bigbtn ghost2" data-act="deployunready" title="Tap to withdraw">✓ Ready · waiting for ${squadLabel(otherSeat)}…</button>`);
+      else if (!otherReady) foot.push(`<button class="bigbtn ghost2" data-act="deployunready" title="Tap to withdraw">✓ Ready · waiting for ${esc(squadLabel(otherSeat))}…</button>`);
       else foot.push('<button class="bigbtn" data-act="deploydone">Begin Round 1</button>');
     } else {
       foot.push(`<button class="bigbtn${pending !== null ? ' ghost2' : ''}" data-act="deploydone">Begin Round 1</button>`);
@@ -1399,7 +1399,7 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
   }
   if (!mine(ctx, turn)) {
     placing = null;
-    return head('Deployment', `${squadLabel(turn)} places a unit`, '', false)
+    return head('Deployment', `${esc(squadLabel(turn))} places a unit`, '', false)
       + `<div class="tp-body">${waiting(turn, 'placing a unit')}</div><div class="tp-foot">${confirmRow}</div>`;
   }
   const waitingUnits = deployable(s, turn, ctx.data);
@@ -1781,15 +1781,15 @@ function asterRows(ctx: HudCtx): string {
 // Solo and in the dev harness it is the plain advance it always was.
 function advanceBtn(ctx: HudCtx, label: string, disabled = false): string {
   if (!ctx.networked || !ctx.seat) {
-    return `<button class="bigbtn" data-act="advance"${disabled ? ' disabled' : ''}>${label}</button>`;
+    return `<button class="bigbtn" data-act="advance"${disabled ? ' disabled' : ''}>${esc(label)}</button>`;
   }
   const r = ctx.state.ready ?? {};
   if (!r[ctx.seat]) {
     const other: Side = ctx.seat === 's1' ? 's2' : 's1';
-    return `<button class="bigbtn" data-act="advance"${disabled ? ' disabled' : ''}>${label}${r[other] ? ` · ${squadLabel(other)} is ready` : ''}</button>`;
+    return `<button class="bigbtn" data-act="advance"${disabled ? ' disabled' : ''}>${esc(label)}${r[other] ? ` · ${esc(squadLabel(other))} is ready` : ''}</button>`;
   }
   const other: Side = ctx.seat === 's1' ? 's2' : 's1';
-  return `<button class="bigbtn ghost2" data-act="advance">✓ Waiting for ${squadLabel(other)}, tap to withdraw</button>`;
+  return `<button class="bigbtn ghost2" data-act="advance">✓ Waiting for ${esc(squadLabel(other))}, tap to withdraw</button>`;
 }
 
 function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
@@ -1802,7 +1802,7 @@ function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
     const t = s.tokens.find((x) => x.uid === sc.opp!.uid);
     if (t) {
       if (!mine(ctx, t.side)) {
-        return head('Waiting', `${squadLabel(t.side)} is acting`, `${esc(t.label)} · ${phase} Phase.`, false)
+        return head('Waiting', `${esc(squadLabel(t.side))} is acting`, `${esc(t.label)} · ${phase} Phase.`, false)
           + `<div class="tp-body">${waiting(t.side, 'resolving its action')}</div><div class="tp-foot"></div>`;
       }
       return head('Your move', esc(t.label), phase === 'Command'
@@ -1818,7 +1818,7 @@ function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
   }
   const turn = canAct(s, phase, sc.turn, ctx.data) ? sc.turn : (nextTurn(s, phase, sc.turn, ctx.data) ?? sc.turn);
   if (!mine(ctx, turn)) {
-    return head('Waiting', `${squadLabel(turn)} designates`, '', false)
+    return head('Waiting', `${esc(squadLabel(turn))} designates`, '', false)
       + `<div class="tp-body">${tokens}${waiting(turn, `picking a ${phase === 'Delay' ? 'projectile' : 'drone'} or passing`)}</div><div class="tp-foot"></div>`;
   }
   const units = eligibleUnits(s, phase, turn, ctx.data);
@@ -1859,7 +1859,7 @@ function actionPanel(ctx: HudCtx): string {
   if (!t) return head('Action Phase', 'The active Mech is gone', '', true) + `<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="endopp">Skip</button></div>`;
   const timing = TIMINGS.find((x) => x.id === o.timing)?.name ?? '';
   if (!mine(ctx, t.side)) {
-    return head('Waiting', `${squadLabel(t.side)} is acting`, `${esc(t.label)} · ${esc(timing)}.`, false)
+    return head('Waiting', `${esc(squadLabel(t.side))} is acting`, `${esc(t.label)} · ${esc(timing)}.`, false)
       + `<div class="tp-body">${waiting(t.side, 'taking its Action Opportunity')}</div><div class="tp-foot"></div>`;
   }
   // A Shutdown Mech whose Opportunity has come must Reboot (FAQ K17), so the
@@ -1893,7 +1893,7 @@ function endPanel(ctx: HudCtx): string {
     .map((st) => {
       const done = at(st.id);
       const wait = (before[st.id] ?? []).some((x) => !at(x));
-      return `<button class="rowwide${done ? ' donerow' : ''}" data-endstep="${st.id}"${done || wait ? ' disabled' : ''}${wait && !done ? ' title="The steps above come first (3.7)"' : ''}>${done ? '✓ ' : ''}${st.label}</button>`;
+      return `<button class="rowwide${done ? ' donerow' : ''}" data-endstep="${st.id}"${done || wait ? ' disabled' : ''}${wait && !done ? ' title="The steps above come first (3.7)"' : ''}>${done ? '✓ ' : ''}${esc(st.label)}</button>`;
     })
     .join('');
   const all = steps.every((st) => sc.endDone.includes(`${s.round.n}:end:${st.id}`));
@@ -1908,8 +1908,8 @@ function endPanel(ctx: HudCtx): string {
   const settled = sc.endDone.includes(`${s.round.n}:end:tasks`);
   const plusBtn = (side: Side) => (ctx.networked ? '' : `<button class="rowbtn" data-award="${side}">+1</button>`);
   const score = `<div class="sect2" style="margin-top:10px">Victory Points</div>
-    <div class="dialrow"><span class="nm s1">${squadLabel('s1')} · ${vp.s1} VP</span>${plusBtn('s1')}</div>
-    <div class="dialrow"><span class="nm s2">${squadLabel('s2')} · ${vp.s2} VP</span>${plusBtn('s2')}</div>
+    <div class="dialrow"><span class="nm s1">${esc(squadLabel('s1'))} · ${vp.s1} VP</span>${plusBtn('s1')}</div>
+    <div class="dialrow"><span class="nm s2">${esc(squadLabel('s2'))} · ${vp.s2} VP</span>${plusBtn('s2')}</div>
     ${owed.lines.length
       ? `<div class="sect2" style="margin-top:10px">This round earns</div>
          ${owed.lines.map((l) => `<div class="dialrow"><span class="nm ${l.side}">${esc(l.why)}</span><span class="pickchip set">+${l.vp}</span></div>`).join('')}
@@ -1937,12 +1937,12 @@ function resultPanel(ctx: HudCtx, vp: { s1: number; s2: number }): string {
   // A concession decides the game whatever the scoreline (ruling I1).
   const conceded = normaliseTasks(ctx.state.tasks).conceded;
   const verdict = conceded && winner
-    ? `${squadLabel(winner)} wins: ${squadLabel(conceded)} conceded`
+    ? `${esc(squadLabel(winner))} wins: ${esc(squadLabel(conceded))} conceded`
     : winner
-      ? `${squadLabel(winner)} wins ${Math.max(vp.s1, vp.s2)}–${Math.min(vp.s1, vp.s2)}`
+      ? `${esc(squadLabel(winner))} wins ${Math.max(vp.s1, vp.s2)}–${Math.min(vp.s1, vp.s2)}`
       : `A draw at ${vp.s1} VP each`;
   const rows = (['s1', 's2'] as Side[])
-    .map((side) => `<div class="dialrow"><span class="nm ${side}">${squadLabel(side)}</span><span class="pickchip${winner === side ? ' set' : ''}">${vp[side]} VP</span></div>`)
+    .map((side) => `<div class="dialrow"><span class="nm ${side}">${esc(squadLabel(side))}</span><span class="pickchip${winner === side ? ' set' : ''}">${vp[side]} VP</span></div>`)
     .join('');
   const foot = recorded
     ? '<p class="tp-note">Saved to both accounts.</p><button class="bigbtn ghost2" data-act="endmatch">Close the table</button>'
@@ -2220,7 +2220,7 @@ function rollbackPanel(ctx: HudCtx): string {
       + `<div class="tp-body">${waiting(ask.by === 's1' ? 's2' : 's1', 'answering your rollback request')}</div>
         <div class="tp-foot"><button class="bigbtn ghost2" data-rb="cancel">Withdraw</button></div>`;
   }
-  return head('Rollback', `${squadLabel(ask.by)} asks to go back`, `To ${esc(to)}. Everything since then is undone for both of you.`, true)
+  return head('Rollback', `${esc(squadLabel(ask.by))} asks to go back`, `To ${esc(to)}. Everything since then is undone for both of you.`, true)
     + `<div class="tp-body">
         <p class="tp-note">Agreeing rewinds both boards. Dice already rolled are not part of this. A rollback never reaches past a roll.</p>
       </div>
@@ -2255,12 +2255,12 @@ function designatePanel(ctx: HudCtx, owed: Designation[]): string {
   const theirCall = !!ctx.seat && now.by !== ctx.seat;
   const title = now.what === 'zone' ? `${now.label}: which Tactical Zone?`
     : now.what === 'leader' ? 'Designate your Commander'
-      : `${now.label}: which Mech?`;
+      : `${esc(now.label)}: which Mech?`;
   const why = now.what === 'leader'
     ? 'Destroying the enemy Commander scores 10 VP and ends the game at once (5.2.3).'
     : now.side === now.by
       ? 'Named now, before anything deploys (5.2.3).'
-      : `${squadLabel(now.side)} is playing for this, so you name the Mech (5.2.3).`;
+      : `${esc(squadLabel(now.side))} is playing for this, so you name the Mech (5.2.3).`;
   if (theirCall) {
     return head('Setup', 'Task Setup', 'Every Task names its Mech or Zone before anything deploys (5.2.3).', false)
       + `<div class="tp-body">${waiting(now.by, now.what === 'zone' ? 'naming a Tactical Zone' : 'naming a Mech')}
@@ -2275,7 +2275,7 @@ function designatePanel(ctx: HudCtx, owed: Designation[]): string {
       .join('')
     : s.tokens
       .filter((t) => t.kind === 'mech' && t.side === now.owner)
-      .map((t) => `<button class="rowwide" data-desigmech="${t.uid}" data-desigfor="${now.side}" data-desigby="${now.by}" data-desigwhat="${now.what}">${esc(t.label)}<span class="ct">${squadLabel(t.side)}</span></button>`)
+      .map((t) => `<button class="rowwide" data-desigmech="${t.uid}" data-desigfor="${now.side}" data-desigby="${now.by}" data-desigwhat="${now.what}">${esc(t.label)}<span class="ct">${esc(squadLabel(t.side))}</span></button>`)
       .join('');
   return head('Your move', title, why, true)
     + `<div class="tp-body">${rows}${designationSummary(ctx, owed)}</div><div class="tp-foot"></div>`;
@@ -2286,7 +2286,7 @@ function designatePanel(ctx: HudCtx, owed: Designation[]): string {
 function designationSummary(ctx: HudCtx, owed: Designation[]): string {
   if (owed.length < 2) return '';
   const rows = owed.slice(1)
-    .map((d) => `<div class="dialrow"><span class="nm ${d.side}">${esc(d.label)}</span><span class="tp-dim">${squadLabel(d.by)} to name</span></div>`)
+    .map((d) => `<div class="dialrow"><span class="nm ${d.side}">${esc(d.label)}</span><span class="tp-dim">${esc(squadLabel(d.by))} to name</span></div>`)
     .join('');
   return `<div class="tp-gap"></div>${rows}`;
 }
@@ -3135,7 +3135,7 @@ function interceptPanel(ctx: HudCtx): string {
   const owed = owedItems(ctx);
   const side = interceptSide(ctx);
   if (side && !mine(ctx, side)) {
-    return head('Waiting', `${squadLabel(side)} is intercepting`, `${owed.length} attempt${owed.length === 1 ? '' : 's'} owed (4.9).`, false)
+    return head('Waiting', `${esc(squadLabel(side))} is intercepting`, `${owed.length} attempt${owed.length === 1 ? '' : 's'} owed (4.9).`, false)
       + `<div class="tp-body">${waiting(side, 'resolving an Interception')}</div><div class="tp-foot"></div>`;
   }
   const rows = owed
@@ -3196,7 +3196,7 @@ function ewPanel(ctx: HudCtx): string {
       + `<div class="tp-body">${all.length
         ? all.map((t) => `<p class="tp-dim">${esc(t.label)} · Range ${gridsApart(by, t)} · Electronic Value ${electronicStrength(ctx.data, s.tokens, t, 'responder')}</p>`).join('')
         : `<p class="tp-note">No enemy ${scan ? 'that a Scan could change' : 'it can target'} is within Range ${reach}.</p>`}</div>
-       <div class="tp-foot">${all.length ? `<button class="bigbtn" data-ewtarget="${all[0].uid}">Roll against ${all.length === 1 ? all[0].label : `all ${all.length}`}</button>` : ''}
+       <div class="tp-foot">${all.length ? `<button class="bigbtn" data-ewtarget="${all[0].uid}">Roll against ${all.length === 1 ? esc(all[0].label) : `all ${all.length}`}</button>` : ''}
        <button class="bigbtn ghost2" data-act="ewcancel" style="margin-top:6px">${all.length ? 'Cancel' : 'Close'}</button></div>`;
   }
   // An allied Repeater lends its position to the shot (FAQ O19), so the Range
@@ -3685,7 +3685,7 @@ function boxDropPanel(ctx: HudCtx): string {
   }
   const who = bearer?.label ?? 'The bearer';
   if (!mine(ctx, m.bySide)) {
-    return head('Waiting', `${squadLabel(m.bySide)} places the Black Box`, `${esc(who)} was Penetrated carrying one.`, false)
+    return head('Waiting', `${esc(squadLabel(m.bySide))} places the Black Box`, `${esc(who)} was Penetrated carrying one.`, false)
       + `<div class="tp-body">${waiting(m.bySide, 'saying where the Box lands')}</div><div class="tp-foot"></div>`;
   }
   const rows = dropGrids(ctx, base)
@@ -5115,7 +5115,7 @@ function blinkPanel(ctx: HudCtx): string {
   // The same five choices freeplay offers, including leaving it alone — a
   // facing the player is happy with should not have to be re-picked off a
   // compass.
-  const rows = COMPASS.map((f) => `<button class="rowwide" data-blinkface="${f.id}">${f.label}${
+  const rows = COMPASS.map((f) => `<button class="rowwide" data-blinkface="${f.id}">${esc(f.label)}${
     naming?.facing === f.id ? ' <span class="ct">as it was</span>' : ''
   }</button>`).join('');
   return head('Your move', `Which way does ${esc(naming?.label ?? 'it')} face?`,
@@ -5662,7 +5662,7 @@ function smokeChoicePanel(ctx: HudCtx): string {
   const owed = smokeOwedOf(ctx.state);
   const next = owed[0];
   if (!mine(ctx, next.side)) {
-    return head('Waiting', `${squadLabel(next.side)} thins its smoke`, `${owed.length} Connected group${owed.length === 1 ? '' : 's'} left.`, false)
+    return head('Waiting', `${esc(squadLabel(next.side))} thins its smoke`, `${owed.length} Connected group${owed.length === 1 ? '' : 's'} left.`, false)
       + `<div class="tp-body">${waiting(next.side, 'choosing a Smoke Screen to remove')}</div><div class="tp-foot"></div>`;
   }
   return head('Your move', 'Smoke dissipation', `Take one screen off this Connected group.<br>${owed.length} group${owed.length === 1 ? '' : 's'} left.`, true)
@@ -5763,7 +5763,7 @@ function secondaryRows(ctx: HudCtx, fpFirst?: Side): string {
           : isMe
             ? `<button class="rowbtn" data-sec="${side}">Pick a Secondary Task</button>`
             : '<span class="tp-dim">picking…</span>';
-      return `<div class="dialrow"><span class="nm ${side}">${squadLabel(side)}</span>${cell}</div>`;
+      return `<div class="dialrow"><span class="nm ${side}">${esc(squadLabel(side))}</span>${cell}</div>`;
     })
     .join('');
 }
@@ -5905,7 +5905,7 @@ function feedHtml(ctx: HudCtx): string {
         ? d.result.map((r) => `<b>${r.n}</b>${d.kind === 'pool' ? '× ' : ' '}${esc(r.unit)}`).join(', ')
         : 'all blank';
       return `<div class="feedline${d.n > feedSeen ? ' rolling' : ''}">
-        <div class="feedwho"><b class="${d.seat}">${squadLabel(d.seat)}</b> ${esc(d.label)}</div>
+        <div class="feedwho"><b class="${d.seat}">${esc(squadLabel(d.seat))}</b> ${esc(d.label)}</div>
         <div class="feedres">${dice}<span class="feedsum">${sum}</span></div>
       </div>`;
     })

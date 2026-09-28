@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <!-- Scripts run only from this site (plus the inline base line below, by its hash), so markup that
+       slips into the page through a name or a log line can never execute. -->
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'sha256-MMrmsclROZtb9kICV79+pMbhdBdPKEF5wFIigAKAqXQ='; object-src 'none'; base-uri 'self'; form-action 'self'" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#17181c" />
   <title>EMBER Reference</title>

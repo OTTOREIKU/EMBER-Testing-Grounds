@@ -1,7 +1,17 @@
+// The same five characters as safetext.ts's escapeHtml, kept local because
+// this module is imported bare (no bundler) by the board-hover test.
+const escapeHtml = (s: string): string =>
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
 export interface InspectInfo {
   title: string;
   sub?: string;
   lines: string[];
+  // Plain text unless the producer says otherwise. Hover text is built from
+  // unit names, squad names, refusal reasons and data-tip attributes, all of
+  // which can hold what a player typed, so the box escapes by default; only a
+  // producer that assembled its own markup from escaped parts sets this.
+  html?: boolean;
 }
 
 const IDLE = '<p class="inspect-idle">Hover for details · click to pin so you can scroll.</p>';
@@ -92,9 +102,10 @@ function render(info: InspectInfo | null, pinned: boolean): void {
     target.innerHTML = IDLE;
     return;
   }
-  target.innerHTML = `<h4>${info.title}${pinned ? '<button class="inspect-unpin" title="Unpin (or press Esc)">✕</button>' : ''}</h4>
-    ${info.sub ? `<p class="inspect-sub">${info.sub}</p>` : ''}
-    <ul>${info.lines.filter(Boolean).map((l) => `<li>${l}</li>`).join('')}</ul>`;
+  const text = info.html ? (s: string) => s : escapeHtml;
+  target.innerHTML = `<h4>${text(info.title)}${pinned ? '<button class="inspect-unpin" title="Unpin (or press Esc)">✕</button>' : ''}</h4>
+    ${info.sub ? `<p class="inspect-sub">${text(info.sub)}</p>` : ''}
+    <ul>${info.lines.filter(Boolean).map((l) => `<li>${text(l)}</li>`).join('')}</ul>`;
   target.querySelector('.inspect-unpin')?.addEventListener('click', () => unpinInspect());
   if (pinned) target.scrollTop = 0;
   if (floating) {

@@ -1,4 +1,5 @@
 import { squadLabel } from './data';
+import { escapeHtml } from './safetext';
 import { bindTips, inspectOnHover, pinInspect, type InspectInfo } from './inspector';
 import { PHASES, SCALES, type BattleScale, type GameState, type Side } from './types';
 import { normaliseSetup } from './setup';
@@ -179,7 +180,7 @@ export class RoundTracker {
       <span class="rt-round${over ? ' over' : ''}">R${s.round.n}<small>/${limit}</small></span>
       <div class="rt-controls">
       <select id="rt-scale" class="rt-scale"${this.strictLock() ? ' disabled title="The game is under way, so its scale is fixed."' : ''}>
-        ${SCALES.map((sc) => `<option value="${sc.id}"${sc.id === scale ? ' selected' : ''}>${sc.name} ${sc.points}${sc.openEnded ? '+' : ''}p</option>`).join('')}
+        ${SCALES.map((sc) => `<option value="${sc.id}"${sc.id === scale ? ' selected' : ''}>${escapeHtml(sc.name)} ${sc.points}${sc.openEnded ? '+' : ''}p</option>`).join('')}
       </select>
       <select id="rt-limit" class="rt-scale"${this.strictLock() ? ' disabled title="The game is under way, so its length is fixed."' : ' title="Game length in rounds"'}>
         ${ROUND_CHOICES.map((n) => `<option value="${n}"${n === limit ? ' selected' : ''}>${n} rounds</option>`).join('')}
@@ -214,7 +215,7 @@ export class RoundTracker {
       <button id="rt-next"${this.blocked() ? ` disabled title="${this.blocked()}"` : ''}>${
         s.round.phase === PHASES.length - 1 ? (s.round.n >= limit ? `Extra round ${s.round.n + 1} ▸` : `End round ${s.round.n} ▸`) : 'Next phase ▸'
       }</button>
-      <span class="rt-first side-${s.round.firstPlayer}">1st: ${squadLabel(s.round.firstPlayer)}</span>
+      <span class="rt-first side-${s.round.firstPlayer}">1st: ${escapeHtml(squadLabel(s.round.firstPlayer))}</span>
       <!-- The Command Token count used to live here as two numbers with their
            own +/- buttons. It is gone because the tokens are now physical: they
            are generated onto each Mech at the start of the Command Phase and

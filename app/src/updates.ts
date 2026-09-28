@@ -1,5 +1,6 @@
 import './updates.css';
 import { BASE } from './data';
+import { escapeHtml } from './safetext';
 
 declare const __BUILD_ID__: string;
 
@@ -98,7 +99,7 @@ function buildNotice(): HTMLElement {
   box.setAttribute('role', 'status');
   box.innerHTML = `
     <div class="upd-k">NEW VERSION</div>
-    <p>The site was updated since this page opened.${options.note ? ` ${options.note}` : ''}</p>
+    <p>The site was updated since this page opened.${options.note ? ` ${escapeHtml(options.note)}` : ''}</p>
     <div class="upd-actions">
       <button type="button" class="upd-go">Reload</button>
       <button type="button" class="upd-later">Later</button>
