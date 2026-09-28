@@ -26,6 +26,9 @@ type AuraSource = any;
 const tokenCards = (data, t) => t.kind === 'mech'
   ? Object.entries(t.mech ?? {}).map(([slot, id]) => ({ slot, card: data.byId.get(id) })).filter((x) => x.card)
   : [{ slot: 'main', card: data.byId.get(t.cardId) }].filter((x) => x.card);
+// The same list for every unit but a loaded Carrier, and no fixture here is
+// one; the Carrier half is driven in mechanics5.test.mjs (G3).
+const ownCards = tokenCards;
 // ZHDR-206's silence-denying aura is pinned in auras.test.mjs against the real
 // cards; this harness has no board at all, so it mirrors an empty projection
 // rather than dragging aurasOn and rangeBetween in behind it.

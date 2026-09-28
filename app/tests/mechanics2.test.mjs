@@ -171,6 +171,9 @@ console.log('Phase 2: turn and Link economy\n');
   check('A3 nor can it spend one', ok(s, { kind: 'spendIntercept', seat: 's1', uid: d.uid, actionId: '041_A' }), false);
   d.stance = 'defensive';
   d.link = 3;
+  // A strict table spends only an owed attempt (audit Phase 5, B9), so the
+  // attempts are queued first, the way the Launch queues them.
+  send(s, { kind: 'queueIntercepts', seat: 's2', items: U.interceptsOwed(data, s.tokens, [], launcher, [missile]) });
   check('A3 the same Mech standing owes and spends it', [owed(), ok(s, { kind: 'spendIntercept', seat: 's1', uid: d.uid, actionId: '041_A' })], [true, true]);
 }
 
@@ -303,20 +306,23 @@ check('A4 and not on a Shutdown one (4.1: no Passive effects)', await reactionsA
   check('A5 KeyHole gains no Low Profile in Shutdown (FAQ L3), and does standing', [off, !!U.hiddenByAlliedAura(data, s.tokens, kh)], [false, true]);
 }
 {
+  // GoF 1.021 retired the A2 rider (ruling I1; audit Phase 5, F2). Its
+  // successor on the same Torso, the A2K Data Link's Coordination after a
+  // Maneuver, is the Passive this pins now.
   const s = table();
   const drag = put(s, 's1', L({ torso: '175' }), 0, 0, { stance: 'shutdown', link: 0 });
-  const d = droneOn(s, 's1', 'ZHDR-201', 3, 0, { commandedBy: drag.uid });
-  const off = U.riderOnDrone(data, s.tokens, d);
+  const off = U.coordinationAfterManeuver(data, drag);
   drag.stance = 'defensive';
   drag.link = 3;
-  check('A5 the A2 Data Link rides no Command from a Shutdown issuer', [off.autoActions, U.riderOnDrone(data, s.tokens, d).autoActions], [false, true]);
+  check('A5 the A2K Data Link Coordinates after no Maneuver of a Shutdown Mech', [off, U.coordinationAfterManeuver(data, drag)], [0, 1]);
 }
 {
+  // And the Pod's 1.021 Distributed Collaboration is "Command Generation +1".
   const s = table();
   const zyb = put(s, 's1', L({ backpack: 'ZYBP-102' }), 0, 0);
-  const on = U.coordinationOnOpportunityEnd(data, zyb);
+  const on = U.commandGeneration(data, zyb);
   zyb.stance = 'shutdown';
-  check('A5 Distributed Collaboration fires for a standing Mech, not a Shutdown one', [on, U.coordinationOnOpportunityEnd(data, zyb)], [1, 0]);
+  check('A5 Distributed Collaboration adds for a standing Mech, not a Shutdown one', [on, U.commandGeneration(data, zyb)], [2, 1]);
 }
 {
   const s = table();

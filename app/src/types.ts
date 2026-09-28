@@ -223,6 +223,24 @@ export interface Token {
   cardId: string;
   mech?: MechLoadout;
   parentUid?: number;
+  // A Missile Group's Units (6.2, p.94): `group` is the first Unit's uid,
+  // shared by every Unit one launch put down, and `groupTarget` the target the
+  // group's first Unit picked, which the rest follow (ruling I12; audit Phase
+  // 5, A5). Rules-bearing: the target list reads both, so boardFingerprint
+  // carries them.
+  group?: number;
+  groupTarget?: number;
+  // A Mine (GM-35), present on every one so the rules that read tokens alone
+  // can tell it (ruling I14). `spared`: the Ground units standing in its Grid
+  // as it arrived, where they stood, which did not ENTER it (ruling I15).
+  // `owed`: it went off with a Mine beside it, and stays owed once that one's
+  // blast has killed the unit that set them off (FAQ I13; audit Phase 5, C2,
+  // C3, C4). Rules-bearing, so boardFingerprint carries it.
+  mine?: { spared?: { uid: number; col: number; row: number }[]; owed?: boolean };
+  // An Unfolded Pholcus that came up in an occupied Grid owes M18.4's blast.
+  // Set by the Unfold itself, so a unit sharing its Grid later owes nothing
+  // (rulings I18, I19; audit Phase 5, D2). Rules-bearing and fingerprinted.
+  unfoldBlast?: boolean;
   droneBackpack?: string;
   label: string;
   col: number;
@@ -693,6 +711,14 @@ export interface Opportunity {
   // True for a granted Extra Action Opportunity: it interrupts the granter's
   // (FAQ K21/K3) and ending it resumes them instead of marking acted.
   extra?: boolean;
+  // True for the activation a Command sent by Command Coordination opens: "the
+  // same effect as a Command sent in the Command Phase" (4.15.3). It nests like
+  // an Extra one, so `extra` is set too, and it takes the Command Phase's icon
+  // lock (audit Phase 5, F1).
+  commanded?: boolean;
+  // Additional Instructions' free Command buys one Command Action and nothing
+  // else: no Move (ruling I7; audit Phase 5, F9).
+  commandOnly?: boolean;
   maneuver: number;
   action: number;
   extras: ExtraTick[];
@@ -711,6 +737,10 @@ export interface Opportunity {
   // though it had never been in it. Freeplay keeps its own copy in scope and
   // does not read this; it is recorded for the sweeping readers.
   movedFrom?: { col: number; row: number };
+  // A Mine in a Grid the walk entered stopped it there (ruling I16): how many
+  // Grids of that same Movement the unit may still go on with, once the blast
+  // is resolved (audit Phase 5, C1).
+  mineHalt?: number;
   // A Mech confirms its Stance before it may Maneuver or act (4.1). Set by
   // setStance or reboot while this Opportunity is open; drones never need it,
   // their Stance being printed on the card.
@@ -809,6 +839,8 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
     // A nested Extra Action Opportunity (FAQ K21): its end pops the granter
     // back rather than marking anyone as having acted.
     extra: o.extra === true ? true : undefined,
+    commanded: o.commanded === true ? true : undefined,
+    commandOnly: o.commandOnly === true ? true : undefined,
     maneuver: typeof o.maneuver === 'number' ? o.maneuver : base.maneuver,
     action: typeof o.action === 'number' ? o.action : base.action,
     extras: Array.isArray(o.extras) ? (o.extras as ExtraTick[]).filter((x) => x && typeof x.id === 'string') : [],
@@ -841,6 +873,7 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
     movedFrom: typeof o.movedFrom?.col === 'number' && typeof o.movedFrom?.row === 'number'
       ? { col: o.movedFrom.col, row: o.movedFrom.row }
       : undefined,
+    mineHalt: typeof o.mineHalt === 'number' && o.mineHalt > 0 ? Math.round(o.mineHalt) : undefined,
     overload: typeof o.overload === 'number' ? Math.max(0, Math.round(o.overload)) : base.overload,
     performed: list(o.performed),
     spentExtras: list(o.spentExtras),
@@ -896,7 +929,7 @@ export interface ScriptState {
   // Scan interrupted resumes as it was declared (audit Phase 2, C7).
   // `control` is The Red Shoes (TM35NA_B): owed to the INITIATOR, whose player
   // now moves the Responder named by `fromUid` (audit Phase 3, D3).
-  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack' | 'control'; fromUid?: number; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean }[];
+  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack' | 'control' | 'overwatch'; fromUid?: number; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean }[];
   // An Electronic Counter-roll in progress (4.11.2). It lives in shared state
   // rather than on one client because BOTH sides roll and either may spend Link
   // to Focus, and a player may only ever send commands for their own units.
@@ -1468,7 +1501,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
             // A trace debt with no attacker can never be answered, so it is not
             // carried across a reload as a row that strands the panel. Nor a
             // control debt with no unit to move.
-            && ((x.kind !== 'trace' && x.kind !== 'control') || typeof x.fromUid === 'number'),
+            && ((x.kind !== 'trace' && x.kind !== 'control' && x.kind !== 'overwatch') || typeof x.fromUid === 'number'),
         )
       : base.reactions,
     counter: normaliseCounter(s.counter),

@@ -62,6 +62,20 @@ export function enterPhase(data: GameData, s: GameState): void {
   sc.stage = `${s.round.n}:${s.round.phase}`;
 }
 
+// A designation opens the unit's activation, the one it acts in (3.2.2).
+// Exported for the tabletop guide, which runs no glue of its own and let a
+// Drone act before it was designated (audit Phase 5, F7). The mark a free
+// Command leaves is kept: Additional Instructions buys a Command Action and
+// nothing else (ruling I7).
+export function openActivation(data: GameData, state: GameState, uid: number): void {
+  const sc = ensureScript(state);
+  const t = state.tokens.find((x) => x.uid === uid);
+  const opp = newOpportunity(uid, undefined);
+  opp.extras = t ? extrasFor(data, t) : [];
+  if (sc.opp?.uid === uid && sc.opp.commandOnly) opp.commandOnly = true;
+  sc.opp = opp;
+}
+
 // Runs after any command lands, ours or theirs, so both clients derive the
 // same turn bookkeeping without it ever crossing the wire.
 export function glueAfter(data: GameData, state: GameState, cmd: Command): void {
@@ -69,11 +83,7 @@ export function glueAfter(data: GameData, state: GameState, cmd: Command): void 
   if (cmd.kind === 'startMatch' || cmd.kind === 'advancePhase' || cmd.kind === 'setPhase' || cmd.kind === 'finishDeployment') {
     enterPhase(data, state);
   } else if (cmd.kind === 'designate') {
-    const sc = ensureScript(state);
-    const t = state.tokens.find((x) => x.uid === cmd.uid);
-    const opp = newOpportunity(cmd.uid, undefined);
-    opp.extras = t ? extrasFor(data, t) : [];
-    sc.opp = opp;
+    openActivation(data, state, cmd.uid);
   }
   // Whose Action Opportunity it is, derived HERE - off the command, the way
   // every other piece of turn bookkeeping is.

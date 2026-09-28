@@ -405,6 +405,28 @@ export function cardName(c: any): string { return c?.name?.en ?? c?.id ?? '?'; }
 export const synced: string[] = [];
 export function syncMagazines(_data: any, t: any): void { synced.push(String(t.uid)); }
 export function unfoldsInto(c: any): any { return c?.unfoldsInto; }
+// The far side of unfoldsInto: the launch check refuses an Unfolded Pholcus
+// (audit Phase 5, A8). A fixture says so with its own flag.
+export function isUnfolded(c: any): boolean { return !!c?.isUnfolded; }
+// No fixture here prints [Stationary] (the GSD7 Mortar is the card that does),
+// so the launch ceiling reads the printed Range (audit Phase 5, A8).
+export function stationaryAdjusted(a: any, _opp?: any): any { return a; }
+// No fixture launcher here names its Projectiles by a real list, so the
+// honest stub is "no list": the table places what it launches (audit Phase
+// 5, G5).
+export function launchableCards(_data: any, _tokens: any, _t: any, _actionId: string, _anywhere?: boolean): any { return null; }
+// The Mine readers are pinned against the real engine in mechanics5.test.mjs;
+// no fixture here lays one, so the honest stub marks nothing (audit Phase 5,
+// C2).
+export function settleMines(_data: any, _state: any): void {}
+// Nor does any stand in a Mine's Grid, so no reprieve is there to end (audit
+// Phase 5, C3).
+export function forgetMineSpares(_tokens: any, _moved?: number): void {}
+// No fixture here puts a folded Pholcus down, so none is owed its Unfold, and
+// the one the Unfold test turns over comes up in an empty Grid (audit Phase
+// 5, D2, D3).
+export function unfoldsOwed(_data: any, _tokens: any): any[] { return []; }
+export function unfoldOccupants(_tokens: any, _t: any): any[] { return []; }
 export function unfoldToken(state: any, data: any, t: any, into: any): void {
   Object.assign(t, {
     cardId: into.id, kind: into.category === 'projectile' ? 'projectile' : 'drone',
@@ -531,7 +553,9 @@ const data = {
     ['H1', { id: 'H1', keywords: [{ en: 'Freehand' }], actions: [] }],
     ['T2', { id: 'T2', actions: [ovlAct] }],
     ['T3', { id: 'T3', structure: 2, actions: [] }],
-    ['T4', { id: 'T4', actions: [{ id: 'L1', type: 'Projectile', size: 'm', name: { en: 'Launcher' }, storage: 3 }] }],
+    // Every real Projectile Action prints a Range, which the launch check now
+    // bounds (audit Phase 5, A8); 8 reaches the Grid these launches land in.
+    ['T4', { id: 'T4', actions: [{ id: 'L1', type: 'Projectile', size: 'm', name: { en: 'Launcher' }, storage: 3, range: 8 }] }],
     ['T5', { id: 'T5', actions: [fire, { id: 'I2', type: 'Passive', name: { en: 'CIWS' }, range: 2, keywords: [{ inline: '拦截2' }] }] }],
     ['T6', { id: 'T6', actions: [{ id: 'C1', type: 'Firing', size: 's', name: { en: 'Charged Shot' }, keywords: [{ inline: '充能' }] }] }],
     ['EW1', { id: 'EW1', electronic: 5, actions: [{ id: 'EWA', type: 'Firing', size: 's', range: 4, name: { en: 'Fire Control Interference' }, keywords: [{ en: 'Electronic Attack' }] }] }],
@@ -771,7 +795,9 @@ check('Battlefield Recovery restores 1 Link', wt.tokens[0].link, 1);
 const wdr = hand([drone(1, 's1')], 0, ['274']);
 wdr.script.commanded = [1];
 C.apply(data, wdr, pt({ cardId: '274' }));
-check('Additional Instructions frees the Command Action', [wdr.script.commanded, wdr.script.freeCommand], [[], [1]]);
+// A Command of its own: the Drone keeps the one its squad may still send it
+// (ruling I7; audit Phase 5, F9), so the card no longer clears it.
+check('Additional Instructions frees the Command Action', [wdr.script.commanded, wdr.script.freeCommand], [[1], [1]]);
 
 // ---------- deployUnit ----------
 
@@ -1048,7 +1074,8 @@ const wfree2 = wcmd();
 wfree2.commandTokens = { s1: 0, s2: 1 };
 wfree2.script.freeCommand = [2];
 C.apply(data, wfree2, dg());
-check('a free Command spends the card instead', [wfree2.commandTokens.s1, wfree2.script.freeCommand, wfree2.script.commanded], [0, [], [2]]);
+// And spending it leaves the Drone's own Command where it was (ruling I7).
+check('a free Command spends the card instead', [wfree2.commandTokens.s1, wfree2.script.freeCommand, wfree2.script.commanded], [0, [], []]);
 const wauto = world([drone(2, 's1'), drone(3, 's2')], 3);
 C.apply(data, wauto, dg());
 check('an Automatic designation just records the act', [wauto.script.acted, wauto.script.turn], [[2], 's2']);

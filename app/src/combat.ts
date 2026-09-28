@@ -6,7 +6,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { actionRange, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, firewatchOn, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, firewatchOn, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, largeGridOf, losBetween, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
 import { canBeForceMoved } from './melee';
@@ -1019,6 +1019,11 @@ export class AttackHelper {
   // to pick from and leaves Forced Movement's direction to the table.
   backAttack: boolean | null = null;
   noBoard = false;
+  // The unit whose Action is running, set by the page (the open Opportunity's
+  // or activation's). A Load's Dodge counts only while that Mech is attacked
+  // during its own Action, such as by a Mine it sets off (ruling I24; FAQ
+  // O16, O5; audit Phase 5).
+  actingUid: (() => number | null) | null = null;
   // A boardless table's answers the geometry would otherwise give: Grace Note's
   // "within 3 grids" (null: measure the board).
   tableGrace: boolean | null = null;
@@ -1186,6 +1191,8 @@ export class AttackHelper {
     // window brought back because it was needed then stays.
     if (this.dismissed && this.dismissed === mirrorKey(view) && !viewAwaits(view, role)) return;
     this.dismissed = null;
+    // The same Firing copy the attacking client's window runs on (B4).
+    if (view.mode === 'intercept') action = asInterception(action);
     const had = this.mirroring ? this.ctx : null;
     const same = !!had && had.attacker.uid === attacker.uid && had.defender.uid === defender.uid;
     const attack = this.mirrorFaces(view.attack, same ? had!.attackRoll : null);
@@ -1468,6 +1475,9 @@ export class AttackHelper {
     redirect = true,
   ): void {
     this.stopBlack();
+    // An Interception is a Firing Action for its modifiers, whatever the card
+    // prints (FAQ M26; ruling I9; audit Phase 5, B4).
+    if (intercept) action = asInterception(action);
     // Explosion and Interception are excluded by their own flags, and both hand
     // `start` a carefully-worded fixed note that a recompute would throw away.
     // Interception could not fire on the geometry in any case: its target is by
@@ -1518,7 +1528,7 @@ export class AttackHelper {
       // whatever the player then nudges it to.
       attackPool: (() => {
         const printed = { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 };
-        const bonus = coolingBonus(this.data, attacker, action, printed);
+        const bonus = coolingBonus(this.data, attacker, action, printed, this.loansFor(attacker));
         // LPA-23-2 Grace Note rides beside the Coolers rather than inside them:
         // the Coolers read Parts and take no defender, and this one is a range
         // question. Both are a STARTING value — the player can still nudge the
@@ -1575,7 +1585,7 @@ export class AttackHelper {
     // The Coolers add to the pool the Multi-Target then SPLITS, not to each
     // sequence: one Firing Action is cooled once, however many targets it takes.
     const printed = { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 };
-    const cooled = coolingBonus(this.data, attacker, action, printed);
+    const cooled = coolingBonus(this.data, attacker, action, printed, this.loansFor(attacker));
     // LPA-23-2 Grace Note is measured to the PRIMARY, and it has to be: the
     // pool is settled once here and split, but only the primary target exists
     // at declaration — the rest are designated afterwards. The card asks about
@@ -1698,7 +1708,7 @@ export class AttackHelper {
     return board.filter((u) => {
       if (u.side === m.attacker.side || chosen.has(u.uid) || u.deployed === false) return false;
       if ((u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
-      if (m.action.type === 'Melee' && u.aerial) return false;
+      if (m.action.type === 'Melee' && u.aerial && !u.mine) return false;
       if ((statusCount(u.statuses, 'camouflage') > 0) !== hidden) return false;
       if (this.noBoard) return true;
       // A camouflaged one is Scanned first and may Manifest anywhere, so Range
@@ -1868,14 +1878,27 @@ export class AttackHelper {
     return rear && !(c.action.type === 'Melee' && noMeleeBackAttack(this.data, c.defender));
   }
 
+  // The Loads lent to this unit by Carriers in Contact (FAQ O3, O17). None on a
+  // table with no board, which cannot see Contact (audit Phase 5, G1 and G4).
+  private loansFor(t: Token): LoanedPart[] {
+    return this.noBoard ? [] : loanedParts(this.data, this.tokens ? this.tokens() : [], t);
+  }
+
   private suggestedDefensePool(slot: string): { white: number; blue: number } {
     const d = this.ctx!.defender;
     const white = this.whiteParts(slot).reduce((s, p) => s + p.n, 0);
     let blue = 0;
     if (d.stance === 'mobility') {
-      blue = tokenCards(this.data, d)
+      // ownCards: a Carrier Tarantula rolls no Dodge from its Load (O4; p.94).
+      blue = ownCards(this.data, d)
         .filter(({ slot: s }) => s !== 'pilot' && (d.partStates[s as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
         .reduce((sum, { card: c }) => sum + (c.dodge ?? 0), 0);
+      // A Load a Carrier in Contact lends is this Mech's Part while it acts,
+      // so its Dodge counts when the Mech is attacked during its own Action;
+      // targeted passively, it does not (ruling I24; FAQ O16, O5).
+      if (d.kind === 'mech' && this.actingUid?.() === d.uid) {
+        blue += this.loansFor(d).reduce((sum, l) => sum + (l.card.dodge ?? 0), 0);
+      }
     }
     // 164 ADK60R Raven Scout: an allied Scout that can see the ATTACKER lends
     // this Mech +1 Blue. It has to sit ABOVE the Immobilized line rather than
@@ -1894,7 +1917,7 @@ export class AttackHelper {
     // the Two-Handed note printed it; nothing took the dice off. It is the
     // attacker's, so a Surplus roll does not carry it (4.8).
     if (!this.ctx!.surplusRound && !this.ctx!.action.twoHandedDeclined) {
-      blue = Math.max(0, blue - (twoHandedUse(this.data, this.ctx!.attacker, this.ctx!.action)?.support?.targetBlue ?? 0));
+      blue = Math.max(0, blue - (twoHandedUse(this.data, this.ctx!.attacker, this.ctx!.action, [], this.loansFor(this.ctx!.attacker))?.support?.targetBlue ?? 0));
     }
     if (statusCount(d.statuses, 'immobilized') > 0) blue = 0;
     // PDRH-202_B Link Shock: the target "cannot make Blue Dice rolls".
@@ -3276,7 +3299,7 @@ export class AttackHelper {
         // one-handed one, and re-deriving the designation here would report a
         // bonus the dice are not getting.
         if (c.action.twoHandedDeclined) return `<p class="ah-los">${ICON_BLOCKED} [Two-Handed] declined: performed one-handed, with none of the rider (FAQ A16).</p>`;
-        const use = twoHandedUse(this.data, c.attacker, c.action);
+        const use = twoHandedUse(this.data, c.attacker, c.action, [], this.loansFor(c.attacker));
         if (use) return `<p class="ah-los">${ICON_BLOCKED} ${use.note}.</p>`;
         // Only when the Action wants a hand and there is none to give.
         const sup = freehandSupportNote(this.data, c.attacker, c.action);
@@ -3737,7 +3760,7 @@ export class AttackHelper {
     return all.filter((u) => {
       if (u.side === c.attacker.side || u.uid === c.defender.uid || u.deployed === false) return false;
       if ((u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
-      if (c.action.type === 'Melee' && u.aerial) return false;
+      if (c.action.type === 'Melee' && u.aerial && !u.mine) return false;
       // Never a camouflaged unit: a random Surplus target cannot be Scanned
       // before it is chosen (ruled 2026-09-25, audit Phase 3, F3; C8).
       if (statusCount(u.statuses, 'camouflage') > 0) return false;
@@ -3781,9 +3804,10 @@ export class AttackHelper {
   // it to the Torso), and none at all on a target that is gone.
   private otherPartFor(original: string | null): boolean {
     const c = this.ctx!;
-    // In Cruise Mode every hit is the Torso's, so there is no other Part for
-    // a Surplus to find, and the die would reroll for ever (D3).
-    if (c.defender.kind === 'mech' && cruising(this.data, c.defender)) return false;
+    // Cruise Mode puts the first hit on the Torso (D3), but "Scatter-shot
+    // damage works normally" (FAQ N7), and Cleaving with it (ruling I29): the
+    // Surplus round reads the Black Die as usual, so another Part is there to
+    // find. Both were refused outright (audit Phase 5, H2).
     return c.defender.kind === 'mech' && this.aliveNow(c.defender)
       && Object.entries(c.defender.partStates).some(([s, st]) => s !== original && st !== 'destroyed');
   }
@@ -4182,8 +4206,9 @@ export class AttackHelper {
   // player see the settled die before the panel changes under them.
   private settleBlack(face: number, caption: HTMLElement): void {
     const c = this.ctx!;
-    // Cruise Mode, if a die is thrown at all: the Torso (D3).
-    if (c.defender.kind === 'mech' && cruising(this.data, c.defender)) {
+    // Cruise Mode, if a die is thrown at all: the Torso (D3). A Surplus round
+    // reads the die normally (FAQ N7; audit Phase 5, H2).
+    if (c.defender.kind === 'mech' && cruising(this.data, c.defender) && c.surplusRound === 0) {
       caption.textContent = 'Cruise Mode: the Torso takes the hit.';
       window.setTimeout(() => { if (this.ctx === c) this.pickPart('torso'); }, 700);
       return;
@@ -4850,7 +4875,7 @@ export class AttackHelper {
         // the way all read zero for different reasons, and protectionFor says
         // which. Claiming "line of sight is clear" over an obstructed board is
         // worse guidance than the missing dice it was explaining.
-        !c.protection && !c.explosion && c.action.type === 'Firing'
+        !c.protection && !c.explosion && !c.intercept && c.action.type === 'Firing'
           ? `<p class="dim">${c.protectionNote || 'No Terrain or Unit Protection applies here. Obstructed firing by a Large unit or 3" terrain would add +2 White.'}</p>`
           : ''
       }`;

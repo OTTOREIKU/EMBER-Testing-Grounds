@@ -91,11 +91,11 @@ check('every Action with Chinese rules text has English somewhere', stranded, []
 // ---------- the Chinese is still there ----------
 // The rules wiring depends on it. A future pass that "cleans up" by deleting
 // the zh would take the printed-keyword routes in units.ts down with it.
-// Counts as they stand: 44 cards and 408 actions carry Chinese rules text.
+// Counts as they stand: 44 cards and 403 actions carry Chinese rules text.
 // Floors rather than exact numbers, so adding a card does not fail this, but
 // a pass that strips the zh does.
 //
-// FIVE deliberate clearings, every one because the bundle's Chinese is a
+// TEN deliberate clearings, every one because the bundle's Chinese is a
 // SUPERSEDED printing whose current Chinese we do not hold, and inventing it
 // would put made-up text where a reader expects the printed card:
 //   - action 180_B and card 180 (the PL29 redesign; the old zh held 静默 and
@@ -103,11 +103,15 @@ check('every Action with Chinese rules text has English somewhere', stranded, []
 //   - actions ZHDR-102_A and ZHDR-103_A (the 1.021 Vanguard regunning; 102's
 //     old zh held 拦截1 and was still read as Interception capacity)
 //   - action ZHDR-304_B (the Harpy tow; the old zh carried no Movement cost)
+//   - actions 172_A, 172_B, 175_A, 176_A and ZYBP-102_A (the GoF 1.021 Command
+//     cards, ruling I1; the old zh printed Command Generation 4, Melee Synergy,
+//     the A2 and M2 riders and the Pod's end-of-Opportunity Coordination, and
+//     every one of them was still read; audit Phase 5, F2)
 // Lowering either floor again should mean finding the same kind of reason.
 const keptZh = cards.filter((c) => (c.description?.zh ?? '').trim()).length;
 check('card Chinese text is preserved, not deleted', keptZh >= 44, true);
 const keptActZh = cards.reduce((n, c) => n + (c.actions ?? []).filter((a) => (a.description?.zh ?? '').trim()).length, 0);
-check('and action Chinese text too', keptActZh >= 408, true);
+check('and action Chinese text too', keptActZh >= 403, true);
 
 // The Silence bug itself, pinned: the redesigned Jump must not read as Silent.
 const jump = cards.find((c) => c.id === '180')?.actions?.find((a) => a.id === '180_B');

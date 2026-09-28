@@ -17,7 +17,7 @@ import { alive, canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, ne
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
-import { canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
+import { interceptorsAgainst, bitPortOf, coordinationAfterManeuver, canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
 import { normaliseTasks } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
 import { PHASES, removableTokens, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Stance, type Timing, type Token, type TokenPick } from '../src/types';
@@ -72,6 +72,8 @@ export interface GuideApi {
   // Launches the projectiles an Action fires (pad.ts): pays the Action, then
   // one `launch` per projectile in the volley.
   launch?(uid: number, actionId: string, cardId: string): void;
+  // 292_A with an empty Port: Recover a Bit instead (ruling I23).
+  recover?(uid: number, actionId: string): void;
 }
 
 const other = (s: Side): Side => (s === 's1' ? 's2' : 's1');
@@ -260,7 +262,9 @@ function reactionHtml(api: GuideApi, owed: { t: Token; r: Owed }): string {
     body = `A Part of ${api.esc(t.label)} was Penetrated: it may change to Defensive Stance.`;
     buttons = btn(api, 'g-react-go', 'Defensive Stance', key, 'pad-chip on');
   } else if (r.kind === 'trace') {
-    const ev = electronicValue(api.data, t, loanedParts(api.data, s.tokens, t));
+    // A table with no board cannot see a Carrier's Contact, so no Load's
+    // Electronic Value is added by accident (audit Phase 5, G4).
+    const ev = electronicValue(api.data, t, s.noBoard ? [] : loanedParts(api.data, s.tokens, t));
     body = `${api.esc(t.label)} may spend 1 Command Token to open an Electronic Counter-roll at ${api.esc(from?.label ?? 'the attacker')} (174).`;
     buttons = from && ev > 0 ? btn(api, 'g-react-go', 'Spend a Command Token and roll', key, 'pad-chip on') : '';
   } else if (r.kind === 'manifest') {
@@ -414,9 +418,9 @@ function setupHtml(api: GuideApi, stage: string): string {
         : waiting(api, fp, 'picking an edge'));
   }
   // deploy
-  const turn = deployTurn(s, su);
-  const complete = deploymentComplete(s);
-  const rows = (['s1', 's2'] as Side[]).flatMap((side) => deployable(s, side).map((t) => `<div class="pad-turn-row">
+  const turn = deployTurn(s, su, api.data);
+  const complete = deploymentComplete(s, api.data);
+  const rows = (['s1', 's2'] as Side[]).flatMap((side) => deployable(s, side, api.data).map((t) => `<div class="pad-turn-row">
       <span class="pad-turn-name">${api.esc(t.label)}</span><span class="pad-turn-val">${api.esc(api.sideName(side))}</span>
       ${mine(api, side) && (api.solo || turn === side)
         // Tracking solo both squads' units are listed, so the ones whose turn it
@@ -686,6 +690,20 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   // with the Action; the table swaps the model for the camouflage one.
   const camo = activatesCamo(a);
   if (camo && (t.statuses ?? []).includes('camouflage')) { api.toast(`${t.label} is already in the Optical Camouflage State.`); return; }
+  // M18.4, asked before anything is paid: with no board the table says
+  // whether the Grid it Unfolds in holds a unit, Aerial units and Mines aside
+  // (rulings I18, I19; audit Phase 5, C5).
+  let occupied: boolean | undefined;
+  if (api.state().noBoard && unfoldsOwed(d, [t]).some((x) => x.actionId === a.id)) {
+    const pick = await choiceDialog({
+      title: `${t.label} Unfolds`,
+      body: 'Does its Grid hold a unit, not an Aerial unit or a Mine? Then it detonates at once, at one of them (FAQ M18.4).',
+      choices: [{ id: 'no', label: 'Its Grid is empty', primary: true }, { id: 'yes', label: 'A unit is there' }],
+      stacked: true,
+    });
+    if (pick === null) return;
+    occupied = pick === 'yes';
+  }
   let form: string | null = null;
   const forms = formSwitch(a);
   if (forms) {
@@ -823,7 +841,10 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   if (form) api.send({ kind: 'switchForm', seat, uid, actionId: a.id, cardId: form, chain });
   const mode = transformOffer(d, t, a);
   if (mode) api.send({ kind: 'transformPart', seat, uid, slot: mode.slot, cardId: mode.into.id, chain });
-  if (unfoldsOwed(d, [t]).some((x) => x.actionId === a.id)) api.send({ kind: 'unfold', seat, uid, chain });
+  if (unfoldsOwed(d, [t]).some((x) => x.actionId === a.id)) {
+    api.send({ kind: 'unfold', seat, uid, chain, ...(occupied !== undefined ? { occupied } : {}) });
+    if (occupied) api.toast(`${t.label} Unfolded into an occupied Grid: it detonates at once, at one of the units there (FAQ M18.4).`);
+  }
   if (chargeSlot) api.send({ kind: 'setCharge', seat, uid, slot: chargeSlot as PartSlot, on: true, chain });
   if (tagged) api.send({ kind: 'applyStatus', seat, uid, targetUid: tagged.uid, statusId: tagged.statusId, stacks: tagged.stacks, chain });
   if (resupply) api.send({ kind: 'restoreAmmo', seat: resupply.to.side, uid: resupply.to.uid, actionId: resupply.actionId, amount: resupply.amount, chain });
@@ -1046,7 +1067,22 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       const act = activeOpp(api);
       if (!act) return true;
       const t = s.tokens.find((x) => x.uid === act.uid)!;
-      api.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: 0, row: 0 } });
+      if (!api.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: 0, row: 0 } })) return true;
+      // An Aerial unit's Movement owes Interception from enemies in Range of
+      // its start or landing (4.9, FAQ O11): the table judges the Range, so the
+      // pad names who could owe one (audit Phase 5, B7).
+      if (t.aerial) {
+        const guards = interceptorsAgainst(api.data, s.tokens, t.side);
+        if (guards.length) api.toast(`Interception may be owed (4.9): ${guards.map((g) => g.label).join(', ')}, if in Range of ${t.label}'s start or landing.`);
+      }
+      // A2K Data Link (GoF 1.021, 175_A): one Command Coordination after the
+      // Maneuver, joined to it for Undo (audit Phase 5, F2).
+      const after = t.kind === 'mech' ? coordinationAfterManeuver(api.data, t) : 0;
+      if (after > 0 && readyCommands(t) > 0) {
+        void offerCoordination(api.data, api.state(), t, after, (mechUid, targetUid) => {
+          api.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid, chain: 'join' });
+        }, (_d, text) => api.toast(text));
+      }
       return true;
     }
     case 'g-end': {
@@ -1091,9 +1127,23 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         void performRouted(api, t, a.action);
         return true;
       }
-      // A Projectile's Delayed Action: paid, then the detonation resolver.
-      if (a && t.kind === 'projectile' && a.action.type !== 'Passive') {
+      // The folded Pholcus's Delayed Action is its Unfold (FAQ M18.3), never a
+      // Detonation: routed like any other Action, which sends `unfold`. The
+      // resolver below destroyed it instead (audit Phase 5, D1).
+      if (a && t.kind === 'projectile' && unfoldsOwed(api.data, [t]).some((x) => x.actionId === a.action.id)) {
+        void performRouted(api, t, a.action);
+        return true;
+      }
+      // A Projectile's Delayed Action, and a Drone's own Detonation (the
+      // Unfolded Pholcus's Automatic Attack, 167_A, which was only a toast):
+      // paid, then the detonation resolver (audit Phase 5, D1).
+      if (a && ((t.kind === 'projectile' && a.action.type !== 'Passive') || (t.kind === 'drone' && a.action.type === 'Detonation'))) {
         if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.action.id })) api.detonate(t.uid, a.action.id, true);
+        return true;
+      }
+      // An empty Bit Port Recovers instead of launching (292_A; ruling I23).
+      if (a && bitPortOf(a.action) && a.ammoLeft === 0 && api.recover) {
+        api.recover(t.uid, a.action.id);
         return true;
       }
       // An Action that fires projectiles launches them; a card that names
@@ -1232,7 +1282,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
 export function finishIfBothReady(api: GuideApi): void {
   const s = api.state();
   if (!normaliseSetup(s.setup) || normaliseSetup(s.setup)!.stage !== 'deploy') return;
-  if (!deploymentComplete(s)) return;
+  if (!deploymentComplete(s, api.data)) return;
   if (!(s.ready?.s1 && s.ready?.s2)) return;
   if (api.me() !== 's1') return;
   api.send({ kind: 'finishDeployment', seat: 's1' });

@@ -116,7 +116,11 @@ check('the Mode-change branch pays before it returns',
 // which Ally Mech and which Stance, then pays.
 // Twenty-five since the Phase 3 audit (E2): Target Tag asks for its target,
 // then pays.
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 25);
+// Twenty-six since the Phase 5 audit (H1): the Bit Port's Recover pays, then
+// takes the Bit back.
+// Twenty-seven since the second Phase 5 pass (F8): the KK9's Overwatch Strike
+// pays its Action, then calls the strike.
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 27);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //

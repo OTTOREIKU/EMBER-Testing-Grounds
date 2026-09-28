@@ -1,4 +1,5 @@
 import type { GameState, Side, Token } from './types';
+import type { GameData } from './data';
 
 // ---------- pre-game setup (rulebook 3.1.2 and 3.1.4) ----------
 
@@ -92,21 +93,26 @@ export function isDeployed(t: Token): boolean {
   return t.deployed !== false;
 }
 
-// A Projectile is not deployed; it arrives when something launches it.
-export function deployable(state: GameState, side: Side): Token[] {
-  return state.tokens.filter((t) => t.side === side && t.kind !== 'projectile' && !isDeployed(t));
+// A Projectile is not deployed; it arrives when something launches it. Nor is
+// a Low Value Drone, printed at 0 points: it "cannot be placed during the
+// Deployment stage" (p.82). The Bits, the Delphinium, a Dragonfly, KK9, SU1
+// and SU2 arrive when a card puts them down, and every one could be placed at
+// setup (audit Phase 5, E2). A squad list may still carry one; it waits.
+export function deployable(state: GameState, side: Side, data: GameData): Token[] {
+  return state.tokens.filter((t) => t.side === side && t.kind !== 'projectile' && !isDeployed(t)
+    && !(!!data && t.kind === 'drone' && (data.byId.get(t.cardId)?.score ?? 0) === 0));
 }
 
-export function deploymentComplete(state: GameState): boolean {
-  return !deployable(state, 's1').length && !deployable(state, 's2').length;
+export function deploymentComplete(state: GameState, data: GameData): boolean {
+  return !deployable(state, 's1', data).length && !deployable(state, 's2', data).length;
 }
 
 // The First Player places one Unit, then the sides alternate. Once one side has
 // placed everything, the other places all of its remaining Units (3.1.4).
-export function deployTurn(state: GameState, setup: SetupState): Side | null {
+export function deployTurn(state: GameState, setup: SetupState, data: GameData): Side | null {
   const first = state.round.firstPlayer;
   const other: Side = first === 's1' ? 's2' : 's1';
-  const left = { s1: deployable(state, 's1').length, s2: deployable(state, 's2').length };
+  const left = { s1: deployable(state, 's1', data).length, s2: deployable(state, 's2', data).length };
   if (!left.s1 && !left.s2) return null;
   if (!left[first]) return other;
   if (!left[other]) return first;

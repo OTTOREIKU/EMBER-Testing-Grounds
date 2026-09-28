@@ -483,7 +483,10 @@
    "score": 30,
    "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
    "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived.",
-   "_launch_note": "The Projectile it launches is SU2 “Killer Swarm”, added alongside it. No structured launch rule is written here: the existing launchers carry theirs in cards.json and this file does not model wiring."
+   "projectile": [
+    "SU2"
+   ],
+   "_launch_note": "The Projectile it launches is SU2 “Killer Swarm”, added alongside it: the printed \"Launch 1 Killer Swarm\" names it, and `projectile` is that line (ruling I2; audit Phase 5, F9). With no list SU2 could never be launched."
   },
   {
    "id": "ECP10",

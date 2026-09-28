@@ -46,7 +46,12 @@ const sweep = sweeper?.actions?.find((a) => a.id === '038_A');
 check('the fixture Action is still on the card', !!firing, true);
 check('and so is the Multi-Target one', !!sweep, true);
 
-const torso = data.cards.find((c) => c.type === 'torso');
+// The first PLAIN Torso: one whose Parts its defender may not designate.
+// The first in the data is the P7 Warrior, and GoF 1.021 gave it Designated
+// Defense (audit Phase 5, F2), which puts the defender's declaration in front
+// of every attack on it.
+const torso = data.cards.find((c) => c.type === 'torso'
+  && !(c.actions ?? []).some((a) => (a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => /defender_designate/.test(e.type ?? '')))));
 const chasis = data.cards.find((c) => c.type === 'chasis');
 const kit = (t, hand) => {
   t.mech = { torso: torso.id, chasis: chasis.id, rightHand: hand ?? '', leftHand: '', backpack: '', pilot: '' };

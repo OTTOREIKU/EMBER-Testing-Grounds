@@ -537,8 +537,11 @@ check('and the Range is measured from the Beacon to the target',
 check('an enemy Beacon guides nothing', guide(beacon(0, 0), missile('s2'), mark(0, 0)), []);
 check('and a Mech is not a Missile',
   A.missileGuidance(data, [beacon(0, 0), mark(0, 0)], mark(0, 0), mark(0, 0), shot()), []);
-check('a Melee Action is out of scope, since the card names Firing and Tactic',
-  guide(beacon(0, 0), missile(), mark(0, 0), shot('Melee')), []);
+// The card says "Ally Missile" and nothing about the Action: a Missile attacks
+// only with its own Detonation, which the data types Delay. The data's
+// Firing/Tactic gate reached no real Missile at all (FAQ M25; audit Phase 5, A4).
+check('a real Missile Detonation, typed Delay, is guided',
+  guide(beacon(0, 0), missile(), mark(0, 0), data.byId.get('071').actions.find((x) => x.id === '071_A')).length, 1);
 check('a Tactic is in scope', guide(beacon(0, 0), missile(), mark(0, 0), shot('Tactic')).length, 1);
 check('a destroyed Beacon guides nothing',
   guide({ ...beacon(0, 0), partStates: { main: 'destroyed' } }, missile(), mark(0, 0)), []);

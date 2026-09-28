@@ -59,7 +59,7 @@ const FOLLOW = new Set(['answerDefense', 'acceptRoll', 'focus', 'focusAnswer', '
   'resolveReaction', 'resolveIntercept', 'spendIntercept', 'restoreIntercept', 'rollCounter', 'declareCounterFocus', 'forceShutdown', 'onBehalf',
   'crushSwap', 'forceMove', 'tether', 'disarm', 'destroyTerrain', 'placeSmoke', 'removeSmoke',
   'dissipateSmoke', 'despawn', 'dropBlackBox', 'breakRepaired', 'asterRestore', 'overload',
-  'grantExtra', 'layMine', 'attackMode', 'setStance', 'stanceFeedback', 'firewatch', 'handOver', 'placeInGrid']);
+  'grantExtra', 'layMine', 'recoverBit', 'flyToTarget', 'overwatch', 'attackMode', 'setStance', 'stanceFeedback', 'firewatch', 'handOver', 'placeInGrid']);
 // endOpportunity and passTurn are NOT here although they close units all the
 // same (solo closes too): they are a player's own deliberate acts, and "I
 // ended my activation too early" is a target the catalog should keep offering
@@ -229,6 +229,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'unfold': label = `${who()} Unfolds`; break;
     case 'reveal': label = `${who()} Reveals`; break;
     case 'riposte': label = `${who()}: Riposte`; break;
+    case 'overwatch': label = `${who()}: Overwatch Strike on ${target()}`; break;
     case 'tether': label = `${who()} Tethers ${target()}`; break;
     case 'disarm': label = `${who()} Disarms ${target()}`; break;
     case 'suppress': label = `${who()}: Suppression`; break;
@@ -289,6 +290,8 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'dissipateSmoke': label = 'Smoke dissipates'; break;
     case 'destroyTerrain': label = 'Terrain destroyed'; break;
     case 'despawn': label = `${who()} leaves the board`; break;
+    case 'recoverBit': label = `${who()} recovers a Bit`; break;
+    case 'flyToTarget': label = `${who()} flies to its target`; break;
 
     // ---------- phase machinery ----------
     case 'advancePhase': label = 'Next phase'; break;

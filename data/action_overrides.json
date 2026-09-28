@@ -1,6 +1,26 @@
 {
   "_comment": "Per-action corrections, keyed by action id (the card id plus its A/B slot, which is exactly how the publisher's sheets label them). Source for every entry below is the publisher's championship-legal English parts lists (v1.02). Those come from the game company, so they outrank both the community database that generated cards.json and an older card scan. Ranges of 0 on a Firing or Projectile action are the community data simply not recording a range at all.",
   "actions": {
+    "ZHDR-201_A": {
+      "range": 0,
+      "_note": "Mechanics audit Phase 5, F6: the publisher lists print this Melee Action's range as \"--\" (Melee), which reaches the Adjacent Grids, diagonals included (4.2.2). Range 1 put a diagonal enemy out of reach; 0 is how the engine writes \"--\"."
+    },
+    "ZHDR-202_A": {
+      "range": 0,
+      "_note": "Mechanics audit Phase 5, F6: the publisher lists print this Melee Action's range as \"--\" (Melee), which reaches the Adjacent Grids, diagonals included (4.2.2). Range 1 put a diagonal enemy out of reach; 0 is how the engine writes \"--\"."
+    },
+    "ZHDR-203_A": {
+      "range": 0,
+      "_note": "Mechanics audit Phase 5, F6: the publisher lists print this Melee Action's range as \"--\" (Melee), which reaches the Adjacent Grids, diagonals included (4.2.2). Range 1 put a diagonal enemy out of reach; 0 is how the engine writes \"--\"."
+    },
+    "MHKX-L_B": {
+      "range": 0,
+      "_note": "Mechanics audit Phase 5, F6: the publisher lists print this Melee Action's range as \"--\" (Melee), which reaches the Adjacent Grids, diagonals included (4.2.2). Range 1 put a diagonal enemy out of reach; 0 is how the engine writes \"--\"."
+    },
+    "MHKX-R_B": {
+      "range": 0,
+      "_note": "Mechanics audit Phase 5, F6: the publisher lists print this Melee Action's range as \"--\" (Melee), which reaches the Adjacent Grids, diagonals included (4.2.2). Range 1 put a diagonal enemy out of reach; 0 is how the engine writes \"--\"."
+    },
     "547_A": {
       "range": 8
     },
@@ -200,7 +220,8 @@
       "redDice": 3,
       "description": {
         "en": "· Omni-direction Firing\n· Melee Firing",
-        "zh": ""
+        "zh": "",
+        "jp": ""
       },
       "keywords": [
         {
@@ -210,7 +231,7 @@
           "inline": "近战射击"
         }
       ],
-      "_note": "The 1.021 REGUNNING, which the stats adoption never reached: the Crossbow's action is renamed Full-auto to Single Shot, rolls 3R instead of 2Y1R, and NO LONGER PRINTS Interception 1. Losing the Interception is load-bearing two ways, which is why this entry replaces the keywords array as well as the text: interceptCapacity() reads the inline keyword 拦截1 first and the printed text second, so the old keyword or the old zh alone would keep the drone intercepting. The zh is cleared because we hold no 1.021 Chinese; the two zh terms the engine still needs (全向射击 for the Omni grant reader, 近战射击 for melee.ts isMeleeFiring) ride in the keywords, which is where both readers look."
+      "_note": "The 1.021 REGUNNING, which the stats adoption never reached: the Crossbow's action is renamed Full-auto to Single Shot, rolls 3R instead of 2Y1R, and NO LONGER PRINTS Interception 1. Losing the Interception is load-bearing two ways, which is why this entry replaces the keywords array as well as the text: interceptCapacity() reads the inline keyword 拦截1 first and the printed text second, so the old keyword or the old zh alone would keep the drone intercepting. The zh is cleared because we hold no 1.021 Chinese, and the jp for the same reason: the old Japanese still printed 迎撃1, and interceptCapacity reads the Japanese too, so the Crossbow kept intercepting on every page until 2026-09-27 (audit Phase 5, B3); the two zh terms the engine still needs (全向射击 for the Omni grant reader, 近战射击 for melee.ts isMeleeFiring) ride in the keywords, which is where both readers look."
     },
     "ZHDR-103_A": {
       "description": {
@@ -636,7 +657,13 @@
     "ZHAM-001A_A": {
       "range": 8,
       "type": "Delay",
-      "_note": "Publisher parts sheet (audit 2026-09-03): range 8; Delayed Action like PDAM-001/002."
+      "keywords": [],
+      "description": {
+        "zh": "· 以范围内1个敌方单位为目标，飞行进入目标格并引爆。\n· 引爆时，对目标造成爆炸伤害。",
+        "en": "· Target 1 Enemy Unit within range, Fly into target grid and undergo Detonation.\n· On Detonation, cause Explosion damage to target.",
+        "jp": "· 範囲内にいる敵ユニットを対象として、対象がいるグリッドへ飛行移動して誘爆される。\n· 誘爆されるとき、対象に爆発ダメージを与える。"
+      },
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 8; Delayed Action like PDAM-001/002. GoF 1.021 prints no Cruising on the Swift (ruling I3; audit Phase 5, A8), so the line and its keyword go; nothing read it."
     },
     "ZHAM-002_A": {
       "range": 4,
@@ -645,7 +672,10 @@
     },
     "ZHAM-003_A": {
       "type": "Delay",
-      "_note": "Publisher parts sheet (audit 2026-09-03): Delayed Action."
+      "description": {
+        "en": "· Target 1 Enemy Unit within range, Fly into target grid and undergo Detonation.\n· Prioritize Enemy Mechs as target.\n· On Detonation, cause Explosion damage to target.\n· Mutilation\n· If there is no target within Range, this Unit will not be removed."
+      },
+      "_note": "Publisher parts sheet (audit 2026-09-03): Delayed Action. GoF 1.021 parts list adds the last line (audit Phase 5, A6): 4.7.5 destroys a Projectile whose Delayed Action finds no target \"unless otherwise specified\", and this is the card that specifies it."
     },
     "ZHAM-004_A": {
       "type": "Delay",
@@ -762,6 +792,12 @@
       ],
       "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Fire in arc, Volley X."
     },
+    "292_B": {
+      "description": {
+        "en": "· When this part's \"Bit\" has an Ammo Token, may exchange {lightning} in the blue dice for {Dodge}.\n· This action may be used in Cruise Mode."
+      },
+      "_note": "Collab 1.02 parts list (Ace Strategy, ACE-001 Thruster; audit Phase 5, H6): the card prints \"may exchange\", where the bundle's English said \"counts as\"."
+    },
     "ECP10_A": {
       "keywords": [
         {
@@ -800,9 +836,76 @@
           "inline": "指令生成X"
         }
       ],
-      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Command Generation X."
+      "description": {
+        "en": "· Command Generation +1.",
+        "zh": "",
+        "jp": ""
+      },
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Command Generation X. GoF 1.021 parts list (audit Phase 5, F2; ruling I1 adopted 1.021). Distributed Collaboration is \"Command Generation +1\", added to the Mech's own; it was Command Coordination 1 when the Action Opportunity ends, which the zh and jp still printed, so they are cleared."
+    },
+    "172_A": {
+      "name": {
+        "en": "Designated Defense",
+        "zh": "",
+        "jp": ""
+      },
+      "description": {
+        "en": "· This Mech may Designate part to resolve damage.",
+        "zh": "",
+        "jp": ""
+      },
+      "keywords": [],
+      "gameRules": [
+        {
+          "id": "designated_defense",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "defender_designate_any_part"
+            }
+          ]
+        }
+      ],
+      "_note": "GoF 1.021 parts list (audit Phase 5, F2; ruling I1 adopted 1.021). The Warrior was N4 Data Link, Command Generation 4; 1.021 prints Designated Defense instead, so it generates the default 1. Read as the defender's own Snipe: this Mech may name ANY of its Parts to resolve the damage (the list prints \"Designate part\", where every shield prints \"this part\"). The zh, the jp and the Command Generation keyword are cleared because we hold no 1.021 Chinese and the readers match the old line."
+    },
+    "172_B": {
+      "name": {
+        "en": "Swarm Tactics",
+        "zh": "",
+        "jp": ""
+      },
+      "description": {
+        "en": "· After this Mech issues a Command to a GoF Medium Drone, may remove this Command Token and continue issuing a Command to another Ally Drone.",
+        "zh": "",
+        "jp": ""
+      },
+      "keywords": [],
+      "_note": "GoF 1.021 parts list (audit Phase 5, F2; ruling I1 adopted 1.021). Replaces Melee Synergy, which granted Command Coordination 1 to the Mech's Melee Actions; the zh and jp are cleared for the same reason. Ruling I1: the token goes back to the Warrior to be issued again, to a different Drone; each Drone still takes one Command per Phase; a GoF Medium Drone is one the lists size Middle (type medium)."
+    },
+    "175_A": {
+      "name": {
+        "en": "A2K Data Link",
+        "zh": "",
+        "jp": ""
+      },
+      "description": {
+        "en": "· Command Generation 2\n· This Mech may perform one Command Coordination after Maneuver.",
+        "zh": "",
+        "jp": ""
+      },
+      "_note": "GoF 1.021 parts list (audit Phase 5, F2; ruling I1 adopted 1.021). Was A2 Data Link, whose rider let the commanded Drone perform Automatic Actions; the zh and jp still printed it, so they are cleared."
+    },
+    "176_A": {
+      "description": {
+        "en": "· Command Generation 2\n· This Mech's Command Coordination may issue up to 2 Commands.",
+        "zh": "",
+        "jp": ""
+      },
+      "_note": "GoF 1.021 parts list (audit Phase 5, F2; ruling I1 adopted 1.021). The rider that let the commanded Drone move 1 Grid first is gone; the zh and jp still printed it, so they are cleared."
     },
     "ZHDR-302_A": {
+      "range": 0,
+      "_range": "Mechanics audit Phase 5, F6: the publisher lists print this Melee Action's range as \"--\" (Melee), which reaches the Adjacent Grids, diagonals included (4.2.2). Range 1 put a diagonal enemy out of reach; 0 is how the engine writes \"--\".",
       "keywords": [
         {
           "inline": "压制"
@@ -870,6 +973,8 @@
       "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action."
     },
     "ZHLA-304_B": {
+      "range": 0,
+      "_range": "Mechanics audit Phase 5, F6: the publisher lists print this Melee Action's range as \"--\" (Melee), which reaches the Adjacent Grids, diagonals included (4.2.2). Range 1 put a diagonal enemy out of reach; 0 is how the engine writes \"--\".",
       "keywords": [
         {
           "inline": "指令协调X"
@@ -931,6 +1036,8 @@
       "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action."
     },
     "ZHRA-304_B": {
+      "range": 0,
+      "_range": "Mechanics audit Phase 5, F6: the publisher lists print this Melee Action's range as \"--\" (Melee), which reaches the Adjacent Grids, diagonals included (4.2.2). Range 1 put a diagonal enemy out of reach; 0 is how the engine writes \"--\".",
       "keywords": [
         {
           "inline": "指令协调X"
@@ -944,6 +1051,8 @@
       "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action."
     },
     "ZHLA-101_B": {
+      "range": 0,
+      "_range": "Mechanics audit Phase 5, F6: the publisher lists print this Melee Action's range as \"--\" (Melee), which reaches the Adjacent Grids, diagonals included (4.2.2). Range 1 put a diagonal enemy out of reach; 0 is how the engine writes \"--\".",
       "keywords": [
         {
           "inline": "震撼"

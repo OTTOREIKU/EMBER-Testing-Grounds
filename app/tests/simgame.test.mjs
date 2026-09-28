@@ -155,6 +155,28 @@ export function lockersOf(_d: any, _t: any, _tokens: any, _terrain: any, _at?: a
 export function tetherTo(_a: any, _b: any, _range: number): void {}
 export function transformPartOn(_data: any, _t: any, _slot: any, _cardId: string): void {}
 export function transformFaces(_data: any, _c: any): string[] { return []; }
+// No fixture here launches an Unfolded Pholcus (card 167 is the only one), so
+// the honest stub is "never" (audit Phase 5, A8).
+export function isUnfolded(_c: any): boolean { return false; }
+// No fixture here prints [Stationary] (the GSD7 Mortar is the card that does),
+// so the launch ceiling reads the printed Range (audit Phase 5, A8).
+export function stationaryAdjusted(a: any, _opp?: any): any { return a; }
+// No fixture launcher here names its Projectiles by a real list, so the
+// honest stub is "no list": the table places what it launches (audit Phase
+// 5, G5).
+export function launchableCards(_data: any, _tokens: any, _t: any, _actionId: string, _anywhere?: boolean): any { return null; }
+// The Mine readers are pinned against the real engine in mechanics5.test.mjs;
+// no fixture here lays one, so the honest stub marks nothing (audit Phase 5,
+// C2).
+export function settleMines(_data: any, _state: any): void {}
+// Nor does any stand in a Mine's Grid, so no reprieve is there to end (audit
+// Phase 5, C3).
+export function forgetMineSpares(_tokens: any, _moved?: number): void {}
+// No fixture here puts a folded Pholcus down, so none is owed its Unfold, and
+// the one the Unfold test turns over comes up in an empty Grid (audit Phase
+// 5, D2, D3).
+export function unfoldsOwed(_data: any, _tokens: any): any[] { return []; }
+export function unfoldOccupants(_tokens: any, _t: any): any[] { return []; }
 export function hasFlexibleTiming(_data: any, _tokens: any, _t: any): boolean {
   return false;
 }
@@ -333,7 +355,10 @@ const data = { byId, commonActions: common.actions ?? [], overload: common.overl
 
 const partsOf = (ty) => cards.filter((c) => c.type === ty && (c.actions ?? []).length >= 0);
 const pilots = cards.filter((c) => c.category === 'pilot' && typeof c.LV === 'number');
-const drones = cards.filter((c) => c.category === 'drone');
+// A squad's Drones: a Low Value one, printed at 0 points, is not part of the
+// Squad and is never deployed (p.82; audit Phase 5, E2). It arrives when a
+// card puts it down.
+const drones = cards.filter((c) => c.category === 'drone' && (c.score ?? 0) > 0);
 const projectiles = cards.filter((c) => c.category === 'projectile');
 const SLOTS = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
 
@@ -580,7 +605,7 @@ function candidates(s, rng) {
     if (su.stage === 'tasks') out.push({ kind: 'finishTasks', seat: s.round.firstPlayer });
     if (su.stage === 'side') out.push({ kind: 'pickEdge', seat: s.round.firstPlayer, edge: rng() < 0.5 ? 'black' : 'white' });
     if (su.stage === 'deploy') {
-      const seat = C.deployTurn(s, su);
+      const seat = C.deployTurn(s, su, data);
       if (seat) {
         for (const t of s.tokens.filter((x) => x.side === seat && x.kind !== 'projectile' && x.deployed === false)) {
           out.push({ kind: 'deployUnit', seat, uid: t.uid, to: { col: irnd(rng, 36), row: irnd(rng, 36) } });
@@ -596,7 +621,7 @@ function candidates(s, rng) {
           drones: rng() < 0.5 ? [{ cardId: pick(rng, drones).id }] : [],
         });
       }
-      if (C.deploymentComplete(s)) out.push({ kind: 'finishDeployment', seat: 's1' });
+      if (C.deploymentComplete(s, data)) out.push({ kind: 'finishDeployment', seat: 's1' });
     }
     return out;
   }

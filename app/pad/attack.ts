@@ -215,6 +215,8 @@ function blocksFor(side: 'attack' | 'defense', pool: Record<string, number>): Ro
   if (side === 'attack') {
     const base = { red: printed.redDice ?? 0, yellow: printed.yellowDice ?? 0 };
     const adjusted = { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 };
+    // No lent Coolers: the pad's window takes none either, with no board to
+    // see Contact on (audit Phase 5, G4).
     const cool = coolingBonus(a.data, attacker, action, adjusted);
     const pilot = pilotDiceBonus(a.data, attacker, defender, action, current.verdict.graceNote);
     for (const c of ['red', 'yellow'] as const) {

@@ -116,6 +116,14 @@ export function boardFingerprint(state: GameState): string {
       // the NEXT settleEnvironments grants a Fragile Token, so a drift cooks
       // a unit on one board and not the other.
       t.envSeen ?? null,
+      // A Missile Group and the target it follows (A5): check() refuses a
+      // different target, so a drift would have one board refuse the other's pick.
+      t.group ?? null,
+      t.groupTarget ?? null,
+      // A Mine's spared units and its owed mark (C2, C3): minesOwed reads both.
+      t.mine ? `${(t.mine.spared ?? []).map((x) => `${x.uid}@${x.col},${x.row}`).sort().join(';')}|${t.mine.owed ? 1 : 0}` : null,
+      // The Pholcus's M18.4 blast, owed by its Unfold (D2).
+      t.unfoldBlast ? 1 : null,
       // NOT hashed, deliberately: `label` and `log` are display, `timing` is
       // secret until the reveal, and `aerial`/`barricade` are re-derived from
       // the card by migrateState so they cannot drift while cardId agrees.

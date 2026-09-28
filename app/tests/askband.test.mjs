@@ -106,7 +106,12 @@ check('under a plain heading rather than crashing the lookup', traceGroups(['a']
 // ---------- the RENDERED band, driven through the real helper ----------
 const rifle = data.cards.find((c) => c.id === 'ZHRA-201');
 const firing = rifle?.actions?.find((a) => a.id === 'ZHRA-201_B');
-const torso = data.cards.find((c) => c.type === 'torso');
+// The first PLAIN Torso: one whose Parts its defender may not designate.
+// The first in the data is the P7 Warrior, and GoF 1.021 gave it Designated
+// Defense (audit Phase 5, F2), which puts the defender's declaration in front
+// of every attack on it.
+const torso = data.cards.find((c) => c.type === 'torso'
+  && !(c.actions ?? []).some((a) => (a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => /defender_designate/.test(e.type ?? '')))));
 const chasis = data.cards.find((c) => c.type === 'chasis');
 check('the fixture Action is still on the card', !!firing, true);
 

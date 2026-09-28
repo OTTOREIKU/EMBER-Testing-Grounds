@@ -1,14 +1,14 @@
 import type { BoardGrids, CardAction, CombatView, Facing, FreeTicks, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
 import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
-import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
+import { cardName, isUnfolded, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
+import { fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
 import { canBeForceMoved, isMeleeFiring, lockersOf, tetherCap } from './melee';
-import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, rebooted, REBOOT_ID, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload, untouched } from './ticks';
+import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, rebooted, REBOOT_ID, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload, untouched } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
 import { applyKill, normaliseTasks, pendingDesignations, recordPartLoss, recordUnitLoss, settleControl, type Designation, retractKill, unrecordPartLoss } from './tasks';
-import { alive, canAct, dialHidden, droneActionWhy, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity, tiedChoiceWhy } from './loop';
+import { alive, canAct, dialHidden, droneActionWhy, droneLockPhase, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity, tiedChoiceWhy } from './loop';
 import { dissipationFor, losNote, rangeBetween, spotsInGrid } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
@@ -98,7 +98,11 @@ export type Command = (
   // `flying` rides along for the Environment Cards: a flight enters only its
   // landing Grid, so a High Temperature Grid under the route must know whether
   // the unit walked through it or flew over it. Absent means walked.
-  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[]; from?: { col: number; row: number }; actionId?: string; flying?: boolean; breakAwayLink?: number }
+  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[]; from?: { col: number; row: number }; actionId?: string; flying?: boolean; breakAwayLink?: number
+    // A Mine in a Grid the walk entered stopped it there (ruling I16): `halt`
+    // is how many Grids of the Movement are left for later, and a `resume`
+    // goes on with them once the blast is resolved (audit Phase 5, C1).
+    halt?: number; resume?: boolean }
   // A Crush with no escape square (4.3.6, book p.47): "If NONE of the Grids
   // within Range of that Forced Movement can be entered, the crushed Unit
   // instead exchanges positions with the Crushing Unit."
@@ -362,7 +366,17 @@ export type Command = (
   | { kind: 'layMine'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number } }
   | { kind: 'blink'; seat: Side; uid: number; actionId: string; targetUid: number; facing: Facing; targetFacing: Facing }
   | { kind: 'despawn'; seat: Side; uid: number; targetUid: number }
-  | { kind: 'unfold'; seat: Side; uid: number }
+  // 292_A's other half: the Port takes a Bit back and its Ammo Token returns
+  // (ruling I23). The Action itself is paid first, the way a launch is.
+  | { kind: 'recoverBit'; seat: Side; uid: number; actionId: string; targetUid: number }
+  // A Missile's own flight into its target's Grid, which its Delayed Action
+  // prints ("Fly into target grid"). No Forced Movement, which a Projectile
+  // cannot be subject to (4.3.4), and the Interception it owes is queued beside
+  // it (audit Phase 5, A2).
+  | { kind: 'flyToTarget'; seat: Side; uid: number; actionId: string; targetUid: number }
+  // `occupied`: with no board the table says whether the Grid it Unfolds
+  // in holds a unit (FAQ M18.4; audit Phase 5, C5).
+  | { kind: 'unfold'; seat: Side; uid: number; occupied?: boolean }
   // Turning a Part over to its other face without changing anything else about
   // the unit: the White Dwarf's Assault/Cruise Modes (287/288) on a Swift
   // Action, and the Harpoon flipping into Tether Mode when its shot connects.
@@ -456,6 +470,9 @@ export type Command = (
   // Riposte's first half. A TABLE_KIND because it ends the OTHER seat's Action
   // Opportunity, which no seat-scoped command may reach.
   | { kind: 'riposte'; seat: Side; uid: number; fromUid: number }
+  // The KK9's Overwatch Strike: the enemy it designates and the Ally Mech that
+  // fires at it (LHDR-KK9_B; audit Phase 5, F8).
+  | { kind: 'overwatch'; seat: Side; uid: number; actionId: string; targetUid: number; mechUid: number }
   | { kind: 'focusReroll'; seat: Side; indices: number[]; faces: { color: string; face: number }[] }
   // KC Armor (4.10): the remote defender's declare that its consumed Charge
   // Token turns the Defense Roll's Lightning into Defense. The Charge itself
@@ -553,8 +570,8 @@ export function ammoPay(
 ): { from: Token; poolId: string } {
   const own = ammoHolder(data, state, t, actionId);
   if ((own.ammo?.[actionId] ?? 0) > 0) return { from: own, poolId: actionId };
-  const lent = ammoDeliveryPool(data, t, actionId);
-  return lent ? { from: t, poolId: lent } : { from: own, poolId: actionId };
+  const lent = ammoDeliveryPool(data, t, actionId, loanedParts(data, state.tokens, t));
+  return lent ?? { from: own, poolId: actionId };
 }
 
 // How many shots the magazines behind one Action can pay for in all: its own,
@@ -565,8 +582,8 @@ export function ammoPay(
 export function ammoAvailable(data: GameData, state: GameState, t: Token, actionId: string): number | undefined {
   const own = ammoHolder(data, state, t, actionId).ammo?.[actionId];
   if (own === undefined) return undefined;
-  const lent = ammoDeliveryPool(data, t, actionId);
-  return own + (lent ? (t.ammo?.[lent] ?? 0) : 0);
+  const lent = ammoDeliveryPool(data, t, actionId, loanedParts(data, state.tokens, t));
+  return own + (lent ? (lent.from.ammo?.[lent.poolId] ?? 0) : 0);
 }
 
 function findAction(data: GameData, state: GameState, uid: number, actionId: string) {
@@ -579,11 +596,35 @@ function findAction(data: GameData, state: GameState, uid: number, actionId: str
   }
   // A Backpack carried by a Carrier Tarantula in Contact is this Mech's Part
   // while it acts (FAQ O3/O16), so its Actions are this Mech's Actions.
-  for (const { card } of loanedParts(data, state.tokens, t)) {
+  // A table with no board judges the Contact (audit Phase 5, G4).
+  for (const { card } of loanedParts(data, state.tokens, t, { anywhere: !!state.noBoard })) {
     const a = (card.actions ?? []).find((x) => x.id === actionId);
     if (a) return a;
   }
   return data.commonActions.find((x) => x.id === actionId);
+}
+
+// A strict table: the guide's strict tracking, or any online game, which is
+// always strict (see perform). The rules that only a strict table holds ask
+// this, so the sandbox, Teaching and Freeform keep their hand controls.
+export function strictNow(state: GameState): boolean {
+  return !!state.script?.strict || !!getLocalSeat();
+}
+
+// The owed Interception attempts that can still be made: a unit on the board
+// with a Token left on that Part, not in Shutdown and not under Fire Control
+// Interference, at a target still standing. Interception "must be performed"
+// while its conditions are met (M5), so a strict table holds the phase and the
+// skip on these (audit Phase 5, B10).
+export function liveIntercepts(state: GameState): { uid: number; actionId: string; targetUid: number }[] {
+  return (state.script?.intercepts ?? []).filter((o) => {
+    const x = state.tokens.find((u) => u.uid === o.uid);
+    const target = state.tokens.find((u) => u.uid === o.targetUid);
+    if (!x || !target || !alive(x) || !alive(target) || x.deployed === false) return false;
+    if ((x.intercept?.[o.actionId] ?? 0) <= 0) return false;
+    if (x.kind === 'mech' && x.stance === 'shutdown') return false;
+    return statusCount(x.statuses, 'fci') <= 0;
+  });
 }
 
 // The Action Opportunity being spent, but only if it belongs to this unit:
@@ -1142,6 +1183,12 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'advancePhase': {
       const su = normaliseSetup(state.setup);
       if (su && su.stage !== 'done') return no('Finish the pre-game roll and deployment first (3.1).');
+      // An owed Interception is resolved before play moves on (M5; B10).
+      if (strictNow(state) && liveIntercepts(state).length) return no('An Interception is still owed, and it must be made while it can be (M5).');
+      // And a folded Pholcus Unfolds before the Delay Phase ends (M18.3; D3).
+      if (strictNow(state) && PHASES[state.round.phase] === 'Delay' && unfoldsOwed(data, state.tokens).length) {
+        return no('A folded Pholcus must Unfold in the Delay Phase (FAQ M18.3).');
+      }
       // Out of the Planning Phase only with every dial set, a Shutdown Mech's
       // included (FAQ K17): the rule lockDials holds, for the pages that turn
       // the phase without a lock (a solo Match Centre, the guide). A Mech with
@@ -1189,6 +1236,22 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (!state.script) return no('There is no guided game running.');
       if (!isLoopPhase(PHASES[state.round.phase])) return no('There is no designation loop to pass in this phase.');
       if (state.script.passed.includes(cmd.seat)) return no('This squad has already passed for the phase (3.2.2).');
+      // "Automatic Actions are obligatory" (3.5; ruling I4): a strict table
+      // holds the pass while one of this squad's Drones has a legal target
+      // for one (audit Phase 5, F3). A custom map's terrain is the page's.
+      if (strictNow(state) && PHASES[state.round.phase] === 'Automatic' && !state.noBoard) {
+        const terrain = knownTerrain(data, state);
+        const owing = terrain
+          ? eligibleUnits(state, 'Automatic', cmd.seat, data).find((d) => autoShotOwed(data, state.tokens, d, { terrain, smoke: state.smoke ?? [] }))
+          : undefined;
+        if (owing) return no(`${owing.label} has a legal target, and its Automatic Action is obligatory (3.5).`);
+      }
+      // A folded Pholcus "must" Unfold in the Delay Phase (M18.3): a strict
+      // table holds its squad's pass (audit Phase 5, D3).
+      if (strictNow(state) && PHASES[state.round.phase] === 'Delay'
+        && unfoldsOwed(data, state.tokens).some((u) => state.tokens.find((x) => x.uid === u.uid)?.side === cmd.seat)) {
+        return no('A folded Pholcus must Unfold in the Delay Phase (FAQ M18.3).');
+      }
       return ok;
     }
     case 'markEndStep': {
@@ -1277,7 +1340,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'finishDeployment': {
-      if (!deploymentComplete(state)) return no('Units are still waiting to deploy (3.1.4).');
+      if (!deploymentComplete(state, data)) return no('Units are still waiting to deploy (3.1.4).');
       // Both squads confirm before Round 1 begins, and the confirmation is
       // checked here rather than only drawn in the panel, so neither player
       // can push the other out of deployment.
@@ -1296,6 +1359,8 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'clearIntercepts': {
       if (!state.script) return no('There is no guided game running.');
+      // Interception "must be performed" while it can be (M5; audit Phase 5, B10).
+      if (strictNow(state) && liveIntercepts(state).length) return no('Interception must be made while it can be (M5): resolve the owed attempts first.');
       return ok;
     }
     case 'clearCounterRoll': {
@@ -1658,6 +1723,22 @@ function checkActed(
   t: Token,
 ): CheckResult {
   switch (cmd.kind) {
+    case 'overwatch': {
+      // "Designate 1 Enemy Unit within range as the target, allow 1 Ally Mech
+      // to immediately perform 1 Firing Action against it. Then remove this
+      // Drone." The Mech's Action is granted on the Riposte pattern, any
+      // length (FAQ K15; audit Phase 5, F8).
+      const a = findAction(data, state, cmd.uid, cmd.actionId);
+      if (!a || !overwatchOf(a)) return no('That Action calls no Overwatch Strike.');
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target || target.side === t.side || !alive(target) || target.deployed === false) return no('Overwatch Strike designates an Enemy Unit.');
+      if (!state.noBoard && rangeBetween(t, target).range > (a.range ?? 0)) return no(`${target.label} is out of ${t.label}'s Range.`);
+      const mech = state.tokens.find((x) => x.uid === cmd.mechUid);
+      if (!mech || mech.kind !== 'mech' || mech.side !== t.side || !alive(mech)) return no('Overwatch Strike lets an Ally Mech fire.');
+      if (mech.stance === 'shutdown') return no(`${mech.label} is in Shutdown Stance, so it performs nothing (4.1.1).`);
+      if (guidedGame(state) && strictNow(state) && !oppOf(state, cmd.uid)) return no(`${t.label} does not hold an activation, so it calls no strike now.`);
+      return ok;
+    }
     case 'setTiming': {
       if (t.kind !== 'mech') return no('Only a Mech has a Timing Dial. Drones act in the Command and Automatic Phases instead.');
       if (t.partStates.torso === 'destroyed') return no('A destroyed Mech cannot set a dial.');
@@ -1840,6 +1921,7 @@ function checkActed(
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
       }
+      if (cmd.halt !== undefined && (!Number.isInteger(cmd.halt) || cmd.halt < 0)) return no('That is not a number of Grids.');
       // WHERE THE MOVEMENT STARTED, and the only rules-bearing number on this
       // command the SENDER chooses. check() took it on trust, which is the very
       // mistake the crushSwap round refused to make when it declined to have
@@ -1919,6 +2001,10 @@ function checkActed(
         if (state.noBoard || cmd.from) return null;
         const crossed = Math.abs(Math.floor(col / 3) - Math.floor(t.col / 3)) + Math.abs(Math.floor(row / 3) - Math.floor(t.row / 3));
         const reach = movementCeiling(data, state, t, moveAction ?? null);
+        // A Mine's stop keeps back no more than the Movement had (C1).
+        if (crossed <= reach && cmd.halt && crossed + cmd.halt > reach) {
+          return `${t.label} has ${reach - crossed} Grid${reach - crossed === 1 ? '' : 's'} of this Movement left, not ${cmd.halt}.`;
+        }
         if (crossed <= reach) return null;
         return reach > 0
           ? `${t.label} can move at most ${reach} Grid${reach === 1 ? '' : 's'} with this Movement, and that Grid is ${crossed} away.`
@@ -1946,6 +2032,22 @@ function checkActed(
         const ph = PHASES[state.round.phase];
         const why = isLoopPhase(ph) ? droneMoveWhy(ph) : null;
         if (why) return no(why);
+        if (o.commandOnly) return no('Additional Instructions buys a Command Action, not a Move (ruling I7).');
+      }
+      // The rest of a Movement a Mine stopped (ruling I16): within the Grids it
+      // had left, never on a destroyed Chassis, and on the Tick already paid
+      // for it (audit Phase 5, C1).
+      if (cmd.resume) {
+        const left = o.mineHalt ?? 0;
+        if (left <= 0) return no('No Mine stopped this unit\'s Movement, so there is nothing to go on with.');
+        const stop = chassisStop(t);
+        if (stop) return no(stop);
+        if (!state.noBoard) {
+          const crossed = Math.abs(Math.floor(col / 3) - Math.floor(t.col / 3)) + Math.abs(Math.floor(row / 3) - Math.floor(t.row / 3));
+          if (crossed > left) return no(`${t.label} has ${left} Grid${left === 1 ? '' : 's'} of that Movement left, and that Grid is ${crossed} away.`);
+          if (cmd.halt && crossed + cmd.halt > left) return no(`${t.label} has ${left - crossed} Grid${left - crossed === 1 ? '' : 's'} of that Movement left, not ${cmd.halt}.`);
+        }
+        return ok;
       }
       // A free move rides on an Action already performed that carries a
       // Movement, and takes it: one Movement per such Action. It used to ride
@@ -2193,6 +2295,13 @@ function checkActed(
       // included, and only the Torso in Cruise Mode.
       const partWhy = actionPartWhy(data, t, a, cmd.partKey);
       if (partWhy) return no(partWhy);
+      // A lent Action names its Carrier (FAQ O7), and the loan has to be real:
+      // a Carrier in Contact holding that Load (FAQ O3; audit Phase 5, G5). A
+      // table with no board judges the Contact itself.
+      const lender = cmd.partKey && !(data.commonActions ?? []).some((c) => c.id === a.id) ? cmd.partKey.split('@')[1] : undefined;
+      if (lender !== undefined && !loanedParts(data, state.tokens, t, { anywhere: !!state.noBoard }).some((l) => String(l.from.uid) === lender && (l.card.actions ?? []).some((x) => x.id === a.id))) {
+        return no(`No Carrier in Contact lends ${t.label} that Action (FAQ O3).`);
+      }
       // 4.13: an Action whose Ammo Tokens are all spent cannot be performed.
       // ammoPay, so an empty Pod may still draw on an Ammunition Pack (086_B).
       if (spendsAmmoWhenPerformed(a)) {
@@ -2235,7 +2344,9 @@ function checkActed(
       // Command Phase is the autocannon a Command was sent for. It costs the
       // activation the Command bought, not Ticks - there is no Opportunity of
       // Ticks in this phase - and each Part fires once per round.
-      if (t.kind === 'mech' && PHASES[state.round.phase] === 'Command' && state.script) {
+      // A granted Action is no RWS one: the KK9's Overwatch Strike hands a
+      // Mech its Firing Action in this phase (audit Phase 5, F8).
+      if (t.kind === 'mech' && PHASES[state.round.phase] === 'Command' && state.script && !cmd.granted) {
         const o = oppOf(state, cmd.uid);
         if (!o) return no('It is not this Mech\'s activation.');
         if (!isRwsAction(a)) return no('In the Command Phase a Mech performs only the RWS Action a Command was sent for (遥控武器); its own Action Opportunity comes in the Action Phase.');
@@ -2249,9 +2360,14 @@ function checkActed(
       // Opportunity, and the grant has to be real: a queued riposte debt for
       // THIS unit is the proof, and it buys a Melee Action and nothing else.
       if (cmd.granted) {
-        const owed = (state.script?.reactions ?? []).some((r) => r.uid === cmd.uid && r.kind === 'riposte');
-        if (!owed) return no('Nothing has granted this unit an Action outside its Action Opportunity.');
-        if (a.type !== 'Melee') return no('A Riposte grants a Melee Action (050 / ZHLA-202).');
+        const debts = (state.script?.reactions ?? []).filter((r) => r.uid === cmd.uid && (r.kind === 'riposte' || r.kind === 'overwatch'));
+        if (!debts.length) return no('Nothing has granted this unit an Action outside its Action Opportunity.');
+        // A Riposte buys a Melee Action, an Overwatch Strike a Firing one of
+        // any length (FAQ K15; audit Phase 5, F8).
+        const kind = a.type === 'Melee' ? 'riposte' : a.type === 'Firing' ? 'overwatch' : null;
+        if (!kind || !debts.some((r) => r.kind === kind)) {
+          return no(debts.some((r) => r.kind === 'riposte') ? 'A Riposte grants a Melee Action (050 / ZHLA-202).' : 'An Overwatch Strike grants a Firing Action (KK9).');
+        }
         return ok;
       }
       const o = oppOf(state, cmd.uid);
@@ -2264,8 +2380,10 @@ function checkActed(
         // Actions, the Automatic Phase performs Automatic ones. Drones only —
         // a Projectile's Delayed Action belongs to the Delay Phase (3.6).
         if (t.kind === 'drone') {
-          const ph = PHASES[state.round.phase];
-          const why = isLoopPhase(ph)
+          // A Coordination's activation is under the Command Phase's lock in
+          // the middle of the Action Phase (audit Phase 5, F1).
+          const ph = droneLockPhase(state);
+          const why = ph
             ? droneActionWhy(ph, a, { autoActions: riderOnDrone(data, state.tokens, t).autoActions })
             : null;
           if (why) return no(why);
@@ -2278,7 +2396,8 @@ function checkActed(
       // Stance] This action is considered a Short Action"; audit Phase 2, D2)
       // and on a designated Freehand (card 129), in that order.
       const shaped = stanceShaped(a, t.stance);
-      const use = cmd.twoHanded ? twoHandedUse(data, t, shaped) : null;
+      // A Load lent by a Carrier in Contact can be the Freehand (FAQ O16).
+      const use = cmd.twoHanded ? twoHandedUse(data, t, shaped, [], loanedParts(data, state.tokens, t)) : null;
       if (cmd.twoHanded && !use) return no('[Two-Handed] needs a free hand to designate, and this unit has none for that Action.');
       // FAQ K3: "A Mech affected by Echoes cannot use Echoes again on another
       // Mech during the Action Opportunity gained from Echoes." The guide
@@ -2340,6 +2459,11 @@ function checkActed(
       if (state.script && PHASES[state.round.phase] !== spec.phase) {
         return no(`${spec.name} is played in the ${spec.phase} Phase (${spec.timing.toLowerCase()}), and it is the ${PHASES[state.round.phase]} Phase.`);
       }
+      // Additional Instructions comes too late once the squad has passed the
+      // Command Phase (FAQ A21; ruling I7; audit Phase 5, F9).
+      if (spec.freeCommand && state.script?.passed.includes(cmd.seat)) {
+        return no(`Your squad has passed this Command Phase, so ${spec.name} comes too late (FAQ A21).`);
+      }
       const ctx = tacticCtx(data);
       if (!tacticTargets(spec, state, cmd.seat, ctx).some((x) => x.uid === cmd.uid)) return no(spec.none);
       if (spec.choices && !spec.choices(t, state, ctx).some((o) => o.id === cmd.pick)) {
@@ -2351,13 +2475,15 @@ function checkActed(
       // Like the maneuver, the Deployment Zone and the standing-spot rules stay
       // with the placement UI, which only offers legal Grids.
       if (t.kind === 'projectile') return no('A Projectile is never deployed; it arrives when something launches it.');
+      // Nor a Low Value Drone (p.82; audit Phase 5, E2).
+      if (lowValueUnit(data, t)) return no(`${t.label} is a Low Value Unit, which is never placed during the Deployment stage (p.82). It arrives when a card puts it down.`);
       const su = normaliseSetup(state.setup);
       if (!su || su.stage !== 'deploy') {
         return no(t.deployed !== false ? `${t.label} is already on the board.` : 'Units are placed in the deployment stage of setup (3.1.4).');
       }
       // A unit already down may be nudged until deployment closes; only a
       // fresh placement spends the alternation turn (3.1.4).
-      if (t.deployed === false && deployTurn(state, su) !== cmd.seat) return no('It is the other squad\'s turn to place a unit (3.1.4).');
+      if (t.deployed === false && deployTurn(state, su, data) !== cmd.seat) return no('It is the other squad\'s turn to place a unit (3.1.4).');
       // Tasks come before deployment (3.1.3 then 3.1.4). Across a table that
       // ordering has to be a rule rather than a drawn panel, or the First
       // Player could take an edge and start placing while the other squad
@@ -2511,9 +2637,24 @@ function checkActed(
       const held = t.intercept?.[cmd.actionId];
       if (held === undefined) return no('That Action carries no Interception Tokens.');
       if (held < 1) return no('Every Interception Token on that Part is spent, and they are never restored (4.9).');
+      // Fire Control Interference names Interception, and a destroyed Part
+      // performs nothing (3.4.3): the queue knew both, the spend did not
+      // (audit Phase 5, B9).
+      if (statusCount(t.statuses, 'fci') > 0) return no(`${t.label} bears Fire Control Interference, so it cannot Intercept.`);
+      const slot = tokenCards(data, t).find(({ card }) => (card.actions ?? []).some((a) => a.id === cmd.actionId))?.slot;
+      if (slot && (t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') return no('That Part is destroyed, so it cannot Intercept (3.4.3).');
+      // A strict table makes only an owed attempt (ruling I11): a Launch or an
+      // Aerial unit's Movement is what owes one (4.9). A table with no board
+      // owes nothing the engine can see, so it judges for itself.
+      if (strictNow(state) && !state.noBoard && !(state.script?.intercepts ?? []).some((o) => o.uid === t.uid && o.actionId === cmd.actionId)) {
+        return no('No Interception is owed to that Part: a Launch or an Aerial unit\'s Movement owes one (4.9).');
+      }
       return ok;
     }
     case 'restoreIntercept': {
+      // Interception Tokens "are normally not restored" (M27); a strict table
+      // takes a mistaken spend back with Undo (audit Phase 5, B8).
+      if (strictNow(state)) return no('Interception Tokens are never restored (4.9, M27). Undo takes back a mistaken spend.');
       const held = t.intercept?.[cmd.actionId];
       if (held === undefined) return no('That Action carries no Interception Tokens.');
       const max = interceptMax(data, t, cmd.actionId);
@@ -2735,6 +2876,14 @@ function checkActed(
     }
     case 'endOpportunity': {
       if (!oppOf(state, cmd.uid)) return no('It is not this unit\'s Action Opportunity.');
+      // Nor may a Drone's Automatic activation end before its obligatory
+      // Action (3.5; ruling I4; audit Phase 5, F3).
+      if (strictNow(state) && PHASES[state.round.phase] === 'Automatic' && !state.noBoard && t.kind === 'drone' && untouched(oppOf(state, cmd.uid)!)) {
+        const terrain = knownTerrain(data, state);
+        if (terrain && autoShotOwed(data, state.tokens, t, { terrain, smoke: state.smoke ?? [] })) {
+          return no(`${t.label} has a legal target, and its Automatic Action is obligatory (3.5).`);
+        }
+      }
       if (rebootOwed(state, t)) return no(`${t.label} is in Shutdown Stance and its Action Opportunity has come, so it Reboots now: choose the Stance it Reboots into (FAQ K17).`);
       return ok;
     }
@@ -2784,6 +2933,21 @@ function checkActed(
       // that already acted can take one now (4.15.3) - so this reads the board
       // rather than the phase's `commanded` list.
       if (heldCommands(to) > 0) return no(`${to.label} already has a Command Token, so it cannot take another (4.15.2).`);
+      // A Shutdown Mech triggers none of its own effects (4.1, FAQ L3).
+      if (from.stance === 'shutdown') return no(`${from.label} is in Shutdown Stance, so it coordinates nothing (4.1).`);
+      // A strict guided game: the Coordination rides on an Action or a
+      // Maneuver this Mech performed in its own Opportunity (4.15.3), and one
+      // was sent with nothing performed, in any phase (audit Phase 5, F9).
+      if (guidedGame(state) && strictNow(state)) {
+        const o = oppOf(state, from.uid);
+        if (!o) return no(`${from.label} does not hold the Action Opportunity, so it has no Coordination to send (4.15.3).`);
+        const acts = tokenCards(data, from).flatMap(({ card }) => card.actions ?? []);
+        const did = o.performed.map(actionIdOf);
+        const owed = acts.some((a) => did.includes(a.id) && coordinationFor(data, from, a) > 0)
+          || (o.maneuvered && acts.some((a) => coordinatesAfterManeuver(a)))
+          || coordinationOnOpportunityEnd(data, from) > 0;
+        if (!owed) return no(`${from.label} has performed nothing that carries Command Coordination this Opportunity (4.15.3).`);
+      }
       return ok;
     }
     case 'designate': {
@@ -2791,6 +2955,11 @@ function checkActed(
       if (!isLoopPhase(phase)) return no('Designation happens in the Command, Automatic and Delay Phases.');
       const sc = state.script;
       if (!sc) return no('There is no guided game running.');
+      // One activation at a time (3.2.2): a designation while another unit's
+      // was still open took the table from it (audit Phase 5, F9). One whose
+      // unit has left the board is over.
+      const open = sc.opp && sc.opp.uid !== cmd.uid ? state.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+      if (open && alive(open) && open.deployed !== false) return no(`${open.label}'s activation is still open: finish it first (3.2.2).`);
       // Normalised the way both panels already display it, because the raw
       // pointer can be STUCK: only a designation or a pass ever moves it, so a
       // First Player with nothing to designate parks it on themselves forever —
@@ -2947,7 +3116,22 @@ function checkActed(
     }
     case 'launch': {
       if (!data.byId.get(cmd.cardId)) return no('That is not a card the database knows.');
-      if (!findAction(data, state, cmd.uid, cmd.actionId)) return no('This unit has no such Action.');
+      const launcher = findAction(data, state, cmd.uid, cmd.actionId);
+      if (!launcher) return no('This unit has no such Action.');
+      // A Projectile Action is performed in the unit's own activation (4.7.3):
+      // a Mech in its Action Opportunity, a Drone in the one its Command or its
+      // Phase opened, under the icon lock (3.2.2, 3.5). The card's Launch door
+      // sent one with neither, so an uncommanded Hyena Missile launched in any
+      // phase and a Mech launched for no Tick (audit Phase 5, A7). A strict
+      // guided game holds it; the sandbox, Teaching and Freeform keep the door.
+      if (guidedGame(state) && strictNow(state)) {
+        if (!oppOf(state, cmd.uid)) return no(`${t.label} does not hold an Action Opportunity, so it cannot launch now (4.7.3).`);
+        if (t.kind === 'drone') {
+          const ph = droneLockPhase(state);
+          const why = ph ? droneActionWhy(ph, launcher, { autoActions: riderOnDrone(data, state.tokens, t).autoActions }) : null;
+          if (why) return no(why);
+        }
+      }
       // Every launch costs one Ammo Token (4.13), and apply clamps the count at
       // zero - so without this line an empty magazine fired forever, in a
       // strict game as much as the sandbox, because nothing ever said no.
@@ -2981,6 +3165,24 @@ function checkActed(
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
+      }
+      // The rack launches the folded Pholcus, which Unfolds into the Drone
+      // (FAQ M18.3); the Unfolded one is never launched (audit Phase 5, A8).
+      const shot = data.byId.get(cmd.cardId);
+      if (shot && isUnfolded(shot)) return no(`${cardName(shot)} is never launched: the folded Pholcus Unfolds into it (FAQ M18.3).`);
+      // A card this Action launches, the list the pickers draw from (audit
+      // Phase 5, G5). An Action whose card names nothing is left to the table.
+      const may = launchableCards(data, state.tokens, t, cmd.actionId, !!state.noBoard);
+      if (shot && may && may.length && !may.includes(cmd.cardId)) return no(`${launcher.name?.en || 'That Action'} does not launch ${cardName(shot)}.`);
+      // HOW FAR: the Landing Point within the Action's Range, [Stationary] and
+      // the Seagull's +2 included, the Grids the pages light (4.7.2). The check
+      // bounded nothing, and a Range 3 launch 18 Grids away passed (audit
+      // Phase 5, A8; Phase 4's I10 ceiling for movement). A table with no
+      // board has no distances.
+      if (!state.noBoard) {
+        const reach = projectileReach(data, t, launcher, oppOf(state, cmd.uid));
+        const far = Math.abs(Math.floor(col / 3) - Math.floor(t.col / 3)) + Math.abs(Math.floor(row / 3) - Math.floor(t.row / 3));
+        if (far > reach) return no(`That Landing Point is ${far} Grids away, beyond ${launcher.name?.en || 'the Action'}'s Range ${reach} (4.7.2).`);
       }
       return ok;
     }
@@ -3067,7 +3269,12 @@ function checkActed(
     case 'layMine': {
       if (!t) return no('That unit is not on the board.');
       if (!data.byId.get(cmd.cardId)) return no('That is not a card the database knows.');
-      const a = findAction(data, state, cmd.uid, cmd.actionId);
+      // A lent Mine Layer was this Mech's Part where the walk began, and the
+      // walk may have left its Carrier behind, so any allied Carrier's Load is
+      // accepted here: the route is the driver's business (below; audit Phase
+      // 5, G1).
+      const a = findAction(data, state, cmd.uid, cmd.actionId)
+        ?? loanedParts(data, state.tokens, t, { anywhere: true }).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === cmd.actionId);
       if (!a) return no('This unit has no such Action.');
       if (projectileDelivery(a) !== 'lay') return no('That Action does not Lay anything.');
       const { col, row } = cmd.to;
@@ -3078,10 +3285,44 @@ function checkActed(
       // business, and the route is gone by the time this arrives — the driver
       // that drew it only offers Grids on it. Laying is a Passive, so unlike
       // every other Action there is no Tick to check here either.
+      //
+      // What the engine can hold (ruling I20; audit Phase 5, C6): a Mine Layer
+      // that is intact, and on a strict guided table a Lay during the layer's
+      // own Movement, in a Grid on some route from where that Movement began
+      // to where it stands within its reach. Any Grid, in any phase, was taken.
+      const owned = findAction(data, state, cmd.uid, cmd.actionId);
+      const partWhy = owned ? actionPartWhy(data, t, owned) : null;
+      if (partWhy) return no(partWhy);
+      if (guidedGame(state) && strictNow(state) && !state.noBoard) {
+        const o = oppOf(state, cmd.uid);
+        if (!o || !o.moved) return no(`${t.label} Lays Mines during its own Movement (FAQ M7).`);
+        const from = o.movedFrom ?? { col: t.col, row: t.row };
+        const g = { c: Math.floor(col / 3), r: Math.floor(row / 3) };
+        const via = Math.abs(g.c - Math.floor(from.col / 3)) + Math.abs(g.r - Math.floor(from.row / 3))
+          + Math.abs(g.c - Math.floor(t.col / 3)) + Math.abs(g.r - Math.floor(t.row / 3));
+        const reach = Math.max(movementCeiling(data, state, t, null),
+          ...tokenCards(data, t).flatMap(({ card }) => card.actions ?? []).filter((x) => x.type === 'Moving').map((x) => movementCeiling(data, state, t, x)));
+        if (via > reach) return no(`That Grid is on no route of ${t.label}'s Movement (FAQ M7).`);
+      }
       return ok;
     }
     case 'despawn': {
       if (!state.tokens.some((x) => x.uid === cmd.targetUid)) return no('That unit is not on the board.');
+      return ok;
+    }
+    case 'recoverBit': {
+      const a = findAction(data, state, cmd.uid, cmd.actionId);
+      const port = a ? bitPortOf(a) : undefined;
+      if (!a || !port) return no('That Action recovers no Bit.');
+      const bit = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!bit || !bitsToRecover(data, [bit], t, a, !!state.noBoard).length) {
+        return no(`That is not one of your own "White Dwarf" Bits within Range ${port.range} (292_A).`);
+      }
+      const held = t.ammo?.[a.id];
+      const max = ammoMax(data, t, a.id);
+      if (held !== undefined && max !== undefined && held >= max) {
+        return no('The Bit Port still holds its Ammo Token: a Bit is Recovered into an empty Port.');
+      }
       return ok;
     }
     case 'switchForm': {
@@ -3097,6 +3338,9 @@ function checkActed(
       if (!forms.includes(cmd.cardId)) return no('That is not a form this unit can take.');
       if (cmd.cardId === t.cardId) return no(`${t.label} is already in that Stance.`);
       if (!data.byId.get(cmd.cardId)) return no('That form is missing from the card data.');
+      // Performed in the unit's own activation, as the Stance Change Action it
+      // is (audit Phase 5, G5). A strict guided game holds it.
+      if (guidedGame(state) && strictNow(state) && !oppOf(state, cmd.uid)) return no(`${t.label} does not hold an activation, so it cannot change Stance now.`);
       return ok;
     }
     case 'unfold': {
@@ -3154,6 +3398,21 @@ function checkActed(
     case 'cutTether': {
       if (!t) return no('That unit is not on the board.');
       if (!(t.tether ?? []).some((x) => x.uid === cmd.targetUid)) return no('No Tether joins those two units.');
+      return ok;
+    }
+    case 'flyToTarget': {
+      if (!t || t.kind !== 'projectile') return no('Only a Projectile flies into its target\'s Grid.');
+      const a = findAction(data, state, cmd.uid, cmd.actionId);
+      if (!a || !fliesToTarget(a)) return no('That Action flies nothing into a target\'s Grid.');
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target || target.deployed === false) return no('That target is not on the board.');
+      if (!state.noBoard && rangeBetween(t, target).range > (a.range ?? 0)) return no(`${target.label} is out of ${t.label}'s Range.`);
+      // A Missile Group's Units attack the same target: the one its first Unit
+      // picked, while it stands (p.94; ruling I12; audit Phase 5, A5).
+      const gt = t.groupTarget !== undefined ? state.tokens.find((x) => x.uid === t.groupTarget) : undefined;
+      if (gt && gt.uid !== target.uid && alive(gt) && gt.deployed !== false) {
+        return no(`A Missile Group's Units attack the same target, and this group's is ${gt.label} (p.94).`);
+      }
       return ok;
     }
   }
@@ -3293,6 +3552,9 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   // the freeplay board narrates from its own call, and the Match Centre lets
   // the board redraw speak.
   settleEnvironments(data, state);
+  // A Mine set off stays owed until it is resolved (FAQ I13; audit Phase 5,
+  // C2), marked the same way.
+  settleMines(data, state);
   // 4.12.2's Contact trigger, the same way: a Movement of either unit that ends
   // in Contact, whatever command carried it (a Maneuver, a knockback, a Crush
   // swap, a Blink, a Beacon or Mine laid into Contact), derived here so both
@@ -4218,7 +4480,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         if (cmd.facing !== undefined) t.facing = cmd.facing;
         if (!maneuverIsSilent(data, t)) {
           shedLowProfile(data, state, t);
-          if (!cmd.free && statusCount(t.statuses, 'camouflage') > 0) oweReveal(state, t.uid, 'move');
+          if (!cmd.free && !cmd.resume && statusCount(t.statuses, 'camouflage') > 0) oweReveal(state, t.uid, 'move');
         }
         const o0 = oppOf(state, cmd.uid);
         if (o0 && sc && !cmd.free && !cmd.granted) sc.opp = lockStance(t, spendManeuver(o0));
@@ -4247,7 +4509,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // of an Action already performed, whose own Silence was judged then.
       if (!maneuverIsSilent(data, t)) {
         shedLowProfile(data, state, t);
-        if (!cmd.free && statusCount(t.statuses, 'camouflage') > 0) oweReveal(state, t.uid, 'move');
+        if (!cmd.free && !cmd.resume && statusCount(t.statuses, 'camouflage') > 0) oweReveal(state, t.uid, 'move');
       }
       // A Move Action's own Silence was judged where it began, by performAction.
       // Its landing is judged here: an enemy Patrol Eagle it lands beside takes
@@ -4269,10 +4531,16 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // command, so granting it here too would cook the unit twice. A flight
       // enters only its landing Grid, so it leaves nothing for this half.
       if (!cmd.flying && !t.aerial && cmd.via?.length) walkHeat(state, t, from, cmd.to, cmd.via);
+      // A walk that left its Grid and came back to the cell it stood on has
+      // ENTERED it, so a Mine that arrived on it spares it no longer; ending
+      // anywhere else, settleMines sees that for itself (audit Phase 5, C3).
+      if (cmd.via?.some((v) => Math.floor(v.col / 3) !== Math.floor(from.col / 3) || Math.floor(v.row / 3) !== Math.floor(from.row / 3))) {
+        forgetMineSpares(state.tokens, t.uid);
+      }
       const o = oppOf(state, cmd.uid);
       // A Movement Action already paid with an Action Tick, and one a card
       // handed out was never charged to the Opportunity at all.
-      if (o && sc && !cmd.free && !cmd.granted) {
+      if (o && sc && !cmd.free && !cmd.granted && !cmd.resume) {
         // M2 Data Link: "the Ally Drone may move 1 grid before performing
         // Actions". A move within that allowance leaves the activation open,
         // so the Drone may still act; anything longer, or a second one, spends
@@ -4300,6 +4568,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         // Shock Attack's walk left `moved` false, so the Tempest kept its Extra
         // Firing Tick and a Railgun its Stationary Range (audit Phase 4, E1).
         sc.opp = { ...o, moved: true, movedFrom: o.movedFrom ?? from };
+      }
+      // The Mine's stop, and the going on (ruling I16; audit Phase 5, C1).
+      if (sc?.opp && sc.opp.uid === t.uid && (cmd.halt !== undefined || cmd.resume)) {
+        sc.opp = { ...sc.opp, mineHalt: cmd.halt && cmd.halt > 0 ? cmd.halt : undefined };
       }
       takeMoveGrant(state, cmd);
       return;
@@ -4356,7 +4628,8 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // spending it are one step. Clearing the debt from the panel instead
       // leaves a window in which one Riposte buys several Melee Actions.
       if (cmd.granted && sc) {
-        const at = (sc.reactions ?? []).findIndex((r) => r.uid === cmd.uid && r.kind === 'riposte');
+        const kind = a?.type === 'Firing' ? 'overwatch' : 'riposte';
+        const at = (sc.reactions ?? []).findIndex((r) => r.uid === cmd.uid && r.kind === kind);
         if (at >= 0) sc.reactions.splice(at, 1);
         // It belongs to no Opportunity, so there are no Ticks to charge.
         return;
@@ -4372,7 +4645,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         // The length PAID: a designated Freehand can shorten it (card 129), and
         // the check above let the Action through on that same reading.
         const shaped = t.kind === 'mech' ? stanceShaped(a, t.stance) : a;
-        const paidAs = (cmd.twoHanded ? twoHandedUse(data, t, shaped)?.action : null) ?? shaped;
+        const paidAs = (cmd.twoHanded ? twoHandedUse(data, t, shaped, [], loanedParts(data, state.tokens, t))?.action : null) ?? shaped;
         sc.opp = t.kind === 'mech'
           // The same startOpts the check read, so the SPEND agrees with the
           // check that let the Action through -- miss one and a Starting Action
@@ -4433,8 +4706,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       const spec = tacticSpec(cmd.cardId);
       if (!spec) return;
       const log = spec.apply(t, state, tacticCtx(data), cmd.pick ?? null);
+      // A Command of its own: the Drone keeps the one its squad may still send
+      // it (ruling I7; audit Phase 5, F9).
       if (spec.freeCommand && sc) {
-        sc.commanded = sc.commanded.filter((x) => x !== t.uid);
         if (!sc.freeCommand.includes(t.uid)) sc.freeCommand.push(t.uid);
       }
       if (!state.tacticsPlayed) state.tacticsPlayed = { s1: [], s2: [] };
@@ -4458,6 +4732,11 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       t.deployed = true;
       // A Mech picks its Stance as it lands; anything else keeps its printed one.
       if (t.kind === 'mech' && cmd.stance) t.stance = cmd.stance;
+      // In Cruise Mode it is in Mobility: "Upon entering Cruise Mode, the mech
+      // automatically switches to the mobility stance" (Ace Strategy
+      // additional rules; ruling I28). Deployed so, it stood in Offensive, and
+      // the Stance lock kept it there (audit Phase 5, H3).
+      if (t.kind === 'mech' && cruising(data, t)) t.stance = 'mobility';
       if (cmd.camo) t.statuses = addStatus(t.statuses, 'camouflage');
       // Nudging a unit already down is not a placement, so the alternation
       // count only moves on the first landing.
@@ -4628,6 +4907,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       const bag = t.intercept;
       if (!bag || bag[cmd.actionId] === undefined) return;
       bag[cmd.actionId] = Math.max(0, bag[cmd.actionId] - 1);
+      // A Part with no Token left owes nothing more: they are never restored
+      // (4.9). A Volley of 2 into a Part holding 1 queued two attempts, and the
+      // second, which nothing could pay, stranded the Match Centre's panel
+      // (audit Phase 5, B2).
+      if (bag[cmd.actionId] === 0 && sc?.intercepts) {
+        sc.intercepts = sc.intercepts.filter((x) => !(x.uid === t.uid && x.actionId === cmd.actionId));
+      }
       return;
     }
     case 'restoreIntercept': {
@@ -4840,7 +5126,21 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       from.statuses = l;
       to.statuses = [...(to.statuses ?? []), 'commandUsed'];
       to.commandedBy = from.uid;
+      swarmReturn(data, from, to);
       syncCommandPool(state);
+      // "The same effect as a Command sent in the Command Phase" (4.15.3): the
+      // Drone acts now, in an activation nested inside the Mech's the way an
+      // Extra Action Opportunity nests (FAQ K21), so ending it resumes the Mech
+      // and never marks the Drone as having acted. It used to sit commanded
+      // with no activation to act in, and the Match Centre and pad Guided
+      // refused its every Move and Action (audit Phase 5, F1).
+      if (sc && PHASES[state.round.phase] === 'Action') {
+        if (sc.opp) sc.oppStack.push({ ...sc.opp });
+        const fresh = newOpportunity(to.uid, undefined);
+        fresh.extra = true;
+        fresh.commanded = true;
+        sc.opp = fresh;
+      }
       return;
     }
     case 'designate': {
@@ -4867,6 +5167,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
             // Remembered so "when receiving Command from THIS Mech" can be
             // answered later — the token itself carries no origin.
             t.commandedBy = issuer.uid;
+            swarmReturn(data, issuer, t);
           }
           syncCommandPool(state);
         }
@@ -4874,7 +5175,11 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         // counts the Command against its Parts, once each per round. Drones
         // keep the `commanded` list, which is what excludes them from a second.
         if (t.kind === 'mech') sc.oncePerRound.push(rwsCommandKey(state.round.n, t.uid));
-        else if (!sc.commanded.includes(cmd.uid)) sc.commanded.push(cmd.uid);
+        else if (free) {
+          // Additional Instructions' Command Action: nothing else, and the
+          // Drone keeps its own Command (ruling I7). The glue keeps the mark.
+          sc.opp = { ...newOpportunity(cmd.uid, undefined), commandOnly: true };
+        } else if (!sc.commanded.includes(cmd.uid)) sc.commanded.push(cmd.uid);
       } else if (!sc.acted.includes(cmd.uid)) {
         sc.acted.push(cmd.uid);
       }
@@ -4977,6 +5282,20 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: cmd.facing });
         minted.push(tok.uid);
       }
+      // One group, so its Units can follow one target (p.94; A5).
+      if (minted.length > 1) for (const x of state.tokens) if (minted.includes(x.uid)) x.group = minted[0];
+      // A Mine fires on ENTRY: a Ground unit already standing in the Grid it
+      // is Deployed into is spared until it moves (ruling I15). As built, the
+      // GLP-15's Range 1 Deploy was a repeatable Explosion on any adjacent
+      // Ground unit (audit Phase 5, C3).
+      for (const x of state.tokens) {
+        if (!minted.includes(x.uid) || !x.mine) continue;
+        const g = { c: Math.floor(x.col / 3), r: Math.floor(x.row / 3) };
+        const standing = state.tokens.filter((o) => !minted.includes(o.uid) && !o.mine && !o.aerial && o.deployed !== false
+          && Math.floor(o.col / 3) <= g.c && g.c < Math.floor(o.col / 3) + Math.max(1, Math.ceil(o.size / 3))
+          && Math.floor(o.row / 3) <= g.r && g.r < Math.floor(o.row / 3) + Math.max(1, Math.ceil(o.size / 3)));
+        if (standing.length) x.mine = { ...x.mine, spared: standing.map((o) => ({ uid: o.uid, col: o.col, row: o.row })) };
+      }
       // One launch, however many Units a Missile Group puts down, counted
       // against the Volley (C12).
       const lo = oppOf(state, cmd.uid);
@@ -5071,6 +5390,27 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       target.facing = cmd.targetFacing;
       return;
     }
+    case 'flyToTarget': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return;
+      const to = flightLanding(target);
+      t.col = to.col;
+      t.row = to.row;
+      // The group's first pick names the target the rest follow (ruling I12).
+      if (t.group !== undefined) {
+        for (const x of state.tokens) if (x.group === t.group && x.uid !== t.uid) x.groupTarget = target.uid;
+      }
+      return;
+    }
+    case 'recoverBit': {
+      // The Bit leaves the board and comes back, if it is launched again, as a
+      // new unit (FAQ N4, N8).
+      state.tokens = state.tokens.filter((x) => x.uid !== cmd.targetUid);
+      const max = ammoMax(data, t, cmd.actionId);
+      const held = t.ammo?.[cmd.actionId] ?? 0;
+      t.ammo = { ...(t.ammo ?? {}), [cmd.actionId]: max !== undefined ? Math.min(max, held + 1) : held + 1 };
+      return;
+    }
     case 'layMine': {
       const card = data.byId.get(cmd.cardId);
       if (!card) return;
@@ -5085,11 +5425,25 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       switchFormTo(data, t, cmd.cardId);
       return;
     }
+    case 'overwatch': {
+      // The Mech's Firing Action is owed at the designated enemy, and the KK9
+      // is removed (LHDR-KK9_B; audit Phase 5, F8).
+      const sc = state.script;
+      if (sc) sc.reactions = [...(sc.reactions ?? []), { uid: cmd.mechUid, actionId: cmd.actionId, count: 0, range: 0, kind: 'overwatch', fromUid: cmd.targetUid }];
+      state.tokens = state.tokens.filter((x) => x.uid !== t.uid);
+      return;
+    }
     case 'unfold': {
       const card = data.byId.get(t.cardId);
       const into = card ? unfoldsInto(card) : undefined;
       const target = into ? data.byId.get(into) : undefined;
-      if (target) unfoldToken(state, data, t, target);
+      if (target) {
+        unfoldToken(state, data, t, target);
+        // M18.4, "if its Grid is occupied it detonates at once", judged here
+        // at the replacement and marked, Aerial units and Mines aside
+        // (rulings I18, I19; audit Phase 5, D2).
+        if (state.noBoard ? cmd.occupied === true : unfoldOccupants(state.tokens, t).length > 0) t.unfoldBlast = true;
+      }
       return;
     }
     case 'transformPart': {
@@ -5302,6 +5656,17 @@ export function seedCommandTokens(data: GameData, state: GameState): void {
 // one (4.15.4) or hands one out through Command Coordination (4.15.3). They are
 // swept later, by the End Phase (3.7.2). Clearing everything here reads as
 // tidier and silently deletes the GoF economy.
+// Swarm Tactics (172_B, GoF 1.021): a Command the Warrior issues to a GoF
+// Medium Drone hands the token straight back, to be issued again to another
+// Drone (ruling I1). The Drone keeps the face-down token it was given, which is
+// what already holds it to one Command this Phase (FAQ N8), so only the
+// Warrior's side of the move is undone. The card says "may"; taking it back is
+// never worse, so it is taken (audit Phase 5, F2).
+function swarmReturn(data: GameData, issuer: Token, drone: Token): void {
+  if (!swarmTacticsOn(data, issuer) || !isGofMediumDrone(data, drone)) return;
+  issuer.statuses = [...(issuer.statuses ?? []), 'command'];
+}
+
 export function clearDroneCommands(state: GameState): void {
   for (const t of state.tokens) {
     if (t.kind === 'mech') continue;

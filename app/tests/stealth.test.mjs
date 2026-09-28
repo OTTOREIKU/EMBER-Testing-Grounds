@@ -46,6 +46,9 @@ const standingSpot = (c, r, size, aerial, terrain, tokens, ignoreUid) =>
     ? null : { col: c * 3, row: r * 3 };
 const tokenCards = (data, t) => Object.entries(t.mech ?? {})
   .map(([slot, id]) => ({ slot, card: data.byId.get(id) })).filter((x) => x.card);
+// The same list for every unit but a loaded Carrier, and no fixture here is
+// one; the Carrier half is driven in mechanics5.test.mjs (G3).
+const ownCards = tokenCards;
 // Immobilized: "Revealed in place, but it cannot move" (FAQ I20). The real
 // reader adds the Unstoppable exception, which no Manifestation has; the rule
 // itself is driven in commands.test.mjs.

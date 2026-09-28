@@ -822,7 +822,7 @@ export function losBetween(
   terrain: TerrainPiece[],
   tokens: Token[],
 ): 'clear' | 'obstructed' | 'blocked' {
-  return walkLines(a, b, terrain, tokens, null) as 'clear' | 'obstructed' | 'blocked';
+  return walkLines(a, b, terrain, tokens, null, null) as 'clear' | 'obstructed' | 'blocked';
 }
 
 // A FIRING ACTION'S line of sight: terrain and smoke judged on the SAME lines.
@@ -839,10 +839,12 @@ export function firingSight(
   tokens: Token[],
   smoke: SmokeScreen[],
 ): 'clear' | 'obstructed' | 'blocked' | 'smoked' {
-  if (!smoke.length) return walkLines(a, b, terrain, tokens, null);
+  // The target is `b`: a Turtle Shell stands as terrain for a Firing Action
+  // at one of its allies (E1).
+  if (!smoke.length) return walkLines(a, b, terrain, tokens, null, b);
   const grids = new Set(smoke.map(smokeKey));
   if (standsInSmoke(a, grids) || standsInSmoke(b, grids)) return 'smoked';
-  return walkLines(a, b, terrain, tokens, grids);
+  return walkLines(a, b, terrain, tokens, grids, b);
 }
 
 // The one line-walk behind both readers, so a smoke line and a terrain line are
@@ -854,10 +856,15 @@ function walkLines(
   terrain: TerrainPiece[],
   tokens: Token[],
   smokeGrids: Set<string> | null,
+  // The target of the Attack this line is for, when there is one: what a
+  // Turtle Shell's Barricade asks (E1). Null for any other sight question.
+  target: Token | null,
 ): 'clear' | 'obstructed' | 'blocked' | 'smoked' {
   // 4.2.4: line of sight to or from an Aerial Unit is never Obstructed, and
   // terrain does not block it. Smoke still does (4.16).
-  const aerial = !!(a.aerial || b.aerial);
+  // A Mine is Aerial for placement only: sight to one is a ground unit's,
+  // which is how it gets Protection (ruling I14; audit Phase 5, C4).
+  const aerial = !!((a.aerial && !a.mine) || (b.aerial && !b.mine));
   if (aerial && !smokeGrids) return 'clear';
   const losCells = new Set<string>();
   const obstructCells = new Set<string>();
@@ -870,7 +877,14 @@ function walkLines(
     }
     for (const t of tokens) {
       if (t.uid === a.uid || t.uid === b.uid || t.aerial) continue;
-      for (let dc = 0; dc < t.size; dc++) for (let dr = 0; dr < t.size; dr++) obstructCells.add(`${t.col + dc},${t.row + dr}`);
+      // A wall stands as 3-inch terrain, which blocks the lines it crosses (E1).
+      const wall = standsAsTerrain(t, target);
+      for (let dc = 0; dc < t.size; dc++) {
+        for (let dr = 0; dr < t.size; dr++) {
+          obstructCells.add(`${t.col + dc},${t.row + dr}`);
+          if (wall) losCells.add(`${t.col + dc},${t.row + dr}`);
+        }
+      }
     }
   }
 
@@ -912,6 +926,32 @@ function walkLines(
   }
   if (!anySight) return smokeTook ? 'smoked' : 'blocked';
   return anyObstruct ? 'obstructed' : 'clear';
+}
+
+// The AS3 Inflatable Walls print "This unit is considered as 3-inch terrain",
+// and the DBP Turtle Shell's Barricade (p.92) makes it 3-inch high Terrain
+// "when another Ally Unit is the target of an Attack". They stood on the board
+// as units: they obstructed, blocked no sight and gave no Terrain Protection
+// (PHASE6-PLAN D-9; audit Phase 5, E1). The ids are the cards' own, as
+// data.ts BARRICADE_CARDS keeps them, because rules.ts reads no card data.
+//
+// FOOTPRINT: the token's own cells. The data's boardProfile prints a 1x3 line
+// for all three, which needs an orientation the board does not yet record.
+const WALL_CARDS = new Set(['PDAM-003', 'PDAM-004']);
+const BARRICADE_TERRAIN_CARDS = new Set(['158']);
+export function standsAsTerrain(t: Token, target: Token | null): boolean {
+  if (t.aerial) return false;
+  if (WALL_CARDS.has(t.cardId)) return true;
+  return !!target && BARRICADE_TERRAIN_CARDS.has(t.cardId) && target.side === t.side && target.uid !== t.uid;
+}
+
+// The same units as terrain pieces, for the readers that take terrain.
+export function unitTerrain(tokens: Token[], target: Token | null): TerrainPiece[] {
+  return tokens.filter((t) => standsAsTerrain(t, target)).map((t) => {
+    const subCells: { col: number; row: number }[] = [];
+    for (let dc = 0; dc < t.size; dc++) for (let dr = 0; dr < t.size; dr++) subCells.push({ col: t.col + dc, row: t.row + dr });
+    return { id: `unit:${t.uid}`, type: 'high_wall' as const, subCells, height: 3, blocksLos: true, providesProtection: true, isFragile: false };
+  });
 }
 
 // Does the line between two Bases PASS THROUGH this third unit's footprint?
@@ -1058,7 +1098,7 @@ export function losNote(
   // a warning a table can overrule by strictness: the Match Centre disables
   // the row on it, and freeplay asks before letting a house rule through. The
   // pad already filtered its list; the two board pages let the swing land.
-  if (action.type === 'Melee' && defender.aerial) bits.push('✕ Melee cannot target an Aerial unit (4.4.1)');
+  if (action.type === 'Melee' && defender.aerial && !defender.mine) bits.push('✕ Melee cannot target an Aerial unit (4.4.1)');
   if (action.type === 'Firing' && !action.anyDistance) {
     // Terrain and smoke on the same lines: any one line clear of both is sight
     // (4.2.4, 4.16; audit Phase 4, G1/G3).
@@ -1129,7 +1169,10 @@ export function protectionFor(
   // Container sizes wherever terrain is built (mapeditor.ts, scenarios.ts). It
   // simply was not asked, so the little green boxes were handing the defender
   // +2 White while the note beside them read "obstructed by terrain >=2\"".
-  const cover = terrain.filter((p) => p.providesProtection && !touching(p));
+  // The walls stand as terrain here too, and pay Terrain Protection like any
+  // 3-inch piece; a Turtle Shell only for its own allies (E1).
+  const cover = [...terrain, ...unitTerrain(tokens.filter((t) => t.uid !== attacker.uid && t.uid !== defender.uid), defender)]
+    .filter((p) => p.providesProtection && !touching(p));
   // 4.5.3: standing in the line is not the same as protecting. Only LARGE
   // Units provide Unit Protection — "medium Units do not" — while Ally and
   // Enemy alike count among the Large ones. Every Mech in this app is size 3
@@ -1151,7 +1194,8 @@ export function protectionFor(
   // the only thing in the line, and as a footnote when Terrain Protection alone
   // is the number. A player counting bodies on the table reads the board as +4
   // and the app as broken otherwise.
-  const idle = unitsOnly === 'clear' && losBetween(attacker, defender, [], tokens) !== 'clear';
+  // A wall is terrain, not a unit in the way (E1).
+  const idle = unitsOnly === 'clear' && losBetween(attacker, defender, [], tokens.filter((t) => !standsAsTerrain(t, defender))) !== 'clear';
   const IDLE = 'the unit in the way is not Large, so there is no Unit Protection (4.5.3)';
   if (losBetween(attacker, defender, cover, protectors) === 'clear') {
     return { white: 0, note: idle ? `Obstructed, but ${IDLE}` : '' };

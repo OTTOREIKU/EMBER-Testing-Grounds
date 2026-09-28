@@ -43,7 +43,7 @@ import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack,
 import { registerOffline } from '../src/offline';
 import { askTablePool, askTableRoll, askTargetPart } from './tabledice';
 import type { RollGroup } from '../src/combat';
-import { beginElectronic, beginElectronicAll, beginFreeScan, beginTrace, ewActive, ewWatching, initEw, mountEw, syncContest } from './ew';
+import { beginBlastScan, beginElectronic, beginElectronicAll, beginFreeScan, beginTrace, ewActive, ewWatching, initEw, mountEw, syncContest } from './ew';
 import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot, type Snapshot } from '../src/history';
 import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
 import { setLocalSeat } from '../src/loop';
@@ -67,10 +67,10 @@ import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updat
 import { normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { previewScore } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from '../src/tactics';
-import { conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop } from '../src/units';
+import { interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop } from '../src/units';
 import { gameResult } from '../src/tasks';
 import { isMeleeFiring } from '../src/melee';
-import { isSilentAction, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
+import { isSilentAction, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { canManeuver, canPerform, costOf, lengthOf, LENGTH_NAME, markAction, markExtra, markManeuver, spendAction, spendManeuver, tickBarState, timingOf } from '../src/ticks';
 import { extrasFor, startOpts } from '../src/units';
 import { tickBar, type CapsuleShort } from '../src/glyphs';
@@ -1182,6 +1182,10 @@ const guide: GuideApi = {
     const t = unitOf(uid);
     if (t) void launchFrom(t, actionId, cardId);
   },
+  recover: (uid, actionId) => {
+    const t = unitOf(uid);
+    if (t) void recoverFrom(t, actionId);
+  },
 };
 
 // ---------- the attack window ----------
@@ -1316,7 +1320,9 @@ async function askTableAndIntercept(by: Token, actionId: string, target: Token):
 // The Action as this unit carries it, or the Common one.
 function actionOfUnit(t: Token, actionId: string): CardAction | undefined {
   return tokenCards(data!, t).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId)
-    ?? data!.commonActions.find((x) => x.id === actionId) as CardAction | undefined;
+    ?? data!.commonActions.find((x) => x.id === actionId) as CardAction | undefined
+    // A lent Load's Action, the table judging the Contact (audit Phase 5, G4).
+    ?? loanedParts(data!, table.tokens, t, { anywhere: true }).flatMap((l) => l.card.actions ?? []).find((x) => x.id === actionId);
 }
 
 // Scream and the Scan Battlefield: "all Enemy ... within range". The table
@@ -1460,6 +1466,10 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
   const lockRow = firing && a && !isMeleeFiring(a)
     ? [{ id: 'locked', label: `${attacker.label} is Melee Locked` }]
     : [];
+  // The target stands in the attacker's Forward Arc unless the Action is
+  // Omni-direction (4.2.5). The pad never asked (audit Phase 5, F4).
+  const omni = !!a && (a.keywords ?? []).some((k) => /全向|omni/i.test(JSON.stringify(k)));
+  const arcRow = (firing || melee) && !omni ? [{ id: 'arc', label: `Outside ${attacker.label}'s Forward Arc` }] : [];
   // The table's "In smoke" record, said where it decides the shot (audit
   // Phase 4, G12): a Firing Action has no line of sight into or out of a Smoke
   // Screen's Grid, and an Aerial unit is no exception (FAQ F1, F2).
@@ -1469,18 +1479,23 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
     body: `${range} · judged on the table.${firing ? ' Any one line between the bases that crosses neither 3" terrain nor a Smoke Screen is line of sight.' : ''}${
       smoked.length ? ` ${smoked.map((u) => u.label).join(' and ')} ${smoked.length === 1 ? 'is' : 'are'} marked In smoke, so there is no line of sight for a Firing Action (4.16).` : ''}`,
     choices: open
-      ? [{ id: '0', label: melee ? (extended ? 'In range, line of sight clear' : 'In reach') : 'In range, a line clear of smoke', primary: true }, ...lockRow, { id: 'no', label: 'Not this target', cancel: true }]
+      ? [{ id: '0', label: melee ? (extended ? 'In range, line of sight clear' : 'In reach') : 'In range, a line clear of smoke', primary: true }, ...arcRow, ...lockRow, { id: 'no', label: 'Not this target', cancel: true }]
       : [
         { id: '0', label: 'In range, line of sight clear', primary: true },
         { id: '2t', label: 'In range, behind terrain (+2 White)' },
         { id: '2u', label: 'In range, behind a unit (+2 White)' },
         { id: '4', label: 'In range, behind terrain and a unit (+4 White)' },
+        ...arcRow,
         ...lockRow,
         { id: 'no', label: 'Not this target', cancel: true },
       ],
     stacked: true,
   });
   if (seen === null || seen === 'no') return;
+  if (seen === 'arc') {
+    toast(`${defender.label} is outside ${attacker.label}'s Forward Arc, and this Action is not Omni-direction (4.2.5).`);
+    return;
+  }
   if (seen === 'locked') {
     toast(`${attacker.label} is Melee Locked, and a Firing Action without [Melee Firing] cannot be performed while it is (4.3.5).`);
     return;
@@ -1614,10 +1629,12 @@ function targetPanel(): string {
   const mode = targetFor?.mode;
   const enemies = table.tokens.filter((u) => u.side !== t.side && u.deployed !== false
     && (u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
-    && !(mode === 'attack' && a?.type === 'Melee' && u.aerial)
-    // An Interception answers a projectile or a flyer (4.9); an Electronic
-    // Value of "-" cannot Respond (4.11.2).
-    && !(mode === 'intercept' && !u.aerial)
+    && !(mode === 'attack' && a?.type === 'Melee' && u.aerial && !u.mine)
+    // An Interception answers a projectile or a flyer (4.9): a Projectile
+    // counts as Aerial while it is Launched, whatever it is (4.7.2), and with
+    // no board the table says which one was (audit Phase 5, B1). An
+    // Electronic Value of "-" cannot Respond (4.11.2).
+    && !(mode === 'intercept' && !u.aerial && u.kind !== 'projectile' && !interceptOwedAt(table, t.uid, targetFor?.actionId ?? '', u.uid))
     && !(mode === 'electronic' && electronicDash(data!, u))
     // The unit types the card prints ("Mech/Drone", "Drone/Projectile"), and
     // for a Scan only a unit it could change: it offered every enemy (audit
@@ -1633,6 +1650,7 @@ function targetPanel(): string {
   if (lit.length) enemies.sort((x, y) => Number(lit.includes(y)) - Number(lit.includes(x)));
   return `<div class="pad-panel-in">${panelHead(mode === 'intercept' ? 'Intercept' : a?.name.en ?? 'Attack')}
     <p class="pad-lead">${esc(t.label)} · pick the target.</p>
+    ${a?.speed === 'auto' ? `<p class="pad-note">An Automatic Action takes the nearest enemy in Range${a.type === 'Firing' || a.type === 'Melee' ? ', in sight and in its Forward Arc' : ''}${a.type === 'Firing' ? ', a Highlighted one first' : ''}${isElectronicAttack(a) ? ', measured from a Repeater too' : ''}. With none, it may take the nearest Breakable Terrain (3.5.2, FAQ O9).</p>` : ''}
     ${lit.length ? `<p class="pad-note">${esc(lit.map((u) => u.label).join(', '))} ${lit.length === 1 ? 'has' : 'have'} Highlight: if this Firing Action can target ${lit.length === 1 ? 'it' : 'one of them'} on the table, it must (6.2.1).</p>` : ''}
     ${enemies.length
       ? enemies.map((u) => `<button class="pad-seat" data-act="pick-target" data-uid="${u.uid}">
@@ -1650,6 +1668,26 @@ function blastsOnItsOwn(a: CardAction): boolean {
 // A launch: the Action is paid in a Guided game, then one `launch` per
 // projectile in the volley (4.7.1), each spending its Ammo Token (4.13). The
 // projectiles land on the placeholder cell; the table places them.
+// 292_A's other half: an empty Bit Port Recovers a Bit, and its Token comes
+// back (ruling I23). With no board the table says which Bit, so any of this
+// squad's may be named; the Action is paid first, the way a launch is (audit
+// Phase 5, H1).
+async function recoverFrom(t: Token, actionId: string): Promise<void> {
+  if (!data) return;
+  const action = tokenCards(data, t).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId);
+  if (!action) return;
+  const bits = bitsToRecover(data, table.tokens, t, action, true);
+  if (!bits.length) return;
+  const pick = bits.length === 1 ? String(bits[0].uid) : await choiceDialog({
+    title: 'Which Bit comes back?',
+    choices: bits.map((b) => ({ id: String(b.uid), label: b.label })),
+  });
+  if (pick === null) return;
+  if (guidedOn(table) && !send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId })) return;
+  const paid = guidedOn(table) || spendFree(t, actionId);
+  send({ kind: 'recoverBit', seat: t.side, uid: t.uid, actionId, targetUid: Number(pick), ...(paid ? { chain: 'join' as const } : {}) });
+}
+
 async function launchFrom(t: Token, actionId: string, cardId: string): Promise<void> {
   if (!data) return;
   const action = tokenCards(data, t).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId);
@@ -1686,12 +1724,17 @@ async function launchFrom(t: Token, actionId: string, cardId: string): Promise<v
   // Counted off the table: a Missile Group lands as several Units (6.2).
   const units = table.tokens.filter((x) => !before.has(x.uid)).length;
   if (n) toast(`${t.label}: ${card ? cardName(card) : 'projectile'}${units > 1 ? ` ×${units}` : ''} launched.`);
+  // 4.9: a Launch owes Interception from every enemy in Range of the launch
+  // or its Landing Point. The table judges the Range, so the pad names who
+  // could owe one, and asks before an Immediate Detonation (audit Phase 5, B7).
+  const guards = n && projectileDelivery(action) === 'launch' ? interceptorsAgainst(data, table.tokens, t.side) : [];
+  if (guards.length) toast(`Interception may be owed (4.9): ${guards.map((g) => g.label).join(', ')}, if in Range of ${t.label} or the Landing Point.`);
   // 4.7.4: an Immediate Projectile detonates as it lands, so its Detonation
   // opens here, one landed Projectile after another.
   const now = card ? immediateDetonation(card) : null;
   if (now) {
     const landed = table.tokens.filter((x) => !before.has(x.uid) && x.cardId === cardId).map((x) => x.uid);
-    detonateQueue = landed.map((uid) => ({ uid, actionId: now.id, joined: n > 0 }));
+    detonateQueue = landed.map((uid) => ({ uid, actionId: now.id, joined: n > 0, ask: guards.length > 0 }));
     nextDetonation();
   }
 }
@@ -1699,14 +1742,30 @@ async function launchFrom(t: Token, actionId: string, cardId: string): Promise<v
 // Immediate Projectiles waiting their turn to detonate (a volley of grenades).
 // `joined`: the detonation is part of the tap that launched it, so its
 // first command chains to the launch for Undo.
-let detonateQueue: { uid: number; actionId: string; joined?: boolean }[] = [];
+// `ask`: an enemy that could Intercept it was in play, so the table says
+// whether it came through first (4.9; audit Phase 5, B7).
+let detonateQueue: { uid: number; actionId: string; joined?: boolean; ask?: boolean }[] = [];
 function nextDetonation(): void {
   if (detonating) return;
   const next = detonateQueue.shift();
   if (!next) return;
   const proj = unitOf(next.uid);
-  if (proj && !isDead(proj)) void detonate(proj, next.actionId, next.joined);
-  else nextDetonation();
+  if (!proj || isDead(proj)) { nextDetonation(); return; }
+  if (!next.ask) { void detonate(proj, next.actionId, next.joined); return; }
+  void choiceDialog({
+    title: `${proj.label}: Interception first`,
+    body: 'It detonates as it lands, once any Interception it triggered is resolved on the table (4.7.4, 4.9).',
+    choices: [{ id: 'yes', label: 'It came through', primary: true }, { id: 'no', label: 'It was shot down' }],
+    stacked: true,
+  }).then((pick) => {
+    if (pick === 'no') {
+      send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid, ...(next.joined ? { chain: 'join' as const } : {}) });
+      toast(`${proj.label} was shot down before its Detonation (4.9).`);
+      nextDetonation();
+      return;
+    }
+    void detonate(proj, next.actionId, next.joined);
+  });
 }
 
 // Under More: every destroyed unit, folded, the ones already off the strip
@@ -2031,7 +2090,9 @@ function sheetHtml(s: Side = shownSide()): string {
 function statStrip(t: Token): string {
   const d = data!;
   const cards = tokenCards(d, t).filter((c) => c.slot !== 'pilot');
-  const live = cards.filter((c) => (t.partStates[c.slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed');
+  // Points count the Load a Carrier brought; Structure and Dodge are the
+  // Drone's own, and a Carrier gains none of its Load's (O4; p.94).
+  const live = ownCards(d, t).filter((c) => c.slot !== 'pilot' && (t.partStates[c.slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed');
   const chip = (field: string, value: number | string, label: string) => {
     const ic = statIconUrl(field);
     const mark = ic
@@ -2261,6 +2322,15 @@ function actionList(t: Token, mine: boolean): string {
         ? `<button class="pad-chip on pad-perform" data-act="link-support" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Restore Link</button>`
         : mine && g.available && t.kind === 'projectile' && (g.action.type !== 'Passive' || blastsOnItsOwn(g.action))
         ? `<button class="pad-chip on pad-perform" data-act="detonate" data-id="${esc(g.action.id)}">${g.action.type === 'Passive' ? 'Trigger' : 'Detonate'}</button>`
+        // Freeform's Transform and the Bit's Stance Change (audit Phase 5,
+        // H5): Guided routes them through its own Action row.
+        : mine && g.available && transformOffer(d, t, g.action)
+        ? `<button class="pad-chip on pad-perform" data-act="transform" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Transform</button>`
+        : mine && g.available && formSwitch(g.action)
+        ? `<button class="pad-chip on pad-perform" data-act="form-switch" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Change Stance</button>`
+        // Auto Mine Laying, a Passive the table records (audit Phase 5, C5).
+        : mine && g.available && projectileDelivery(g.action) === 'lay' && Array.isArray(g.card.projectile) && g.card.projectile.length
+        ? `<button class="pad-chip on pad-perform" data-act="lay-mine" data-uid="${t.uid}" data-id="${esc(g.action.id)}" data-projectile="${esc(g.card.projectile[0])}">Lay a Mine</button>`
         : mine && g.available && isAttackAction(g.action)
         ? `<button class="pad-chip on pad-perform" data-act="attack" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Attack</button>`
         : mine && g.available && isElectronicAttack(g.action)
@@ -2271,6 +2341,12 @@ function actionList(t: Token, mine: boolean): string {
             ? `<button class="pad-chip on pad-perform" data-act="tag" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Use</button>`
           : mine && g.available && tokenCleanupOf(g.action)
             ? `<button class="pad-chip on pad-perform" data-act="token-cleanup" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Remove a Token</button>`
+          // An empty Bit Port Recovers instead (292_A; ruling I23), greyed
+          // while no Bit of this squad is on the table.
+          : mine && g.available && bitPortOf(g.action) && g.ammoLeft === 0
+            ? (bitsToRecover(d, table.tokens, t, g.action, true).length
+              ? `<button class="pad-chip on pad-perform" data-act="recover-bit" data-id="${esc(g.action.id)}">Recover</button>`
+              : inert(`<button class="pad-chip on pad-perform">Recover</button>`, 'No Bit on the table'))
           : mine && g.available && g.projectiles.length
             ? g.projectiles.map((p) => `<button class="pad-chip on pad-perform" data-act="launch" data-id="${esc(g.action.id)}" data-projectile="${esc(p.id)}">Launch${g.projectiles.length > 1 ? ` ${esc(cardName(p))}` : ''}</button>`).join('')
             : fo && g.available && costOf(g.action)
@@ -2285,6 +2361,23 @@ function actionList(t: Token, mine: boolean): string {
       ${actionBlock(g.card, g.action, short)}
       <div class="pad-act-meta">${esc(meta)}${!g.available && g.reason ? ` · <em>${esc(g.reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${nofit ? inert(perform, nofit) : perform}</span>` : ''}</div>
     </div>`);
+  }
+  // A Carrier's Load lends its Actions only while it is in Contact (FAQ O3),
+  // which a table with no board judges: each is listed, marked, and asked
+  // when used. The pad listed none (audit Phase 5, G4).
+  if (table.noBoard && t.kind === 'mech') {
+    for (const loan of loanedParts(d, table.tokens, t, { anywhere: true })) {
+      for (const a of loan.card.actions ?? []) {
+        if (a.type === 'Passive' || a.speed === 'passive') continue;
+        const key = `${a.id}@${loan.from.uid}`;
+        const open = sheetView[drawSide].action === key;
+        const go = mine ? `<button class="pad-chip on pad-perform" data-act="lent-use" data-uid="${t.uid}" data-id="${esc(a.id)}" data-key="${esc(key)}">Use</button>` : '';
+        rows.push(`<div class="pad-act${open ? ' open' : ''}" data-act="open-action" data-id="${esc(key)}" role="button" aria-expanded="${open}">
+      ${actionBlock(loan.card, a)}
+      <div class="pad-act-meta">${esc(`Lent by ${loan.from.label} · if in Contact`)}${go ? `<span class="pad-act-go">${go}</span>` : ''}</div>
+    </div>`);
+      }
+    }
   }
   rows.push(...commonRows(t, mine));
   return `<div class="pad-acts">${rows.join('')}</div>`;
@@ -2577,13 +2670,18 @@ function interceptRows(t: Token): string {
   return Object.entries(t.intercept ?? {}).map(([id, n]) => {
     const action = cards.flatMap((c) => c.card.actions ?? []).find((a) => a.id === id);
     const cap = action ? interceptCapacity(action) : undefined;
+    // Greyed where the engine refuses: never restored at a table (4.9, M27),
+    // and never spent under Fire Control Interference or from a destroyed
+    // Part (audit Phase 5, B8 and B9).
+    const spend = can({ kind: 'spendIntercept', seat: t.side, uid: t.uid, actionId: id });
+    const restore = can({ kind: 'restoreIntercept', seat: t.side, uid: t.uid, actionId: id });
     return `<div class="pad-row">
       <span class="pad-part-name">${esc(names()?.action?.(t.uid, id) ?? id)}</span>
       <div class="pad-count">
-        <button class="pad-step" data-act="intercept-down" data-id="${esc(id)}"${n > 0 ? '' : ' disabled'}>−</button>
+        <button class="pad-step" data-act="intercept-down" data-id="${esc(id)}"${n > 0 && spend ? '' : ' disabled'}>−</button>
         <span class="pad-num">${n}${cap !== undefined ? `<span class="pad-of"> / ${cap}</span>` : ''}</span>
-        <button class="pad-step" data-act="intercept-up" data-id="${esc(id)}"${cap !== undefined && n >= cap ? ' disabled' : ''}>+</button>
-        <button class="pad-chip on pad-perform" data-act="intercept" data-id="${esc(id)}"${n > 0 && t.stance !== 'shutdown' ? '' : ' disabled'}${t.stance === 'shutdown' ? ' title="A Shutdown Mech cannot Intercept (4.1, 4.9)"' : ''}>Intercept</button>
+        <button class="pad-step" data-act="intercept-up" data-id="${esc(id)}"${(cap !== undefined && n >= cap) || !restore ? ' disabled' : ''}>+</button>
+        <button class="pad-chip on pad-perform" data-act="intercept" data-id="${esc(id)}"${n > 0 && spend && t.stance !== 'shutdown' ? '' : ' disabled'}${t.stance === 'shutdown' ? ' title="A Shutdown Mech cannot Intercept (4.1, 4.9)"' : ''}>Intercept</button>
       </div>
     </div>`;
   }).join('');
@@ -3118,7 +3216,9 @@ function openBuildSlot(slot: BuildSlot): void {
 // the end (4.7.5).
 // `hit` is every unit this blast has already reached: one Detonation touches
 // a unit once, so it drops off the list instead of being pickable again.
-let detonating: { uid: number; actionId: string; single?: boolean; fired?: boolean; hit?: number[] } | null = null;
+// `scanned`: camouflaged targets its Scan was tried on; `scanning`: the list
+// waits for that Scan, and any Manifestation it won, to finish (A3).
+let detonating: { uid: number; actionId: string; single?: boolean; fired?: boolean; hit?: number[]; scanned?: number[]; scanning?: boolean } | null = null;
 
 function detonationText(a: CardAction): string {
   const en = a.description?.en?.trim();
@@ -3167,19 +3267,47 @@ async function continueDetonation(): Promise<void> {
   // Range 0 is the Projectile's own Grid, and reads better said that way.
   const reach = a.range ? `within Range ${a.range}` : 'in its Grid';
   const units = table.tokens.filter((x) => x.uid !== proj.uid && x.deployed !== false && !isDead(x) && !(d.hit ?? []).includes(x.uid));
+  // p.71 (A3): a camouflaged target is Scanned first, the Projectile the
+  // Initiator, or cannot be picked at all; a Scanned one waits until it has
+  // appeared, and a failed Scan leaves only Done.
+  const reactions = table.script?.reactions ?? [];
+  const camoOf = (x: Token) => (damaging ? explosionCamo(data!, proj, a, x) : null);
+  const scanTag = (x: Token): { tag: string; off: boolean } => {
+    const camo = camoOf(x);
+    if (!camo) return { tag: '', off: false };
+    if ('why' in camo) return { tag: ' · hidden', off: true };
+    const st = (d.scanned ?? []).includes(x.uid) ? blastScanState(reactions, proj, x) : null;
+    return st === 'appearing' ? { tag: ' · appearing', off: true } : st === 'failed' ? { tag: ' · Scan failed', off: true } : { tag: ' · Scan first', off: false };
+  };
+  // The card's own target rule (4.7.5; A5). The table judges the Range, so a
+  // Unit Type taken first is named rather than applied.
+  const barOf = (x: Token) => (damaging ? detonationBar(table.tokens, proj, a, units, x, { tableJudges: true }) : '');
+  const first = damaging && scope !== 'all' ? detonationPriority(a) : null;
   const pick = await choiceDialog({
     title: `${name} · ${proj.label}`,
     body: damaging
-      ? scope === 'all' ? `Every unit ${reach}, allies too, takes a separate attack (4.7.6). Name each one.` : `One target ${reach}.`
+      ? scope === 'all' ? `Every unit ${reach}, allies too, takes a separate attack (4.7.6). Name each one.` : `One target ${reach}.${first ? ` ${first} first, if one is in Range (4.7.5).` : ''}`
       : effectStatus ? `Each unit ${reach} the card affects gains the Token.` : `${detonationText(a) || 'See the card.'} Apply it on the table.`,
     choices: [
-      ...units.map((x) => ({ id: String(x.uid), label: `${x.side === proj.side ? 'Ally' : 'Enemy'} · ${x.label}` })),
+      ...units.map((x) => {
+        const st = scanTag(x);
+        const bar = barOf(x);
+        return { id: String(x.uid), label: `${x.side === proj.side ? 'Ally' : 'Enemy'} · ${x.label}${bar ? ` · ${bar}` : st.tag}`, disabled: st.off || !!bar };
+      }),
+      // The PK3 with nothing to take stays (GoF 1.021; A6).
+      ...(damaging && keptWithoutTarget(a) ? [{ id: '__stay', label: 'No target in Range: it stays' }] : []),
       { id: '__done', label: 'Done, the Projectile is destroyed', primary: true },
       { id: '__keep', label: 'Cancel', cancel: true },
     ],
     stacked: true,
   });
   if (pick === null || pick === '__keep') { detonating = null; return; }
+  if (pick === '__stay') {
+    detonating = null;
+    toast(`${proj.label} has no target in Range and stays (GoF 1.021).`);
+    nextDetonation();
+    return;
+  }
   if (pick === '__done') {
     detonating = null;
     send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
@@ -3189,6 +3317,36 @@ async function continueDetonation(): Promise<void> {
   }
   const hit = unitOf(Number(pick));
   if (!hit) { void continueDetonation(); return; }
+  // The Scan first (A3). The list waits for it, and for the Manifestation a
+  // won Scan owes, then comes back through render(); a failed one leaves the
+  // unit greyed and Done, which destroys the Projectile.
+  if (damaging && camoOf(hit)) {
+    detonating = { ...d, scanned: [...(d.scanned ?? []), hit.uid], scanning: true };
+    if (!beginBlastScan(proj, hit)) {
+      detonating = { ...detonating, scanning: false };
+      void continueDetonation();
+    }
+    return;
+  }
+  // A Missile flies to its target first, and the flight is Intercepted at
+  // either end (4.9; A2). With no board the table resolves that and says
+  // whether it came through. A Missile Group's pick is recorded, so the rest
+  // of the group follow it (p.94; ruling I12).
+  if (damaging && fliesToTarget(a)) {
+    if (proj.group !== undefined) send({ kind: 'flyToTarget', seat: proj.side, uid: proj.uid, actionId: a.id, targetUid: hit.uid });
+    const through = await choiceDialog({
+      title: `${proj.label} flies to ${hit.label}`,
+      body: 'Its flight is Intercepted by the enemy units in Range of either end (4.9).',
+      choices: [{ id: 'yes', label: 'It came through', primary: true }, { id: 'no', label: 'It was shot down', cancel: true }],
+    });
+    if (through !== 'yes') {
+      detonating = null;
+      send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
+      toast(`${proj.label} was shot down before its Explosion (4.9).`);
+      nextDetonation();
+      return;
+    }
+  }
   if (damaging) {
     detonating = { ...d, single: scope !== 'all', fired: true, hit: [...(d.hit ?? []), hit.uid] };
     panel = 'combat';
@@ -4174,7 +4332,19 @@ const SKELETON = `<header class="pad-bar" id="pad-bar"></header>
     </div>
   </div>`;
 
+// A Detonation waiting on its Scan (A3), picked up again once the Counter-roll
+// has closed, on this phone or at the table, and any Manifestation it won has
+// been made.
+function resumeBlastScan(): void {
+  const d = detonating;
+  if (!d?.scanning || ewActive() || table.script?.counter) return;
+  if ((table.script?.reactions ?? []).some((r) => r.kind === 'manifest' && r.fromUid === d.uid)) return;
+  detonating = { ...d, scanning: false };
+  void continueDetonation();
+}
+
 function render(): void {
+  resumeBlastScan();
   // The update notice follows the screen: re-placed after a door screen is
   // redrawn, taken away when a table opens (src/updates.ts).
   queueMicrotask(syncUpdateNotice);
@@ -4627,6 +4797,61 @@ function act(el: HTMLElement, ev: Event): void {
     case 'tick-new': if (t && freeTicksOn(t)) storeTicks(t, null); return;
     // A row with a cost and no tool: its Ticks come off the bar, and the table
     // does the rest.
+    // H5: the Transform (287/288) and the Bit's Stance Change, Freeform.
+    case 'transform': {
+      const by = unitOf(Number(el.dataset.uid));
+      const a = by ? actionOfUnit(by, el.dataset.id!) : undefined;
+      const mode = by && a && data ? transformOffer(data, by, a) : null;
+      if (!by || !a || !mode) return;
+      const paid = spendFree(by, a.id);
+      send({ kind: 'transformPart', seat: by.side, uid: by.uid, slot: mode.slot, cardId: mode.into.id, ...(paid ? { chain: 'join' as const } : {}) });
+      return;
+    }
+    case 'form-switch': {
+      const by = unitOf(Number(el.dataset.uid));
+      const a = by ? actionOfUnit(by, el.dataset.id!) : undefined;
+      const forms = a ? (formSwitch(a) ?? []).filter((id) => id !== by!.cardId && data?.byId.get(id)) : [];
+      if (!by || !a || !forms.length) return;
+      void (async () => {
+        const pick = forms.length === 1 ? forms[0] : await choiceDialog({ title: a.name.en ?? a.id, choices: forms.map((id) => ({ id, label: cardName(data!.byId.get(id)!) })), stacked: true });
+        if (!pick) return;
+        const paid = spendFree(by, a.id);
+        send({ kind: 'switchForm', seat: by.side, uid: by.uid, actionId: a.id, cardId: pick, ...(paid ? { chain: 'join' as const } : {}) });
+        toast(`${by.label} switches Stance: make its one Movement on the table.`);
+      })();
+      return;
+    }
+    // C5: a Mine Laid on the route just walked (FAQ M7), 1 Move Range each.
+    case 'lay-mine': {
+      const by = unitOf(Number(el.dataset.uid));
+      if (by) send({ kind: 'layMine', seat: by.side, uid: by.uid, actionId: el.dataset.id!, cardId: el.dataset.projectile!, to: { col: 0, row: 0 } });
+      if (by) toast(`${by.label} Lays a Mine on its route: place it on the table, 1 Move Range spent (FAQ M7).`);
+      return;
+    }
+    // G4: a lent Action, asked first: only while the Carrier is in Contact.
+    case 'lent-use': {
+      const by = unitOf(Number(el.dataset.uid));
+      const key = el.dataset.key ?? '';
+      const actionId = el.dataset.id!;
+      const carrier = unitOf(Number(key.split('@')[1]));
+      if (!by || !carrier) return;
+      void (async () => {
+        const pick = await choiceDialog({
+          title: `${carrier.label} lends this Action`,
+          body: `Only while ${carrier.label} is in Contact with ${by.label} (FAQ O3).`,
+          choices: [{ id: 'yes', label: 'In Contact', primary: true }, { id: 'no', label: 'Not in Contact', cancel: true }],
+          stacked: true,
+        });
+        if (pick !== 'yes') return;
+        if (guidedOn(table)) {
+          if (send({ kind: 'performAction', seat: by.side, uid: by.uid, actionId, partKey: key })) toast(`${by.label}: resolve it on the table.`);
+        } else {
+          spendFree(by, actionId, key);
+          toast(`${by.label}: resolve it on the table.`);
+        }
+      })();
+      return;
+    }
     case 'use-action': {
       // The bar above shows the mark; nothing else needs saying.
       const by = unitOf(Number(el.dataset.uid));

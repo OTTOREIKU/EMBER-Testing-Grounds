@@ -5,10 +5,10 @@ import { BASE, cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { activatesCamo, linkTickTraitOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
+import { coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
 import { actionPipCount, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
-import { popDeadExtras } from './glue';
+import { openActivation, popDeadExtras } from './glue';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
 import { tacticFitsPhase, tacticSpec } from './tactics';
 import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, tiedChoices, type InitLookup, type Activation } from './loop';
@@ -74,7 +74,8 @@ export interface GuideCallbacks {
   // the driver knows whether an Ojs200's optional Flying Movement is on offer.
   // `turn` is a quarter-turn the plan opens with: Q or E pressed on the acting
   // unit opens its Maneuver already turned (audit Phase 4, E5).
-  onMoveUnit(uid: number, opts: { range?: number; label: string; maneuver?: boolean; turn?: 1 | 3 }, done: (moved: boolean) => void): void;
+  // `halt`: the Grids a Mine's stop kept back (audit Phase 5, C1).
+  onMoveUnit(uid: number, opts: { range?: number; label: string; maneuver?: boolean; turn?: 1 | 3 }, done: (moved: boolean, halt?: number) => void): void;
   // `partKey` names the Part a Common Action was initiated through, when the
   // flow chose one (COMMON_CHARGE@rightHand; FAQ H6/H7, audit Phase 2, E7).
   onPerformAction(uid: number, actionId: string, done: (performed: boolean, opts?: { twoHanded?: boolean; partKey?: string }) => void): void;
@@ -115,7 +116,9 @@ export class PlayGuide {
   private data: GameData;
   private cb: GuideCallbacks;
   private state: GameState | null = null;
-  private picked: number | null = null;
+  // The Drone that took its Data Link move first (the YP23, GoF 1.021), so
+  // the button is spent once used (audit Phase 5, F9).
+  private preMoved: number | null = null;
   private warn: string | null = null;
   private deploying: { uid: number; stance: Stance; camo: boolean } | null = null;
   private ui: GuideUi;
@@ -360,6 +363,21 @@ export class PlayGuide {
         });
       }),
     );
+    // The YP23's Data Link: "may perform a 2 grid Move before performing its
+    // Action" (GoF 1.021). The move leaves the activation open for the Action
+    // (audit Phase 5, F9).
+    this.root.querySelectorAll<HTMLButtonElement>('[data-premove]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const uid = Number(b.dataset.premove);
+        this.cb.onMoveUnit(uid, { range: Number(b.dataset.grids), label: 'Data Link move' }, (moved) => {
+          if (!moved) return;
+          this.preMoved = uid;
+          const t = this.state?.tokens.find((x) => x.uid === uid);
+          if (t) this.cb.onNote(t, `${t.label} moves first on its Data Link, and may still take its Action.`);
+          this.cb.onChanged();
+        });
+      }),
+    );
     this.root.querySelectorAll<HTMLButtonElement>('[data-acted]').forEach((b) =>
       b.addEventListener('click', () => this.finishDesignation(Number(b.dataset.acted))),
     );
@@ -550,8 +568,9 @@ export class PlayGuide {
         const sc = this.script(s);
         const item = sc.intercepts[Number(b.dataset.intercept)];
         if (!item) return;
-        const owner = s.tokens.find((x) => x.uid === item.uid);
-        perform(this.data, s, { kind: 'resolveIntercept', seat: owner?.side ?? s.round.firstPlayer, ...item });
+        // The board strikes the attempt off once its Token is paid: a strict
+        // table spends only an owed attempt (audit Phase 5, B9), so settling
+        // it here first left the spend nothing to pay.
         this.cb.onIntercept(item.uid, item.actionId, item.targetUid);
       }),
     );
@@ -561,15 +580,17 @@ export class PlayGuide {
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-unit-act]').forEach((b) =>
       b.addEventListener('click', () => {
-        if (this.picked !== null) this.performUnitAction(this.picked, b.dataset.unitAct!);
+        const uid = this.activeLoopUnit();
+        if (uid !== null) this.performUnitAction(uid, b.dataset.unitAct!);
       }),
     );
     this.root.querySelectorAll<HTMLButtonElement>('[data-aster]').forEach((b) =>
       b.addEventListener('click', () => void this.runAster(Number(b.dataset.aster))),
     );
     this.root.querySelector('[data-end]')?.addEventListener('click', () => this.endActivation());
+    // Back is greyed once a unit is designated: the Command is spent, and
+    // Undo takes the designation back (audit Phase 5, F7).
     this.root.querySelector('[data-unpick]')?.addEventListener('click', () => {
-      this.picked = null;
       this.warn = null;
       this.render();
     });
@@ -644,7 +665,10 @@ export class PlayGuide {
         const by = s.tokens.find((t) => t.uid === x.uid);
         const at = s.tokens.find((t) => t.uid === x.targetUid);
         if (!by || !at) return '';
-        return `<button class="pg-act" data-intercept="${i}" data-mech="interception">
+        // An attempt the engine would refuse (Fire Control Interference, a
+        // destroyed Part) is shown and greyed (audit Phase 5, B9).
+        const verdict = check(this.data, s, { kind: 'spendIntercept', seat: by.side, uid: by.uid, actionId: x.actionId });
+        return `<button class="pg-act" data-intercept="${i}" data-mech="interception"${verdict.ok ? '' : ` disabled title="${esc(verdict.why)}"`}>
           <span class="pg-act-name">${esc(by.label)} → ${esc(at.label)}</span>
           <span class="pg-act-cost">INT</span>
         </button>`;
@@ -655,9 +679,13 @@ export class PlayGuide {
       <p class="pg-intercept-head"><i>⊘</i> Interception owed</p>
       <p class="pg-intercept-note">A launch or move by an Aerial Unit triggers this at once, in this phase. Each attempt spends a Token, and a unit must keep going until its Tokens run out or the target dies.</p>
       <div class="pg-acts">${rows}</div>
-      ${this.script(s).strict
-        ? ''
-        : '<button class="pg-pass" data-intercept-skip="1">Skip the rest</button>'}
+      ${(() => {
+        // Interception "must be performed" while it can be (M5): a strict
+        // table greys the skip until only attempts nobody can make are left
+        // (audit Phase 5, B10).
+        const skip = check(this.data, s, { kind: 'clearIntercepts', seat: this.script(s).turn });
+        return `<button class="pg-pass" data-intercept-skip="1"${skip.ok ? '' : ` disabled title="${esc(skip.why)}"`}>Skip the rest</button>`;
+      })()}
     </div>`;
   }
 
@@ -836,7 +864,7 @@ export class PlayGuide {
       if (su.stage === 'map') return 'Lock the battlefield';
       if (su.stage === 'tasks') return 'Choose the Tasks';
       if (su.stage === 'side') return 'Choose a board edge';
-      return deploymentComplete(s) ? 'Press Begin round 1' : 'Deploy every unit';
+      return deploymentComplete(s, this.data) ? 'Press Begin round 1' : 'Deploy every unit';
     }
     // Free play is a sandbox: with no game running nothing is gated, so the
     // round bar can be driven by hand for testing.
@@ -1029,7 +1057,7 @@ export class PlayGuide {
     const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${squadLabel(s.round.firstPlayer)}</b></p>`;
     const tasks = normaliseTasks(s.tasks);
     const secRow = !tasks.secondary.s1 || !tasks.secondary.s2 ? this.secondaryHtml(s) : '';
-    if (deploymentComplete(s)) {
+    if (deploymentComplete(s, this.data)) {
       return `${fp}${phaseDone('Everything is deployed')}
         <div class="pg-units"><button class="pg-unit" data-deploy-done="1">Begin round 1</button></div>`;
     }
@@ -1040,11 +1068,11 @@ export class PlayGuide {
       return `${fp}${secRow}
         <p class="pg-intercept-note">Both Secondary Tasks are picked before anything deploys, so each side knows what the other is playing for.</p>`;
     }
-    const turn = deployTurn(s, su);
+    const turn = deployTurn(s, su, this.data);
     if (!turn) return `${fp}${phaseDone('Everything is deployed')}`;
-    const waiting = deployable(s, turn);
+    const waiting = deployable(s, turn, this.data);
     const other: Side = turn === 's1' ? 's2' : 's1';
-    const otherLeft = deployable(s, other).length;
+    const otherLeft = deployable(s, other, this.data).length;
     if (this.notMySeat(turn)) {
       return `${fp}
         <p class="pg-active">Deployment <small>${waiting.length} of theirs and ${otherLeft} of yours still to place</small></p>
@@ -1342,7 +1370,7 @@ export class PlayGuide {
 
     return `${fp}
       <p class="pg-active">Now: <b class="side-${t.side}">${squadLabel(t.side)}</b>
-        <small>${esc(t.label)} · ${timing?.name ?? 'no dial'}${init === undefined ? '' : ` · Initiative ${init}`} · ${onExtra ? 'Extra Action Opportunity' : `${at + 1} of ${order.length}`}</small></p>
+        <small>${esc(t.label)} · ${timing?.name ?? 'no dial'}${init === undefined ? '' : ` · Initiative ${init}`} · ${onExtra ? (o.commanded ? 'Command Coordination' : 'Extra Action Opportunity') : `${at + 1} of ${order.length}`}</small></p>
       ${pool}
       ${this.warn ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
       ${tieRow}
@@ -1527,11 +1555,16 @@ export class PlayGuide {
       return;
     }
     this.warn = null;
-    this.cb.onMoveUnit(o.uid, { range: maneuverRange(this.data, t), label: 'Maneuver', maneuver: true, ...(turn ? { turn } : {}) }, (moved) => {
+    this.cb.onMoveUnit(o.uid, { range: maneuverRange(this.data, t), label: 'Maneuver', maneuver: true, ...(turn ? { turn } : {}) }, (moved, halt) => {
       if (!moved) return;
       // The interactive move has already landed the token, so the command
       // records where it ended up: a no-op here, the real move on a mirror.
-      perform(this.data, s, { kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: t.facing });
+      // A Mine's stop keeps the rest of the Range back for later (C1).
+      const v = perform(this.data, s, { kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: t.facing, ...(halt !== undefined ? { halt } : {}) });
+      // A2K Data Link (GoF 1.021, 175_A): "This Mech may perform one Command
+      // Coordination after Maneuver" (audit Phase 5, F2).
+      const after = v.ok ? coordinationAfterManeuver(this.data, t) : 0;
+      if (after > 0) void this.offerCoordination(s, t, after).then(() => this.cb.onChanged());
       this.cb.onChanged();
     });
   }
@@ -1661,6 +1694,19 @@ export class PlayGuide {
     const sc = this.script(s);
     this.cb.onNote(t, `${bonus.label}: +${bonus.actionPoints} ordinary Action Tick${bonus.actionPoints === 1 ? '' : 's'} (${sc.opp?.action ?? '?'} in the pool), and ${t.label}'s Stance is now set for this Action Opportunity (4.1).`);
     this.cb.onChanged();
+  }
+
+  // The unit card's door into the Action the guide's own row performs, so a
+  // Launch from the card is paid for like one from the guide (audit Phase 5,
+  // A7). False when this unit is not the one acting.
+  performFromCard(uid: number, actionId: string): boolean {
+    const s = this.state;
+    if (!s?.script) return false;
+    const t = s.tokens.find((x) => x.uid === uid);
+    if (!t || this.script(s).opp?.uid !== uid) return false;
+    if (t.kind === 'mech') this.tryAction(actionId);
+    else this.performUnitAction(uid, actionId);
+    return true;
   }
 
   // Warn rather than block: the rules have more exceptions than the app knows, so
@@ -1855,6 +1901,9 @@ export class PlayGuide {
       if (!performed) return;
       const t = s.tokens.find((x) => x.uid === uid);
       const a = t && guidedActions(this.data, t, this.cb.world()).find((g) => g.action.id === actionId)?.action;
+      // Recorded on its activation, as the other pages record it, so the end
+      // of it knows the Action was made (3.5; audit Phase 5, F3).
+      if (t && this.script(s).opp?.uid === uid) perform(this.data, s, { kind: 'performAction', seat: t.side, uid, actionId });
       if (t && a) this.cb.onNote(t, `${a.name.en || a.name.zh || a.id}.`);
       this.finishDesignation(uid);
     });
@@ -1903,19 +1952,19 @@ export class PlayGuide {
         ? `<p class="pg-tokens">Command tokens: <b class="side-s1">${squadLabel('s1')} ${s.commandTokens.s1}</b> · <b class="side-s2">${squadLabel('s2')} ${s.commandTokens.s2}</b></p>${this.asterHtml(s)}`
         : '';
 
-    if (loopComplete(s, phase, this.data)) {
-      return `${fp}${tokens}${phaseDone(`${phase} Phase complete`)}`;
+    // The unit being activated: the one whose activation its designation
+    // opened (audit Phase 5, F7). It has left the eligible list, and the loop
+    // may already read as complete while its one Action waits.
+    const openUid = this.activeLoopUnit();
+    const chosen = openUid !== null ? s.tokens.find((t) => t.uid === openUid && alive(t)) : undefined;
+    if (chosen && this.notMySeat(chosen.side)) {
+      return `${fp}${tokens}${this.waitingOn(chosen.side, `resolve ${chosen.label}'s activation`)}`;
     }
-
-    const turn = canAct(s, phase, sc.turn, this.data) ? sc.turn : (nextTurn(s, phase, sc.turn, this.data) ?? sc.turn);
-    const units = eligibleUnits(s, phase, turn, this.data);
-    if (this.notMySeat(turn)) {
-      const noun = phase === 'Delay' ? 'projectile' : 'drone';
-      return `${fp}${tokens}${this.waitingOn(turn, `${phase === 'Command' ? 'command' : 'activate'} a ${noun} or pass`)}`;
-    }
-
-    const chosen = this.picked !== null ? units.find((t) => t.uid === this.picked) : undefined;
     if (chosen) {
+      // A Data Link that moves the Drone first (the YP23), and Additional
+      // Instructions' Command Action, which buys no Move (ruling I7).
+      const pre = phase === 'Command' && chosen.kind === 'drone' ? riderOnDrone(this.data, s.tokens, chosen).preMove : 0;
+      const commandOnly = !!sc.opp?.commandOnly;
       const what = chosen.kind === 'mech'
         ? 'RWS: the Command fires its autocannon, and nothing else (遥控武器).'
         : phase === 'Command' ? 'It may move, or take one Command action.' : 'Resolve its action, then mark it done.';
@@ -1942,7 +1991,7 @@ export class PlayGuide {
             .join('')}</div>`
         : '';
       return `${fp}${tokens}
-        <p class="pg-active">Now: <b class="side-${turn}">${squadLabel(turn)}</b>
+        <p class="pg-active">Now: <b class="side-${chosen.side}">${squadLabel(chosen.side)}</b>
           <small>${chosen.label}: ${what}</small></p>
         ${this.warn ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
         ${list}
@@ -1955,14 +2004,31 @@ export class PlayGuide {
         }
         <div class="pg-units">
           ${
+            pre > 0
+              ? `<button class="pg-unit" data-premove="${chosen.uid}" data-grids="${pre}"${this.preMoved === chosen.uid ? ' disabled' : ''}>Move ${pre} first</button>`
+              : ''
+          }
+          ${
             phase === 'Command' && chosen.kind !== 'mech'
-              ? `<button class="pg-unit" data-move="${chosen.uid}">Move</button>`
+              ? `<button class="pg-unit" data-move="${chosen.uid}"${commandOnly ? ' disabled title="Additional Instructions buys a Command Action, not a Move (ruling I7)."' : ''}>Move</button>`
               : ''
           }
           <button class="pg-pass" data-acted="${chosen.uid}" title="Mark this unit done without the guide driving the action">Did it myself</button>
-          <button class="pg-pass" data-unpick="1">Back</button>
+          <button class="pg-pass" data-unpick="1" disabled title="Designated: the Command is spent. Undo takes the designation back.">Back</button>
         </div>`;
     }
+
+    if (loopComplete(s, phase, this.data)) {
+      return `${fp}${tokens}${phaseDone(`${phase} Phase complete`)}`;
+    }
+
+    const turn = canAct(s, phase, sc.turn, this.data) ? sc.turn : (nextTurn(s, phase, sc.turn, this.data) ?? sc.turn);
+    const units = eligibleUnits(s, phase, turn, this.data);
+    if (this.notMySeat(turn)) {
+      const noun = phase === 'Delay' ? 'projectile' : 'drone';
+      return `${fp}${tokens}${this.waitingOn(turn, `${phase === 'Command' ? 'command' : 'activate'} a ${noun} or pass`)}`;
+    }
+
 
     const verb = phase === 'Command' ? 'command' : 'activate';
     const noun = phase === 'Delay' ? 'projectile' : 'drone';
@@ -1991,46 +2057,62 @@ export class PlayGuide {
       : '<button class="pg-undo" disabled title="Nothing to undo yet.">↩</button>';
   }
 
-  private designate(uid: number): void {
+  // The loop unit whose activation is open, if any: an Extra Opportunity is
+  // the Action Phase's.
+  private activeLoopUnit(): number | null {
     const s = this.state;
-    if (!s) return;
-    const phase = PHASES[s.round.phase];
-    if (!isLoopPhase(phase)) return;
-    this.picked = uid;
-    this.warn = null;
-    this.cb.onSelectUnit(uid);
-    this.render();
+    if (!s || !isLoopPhase(PHASES[s.round.phase])) return null;
+    const o = this.script(s).opp;
+    return o && !o.extra ? o.uid : null;
   }
 
-  private finishDesignation(uid: number): void {
+  // Picking a unit designates it (3.2.2): the issuer is asked and the Command
+  // spent BEFORE it acts, and the activation opened as the other pages open
+  // it. The Drone acted first and was designated after, so backing out of the
+  // picker left one that could act again (audit Phase 5, F7). The Automatic
+  // and Delay Phases designate with no issuer to ask.
+  private designate(uid: number): void {
     const s = this.state;
     if (!s) return;
     const phase = PHASES[s.round.phase];
     if (!isLoopPhase(phase)) return;
     const unit = s.tokens.find((t) => t.uid === uid);
     if (!unit) return;
-    // Only the Command Phase takes a token off a Mech (4.15.2). The Automatic
-    // and Delay Phases designate a unit that acts under its own steam, so there
-    // is no issuer to ask about.
+    const go = (fromUid: number | undefined): void => {
+      const v = perform(this.data, s, { kind: 'designate', seat: unit.side, uid, fromUid });
+      if (!v.ok && this.script(s).strict) {
+        this.warn = v.why ?? null;
+        this.render();
+        return;
+      }
+      openActivation(this.data, s, uid);
+      this.preMoved = null;
+      this.warn = null;
+      this.cb.onSelectUnit(uid);
+      this.cb.onChanged();
+    };
+    // Only the Command Phase takes a token off a Mech (4.15.2).
     if (phase !== 'Command') {
-      this.issue(unit, undefined);
+      go(undefined);
       return;
     }
     const free = this.script(s).freeCommand.includes(uid);
     void askIssuer(this.data, s, unit.side, unit, free).then((pick) => {
-      // Backing out of the picker leaves the Drone selected and the Command
-      // unspent, so the player can choose a different Mech or a different
-      // Drone. Issuing anyway would spend a token they never agreed to.
+      // Backing out of the picker spends nothing and designates nothing.
       if (pick === 'cancelled') return;
-      this.issue(unit, pick.uid || undefined);
+      go(pick.uid || undefined);
     });
   }
 
-  private issue(unit: Token, fromUid: number | undefined): void {
+  // The activation is over once its one Action or Move is resolved, or the
+  // table resolved it by hand. A unit that left the board with it (SU1's
+  // Armor Patch removes it) has nothing to end.
+  private finishDesignation(uid: number): void {
     const s = this.state;
     if (!s) return;
-    perform(this.data, s, { kind: 'designate', seat: unit.side, uid: unit.uid, fromUid });
-    this.picked = null;
+    const unit = s.tokens.find((t) => t.uid === uid);
+    if (unit && this.script(s).opp?.uid === uid) perform(this.data, s, { kind: 'endOpportunity', seat: unit.side, uid });
+    this.preMoved = null;
     this.warn = null;
     this.cb.onChanged();
   }
@@ -2044,6 +2126,20 @@ export class PlayGuide {
     // The pass belongs to whoever's turn it actually is, so a stale turn
     // pointer is normalised before the command is issued.
     const turn = canAct(s, phase, sc.turn, this.data) ? sc.turn : (nextTurn(s, phase, sc.turn, this.data) ?? sc.turn);
+    // "Automatic Actions are obligatory" (3.5; ruling I4): the strict tracker
+    // refuses the pass; teaching warns once and lets a house rule through
+    // (audit Phase 5, F3).
+    if (phase === 'Automatic') {
+      const owing = eligibleUnits(s, 'Automatic', turn, this.data)
+        .find((d) => autoShotOwed(this.data, s.tokens, d, { terrain: this.cb.world().terrain, smoke: s.smoke ?? [] }));
+      const why = owing ? `${owing.label} has a legal target, and its Automatic Action is obligatory (3.5).` : null;
+      if (why && !sc.strict && this.warn !== why) {
+        this.warn = why;
+        this.render();
+        return;
+      }
+    }
+    this.warn = null;
     perform(this.data, s, { kind: 'passTurn', seat: turn });
     this.cb.onChanged();
   }

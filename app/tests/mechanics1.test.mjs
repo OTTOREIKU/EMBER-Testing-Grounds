@@ -205,7 +205,9 @@ const SHOVE = { id: 'KB_TEST', type: 'Melee', name: { en: 'Shove Strike' }, redD
 // ---------- A6: a destroyed Part cannot be designated ----------
 {
   const atk = kit(mech(1, 's1', 'Sniper', 1), { rightHand: 'ZHRA-202' });
-  const def = kit(mech(2, 's2', 'Wreck', 3), { leftHand: 'ZHLA-201', rightHand: '109' });
+  // Not the Warrior: its Designated Defense (GoF 1.021) lets the defender
+  // designate too, and then neither choice stands (FAQ A14).
+  const def = kit(mech(2, 's2', 'Wreck', 3), { torso: '173', leftHand: 'ZHLA-201', rightHand: '109' });
   def.partStates.leftHand = 'destroyed';
   const { h, root } = windowOn([atk, def]);
   h.start(atk, act('ZHRA-202', 'ZHRA-202_B'), def, 'clear');

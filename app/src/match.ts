@@ -25,13 +25,13 @@ import { syncUpdateNotice, watchForUpdates } from './updates';
 import { choiceDialog } from './dialog';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { animateRemoteMove, clearRangeOverlayFor, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, clearRangeOverlayFor, detonationHit, ensureHud, offerCoordinationAfterManeuver, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
 import { AttackHelper, combatRoleFor, type MirrorAct } from './combat';
 import { losNote, protectionFor, spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
-import { chargeAdjusted, dodgeEnhanceOf, grantAdjusted, SLOT_LABEL, stationaryAdjusted, twoHandedUse } from './units';
+import { chargeAdjusted, dodgeEnhanceOf, grantAdjusted, SLOT_LABEL, stationaryAdjusted, twoHandedUse, loanedParts, explosionScope } from './units';
 import { gridsOf, PHASES, statusCount } from './types';
 // FIRST, before anything else in this module runs. A net that is installed
 // after the thing it is meant to catch is not a net.
@@ -548,6 +548,7 @@ function send(cmd: Command): CheckResult {
     settleDefense(cmd);
     advanceIfBothReady(cmd);
     publishCatalog();
+    offerCoordinationAfterManeuver(cmd);
   }
   return v;
 }
@@ -908,8 +909,10 @@ function attackActionBuilt(t: Token | undefined, actionId: string, twoHandedDecl
   // used to stop at the grants, so the Match Centre rolled a Two-Handed weapon
   // without its rider while the turn panel had promised it. FAQ A16: the
   // player may decline, and the declined copy is marked so the window says so.
-  if (twoHandedDeclined) return twoHandedUse(data, t, granted) ? { ...granted, twoHandedDeclined: true } : granted;
-  return twoHandedUse(data, t, granted)?.action ?? granted;
+  // A Load lent by a Carrier in Contact can be the Freehand (FAQ O16).
+  const loans = loanedParts(data, state.tokens, t);
+  if (twoHandedDeclined) return twoHandedUse(data, t, granted, [], loans) ? { ...granted, twoHandedDeclined: true } : granted;
+  return twoHandedUse(data, t, granted, [], loans)?.action ?? granted;
 }
 
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack', opts: { twoHandedDeclined?: boolean; charged?: boolean; chargeChoice?: string } = {}): void {
@@ -1017,13 +1020,27 @@ function mountSide(): void {
       startInterceptPick(t.uid, actionId);
       render();
     },
+    // Interception Tokens are never restored (4.9, M27; audit Phase 5, B8).
     onRestoreIntercept: (t, actionId) => {
+      if (relay.state.room) {
+        lobbyNote = 'Interception Tokens are never restored. Undo takes back a mistaken spend.';
+        render();
+        return;
+      }
       send({ kind: 'restoreIntercept', seat: t.side, uid: t.uid, actionId });
       render();
       syncSide(t.uid);
     },
     // The card has chosen the Action and the Projectile; the board asks where.
+    // Through the turn panel's door when this unit holds the Opportunity, so
+    // the Ticks are paid; a match refuses one otherwise (audit Phase 5, A7).
     onLaunch: (t, action, projectile) => {
+      if (startActionFromCard(t.uid, action.id, projectile.id)) { render(); return; }
+      if (relay.state.room) {
+        lobbyNote = `${t.label} does not hold the Action Opportunity, so it cannot launch now (4.7.3).`;
+        render();
+        return;
+      }
       startLaunchPlan(t.uid, action.id, projectile.id, projectile.name?.en || projectile.id);
     },
     // The card names the Action; the turn panel asks which enemy, reading the
@@ -1151,7 +1168,12 @@ function mountSide(): void {
         // On-Hit Knockback that scored nothing does not trigger either.
         const kb = knockbackOf(action, data?.actionTranslation(action.id)?.english ?? undefined);
         const shoving = !!kb && !(kb.onHit && hits === 0) && attacker.kind !== 'projectile';
-        if (attacker.kind === 'projectile') send({ kind: 'despawn', seat: attacker.side, uid: attacker.uid, targetUid: attacker.uid });
+        // An "all Units" blast keeps its Projectile until Done: this unit is
+        // struck off its list instead (4.7.6, M21; audit Phase 5, A1).
+        const blasting = attacker.kind === 'projectile'
+          && explosionScope(action, data?.actionTranslation(action.id)?.english ?? undefined) === 'all'
+          && detonationHit(attacker.uid, defender.uid);
+        if (attacker.kind === 'projectile') { if (!blasting) send({ kind: 'despawn', seat: attacker.side, uid: attacker.uid, targetUid: attacker.uid }); }
         else if (shoving) startShove(attacker.uid, action.id, defender.uid);
         // With no Forced Movement to wait for, a queued Black Box question is
         // asked now; with one, the shove flow flushes it when it settles (E19).
@@ -1177,6 +1199,8 @@ function mountSide(): void {
       (cmd) => send(cmd),
     );
     attackHelper.tokens = () => state.tokens;
+    // Whose Action is running, for a lent Load's Dodge (ruling I24).
+    attackHelper.actingUid = () => state.script?.opp?.uid ?? null;
     attackHelper.terrain = () => terrainNow();
     attackHelper.smoke = () => state.smoke ?? [];
     // How the same window MOVES an attack it is only watching: by sending the

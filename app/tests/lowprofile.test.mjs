@@ -72,6 +72,9 @@ export function tokenCards(data: any, t: any): any[] {
   if (t.kind !== 'mech') { const c = data.byId.get(t.cardId); if (c) out.push({ slot: 'main', card: c }); }
   return out;
 }
+// The same list for every unit but a loaded Carrier, and no fixture here is
+// one; the Carrier half is driven in mechanics5.test.mjs (G3).
+export const ownCards = tokenCards;
 `
   + cut(types, 'export function statusCount', 'export function ageTokens', 'statusCount')
   + cut(rules, 'export function largeGridOf', '// Where inside Large Grid', 'largeGridOf')

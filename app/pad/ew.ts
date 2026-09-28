@@ -161,6 +161,26 @@ export function beginFreeScan(attacker: Token, attackId: string, defender: Token
   return true;
 }
 
+// A Detonation's Scan of a camouflaged target (p.71; audit Phase 5, A3): the
+// Projectile is the Initiator and no attack rides behind it, the Explosion
+// being the pad's own to resume once the Counter-roll has closed. In a room
+// it goes to the table; alone, the local exchange runs it.
+export function beginBlastScan(proj: Token, defender: Token): boolean {
+  const a = api!;
+  if (a.state().script && !a.solo) {
+    return a.send({ kind: 'startCounterRoll', seat: proj.side, uid: proj.uid, actionId: 'COMMON_SCAN', targetUid: defender.uid });
+  }
+  if (!root) return false;
+  const h = mountEw(root);
+  if (!h) { a.toast('No dice data loaded.'); return false; }
+  const scan = a.data.commonActions.find((x) => x.id === 'COMMON_SCAN') as CardAction | undefined;
+  if (!scan) return false;
+  h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
+  h.start(proj, scan, defender, {});
+  a.openCombat();
+  return true;
+}
+
 // Target Tracing (174): "may spend 1 Command Token to perform an Electronic
 // Counter Roll against the Attacker. If successful, the Attacker loses 1
 // Link." In a room the command that opens the record spends the Token and

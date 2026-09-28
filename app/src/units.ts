@@ -867,6 +867,44 @@ export function immediateDetonation(card: Card): CardAction | null {
   return null;
 }
 
+// The cards an Action may put on the board: the list both pickers draw from
+// (guidedActions), the card's own projectiles narrowed to this Action and to
+// a lock_one commitment, the Bit Port's three faces, and never an Unfolded
+// Pholcus. Null when no card of this unit's, a Load's included, carries the
+// Action. The launch check took any card at all (audit Phase 5, G5).
+export function launchableCards(data: GameData, tokens: Token[], t: Token, actionId: string, anywhere = false): string[] | null {
+  const sources = [...ownCards(data, t).map(({ card }) => card), ...loanedParts(data, tokens, t, { anywhere }).map((l) => l.card)];
+  for (const card of sources) {
+    const a = (card.actions ?? []).find((x) => x.id === actionId);
+    if (!a) continue;
+    const port = bitPortOf(a);
+    const list = port
+      ? port.formIds.map((id) => data.byId.get(id)).filter((x): x is Card => !!x)
+      : Array.isArray(card.projectile)
+        ? card.projectile.map((id) => data.byId.get(id)).filter((x): x is Card => !!x && !isUnfolded(x))
+        : [];
+    return lockedDown(t, a, projectilesOfAction(card, a, list)).map((c) => c.id);
+  }
+  return null;
+}
+
+// An Immediate Projectile detonates as it lands (4.7.4), after the
+// Interception it triggered (4.9). One that came through was left to be
+// reopened by hand (audit Phase 5, A8). Derived from the board: an Immediate
+// Projectile still standing, with no attempt owed at it, is owed its
+// Detonation now. `owed` is the page's own list of owed attempts.
+export function immediatesOwed(data: GameData, tokens: Token[], owed: { targetUid: number }[]): { uid: number; actionId: string }[] {
+  const out: { uid: number; actionId: string }[] = [];
+  for (const t of tokens) {
+    if (t.kind !== 'projectile' || t.deployed === false || !alive(t)) continue;
+    const card = data.byId.get(t.cardId);
+    const now = card ? immediateDetonation(card) : null;
+    if (!now || owed.some((x) => x.targetUid === t.uid)) continue;
+    out.push({ uid: t.uid, actionId: now.id });
+  }
+  return out;
+}
+
 // A card's `projectile` list is per CARD, but two cards print two Projectile
 // Actions that each launch ONE of the listed cards: the Vigilant's |Cluster
 // Grenade| and |Beacon| (PRDR-204), and the Exocet pack's |Missile| and
@@ -912,11 +950,19 @@ function lockedDown(t: Token, a: CardAction, all: Card[]): Card[] {
 // AUDIT TRAP recorded on this card: 086_A (Ammo Supply) is FULLY wired and has
 // been for a long time. That is a different action with a different rule, and
 // it is what made 086 look done in two separate sweeps.
-export function ammoDeliveryPool(data: GameData, t: Token, actionId: string): string | undefined {
+//
+// A Pack lent by a Carrier in Contact delivers too, out of the magazine on the
+// Carrier holding it (FAQ O3/O16; audit Phase 5, G1), so the answer names the
+// token that pays as well as the pool. The Mech's own Parts go first.
+export function ammoDeliveryPool(data: GameData, t: Token, actionId: string, loans: LoanedPart[] = []): { from: Token; poolId: string } | undefined {
   if (t.kind !== 'mech') return undefined;
-  for (const { slot, card } of tokenCards(data, t)) {
-    if (slot === 'pilot') continue;
-    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+  const parts: { card: Card; from: Token }[] = [
+    ...tokenCards(data, t)
+      .filter(({ slot }) => slot !== 'pilot' && (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
+      .map(({ card }) => ({ card, from: t })),
+    ...loans.map(({ card, from }) => ({ card, from })),
+  ];
+  for (const { card, from } of parts) {
     // The Part has to carry the DELIVERY passive; a Pack without it resupplies
     // between Actions but may not pay for a shot as it happens.
     const delivers = (card.actions ?? []).some((a) => {
@@ -925,7 +971,7 @@ export function ammoDeliveryPool(data: GameData, t: Token, actionId: string): st
     });
     if (!delivers) continue;
     for (const a of card.actions ?? []) {
-      if (resupplyOf(a)?.actionId === actionId && (t.ammo?.[a.id] ?? 0) > 0) return a.id;
+      if (resupplyOf(a)?.actionId === actionId && (from.ammo?.[a.id] ?? 0) > 0) return { from, poolId: a.id };
     }
   }
   return undefined;
@@ -1073,7 +1119,9 @@ export function freehandSlots(data: GameData, t: Token, taken: string[] = [], lo
   const out: { slot: PartSlot | 'pilot' | 'main'; label: string }[] = [];
   const hasFreehand = (card: Card): boolean =>
     (card.keywords ?? []).some((k) => k.en === 'Freehand' || k.key === '空手');
-  for (const { slot, card } of tokenCards(data, t)) {
+  // ownCards, not tokenCards: a Carrier Tarantula gains none of its Load's
+  // attributes (O4; p.94). For every other unit the two are the same list.
+  for (const { slot, card } of ownCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     if (taken.includes(slot)) continue;
     if (!hasFreehand(card)) continue;
@@ -1102,20 +1150,29 @@ export function freehandSlots(data: GameData, t: Token, taken: string[] = [], lo
 // runs on Drones; the sixth is the TM31Q Wild Cat in the Raid starter.
 const COMMAND_GEN_ZH = /指令生成\s*(\d+)/;
 const COMMAND_GEN_EN = /Command\s+Generation\s*(\d+)/i;
+// GoF 1.021's Integrated Data Link Pod (ZYBP-102_A) ADDS to that: "Command
+// Generation +1", on top of the Torso's number or the default 1 (audit Phase
+// 5, F2). The replacing readers above never match it: a "+" is not a digit.
+const COMMAND_GEN_PLUS_ZH = /指令生成\s*\+\s*(\d+)/;
+const COMMAND_GEN_PLUS_EN = /Command\s+Generation\s*\+\s*(\d+)/i;
 export function commandGeneration(data: GameData, t: Token): number {
   if (t.kind !== 'mech') return 0;
   // Command Generation X is a Passive on the Torso, and a Shutdown Mech
   // "cannot activate any Passive effects" (4.1, FAQ L3). It still generates
   // the default 1 of 3.2.1, which is the rule and not a Part.
   if (t.stance === 'shutdown') return 1;
+  let base: number | undefined;
+  let plus = 0;
   for (const { slot, card } of tokenCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     for (const a of card.actions ?? []) {
+      const p = COMMAND_GEN_PLUS_ZH.exec(a.description?.zh ?? '') ?? COMMAND_GEN_PLUS_EN.exec(a.description?.en ?? '');
+      if (p) { plus += Number(p[1]); continue; }
       const m = COMMAND_GEN_ZH.exec(a.description?.zh ?? '') ?? COMMAND_GEN_EN.exec(a.description?.en ?? '');
-      if (m) return Number(m[1]);
+      if (m && base === undefined) base = Number(m[1]);
     }
   }
-  return 1;
+  return (base ?? 1) + plus;
 }
 
 // Command Coordination X (4.15.3) lets a Mech issue Commands to Drones OUTSIDE
@@ -1156,12 +1213,40 @@ export function endsOpportunityCoordination(a: CardAction): boolean {
 // that demanded a digit scored those four as 0 while looking wired.
 const COMMAND_CO_BARE = /指令协调|Command Coordination/i;
 
+// GoF 1.021's two Data Links name Command Coordination without carrying it
+// (audit Phase 5, F2). A2K on the Dragoon (175_A): "This Mech may perform one
+// Command Coordination after Maneuver", its own trigger, read by
+// coordinationAfterManeuver. M2 on the Chariot (176_A): "This Mech's Command
+// Coordination may issue up to 2 Commands", a ceiling on every Coordination
+// the Mech performs, read by coordinationCap. English only: we hold no 1.021
+// Chinese.
+const COMMAND_CO_AFTER_MANEUVER = /Command Coordination after Maneuver/i;
+const COMMAND_CO_CAP = /Command Coordination may issue up to\s*(\d+)\s*Commands?/i;
+export function coordinatesAfterManeuver(a: CardAction): boolean {
+  return COMMAND_CO_AFTER_MANEUVER.test(a.description?.en ?? '');
+}
+export function coordinationCapOf(a: CardAction): number {
+  const m = COMMAND_CO_CAP.exec(a.description?.en ?? '');
+  return m ? Number(m[1]) : 0;
+}
+
+// The Tactic Action that IS a Coordination: named "Command Coordination" and
+// printed "Give 1 Command Token to 1 Ally Drone", the keyword in its NAME
+// alone (ZYBP-101_B, ZYBP-202_B, ZHLA-102_B, ZHLA-201_B and the four Discard
+// faces). Every reader here asks the description, so all eight gave nothing
+// (audit Phase 5, F5). The number of Drones is the Coordination's X.
+const COMMAND_CO_GIVE = /Give\s+(\d+)\s+Command\s+Tokens?\s+to\s+(\d+)\s+Ally\s+Drones?/i;
+
 export function commandCoordination(a: CardAction): number {
   // A grant describes OTHER Actions, and an end-of-Opportunity Passive fires on
   // a different trigger; neither is Coordination carried by this Action. Both
   // are asked BEFORE the bare check as well as before the digit one, or a grant
-  // would fall through to the bare reader and hand the carrier a free 1.
+  // would fall through to the bare reader and hand the carrier a free 1. The
+  // two 1.021 Data Link lines are the same case.
   if (grantsCommandCoordination(a) || endsOpportunityCoordination(a)) return 0;
+  if (coordinatesAfterManeuver(a) || coordinationCapOf(a) > 0) return 0;
+  const give = COMMAND_CO_GIVE.exec(a.description?.en ?? '');
+  if (give) return Number(give[2]);
   const m = COMMAND_CO_ZH.exec(a.description?.zh ?? '') ?? COMMAND_CO_EN.exec(a.description?.en ?? '');
   if (m) return Number(m[1]);
   return COMMAND_CO_BARE.test(a.description?.zh ?? '') || COMMAND_CO_BARE.test(a.description?.en ?? '') ? 1 : 0;
@@ -1184,7 +1269,7 @@ export function coordinationOnOpportunityEnd(data: GameData, t: Token): number {
       if (m) n += Number(m[1]);
     }
   }
-  return n;
+  return capped(data, t, n);
 }
 
 // A Passive that hands Coordination to a WHOLE ACTION TYPE of this Mech's:
@@ -1214,7 +1299,7 @@ export function coordinationFor(data: GameData, t: Token, a: CardAction): number
   let n = commandCoordination(a);
   if (t.kind !== 'mech') return n;
   const timing = timingOf(a);
-  if (!timing) return n;
+  if (!timing) return capped(data, t, n);
   for (const { slot, card } of tokenCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     for (const other of card.actions ?? []) {
@@ -1222,7 +1307,57 @@ export function coordinationFor(data: GameData, t: Token, a: CardAction): number
       if (g && g.timing === timing) n += g.n;
     }
   }
-  return n;
+  return capped(data, t, n);
+}
+
+// The M2 Data Link's ceiling: every Coordination this Mech performs "may issue
+// up to 2 Commands" (GoF 1.021, 176_A). 0 without one, and a Passive, so a
+// Shutdown Mech has none (4.1).
+export function coordinationCap(data: GameData, t: Token): number {
+  if (t.kind !== 'mech' || t.stance === 'shutdown') return 0;
+  let cap = 0;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) cap = Math.max(cap, coordinationCapOf(a));
+  }
+  return cap;
+}
+
+function capped(data: GameData, t: Token, n: number): number {
+  return n > 0 ? Math.max(n, coordinationCap(data, t)) : n;
+}
+
+// The A2K Data Link: "This Mech may perform one Command Coordination after
+// Maneuver" (GoF 1.021, 175_A). How many Commands the Maneuver it just made
+// lets it issue, 0 if none: one Coordination, which the M2 ceiling would widen
+// if a Mech ever carried both.
+export function coordinationAfterManeuver(data: GameData, t: Token): number {
+  if (t.kind !== 'mech' || t.stance === 'shutdown') return 0;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    if ((card.actions ?? []).some(coordinatesAfterManeuver)) return capped(data, t, 1);
+  }
+  return 0;
+}
+
+// GoF 1.021's Swarm Tactics (172_B, the Warrior): "After this Mech issues a
+// Command to a GoF Medium Drone, may remove this Command Token and continue
+// issuing a Command to another Ally Drone." Ruling I1: the token goes back to
+// the Warrior to be issued again, to a different Drone, and each Drone still
+// takes one Command per Phase; a GoF Medium Drone is one the lists size
+// "Middle", which our cards type `medium` (audit Phase 5, F2).
+const SWARM_TACTICS = /issues a Command to a GoF Medium Drone,?\s*may remove this Command Token/i;
+export function swarmTacticsOn(data: GameData, t: Token): boolean {
+  if (t.kind !== 'mech' || t.stance === 'shutdown') return false;
+  return tokenCards(data, t).some(({ slot, card }) => slot !== 'pilot'
+    && (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed'
+    && (card.actions ?? []).some((a) => SWARM_TACTICS.test(a.description?.en ?? '')));
+}
+
+export function isGofMediumDrone(data: GameData, t: Token): boolean {
+  if (t.kind !== 'drone') return false;
+  const c = data.byId.get(t.cardId);
+  return !!c && c.type === 'medium' && data.factionOf(c) === 'GOF';
 }
 
 // An Action or pilot trait that consumes one of the Mech's own Command Tokens
@@ -1320,6 +1455,61 @@ export function chargeableSlots(data: GameData, t: Token): { slot: PartSlot | 'p
   return out;
 }
 
+// p.71: an Attack on a unit in Optical Camouflage, "including Melee/Shooting/
+// Explosion damage", must Scan it first, and a unit with Electronic Value 0 or
+// "-" cannot target one at all; an Attack on every unit in Range needs no
+// Scan. So a single-target Detonation picks a camouflaged unit only through a
+// Scan with the Projectile as the Initiator, and a failed Scan still spends
+// the Projectile. All three target lists offered camouflaged units with no
+// test (ruling I13; audit Phase 5, A3). Null when the unit may simply be
+// picked; `scan` when a Scan comes first; `why` when it cannot be picked.
+export function explosionCamo(data: GameData, proj: Token, a: CardAction, target: Token): { scan: true } | { why: string } | null {
+  if (statusCount(target.statuses, 'camouflage') <= 0) return null;
+  if (explosionScope(a, data.actionTranslation(a.id)?.english ?? undefined) === 'all') return null;
+  if (electronicDash(data, proj) || electronicValue(data, proj) <= 0) {
+    return { why: `${proj.label} has Electronic Value ${electronicDash(data, proj) ? '"-"' : 0}, so it cannot target a unit in Optical Camouflage (p.71).` };
+  }
+  return { scan: true };
+}
+
+// A Missile's Delayed Action flies it: "Target 1 Enemy Unit within range, Fly
+// into target grid and undergo Detonation". p.67's worked example has the
+// units in Range of either end intercept that flight, and p.94's Missile Group
+// is intercepted "during flight"; interceptsOwed was asked only at a launch
+// and at a planned move, and every resolver exploded from the Landing Grid
+// without moving the Missile (audit Phase 5, A2).
+const FLIES_TO_TARGET = /Fly into (?:the )?target grid|飞入目标/i;
+export function fliesToTarget(a: CardAction): boolean {
+  return FLIES_TO_TARGET.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`);
+}
+
+// The flight: where the Missile comes down in the target's Grid, and the
+// Interception that owes, judged at both ends like any Aerial unit's Movement
+// (4.9, FAQ O11). The caller moves it and queues the debt; the Explosion waits
+// until it is resolved, and only a Missile still flying goes off (ruling I13:
+// the end Grid is the one it finally flies to).
+export function flightLanding(target: Token): { col: number; row: number } {
+  const g = largeGridOf(target);
+  return { col: g.c * 3 + 1, row: g.r * 3 + 1 };
+}
+
+export function missileFlight(data: GameData, tokens: Token[], smoke: SmokeScreen[], proj: Token, target: Token): { to: { col: number; row: number }; owed: { uid: number; actionId: string; targetUid: number }[] } {
+  const to = flightLanding(target);
+  const landed = { ...proj, ...to };
+  const board = tokens.map((x) => (x.uid === proj.uid ? landed : x));
+  return { to, owed: interceptsOwed(data, board, smoke, proj, [landed]) };
+}
+
+// Where a Detonation's camouflaged target stands once this Projectile has
+// tried its Scan: `appearing` while the won Scan's Manifestation is owed,
+// `failed` when it is still hidden with nothing owed. The pages ask this
+// rather than keep the Counter-roll's result, which a room settles on the
+// other seat (A3).
+export function blastScanState(reactions: { uid: number; kind?: string; fromUid?: number }[], proj: Token, target: Token): 'appearing' | 'failed' | null {
+  if (statusCount(target.statuses, 'camouflage') <= 0) return null;
+  return reactions.some((r) => r.kind === 'manifest' && r.uid === target.uid && r.fromUid === proj.uid) ? 'appearing' : 'failed';
+}
+
 export function explosionScope(a: CardAction, english?: string): 'single' | 'all' {
   const printed = (a.description?.en ?? '').trim() || (english ?? '').trim();
   const hay = printed || a.description?.zh || '';
@@ -1331,6 +1521,84 @@ export function explosionScope(a: CardAction, english?: string): 'single' | 'all
   // singular read as one target and the grenades asked for a single victim.
   if (/all\s+(?:\w+\s+)?(?:units?|targets?)|所有[^。.]{0,4}(?:单位|目标)|每个单位/i.test(hay)) return 'all';
   return 'single';
+}
+
+// ---------- Detonation targets (4.7.5; audit Phase 5, A5 and A6) ----------
+
+// The target a Detonation's structured rule names: how it selects, which side,
+// and a Unit Type it takes first.
+type DetonationTargetSpec = { selection?: string; filter?: string; prioritize?: string; count?: number };
+function detonationTargetSpec(a: CardAction): DetonationTargetSpec | null {
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const eff = e as { type?: string; target?: DetonationTargetSpec };
+      if (eff.type === 'detonation' && eff.target) return eff.target;
+    }
+  }
+  return null;
+}
+
+const UNIT_TYPE_PLURAL: Record<string, string> = { mech: 'Mechs', drone: 'Drones', projectile: 'Projectiles' };
+
+// Why a single-target Detonation may not take this unit, in a word or two, or
+// '' when it may. "Target 1 Enemy Unit" picks among enemies; a Unit Type the
+// card names goes first while one is in Range (4.7.5, the PK3's Enemy Mechs);
+// and a Missile Group's Units attack the target its first Unit picked (p.94;
+// ruling I12). Both boards listed every unit in Range, allies included, with
+// no priority (audit Phase 5, A5). An "all Units" blast is not narrowed: it
+// hits allies too (4.7.6). `inRange` is what the page lists; a table with no
+// board judges the Range, so it names the priority rather than applying it.
+export function detonationBar(
+  tokens: Token[],
+  proj: Token,
+  a: CardAction,
+  inRange: Token[],
+  x: Token,
+  opts: { tableJudges?: boolean } = {},
+): string {
+  // Mines that go off together never destroy one another (FAQ I13); a Mine
+  // Deployed into this one's Grid is the one its blast may catch (M6).
+  if (proj.mine && x.mine) {
+    const walker = inRange.some((o) => !o.mine && !o.aerial && o.uid !== proj.uid);
+    return walker || x.uid < proj.uid ? 'a Mine' : '';
+  }
+  // The Unfolded Pholcus owes its blast to one of the units it came up among
+  // (M18.4; ruling I19), ally or not (audit Phase 5, D5).
+  if (proj.unfoldBlast) return unfoldOccupants(tokens, proj).some((o) => o.uid === x.uid) ? '' : 'not in its Grid';
+  const spec = detonationTargetSpec(a);
+  if (!spec || (spec.selection !== 'chosen' && spec.selection !== 'nearest')) return '';
+  const side = (u: Token) => spec.filter !== 'enemy' || u.side !== proj.side;
+  if (!side(x)) return 'ally';
+  const gt = proj.groupTarget !== undefined ? tokens.find((u) => u.uid === proj.groupTarget) : undefined;
+  if (gt && alive(gt) && gt.deployed !== false && inRange.some((u) => u.uid === gt.uid)) {
+    return x.uid === gt.uid ? '' : "group's target";
+  }
+  // An Automatic Detonation that takes the nearest (the Pholcus, M18.6)
+  // takes nothing farther (audit Phase 5, D5).
+  if (spec.selection === 'nearest' && a.speed === 'auto' && !opts.tableJudges) {
+    const d = (u: Token) => rangeBetween(proj, u).range;
+    const enemies = inRange.filter((u) => side(u) && alive(u));
+    if (enemies.length && d(x) > Math.min(...enemies.map(d))) return 'not the nearest';
+  }
+  if (spec.prioritize && !opts.tableJudges && x.kind !== spec.prioritize
+    && inRange.some((u) => u.kind === spec.prioritize && side(u) && alive(u))) {
+    return `${UNIT_TYPE_PLURAL[spec.prioritize] ?? spec.prioritize} first`;
+  }
+  return '';
+}
+
+// The Unit Type a Detonation takes first, for a table that judges the Range.
+export function detonationPriority(a: CardAction): string | null {
+  const p = detonationTargetSpec(a)?.prioritize;
+  return p ? UNIT_TYPE_PLURAL[p] ?? p : null;
+}
+
+// A Delayed Detonation that finds no target in Range is destroyed (4.7.5)
+// "unless otherwise specified", and the PK3 specifies it: "If there is no
+// target within Range, this Unit will not be removed" (GoF 1.021; audit Phase
+// 5, A6). Every resolver offered only "Destroy the projectile".
+export function keptWithoutTarget(a: CardAction): boolean {
+  return /no target within Range, this Unit will not be removed/i.test(a.description?.en ?? '');
 }
 
 export function needsSightToLanding(a: CardAction): boolean {
@@ -1436,7 +1704,9 @@ function actionPrintsSilence(a: CardAction): boolean {
 // Stealth Chassis's own Sprint was not (audit Phase 3, B1/B2).
 function silentMovementGrants(data: GameData, t: Token): { slot: string; appliesTo: string[] }[] {
   const out: { slot: string; appliesTo: string[] }[] = [];
-  for (const { slot, card } of tokenCards(data, t)) {
+  // ownCards, not tokenCards: a Carrier Tarantula gains none of its Load's
+  // attributes (O4; p.94). For every other unit the two are the same list.
+  for (const { slot, card } of ownCards(data, t)) {
     if (slot === 'pilot' || !partUsable(t, slot)) continue;
     for (const a of card.actions ?? []) {
       for (const g of a.gameRules ?? []) {
@@ -1462,7 +1732,7 @@ function movementPrintsSilence(data: GameData, t: Token, a: CardAction, partKey?
     const named = partKey && partKey.startsWith(`${a.id}@`) ? partKey.slice(a.id.length + 1) : undefined;
     slot = named ?? (common.slots.includes('chasis') && partUsable(t, 'chasis') ? 'chasis' : undefined);
   } else {
-    slot = tokenCards(data, t).find(({ card }) => (card.actions ?? []).some((x) => x.id === a.id))?.slot;
+    slot = ownCards(data, t).find(({ card }) => (card.actions ?? []).some((x) => x.id === a.id))?.slot;
   }
   return !!slot && grants.some((g) => g.slot === slot);
 }
@@ -1545,7 +1815,9 @@ export function breaksCamoByContact(data: GameData, o: Token): boolean {
   if (statusCount(o.statuses, 'camouflage') > 0) return false;      // I23
   if (!o.aerial) return true;
   const card = data.byId.get(o.cardId ?? '');
-  return !!o.barricade || (!!card && isDeployable(card));           // I10
+  // The folded Pholcus with I10's Deployables: its landing Reveals by Contact
+  // (ruling I19; audit Phase 5, D4).
+  return !!o.barricade || (!!card && (isDeployable(card) || !!unfoldsInto(card)));
 }
 
 // The enemy whose Contact ends a camouflaged unit's hiding, or nothing.
@@ -1560,7 +1832,9 @@ export function camoBrokenBy(data: GameData, tokens: Token[], t: Token): Token |
 const CAMO_ACTIVATES = /开启光学迷彩|Activate Optical Camouflage/i;
 
 export function canActivateCamo(data: GameData, t: Token): boolean {
-  for (const { card } of tokenCards(data, t)) {
+  // ownCards, not tokenCards: a Carrier Tarantula gains none of its Load's
+  // attributes (O4; p.94). For every other unit the two are the same list.
+  for (const { card } of ownCards(data, t)) {
     for (const a of card.actions ?? []) {
       const text = `${a.description?.zh ?? ''} ${a.description?.en ?? ''}`;
       if (CAMO_ACTIVATES.test(text)) return true;
@@ -1606,7 +1880,9 @@ export function stealthValue(a: CardAction): number | undefined {
 // activated the camouflage reveals the unit IN PLACE, with no Manifestation.
 export function manifestationRange(data: GameData, t: Token): number {
   let best = 0;
-  for (const { slot, card } of tokenCards(data, t)) {
+  // ownCards, not tokenCards: a Carrier Tarantula gains none of its Load's
+  // attributes (O4; p.94). For every other unit the two are the same list.
+  for (const { slot, card } of ownCards(data, t)) {
     if ((t.partStates?.[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     for (const a of card.actions ?? []) {
       const x = stealthValue(a);
@@ -1798,6 +2074,16 @@ export function rwsCommandsLeft(data: GameData, state: GameState, t: Token): num
   return parts - ledger.filter((k) => k === key).length;
 }
 
+// Every Interception is a Firing Action for its bonuses and penalties (FAQ
+// M26 names the Caracal's reroll, smoke and Low Profile). Four Parts print
+// theirs Passive (the AMS-190, AMS-192, AMS-193 and the Ot50 ADS), and every
+// reader gates on `type === 'Firing'`, so none of them reached those four. The
+// card stays Passive; the Interception runs on a copy typed Firing (ruling
+// I9; audit Phase 5, B4).
+export function asInterception(a: CardAction): CardAction {
+  return a.type === 'Firing' ? a : { ...a, type: 'Firing' };
+}
+
 export function interceptCapacity(a: CardAction): number | undefined {
   for (const k of a.keywords ?? []) {
     const m = /^拦截\s*(\d+)$/.exec((k.inline ?? '').trim());
@@ -1907,11 +2193,14 @@ export interface FreehandSupport {
   label: string;
 }
 
-export function freehandSupport(data: GameData, t: Token, slot: string, a: CardAction): FreehandSupport | null {
+export function freehandSupport(data: GameData, t: Token, slot: string, a: CardAction, loans: LoanedPart[] = []): FreehandSupport | null {
   if (t.kind !== 'mech') return null;
-  const held = tokenCards(data, t).find((x) => x.slot === slot);
+  // A lent Load is designated by its `load:<uid>` slot, and it is only ever
+  // lent intact (FAQ O16; audit Phase 5, G2).
+  const lent = loans.find((l) => l.slot === slot);
+  const held = lent ?? tokenCards(data, t).find((x) => x.slot === slot);
   if (!held) return null;
-  if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') return null;
+  if (!lent && (t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') return null;
   const out: FreehandSupport = { red: 0, yellow: 0, keywords: [], targetBlue: 0, label: '' };
   for (const act of held.card.actions ?? []) {
     const hay = `${act.description?.en ?? ''} ${act.description?.zh ?? ''}`;
@@ -1961,8 +2250,8 @@ export function twoHandedUse(
   if (!rider) return null;
   const hands = freehandSlots(data, t, taken, loans);
   if (!hands.length) return null;
-  const best = hands.find((h) => freehandSupport(data, t, h.slot, a)) ?? hands[0];
-  const support = freehandSupport(data, t, best.slot, a);
+  const best = hands.find((h) => freehandSupport(data, t, h.slot, a, loans)) ?? hands[0];
+  const support = freehandSupport(data, t, best.slot, a, loans);
   const gains: string[] = [];
   if (rider.range) gains.push(`+${rider.range} Range`);
   // By the printed English name where the glossary has one: the rider is read
@@ -2106,7 +2395,14 @@ export function missileGuidance(
           'requireSourceLosToTarget', 'type',
         ]);
         if (Object.keys(eff).some((k) => !known.has(k))) continue;
-        if (eff.actionTypes && !eff.actionTypes.includes(action.type ?? '')) continue;
+        // A Projectile's attack is its own Detonation, typed Delay or Immediate
+        // in the data, never a Firing or Tactic Action. An effect that names
+        // Projectile attackers can only mean that attack: the Rumba's "Ally
+        // Missile" reroll carried Firing and Tactic and so reached no Missile at
+        // all (FAQ M25; audit Phase 5, A4). One that names none (the Caracal's
+        // Coordinated Observation) keeps its Action-type gate.
+        const forProjectiles = attacker.kind === 'projectile' && !!eff.attackerUnitTypes?.includes('projectile');
+        if (eff.actionTypes && !forProjectiles && !eff.actionTypes.includes(action.type ?? '')) continue;
         // 'self_or_ally' is the only side rule any card prints for this.
         if (eff.attackerSide === 'self_or_ally' && b.side !== attacker.side) continue;
         if (eff.attackerUnitTypes && !eff.attackerUnitTypes.includes(attacker.kind)) continue;
@@ -2481,15 +2777,22 @@ export function coolingBonus(
   t: Token,
   a: CardAction,
   base: { red: number; yellow: number },
+  loans: LoanedPart[] = [],
 ): { red: number; yellow: number } {
   const out = { red: 0, yellow: 0 };
   if (t.kind !== 'mech' || a.type !== 'Firing') return out;
   // The Laser Weapon keyword is printed in Chinese only, on all 20 of the
   // Actions that carry it.
   const laser = (a.keywords ?? []).some((k) => /激光武器|Laser\s*Weapon/i.test(k.inline ?? k.key ?? ''));
-  for (const { slot, card } of tokenCards(data, t)) {
-    if (slot === 'pilot') continue;
-    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+  // A Load lent by a Carrier in Contact is this Mech's Part while it acts, and
+  // its Cooler stacks with the Mech's own (FAQ O3, O17; audit Phase 5, G1).
+  const parts = [
+    ...tokenCards(data, t)
+      .filter(({ slot }) => slot !== 'pilot' && (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
+      .map(({ card }) => card),
+    ...loans.map(({ card }) => card),
+  ];
+  for (const card of parts) {
     for (const act of card.actions ?? []) {
       const en = act.description?.en ?? '';
       const zh = act.description?.zh ?? '';
@@ -3127,9 +3430,12 @@ export function commandRiderOf(data: GameData, mech: Token | undefined): Command
       if (/Automatic Actions instead of Command Actions/i.test(en) || /执行自动动作/.test(zh)) {
         out.autoActions = true;
       }
-      const gridsEn = /may move (\d+) grid/i.exec(en);
+      // "may move 1 grid" (the M2) and the YP23's "may perform a 2 grid Move
+      // before performing its Action" (GoF 1.021), which read as 0 (audit
+      // Phase 5, F9).
+      const gridsEn = /may (?:move (\d+) grids?|perform an? (\d+) grids? Move)/i.exec(en);
       const gridsZh = /移动(\d+)格/.exec(zh);
-      const n = Number(gridsEn?.[1] ?? gridsZh?.[1] ?? 0);
+      const n = Number(gridsEn?.[1] ?? gridsEn?.[2] ?? gridsZh?.[1] ?? 0);
       if (n > out.preMove) out.preMove = n;
     }
   }
@@ -3238,11 +3544,23 @@ export interface SelfHitPart {
 export function selfHitParts(data: GameData, t: Token): SelfHitPart[] {
   if (t.kind !== 'mech') return [];
   const out: SelfHitPart[] = [];
+  // ZYTR-101 Warrior, Designated Defense (GoF 1.021): "This Mech may Designate
+  // part to resolve damage". Every shield prints "this part"; this one names
+  // none, so it is read as the defender's own Snipe, ANY live Part (ruling I1,
+  // audit Phase 5, F2). It rides on a live Part like every other Passive.
+  const anyPart = tokenCards(data, t)
+    .filter(({ slot }) => slot !== 'pilot' && (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
+    .flatMap(({ card }) => card.actions ?? [])
+    .find((a) => (a.gameRules ?? []).some((g) => ((g.effects ?? []) as { type?: string }[]).some((e) => e.type === 'defender_designate_any_part')));
   for (const { slot, card } of tokenCards(data, t)) {
     if (slot === 'pilot') continue;
     const key = slot as PartSlot | 'main';
     if ((t.partStates[key] ?? 'intact') === 'destroyed') continue;
     if ((t.repairedSlots ?? []).includes(key)) continue;
+    if (anyPart) {
+      out.push({ slot: key, card, label: anyPart.name?.en || anyPart.name?.zh || cardName(card) });
+      continue;
+    }
     for (const g of card.actions?.flatMap((a) => a.gameRules ?? []) ?? []) {
       const effects = (g.effects ?? []) as { type?: string }[];
       if (!effects.some((e) => e.type === 'defender_designate_self_hit_part')) continue;
@@ -3350,6 +3668,13 @@ export function autoTargetsFor(
   const origins = isElectronicAttack(a) ? electronicOrigins(data, tokens, t) : [t];
   const reachOf = (o: Token): number => Math.min(...origins.map((from) => rangeBetween(from, o).range));
   const electronic = isElectronicAttack(a) || isScanAction(a);
+  // "--" (Range 0 on a Melee Action) reaches the Adjacent Grids, diagonals
+  // included (4.2.2), the reading losNote gives every Melee "--". Measured as
+  // orthogonal Range it reached only the unit's own Grid, and the Range 1 the
+  // data carried missed a diagonal enemy (audit Phase 5, F6). Nearest is still
+  // orthogonal, so a diagonal neighbour is at 2.
+  const adjacentOnly = a.type === 'Melee' && (a.range ?? 0) === 0;
+  const inReach = (o: Token): boolean => (adjacentOnly ? origins.some((from) => rangeBetween(from, o).adjacent) : reachOf(o) <= reach);
   const omni = (a.keywords ?? []).some((k) => /全向|omni/i.test(JSON.stringify(k)));
   const sees = (o: Token): boolean => {
     if (!board || electronic || (a.type !== 'Firing' && a.type !== 'Melee')) return true;
@@ -3365,11 +3690,12 @@ export function autoTargetsFor(
   const candidates = tokens.filter((o) => {
     if (o.side === t.side || o.uid === t.uid || o.deployed === false) return false;
     if ((o.partStates[o.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
-    if (a.type === 'Melee' && o.aerial) return false;
+    // A Mine is Aerial for placement only: Melee may hit one (ruling I14).
+    if (a.type === 'Melee' && o.aerial && !o.mine) return false;
     // A Counter-roll's Responder: not a "-" (4.11.2), of a type the card names,
     // and for a Scan one it could change (audit Phase 3, D5).
     if (electronic && (electronicDash(data, o) || electronicTargetWhy(a, o) || (isScanAction(a) && !scannable(o)))) return false;
-    return reachOf(o) <= reach && sees(o);
+    return inReach(o) && sees(o);
   });
   if (!candidates.length) return [];
   // Highlight binds FIRING only (FAQ J18, and M26 for Interception), so an
@@ -3387,6 +3713,41 @@ export function autoTargetsFor(
   const pool = lit.length ? lit : traced.length ? traced : candidates;
   const best = Math.min(...pool.map(reachOf));
   return pool.filter((o) => reachOf(o) === best);
+}
+
+// The KK9's Overwatch Strike (LHDR-KK9_B): "Designate 1 Enemy Unit within
+// range as the target, allow 1 Ally Mech to immediately perform 1 Firing
+// Action against it. Then remove this Drone." Nothing read it (audit Phase 5,
+// F8).
+export function overwatchOf(a: CardAction): boolean {
+  return /allow 1 Ally Mech to immediately perform 1 Firing Action/i.test(a.description?.en ?? '');
+}
+
+// A Drone's Automatic Action with a legal target is owed: "Automatic Actions
+// are obligatory" (3.5, p.33; ruling I4). The Neutral fallback is a may, and a
+// Drone with no legal target ends freely. Only the Pholcus's was held (audit
+// Phase 5, F3); its Detonation keeps its own reader. Null when none is owed.
+export function autoShotOwed(data: GameData, tokens: Token[], t: Token, board: { terrain: TerrainPiece[]; smoke: SmokeScreen[] }): CardAction | null {
+  if (t.kind !== 'drone' || t.deployed === false || !alive(t)) return null;
+  for (const a of data.byId.get(t.cardId)?.actions ?? []) {
+    if (a.speed !== 'auto' || a.type === 'Passive' || a.type === 'Detonation') continue;
+    if (autoTargetsFor(data, tokens, t, a, board).length) return a;
+  }
+  return null;
+}
+
+// The enemy units that could owe an Interception against this side's Launch
+// or Aerial Movement: a Token left on a Part that can still act, not in
+// Shutdown, and not under Fire Control Interference (4.9). A table with no
+// board judges the Range, so this is who it asks (audit Phase 5, B7).
+export function interceptorsAgainst(data: GameData, tokens: Token[], side: Side): Token[] {
+  return tokens.filter((u) => u.side !== side && alive(u) && u.deployed !== false
+    && !(u.kind === 'mech' && u.stance === 'shutdown') && statusCount(u.statuses, 'fci') <= 0
+    && Object.entries(u.intercept ?? {}).some(([id, n]) => {
+      if (n <= 0) return false;
+      const slot = tokenCards(data, u).find(({ card }) => (card.actions ?? []).some((a) => a.id === id))?.slot;
+      return !slot || (u.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed';
+    }));
 }
 
 // The Neutral fallback for an automatic attack (FAQ O9/O10).
@@ -3423,10 +3784,28 @@ export function autoNeutralTargets(
   // Enemies first, always. While one is in range, and in sight (3.5.2), there
   // is no choice to offer.
   if (autoTargetsFor(data, tokens, t, a, { terrain, smoke }).length) return [];
-  const reach = a.range ?? 0;
+  // A Container is a Unit here (A23), so it has to be one the Action could
+  // target: within the reach an aura lengthens, in the Forward Arc unless
+  // Omni-direction, and in sight for a Firing or Melee Action (3.5.2; ruling
+  // I5; audit Phase 5, F9). Range alone was read. The piece never hides itself.
+  const reach = actionRange(data, tokens, t, a);
   const g = largeGridOf(t);
+  const omni = (a.keywords ?? []).some((k) => /全向|omni/i.test(JSON.stringify(k)));
+  const seen = (p: TerrainPiece): boolean => {
+    const others = terrain.filter((x) => x.id !== p.id);
+    return p.subCells.some((c) => {
+      const probe: Token = { ...t, uid: -1, col: c.col, row: c.row, size: 1, aerial: false };
+      if (!omni && !inArc(t, probe, 'forward')) return false;
+      if (a.type === 'Firing') {
+        const sight = firingSight(t, probe, others, tokens, smoke);
+        return sight !== 'blocked' && sight !== 'smoked';
+      }
+      if (a.type === 'Melee') return losBetween(t, probe, others, tokens) !== 'blocked';
+      return true;
+    });
+  };
   const near = terrain
-    .filter((p) => p.isFragile)
+    .filter((p) => p.isFragile && seen(p))
     .map((p) => ({
       id: p.id,
       dist: Math.min(...p.subCells.map((c) => Math.abs(Math.floor(c.col / 3) - g.c) + Math.abs(Math.floor(c.row / 3) - g.r))),
@@ -3702,14 +4081,26 @@ export function electronicOrigins(data: GameData, tokens: Token[], t: Token): To
 // Interception; Deploy and Lay never do (FAQ M20). The launcher's wording wins:
 // the MES Beacon reads "Deployable" on the projectile card but "Launch" on the
 // launcher part, and it launches.
+//
+// The printed English first, since it is the authority: the Rumba's Chinese
+// says 设置 ("set up") where its English says Launch. With no English verb the
+// bundle's own projectileType answers, then the Chinese, taught 设置 and 布撒:
+// the Reaper's AS3 wall (PRDR-105_B) has no English, so its Deploy read as a
+// Launch and owed Interceptions (audit Phase 5, B5).
 export function projectileDelivery(a: CardAction): 'launch' | 'deploy' | 'lay' {
-  const hay = [
-    a.name?.en ?? '', a.name?.zh ?? '',
-    a.description?.zh ?? '', a.description?.en ?? '',
+  const en = `${a.name?.en ?? ''} ${a.description?.en ?? ''}`;
+  if (/\bLay\b|Mine ?Lay/i.test(en)) return 'lay';
+  if (/\bDeploy/i.test(en)) return 'deploy';
+  if (/\bLaunch/i.test(en)) return 'launch';
+  const typed = (a as { projectileType?: string }).projectileType;
+  if (typed === 'Deploying') return 'deploy';
+  if (typed === 'Launching') return 'launch';
+  const zh = [
+    a.name?.zh ?? '', a.description?.zh ?? '',
     ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? ''),
   ].join(' ');
-  if (/布设|布雷|\bLay\b|Mine ?Lay/i.test(hay)) return 'lay';
-  if (/部署|\bDeploy/i.test(hay)) return 'deploy';
+  if (/布设|布雷|布撒/.test(zh)) return 'lay';
+  if (/部署|布署|设置/.test(zh)) return 'deploy';
   return 'launch';
 }
 
@@ -3775,7 +4166,11 @@ export function interceptsOwed(
     // performs no Action but Reboot and activates no Passive (4.1). It still
     // intercepted on every page (audit Phase 2, A3).
     if (x.kind === 'mech' && x.stance === 'shutdown') continue;
-    for (const { card } of tokenCards(data, x)) {
+    // Its own Parts only: a Carrier never intercepts with its Load (O4), and a
+    // destroyed Part performs no Action (3.4.3), which the card door already
+    // knew and this queue did not (audit Phase 5, G3 and B6).
+    for (const { slot, card } of ownCards(data, x)) {
+      if ((x.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
       for (const a of card.actions ?? []) {
         if (interceptCapacity(a) === undefined) continue;
         if ((x.intercept?.[a.id] ?? 0) <= 0) continue;
@@ -3790,6 +4185,18 @@ export function interceptsOwed(
     }
   }
   return owed;
+}
+
+// Is an Interception still owed by this Part at this target? An owed attempt was
+// judged at both ends of the Launch, Range and Smoke included, when it was
+// queued, and whatever the Projectile is it counts as Aerial there: "Regardless
+// of whether the Projectile is an Aerial Unit, during Launching the Projectile
+// is considered an Aerial Unit at the Grid it was Launched from and at the
+// Landing Point" (4.7.2). So every door takes an owed target as it stands. A
+// Beacon has been a ground unit since Phase 4 (I1), and all three doors refused
+// it (audit Phase 5, B1).
+export function interceptOwedAt(state: GameState, byUid: number, actionId: string, targetUid: number): boolean {
+  return (state.script?.intercepts ?? []).some((o) => o.uid === byUid && o.actionId === actionId && o.targetUid === targetUid);
 }
 
 // The longest reach of any Intercept Action a unit carries. Nothing calls this
@@ -3821,6 +4228,57 @@ export interface MineTrigger {
   actionId: string;
   victims: number[];
   why: string;
+  // The Ground unit that set it off, when one did (C2, C6).
+  walker?: number;
+}
+
+// Who occupies an Unfolded Pholcus's Grid for M18.4: the units standing in
+// it, Aerial units and Mines aside (ruling I18). The blast takes one of them,
+// its owner choosing (ruling I19).
+export function unfoldOccupants(tokens: Token[], t: Token): Token[] {
+  const g = largeGridOf(t);
+  return tokens.filter((o) => o.uid !== t.uid && alive(o) && !o.aerial && !o.mine && coversGrid(o, g));
+}
+
+// Did this unit stand in the Mine's Grid as the Mine arrived, and not move
+// since? Then it never ENTERED it, and the Mine waits (ruling I15; audit
+// Phase 5, C3).
+function mineSpares(m: Token, o: Token): boolean {
+  return (m.mine?.spared ?? []).some((x) => x.uid === o.uid && x.col === o.col && x.row === o.row);
+}
+
+// Spared only until it moves: the record goes once the unit stands anywhere
+// else, so walking back onto the very cell it stood on is an entry like any
+// other. `moved` is a walk that left the Grid and came back to that cell in
+// one go, which where it ended cannot show (ruling I15; audit Phase 5, C3).
+export function forgetMineSpares(tokens: Token[], moved?: number): void {
+  for (const m of tokens) {
+    const sp = m.mine?.spared;
+    if (!sp?.length) continue;
+    const kept = sp.filter((x) => {
+      if (x.uid === moved) return false;
+      const o = tokens.find((u) => u.uid === x.uid);
+      return !!o && o.col === x.col && o.row === x.row;
+    });
+    if (kept.length !== sp.length) m.mine = { ...m.mine, spared: kept };
+  }
+}
+
+// A Mine set off stays set off until it is resolved. Every Mine in the Grid a
+// Ground unit entered goes off at the same time (FAQ I13), and the first blast
+// may kill that unit before the second is resolved; derived from who stands
+// there, the second then owed nothing (audit Phase 5, C2). Run after every
+// command, where every road into a Grid lands, the way settleEnvironments is.
+export function settleMines(data: GameData, state: GameState): void {
+  // A table with no board keeps every unit on one placeholder cell, so
+  // nothing here says who entered where: the table resolves its Mines.
+  if (state.noBoard) return;
+  forgetMineSpares(state.tokens);
+  for (const trig of minesOwed(data, state.tokens)) {
+    if (trig.walker === undefined) continue;
+    const m = state.tokens.find((x) => x.uid === trig.uid);
+    if (m?.mine && !m.mine.owed) m.mine = { ...m.mine, owed: true };
+  }
 }
 
 function alive(t: Token): boolean {
@@ -4012,11 +4470,14 @@ export function minesOwed(data: GameData, tokens: Token[]): MineTrigger[] {
   for (const m of live) {
     const card = data.byId.get(m.cardId);
     // An Unfolded Pholcus that came up in an occupied Grid detonates on the
-    // spot, ally or not (FAQ M18.4). Nothing else can share a Grid with it -
-    // a Unit entering would Crush it - so sharing one IS that moment.
+    // spot, ally or not (FAQ M18.4). The Unfold decides it, and marks it: a
+    // unit sharing its Grid later, an Aerial one, an ally after a Crush (M8),
+    // owed nothing, and every one of them set it off (rulings I18, I19; audit
+    // Phase 5, D2).
     if (card && isUnfolded(card)) {
+      if (!m.unfoldBlast) continue;
       const blast = (card.actions ?? []).find((a) => (a.redDice ?? 0) + (a.yellowDice ?? 0) > 0);
-      const sharing = blast ? live.filter((o) => o.uid !== m.uid && coversGrid(o, largeGridOf(m))) : [];
+      const sharing = blast ? unfoldOccupants(tokens, m) : [];
       if (blast && sharing.length) {
         out.push({
           uid: m.uid,
@@ -4032,25 +4493,57 @@ export function minesOwed(data: GameData, tokens: Token[]): MineTrigger[] {
     if (!trigger) continue;
     const g = largeGridOf(m);
     // The blast catches everything in the Grid, ally, Flying and Aerial alike
-    // (M6/M22) - but only a Ground Unit sets it off.
+    // (M6/M22) - but only a Ground Unit sets it off, by ENTERING the Grid: one
+    // that stood there as the Mine arrived is spared until it moves (ruling
+    // I15; audit Phase 5, C3).
     const inGrid = live.filter((o) => o.uid !== m.uid && coversGrid(o, g));
-    const walker = inGrid.find((o) => isGroundUnit(data, o));
+    const walker = inGrid.find((o) => isGroundUnit(data, o) && !mineSpares(m, o));
     // Deploying a Mine into a Grid that already holds one sets off the one that
     // was already there (M6). Uids are minted in order, so the higher uid is
     // the Mine that just arrived.
     const newer = inGrid.find((o) => o.uid > m.uid && isMineToken(o));
-    const by = walker ?? newer;
-    if (!by) continue;
+    // One that went off with a Mine beside it stays owed (FAQ I13; C2).
+    const owedBefore = !!m.mine?.owed;
+    if (!walker && !newer && !owedBefore) continue;
+    // Mines that go off together are treated as exploding at the same time,
+    // so one never destroys another (FAQ I13); a Mine Deployed into the Grid
+    // is the one the blast may catch (M6).
+    const victims = walker || owedBefore ? inGrid.filter((o) => !isMineToken(o)) : inGrid;
     out.push({
       uid: m.uid,
       actionId: trigger.id,
-      victims: inGrid.map((o) => o.uid),
+      victims: victims.map((o) => o.uid),
       why: walker
-        ? `${walker.label} is a Ground Unit standing in its Grid`
-        : `${newer!.label} was Deployed into its Grid`,
+        ? `${walker.label} is a Ground Unit that entered its Grid`
+        : owedBefore
+          ? 'it went off with the Mine beside it (FAQ I13)'
+          : `${newer!.label} was Deployed into its Grid`,
+      ...(walker ? { walker: walker.uid } : {}),
     });
   }
   return out;
+}
+
+// A Mine in a Grid the walk ENTERS goes off there: the GM-35 fires "when
+// Ground Units enter the grid" (M6), and the Movement goes on past it (M19).
+// Ruling I16: the unit stops, the blast resolves, and it goes on with the
+// Range it has left unless its Chassis is destroyed. minesOwed only ever asked
+// who stood in the Grid after the move, so a walk through a mined Grid left it
+// armed (audit Phase 5, C1). The index of the first Grid of the route, short
+// of its landing, holding a Mine this unit sets off; -1 if none. The landing's
+// own Mine is minesOwed's, as before, and a flight enters only its landing.
+export function mineStopIndex(data: GameData, tokens: Token[], t: Token, path: { c: number; r: number }[], flying: boolean): number {
+  if (flying || t.aerial || !isGroundUnit(data, t)) return -1;
+  for (let i = 1; i < path.length - 1; i++) {
+    const g = path[i];
+    const mined = tokens.some((m) => {
+      if (m.uid === t.uid || !alive(m) || !coversGrid(m, g)) return false;
+      const c = data.byId.get(m.cardId);
+      return !!c && isMine(c);
+    });
+    if (mined) return i;
+  }
+  return -1;
 }
 
 // What a Mine Layer may drop, and where. The GLP-15's Auto Mine Laying is a
@@ -4077,12 +4570,22 @@ export function minesLayable(
   path: { c: number; r: number }[],
   spare: number,
   flying: boolean,
+  tokens: Token[] = [],
 ): MineLaying | null {
   if (t.kind !== 'mech' || !alive(t) || !path.length || spare <= 0) return null;
-  for (const { card, slot } of tokenCards(data, t)) {
+  // A Mine Layer lent by a Carrier lays too (FAQ O3/O16; audit Phase 5, G1).
+  // Contact is judged in the Grid the Movement began in: that is when the Load
+  // was this Mech's Part, and the walk may well have left the Carrier behind.
+  const start = { ...t, col: path[0].c * 3, row: path[0].r * 3 };
+  const parts = [
     // A destroyed Part lends nothing, the same rule every other borrowed Action
     // follows.
-    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    ...tokenCards(data, t)
+      .filter(({ slot }) => (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
+      .map(({ card }) => card),
+    ...loanedParts(data, tokens, start).map(({ card }) => card),
+  ];
+  for (const card of parts) {
     for (const a of card.actions ?? []) {
       if (projectileDelivery(a) !== 'lay') continue;
       // The Mine it lays is the Part's own Projectile, so a card that lays
@@ -4119,6 +4622,32 @@ export function unfoldToken(state: GameState, data: GameData, t: Token, into: Ca
 // NOTHING read either, so a Bit fielded as 293 could never become 295, which is
 // the only form carrying Automatic Shield.
 //
+// The Bit Port (292_A): "Launch or Recover 1 'White Dwarf' Bit in any stance",
+// Range 6, 1 Ammo Token. Its rule, deploy_or_recover_linked_drone, names the
+// Bit's three faces and the Range, and nothing read it: the Port launched and
+// recovered nothing, so its Token never moved and the Thruster (292_B, live
+// while the Token is on the Port) was always on (ruling I23; audit Phase 5, H1).
+export function bitPortOf(a: CardAction): { formIds: string[]; range: number } | undefined {
+  for (const g of a.gameRules ?? []) {
+    for (const e of (g.effects ?? []) as { type?: string; formIds?: string[]; range?: number }[]) {
+      if (e.type === 'deploy_or_recover_linked_drone' && (e.formIds ?? []).length) {
+        return { formIds: e.formIds!, range: e.range ?? a.range ?? 0 };
+      }
+    }
+  }
+  return undefined;
+}
+
+// The Bits this Port may Recover: this squad's, on the board, within its Range.
+// With no board the table judges the Range, so every one of them is offered.
+export function bitsToRecover(data: GameData, tokens: Token[], t: Token, a: CardAction, noBoard = false): Token[] {
+  const port = bitPortOf(a);
+  if (!port) return [];
+  void data;
+  return tokens.filter((x) => x.side === t.side && x.kind === 'drone' && port.formIds.includes(x.cardId)
+    && alive(x) && x.deployed !== false && (noBoard || rangeBetween(t, x).range <= port.range));
+}
+
 // The forms this Action can turn into, or undefined if it is not a form switch.
 export function formSwitch(a: CardAction): string[] | undefined {
   for (const g of a.gameRules ?? []) {
@@ -4272,6 +4801,9 @@ export function makeDroneToken(state: GameState, data: GameData, card: Card, sid
     size: unitSize(card),
     aerial: isAerial(card),
     barricade: isBarricade(card) || undefined,
+    // Every Mine is marked, so the rules that read tokens alone can tell one
+    // (ruling I14; audit Phase 5, C4).
+    mine: isMine(card) ? {} : undefined,
     stance: (card.stance as Stance) || 'offensive',
     partStates: { main: 'intact', ...(backpack ? { backpack: 'intact' } : {}) },
     ammo: initAmmo(cards),
@@ -4505,7 +5037,7 @@ export function mechCards(data: GameData, loadout: MechLoadout): Card[] {
 // ---------- faction legality ----------
 
 export interface FactionProblem {
-  kind: 'mixed-mech' | 'mixed-squad' | 'duplicate-pilot';
+  kind: 'mixed-mech' | 'mixed-squad' | 'duplicate-pilot' | 'launched-only' | 'mixed-load';
   label: string;
   detail: string;
 }
@@ -4596,6 +5128,35 @@ export function factionProblems(data: GameData, tokens: Token[]): FactionProblem
       kind: 'mixed-squad',
       label: 'Squad',
       detail: `This squad mixes ${allegiance.join(' and ')}. A squad may only contain units from a single faction, though mercenaries may join any of them.`,
+    });
+  }
+  // p.82: a "White Dwarf" Bit is Launched from the Bit Port and is never part
+  // of a Squad, so it is never deployed at setup either. One on the table with
+  // no launcher was fielded, not launched: a Launch records its launcher
+  // (ruling I23; audit Phase 5, H1).
+  const launchedOnly = new Set((data.cards ?? []).flatMap((c) => (c.actions ?? []).flatMap((a) => bitPortOf(a)?.formIds ?? [])));
+  for (const t of tokens) {
+    if (t.kind !== 'drone' || t.parentUid !== undefined || !launchedOnly.has(t.cardId)) continue;
+    out.push({
+      kind: 'launched-only',
+      label: t.label,
+      detail: 'A "White Dwarf" Bit is launched from the Bit Port, never fielded: it is not part of a Squad and is not deployed at setup (p.82).',
+    });
+  }
+  // A Load is a Part, and a unit's Parts are its own faction (5.1, FAQ N6):
+  // an RDL or GoF Load on a UN Carrier raised a mixed squad, while a PD Load or
+  // the Bit Port passed (ruling I26; audit Phase 5, G5).
+  for (const t of tokens) {
+    if (t.kind !== 'drone' || !t.droneBackpack) continue;
+    const carrier = data.byId?.get(t.cardId);
+    const load = data.byId?.get(t.droneBackpack);
+    const cf = carrier ? data.factionOf(carrier) : undefined;
+    const lf = load ? data.factionOf(load) : undefined;
+    if (!load || !cf || !lf || cf === lf) continue;
+    out.push({
+      kind: 'mixed-load',
+      label: t.label,
+      detail: `${cardName(load)} (${lf}) is the Load of ${t.label} (${cf}). A Load is a Part, and a unit's Parts are its own faction (5.1, FAQ N6).`,
     });
   }
   // 5.1's third rule: "Pilots with the same ID cannot appear in the same
@@ -5261,8 +5822,10 @@ export interface LoanedPart {
   from: Token;
 }
 
-// What the Tarantulas touching this Mech are lending it right now.
-export function loanedParts(data: GameData, tokens: Token[], t: Token): LoanedPart[] {
+// What the Tarantulas touching this Mech are lending it right now. `anywhere`
+// drops the Contact test, for the one check that arrives after a walk that may
+// have left the Carrier behind (layMine).
+export function loanedParts(data: GameData, tokens: Token[], t: Token, opts: { anywhere?: boolean } = {}): LoanedPart[] {
   if (t.kind !== 'mech') return [];
   const out: LoanedPart[] = [];
   for (const d of tokens) {
@@ -5274,7 +5837,7 @@ export function loanedParts(data: GameData, tokens: Token[], t: Token): LoanedPa
     if (!d.droneBackpack || (d.partStates.backpack ?? 'intact') === 'destroyed') continue;
     const load = data.byId.get(d.droneBackpack);
     if (!load || !canBeLoad(load)) continue;
-    if (!inContact(t, d)) continue;
+    if (!opts.anywhere && !inContact(t, d)) continue;
     out.push({ slot: `load:${d.uid}`, card: load, from: d });
   }
   return out;
@@ -5332,6 +5895,13 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
         // perform actions (FAQ J23), so the destroyed gate steps aside for it.
         available = false;
         reason = `${SLOT_LABEL[slot]} destroyed`;
+      } else if (t.kind === 'mech' && (loan || (slot !== 'torso' && slot !== 'pilot')) && cruising(data, t) && !usableInCruise(a)) {
+        // In Cruise Mode only the Torso acts, and a lent Load is no part of
+        // it: actionPartWhy's reading, which the list never asked, so the
+        // guide ran the attack before the payment was refused (audit Phase
+        // 5, H4 and H6).
+        available = false;
+        reason = 'Cruise Mode: only the Torso acts';
       } else if (a.type === 'Firing' && statusCount(t.statuses, 'fci') > 0) {
         available = false;
         reason = 'Fire Control Interference blocks Firing';
@@ -5356,10 +5926,14 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
       // Pack's magazine, so the pip has to show the pool that would actually
       // pay or the Action is greyed "out of ammo" while ammo is sitting there.
       if (ammoLeft === 0) {
-        const lent = ammoDeliveryPool(data, t, a.id);
-        if (lent) ammoLeft = t.ammo?.[lent] ?? 0;
+        const lent = ammoDeliveryPool(data, t, a.id, loans);
+        if (lent) ammoLeft = lent.from.ammo?.[lent.poolId] ?? 0;
       }
-      if (available && ammoLeft === 0) {
+      // The Bit Port's Action Recovers too, and an empty Port is exactly when
+      // it can: with a board, while a Bit of this squad stands in Range; with
+      // none, the table says (292_A; ruling I23; audit Phase 5, H1).
+      const recovers = ammoLeft === 0 && !!bitPortOf(a) && (!world || bitsToRecover(data, world.tokens, t, a).length > 0);
+      if (available && ammoLeft === 0 && !recovers) {
         available = false;
         reason = 'out of ammo';
       }
@@ -5388,9 +5962,18 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
         }
       }
 
-      const projectiles = Array.isArray(card.projectile)
-        ? card.projectile.map((id) => data.byId.get(id)).filter((x): x is Card => !!x)
-        : [];
+      // 292_A, the White Dwarf's Bit Port: "Launch or Recover 1 'White Dwarf'
+      // Bit in any stance". The card lists no Projectile; its rule names the
+      // Bit's three faces, and any one may be launched (ruling I23; audit
+      // Phase 5, H1).
+      const port = bitPortOf(a);
+      const projectiles = port
+        ? port.formIds.map((id) => data.byId.get(id)).filter((x): x is Card => !!x)
+        : Array.isArray(card.projectile)
+          // Never the Unfolded Pholcus: the rack launches the folded one, which
+          // Unfolds into it (FAQ M18.3; audit Phase 5, A8).
+          ? card.projectile.map((id) => data.byId.get(id)).filter((x): x is Card => !!x && !isUnfolded(x))
+          : [];
       const charge = consumesCharge(a) ? { charged: isCharged(loan ? loan.from : t, slot) } : undefined;
       out.push({
         action: a, card, slot, available, reason, ammoLeft, intercept, charge,
@@ -5807,6 +6390,16 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       // FAQ audit hold walls as aerial and the elevated drones as grounded.
       aerial: card ? isAerial(card) : (t.aerial ?? false),
       barricade: card && isBarricade(card) ? true : undefined,
+      // Derived from the card like the Barricade, its record kept (C2-C4).
+      unfoldBlast: t.unfoldBlast === true ? true : undefined,
+      mine: card && isMine(card)
+        ? {
+            spared: Array.isArray(t.mine?.spared)
+              ? t.mine.spared.filter((x: { uid?: unknown; col?: unknown; row?: unknown }) => typeof x?.uid === 'number' && typeof x?.col === 'number' && typeof x?.row === 'number')
+              : undefined,
+            owed: t.mine?.owed === true ? true : undefined,
+          }
+        : undefined,
       lastDamagedBy: t.lastDamagedBy,
       repairedSlots: Array.isArray(t.repairedSlots) && t.repairedSlots.length ? t.repairedSlots : undefined,
       stance: t.stance ?? ((card?.stance as Stance) || 'offensive'),
@@ -5830,6 +6423,9 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       // here is dropped on load. Both of these are rules-bearing and both are
       // in boardFingerprint, so losing them silently desyncs a reloaded game.
       commandedBy: typeof t.commandedBy === 'number' ? t.commandedBy : undefined,
+      // A Missile Group and its target: rules-bearing and fingerprinted (A5).
+      group: typeof t.group === 'number' ? t.group : undefined,
+      groupTarget: typeof t.groupTarget === 'number' ? t.groupTarget : undefined,
       // The High Temperature entry marker. Rules-bearing: a dropped one has
       // settleEnvironments cook the unit again on the first command after a
       // load, and it is in boardFingerprint for the same reason.
@@ -6012,7 +6608,10 @@ export function actionPartWhy(data: GameData, t: Token, a: CardAction, partKey?:
     return can.length ? null : `No surviving Part can initiate ${a.name?.en || a.id} (3.4.3).`;
   }
   const held = tokenCards(data, t).find(({ card }) => (card.actions ?? []).some((x) => x.id === a.id));
-  if (!held || held.slot === 'pilot') return null;
+  // A lent Load's Action is no Part of the Torso's, so a cruising Mech
+  // performs none (audit Phase 5, H6).
+  if (!held) return cruising(data, t) && !usableInCruise(a) ? 'In Cruise Mode only the Torso acts, and a lent Load is no part of it (Ace Strategy additional rules).' : null;
+  if (held.slot === 'pilot') return null;
   if (!partUsable(t, held.slot)) return `The ${SLOT_LABEL[held.slot]} is destroyed, so its Actions cannot be performed (3.4.3).`;
   if (held.slot !== 'torso' && cruising(data, t) && !usableInCruise(a)) {
     return `In Cruise Mode only the Torso acts, unless an Action says it may be used in Cruise Mode (Ace Strategy additional rules).`;

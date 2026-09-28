@@ -30,7 +30,7 @@ check('the Match Centre reads it in both places it adjusts an Action',
 check('and freeplay asks it at both of its doors',
   (main.match(/askTwoHanded\(t, granted\)/g) ?? []).length, 2);
 check('and the Match Centre applies it where the attack starts',
-  /twoHandedUse\(data, t, granted\)\?\.action \?\? granted/.test(match), true);
+  /twoHandedUse\(data, t, granted, \[\], loans\)\?\.action \?\? granted/.test(match), true);
 check('both sit AFTER the Stationary adjustment, so the riders compound',
   /const steadied = raw \? stationaryAdjusted[\s\S]{0,900}handsFor/.test(hud)
   && /const steadied = stationaryAdjusted[\s\S]{0,900}askTwoHanded/.test(main), true);
@@ -48,7 +48,7 @@ check('and the mirror rebuilds the same one-handed Action',
 check('which travels on the published view',
   /twoHandedDeclined: c\.action\.twoHandedDeclined \|\| undefined/.test(combat), true);
 check('and the Part picked is one that gives something back, when there is one',
-  /hands\.find\(\(h\) => freehandSupport\(data, t, h\.slot, a\)\) \?\? hands\[0\]/.test(units), true);
+  /hands\.find\(\(h\) => freehandSupport\(data, t, h\.slot, a, loans\)\) \?\? hands\[0\]/.test(units), true);
 check('no hand free means no designation, rather than a free upgrade',
   /if \(!hands\.length\) return null;/.test(units), true);
 // A hand carrying a Black Box is already excluded upstream, which is what makes

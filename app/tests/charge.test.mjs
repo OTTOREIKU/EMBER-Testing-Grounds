@@ -110,7 +110,7 @@ check('and 086_B really does print the delivery phrase',
   /可选择消耗本部件的弹药/.test(byId.get('086').actions.find((x) => x.id === '086_B').description.zh), true);
 
 check('an empty Pod may be paid from the Pack',
-  U.ammoDeliveryPool(realData, gunner({ '129_A': 0, '086_A': 2 }), '129_A'), '086_A');
+  U.ammoDeliveryPool(realData, gunner({ '129_A': 0, '086_A': 2 }), '129_A')?.poolId, '086_A');
 check('an empty Pack offers nothing',
   U.ammoDeliveryPool(realData, gunner({ '129_A': 0, '086_A': 0 }), '129_A'), undefined);
 check('a destroyed Pack delivers nothing',

@@ -39,7 +39,7 @@ check('a trace debt must name the attacker to be queued',
 // The Red Shoes' control debt joined it: a control with no unit to move strands
 // the panel just the same.
 check('a reload drops a trace debt with no attacker, rather than stranding the panel',
-  /\(\(x\.kind !== 'trace' && x\.kind !== 'control'\) \|\| typeof x\.fromUid === 'number'\)/.test(types), true);
+  /\(\(x\.kind !== 'trace' && x\.kind !== 'control' && x\.kind !== 'overwatch'\) \|\| typeof x\.fromUid === 'number'\)/.test(types), true);
 // An older save has no `kind` at all; those are all Emergency Smoke.
 check('an untagged debt is still valid, so old boards keep working',
   /kind\?: 'smoke'/.test(types) && !/kind: 'smoke' \| 'trace';/.test(types), true);

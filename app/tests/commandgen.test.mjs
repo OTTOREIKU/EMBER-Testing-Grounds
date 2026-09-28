@@ -7,6 +7,14 @@
 // a Passive Action instead, which is why the reader has to go through the
 // Action's description. If a future card puts the number somewhere else, the
 // census at the bottom is what catches it.
+//
+// This reads the RAW community cards.json, which is the 1.02 text. The game
+// reads the merged data, where the GoF 1.021 overrides (ruling I1) give the
+// Warrior (172) Designated Defense and Swarm Tactics in place of Command
+// Generation 4 and Melee Synergy, and the Data Link Pod "Command Generation +1"
+// in place of its end-of-Opportunity Coordination. What this file pins is how
+// the readers treat each SHAPE of text; the 1.021 numbers are pinned in
+// mechanics5.test.mjs (F2).
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const cards = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
@@ -187,10 +195,13 @@ check('the MR21 Railgun carries it', coOf('ZHRA-201', 'ZHRA-201_A'), 1);
 check('Melee Synergy grants rather than carries', coOf('172', '172_B'), 0);
 check('and is recognised as a grant', K.grantsCommandCoordination(actionsOf('172').find((a) => a.id === '172_B')), true);
 
-// Six Actions in the data mention the keyword, and they split three ways. Four
-// carry it per-Action, one fires it when the Opportunity ends, one grants it to
-// a whole Action type. Every one has to land in exactly one bucket, or a card
-// either does nothing or hands out a Command it should not.
+// Fourteen Actions in the raw data carry the keyword, and they split three
+// ways. Twelve carry it per-Action: four print a number, and eight are Tactic
+// Actions NAMED for it that print "Give 1 Command Token to 1 Ally Drone" (four
+// Parts and their four Discard faces; audit Phase 5, F5). One fires it when
+// the Opportunity ends, one grants it to a whole Action type. Every one has to
+// land in exactly one bucket, or a card either does nothing or hands out a
+// Command it should not.
 const carriers = [];
 const enders = [];
 const granters = [];
@@ -202,8 +213,10 @@ for (const c of list) {
     if (K.coordinationGrant(a)) granters.push(where);
   }
 }
-check('four Actions carry Command Coordination per-Action', carriers.sort(), [
+check('twelve Actions carry Command Coordination per-Action', carriers.sort(), [
   'ZHLA-102/ZHLA-102_A', 'ZHLA-201/ZHLA-201_A', 'ZHRA-201/ZHRA-201_A', 'ZHRA-202/ZHRA-202_A',
+  'ZYBP-101/ZYBP-101_B', 'ZYBP-202/ZYBP-202_B', 'ZHLA-102/ZHLA-102_B', 'ZHLA-201/ZHLA-201_B',
+  'ZHLA-102-T/ZHLA-102-T_A', 'ZHLA-201-T/ZHLA-201-T_A', 'ZHRA-201-T/ZHRA-201-T_A', 'ZHRA-202-T/ZHRA-202-T_A',
 ].sort());
 check('one fires it when the Opportunity ends', enders, ['ZYBP-102/ZYBP-102_A']);
 check('one grants it to an Action type', granters, ['172/172_B']);

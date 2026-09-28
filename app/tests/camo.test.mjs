@@ -38,7 +38,9 @@ writeFileSync(
     + slice(readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8'),
       'export function statusCount', 'export function ageTokens', 'statusCount')
     + slice(rulesSrc, 'export function inContact', 'export function largeGridOf', 'inContact')
-    + slice(dataSrc, 'export const BARRICADE_CARDS', 'export const UNFOLDS_INTO', 'isBarricade')
+    // Through unfoldsInto: the folded Pholcus breaks camouflage by Contact
+    // with the Deployables (audit Phase 5, D4).
+    + slice(dataSrc, 'export const BARRICADE_CARDS', 'export function isUnfolded', 'isBarricade')
     + slice(unitsSrc, '// ---------- Who breaks Optical Camouflage', 'export function canActivateCamo', 'the camo block'),
 );
 const { isDeployable, breaksCamoByContact, camoBrokenBy } = await import(tmp.href);

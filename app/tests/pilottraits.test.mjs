@@ -392,9 +392,9 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   // (it wants the DOM), so the two pool-construction sites are asserted by
   // source, the way dodgedie.test.mjs pins its own five-file round trip.
   check('the single-target pool calls the reader',
-    /const bonus = coolingBonus\(this\.data, attacker, action, printed\);[\s\S]{0,600}?const pilot = pilotDiceBonus\(this\.data, attacker, defender, action[^;]*\);[\s\S]{0,200}?printed\.yellow \+ bonus\.yellow \+ pilot\.yellow/.test(combat), true);
+    /const bonus = coolingBonus\(this\.data, attacker, action, printed, this\.loansFor\(attacker\)\);[\s\S]{0,600}?const pilot = pilotDiceBonus\(this\.data, attacker, defender, action[^;]*\);[\s\S]{0,200}?printed\.yellow \+ bonus\.yellow \+ pilot\.yellow/.test(combat), true);
   check('and so does the Multi-Target pool, which is settled once and split',
-    /const cooled = coolingBonus\(this\.data, attacker, action, printed\);[\s\S]{0,700}?const pilot = pilotDiceBonus\(this\.data, attacker, primary, action[^;]*\);[\s\S]{0,200}?printed\.yellow \+ cooled\.yellow \+ pilot\.yellow/.test(combat), true);
+    /const cooled = coolingBonus\(this\.data, attacker, action, printed, this\.loansFor\(attacker\)\);[\s\S]{0,700}?const pilot = pilotDiceBonus\(this\.data, attacker, primary, action[^;]*\);[\s\S]{0,200}?printed\.yellow \+ cooled\.yellow \+ pilot\.yellow/.test(combat), true);
   // A boardless table answers the range itself (the pad's Grace Note question).
   check('and a boardless table hands in its own answer',
     /pilotDiceBonus\(this\.data, attacker, defender, action, this\.noBoard \? this\.tableGrace \?\? undefined : undefined\)/.test(combat), true);

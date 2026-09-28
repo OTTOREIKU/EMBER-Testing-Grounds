@@ -27,7 +27,11 @@ const check = (name, got, want) => {
 
 console.log('Intercept X — rulebook 4.9\n');
 
-// Known values read off the cards by hand.
+// Known values read off the cards by hand. This parses the RAW card text, so
+// ZHDR-102_A still reads 1: the old 1.02 Crossbow printed Intercept 1. GoF 1.021
+// drops it, and action_overrides clears it in all three languages, so the game
+// (the merged data) gives the Crossbow no Interception; mechanics5.test.mjs B3
+// pins that.
 const known = { '003_A': 3, '160_A': 3, 'ZHDR-102_A': 1, 'PRDR-101_C': 2, '553_B': 2, '284_A': 1 };
 const byId = new Map();
 for (const c of cards) for (const a of c.actions ?? []) byId.set(a.id, a);
@@ -96,7 +100,11 @@ writeFileSync(
     + cut(rulesSrc, 'export function losBetween', '// Does the line between two Bases', 'the line walker')
     + src.slice(src.indexOf('export function interceptCapacity'), src.indexOf('function initIntercept'))
     + src.slice(src.indexOf('export function interceptsOwed'), src.indexOf('function alive(t: Token)'))
-    + src.slice(src.indexOf('export function tokenCards'), src.indexOf('// ---------- Tarantula Loads')),
+    + src.slice(src.indexOf('export function tokenCards'), src.indexOf('// ---------- Tarantula Loads'))
+    // interceptsOwed walks ownCards, which leaves a Carrier's Load out (audit
+    // Phase 5, G3): the real readers, down to the keyword isCarrier matches.
+    + cut(src, 'const LOAD_KEYWORD', '// What a Carrier may have on its back', 'isCarrier')
+    + cut(src, 'export function carriedLoad', '// ---------- what a won Counter-roll does', 'ownCards'),
 );
 const O = await import(tmp2.href);
 

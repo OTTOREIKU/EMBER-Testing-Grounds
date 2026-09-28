@@ -69,6 +69,13 @@ export function riderOnDrone(_data: any, _tokens: any, _t: any): any {
 // conditions themselves are pinned in tether.test.mjs against the real card.
 export function settleTethers(_data: any, _state: any): void {}
 export function settleEnvironments(_data: any, _state: any): any[] { return []; }
+// The Mine readers are pinned against the real engine in mechanics5.test.mjs;
+// no fixture here lays one, so the honest stub marks nothing (audit Phase 5,
+// C2).
+export function settleMines(_data: any, _state: any): void {}
+// Nor does any stand in a Mine's Grid, so no reprieve is there to end (audit
+// Phase 5, C3).
+export function forgetMineSpares(_tokens: any, _moved?: number): void {}
 // apply() also Reveals a unit whose camouflaging Part is gone (4.12.2's fifth
 // trigger; audit Phase 3, C11). No fixture here is camouflaged, so the honest
 // stub finds none; mechanics3.test.mjs drives the real reader.

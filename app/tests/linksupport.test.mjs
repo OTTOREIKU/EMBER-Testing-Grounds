@@ -137,7 +137,7 @@ const perform = cut(main, 'function performGuided(', 'async function performStab
 check('the tabletop routes a Link Beacon before the Detonation branch',
   perform.indexOf('linkSupportOf(action)') > 0 && perform.indexOf('linkSupportOf(action)') < perform.indexOf("t.kind === 'projectile' && action.type !== 'Passive'"), true);
 check('the Guided pad routes a Link Beacon before the Detonation branch',
-  guided.indexOf('linkSupportOf(a.action)') > 0 && guided.indexOf('linkSupportOf(a.action)') < guided.indexOf("if (a && t.kind === 'projectile' && a.action.type !== 'Passive')"), true);
+  guided.indexOf('linkSupportOf(a.action)') > 0 && guided.indexOf('linkSupportOf(a.action)') < guided.indexOf("t.kind === 'projectile' && a.action.type !== 'Passive'"), true);
 check('the tabletop squad panel\'s + goes through the capped command',
   [/lk-plus[\s\S]{0,400}kind: 'recoverLink'/.test(squads), /t\.link = \(t\.link \?\? 0\) \+ 1/.test(squads)], [true, false]);
 check('the pad asks about Appease as a round turns, on both phones',

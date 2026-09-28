@@ -62,6 +62,10 @@ writeFileSync(
     + 'function rangeBetween(a: any, b: any): any { const p = largeGridOf(a), q = largeGridOf(b);\n'
     + '  return { range: Math.abs(p.c - q.c) + Math.abs(p.r - q.r) }; }\n'
     + 'function isElectronicAttack(_a: any): boolean { return false; }\n'
+    // minesLayable also asks for a Mine Layer lent by a Carrier in Contact
+    // where the walk began; no Carrier stands here, and mechanics5.test.mjs
+    // (G1) drives the lent one.
+    + 'function loanedParts(_d: any, _ts: any, _t: any): any[] { return []; }\n'
     // The Counter-roll Responder filters and the Highlight reader autoTargetsFor
     // asks since the audit's Phase 3: neutral here, since no Mine attacks
     // electronically; the Token half of Highlight is what a Firing attack reads.
@@ -205,7 +209,8 @@ check('a folded Pholcus owes its Unfold (M18.3)',
 check('and a GM-35 owes none', M.unfoldsOwed(data, [mineAt(2, 4, 4)]), []);
 
 // M18.4: coming up in an occupied Grid detonates on the spot, ally or not.
-const unfolded = tok(1, '167', 4, 4, { kind: 'drone', label: 'Pholcus' });
+// The Unfold marks it so (audit Phase 5, D2), which this Pholcus carries.
+const unfolded = tok(1, '167', 4, 4, { kind: 'drone', label: 'Pholcus', unfoldBlast: true });
 const onTop = M.minesOwed(data, [unfolded, mech(2, 3, 3, 's1')]);
 check('an Unfold into an occupied Grid detonates at once (M18.4)',
   onTop.map((x) => [x.uid, x.actionId, x.victims]), [[1, '167_A', [2]]]);
@@ -326,8 +331,13 @@ const wall = (id, c, r) => ({ id, type: 'building', isFragile: false, height: 3,
 const autoAct = { id: 'A1', type: 'Firing', speed: 'auto', range: 1 };
 const drone = (uid, c, r, side = 's1') => tok(uid, '167', c * 3 + 1, r * 3 + 1, { side, kind: 'drone', label: 'Drone' });
 
-check('with no enemy in range, the nearest Breakable Terrain is offered',
-  M.autoNeutralTargets(data, [drone(1, 4, 4)], [box('t1', 5, 4)], drone(1, 4, 4), autoAct).map((x) => x.id), ['t1']);
+// A Container is a Unit here (A23), so it is one the Action could target:
+// in sight, in the Forward Arc and within reach (ruling I5; audit Phase 5,
+// F9). These Drones face the piece they are offered.
+check('with no enemy in range, the nearest Breakable Terrain is offered', (() => {
+  const me = { ...drone(1, 4, 4), facing: 1 };
+  return M.autoNeutralTargets(data, [me], [box('t1', 5, 4)], me, autoAct).map((x) => x.id);
+})(), ['t1']);
 // O9 is a FALLBACK: enemies always outrank Neutrals, so while one is in reach
 // this must stay silent rather than adding to the list.
 // Facing it: an Automatic Firing Action takes only a target it may take, so
@@ -338,7 +348,7 @@ check('an enemy in range suppresses it entirely', (() => {
 })(), []);
 check('but one behind its Forward Arc is no target, and does not', (() => {
   const me = { ...drone(1, 4, 4), facing: 3 };
-  return M.autoNeutralTargets(data, [me, foe(2, 5, 4)], [box('t1', 5, 4)], me, autoAct).map((x) => x.id);
+  return M.autoNeutralTargets(data, [me, foe(2, 5, 4)], [box('t1', 3, 4)], me, autoAct).map((x) => x.id);
 })(), ['t1']);
 // O10, and it needs no list of its own: a building is not fragile.
 check('a building is never offered, however close',
@@ -351,7 +361,7 @@ check('only the nearest is offered, not everything in range',
   ['far']);
 // Ties come back together, the same way tied enemies do.
 check('tied nearest pieces both come back',
-  M.autoNeutralTargets(data, [drone(1, 4, 4)], [box('a', 5, 4), box('b', 3, 4)], drone(1, 4, 4), autoAct).map((x) => x.id), ['a', 'b']);
+  M.autoNeutralTargets(data, [drone(1, 4, 4)], [box('a', 5, 3), box('b', 3, 3)], drone(1, 4, 4), { ...autoAct, range: 2 }).map((x) => x.id), ['a', 'b']);
 // Manhattan again: the diagonal is 2, so Range 1 cannot reach it.
 check('a diagonal piece is range 2, so Range 1 misses it',
   M.autoNeutralTargets(data, [drone(1, 4, 4)], [box('t1', 5, 5)], drone(1, 4, 4), autoAct), []);

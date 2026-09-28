@@ -43,9 +43,11 @@ check('a nested Extra pops the stack instead of recording an activation',
 // ---------- Half two: the Action outside an Opportunity ----------
 check('performAction can be granted', /granted\?: boolean/.test(commands), true);
 check('but the flag is never self-authorising — the debt is checked',
-  /if \(cmd\.granted\) \{[\s\S]{0,300}r\.kind === 'riposte'\);[\s\S]{0,200}Nothing has granted/.test(commands), true);
+  /if \(cmd\.granted\) \{[\s\S]{0,300}r\.kind === 'riposte'[\s\S]{0,300}Nothing has granted/.test(commands), true);
+// A Riposte buys a Melee Action, and the KK9's Overwatch Strike, the other
+// grant, a Firing one (audit Phase 5, F8).
 check('and it buys a Melee Action only',
-  /a\.type !== 'Melee'\) return no\('A Riposte grants a Melee Action/.test(commands), true);
+  /a\.type === 'Melee' \? 'riposte'[\s\S]{0,400}A Riposte grants a Melee Action/.test(commands), true);
 check('the grant is spent by the Action apply, so one Riposte cannot buy two',
   /if \(cmd\.granted && sc\) \{[\s\S]{0,300}sc\.reactions\.splice\(at, 1\);/.test(commands), true);
 

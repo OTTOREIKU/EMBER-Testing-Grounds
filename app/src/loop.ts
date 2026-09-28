@@ -1,6 +1,6 @@
 import type { GameData } from './data';
 import type { GameState, Side, Timing, Token } from './types';
-import { TIMINGS } from './types';
+import { PHASES, TIMINGS } from './types';
 import { commandGeneration, rwsCommandsLeft } from './units';
 import { untouched } from './ticks';
 
@@ -57,8 +57,9 @@ export function eligibleUnits(state: GameState, phase: LoopPhase, side: Side, da
         t.side === side
         && t.kind === 'drone'
         && alive(t)
-        && !commanded.has(t.uid)
-        && (!broke || free.has(t.uid)),
+        // Additional Instructions is a Command of its own: the Drone keeps the
+        // one its squad may still send it (ruling I7; audit Phase 5, F9).
+        && (free.has(t.uid) || (!commanded.has(t.uid) && !broke)),
     );
     // RWS (遥控武器, FAQ A20/A22): a Mech carrying an Ls197R Autocannon may be
     // sent a Command to fire it, once per Part per round - the one case where a
@@ -77,7 +78,12 @@ export function eligibleUnits(state: GameState, phase: LoopPhase, side: Side, da
       (t) => t.side === side && t.kind === 'drone' && alive(t) && !acted.has(t.uid),
     );
   }
-  return state.tokens.filter((t) => t.side === side && t.kind === 'projectile' && alive(t) && !acted.has(t.uid));
+  // 3.6.1 designates units "to perform a Delayed Action": a Mine, a wall, a
+  // Beacon whose only rule is Passive, has none, and every one was listed
+  // with the rest (audit Phase 5, A8). A caller without the cards sees every
+  // Projectile, as before.
+  const delayed = (t: Token) => !data || (data.byId.get(t.cardId)?.actions ?? []).some((a) => a.type === 'Delay');
+  return state.tokens.filter((t) => t.side === side && t.kind === 'projectile' && alive(t) && !acted.has(t.uid) && delayed(t));
 }
 
 // What a Drone's activation may actually do, per phase. 3.2.2 ②: a Command
@@ -86,6 +92,16 @@ export function eligibleUnits(state: GameState, phase: LoopPhase, side: Side, da
 // exist there. One home for the panels of both pages and for check(), because
 // the icon lock lived nowhere and both starter Drones were firing their
 // Automatic Actions off Commands.
+// Which icon lock a Drone's activation is under. A Command sent by Command
+// Coordination "has the same effect as a Command sent in the Command Phase"
+// (4.15.3), so the activation it opens in the Action Phase takes the Command
+// Phase's lock: a Command-icon Action or a Movement (audit Phase 5, F1).
+export function droneLockPhase(state: GameState): LoopPhase | null {
+  if (state.script?.opp?.commanded) return 'Command';
+  const ph = PHASES[state.round.phase];
+  return isLoopPhase(ph) ? ph : null;
+}
+
 export function droneMoveWhy(phase: LoopPhase): string | null {
   if (phase === 'Command') return null;
   return 'A Drone moves only when Commanded (3.2.2). The Automatic Phase performs its Automatic Actions, and only those (3.5).';
