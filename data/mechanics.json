@@ -316,19 +316,21 @@
   },
   {
    "id": "remote_access",
-   "name": "Remote Access",
-   "basic": "In the Terminals missions, every Mech can take a Terminal with an Electronic Counter-roll.",
+   "name": "Terminals and Remote Access",
+   "basic": "In a Terminals mission a Terminal is accessed two ways: a side alone in its zone at the End Phase, or a Mech's Remote Access roll in its Action Opportunity.",
    "points": [
-    "Remote Access: in the End Phase, a Short Tactic with Range 4, performed with the Torso.",
-    "Roll against the Terminal's Electronic Value of 3; win, and the Terminal is accessed.",
-    "Direct Access: in the End Phase, a side with a Mech (not in Shutdown) or a Drone in the zone, and no enemy there, takes it.",
-    "Each Terminal can be accessed once per round."
+    "Direct Access: at the End Phase your Mech not in Shutdown, or your Drone, is in the Terminal's zone and no enemy unit is.",
+    "Remote Access: a Mech's Short Tactical Action, made with the Torso, at Range 4 of any Grid of the Terminal's zone.",
+    "Roll your Electronic Value against the Terminal's 3 dice; a tie goes to you. Terrain and line of sight do not matter.",
+    "It is neither an Electronic Attack nor Support, so Repeaters and bonuses to those do not help. It has no Silence.",
+    "Each Terminal is accessed once a round and pays each time; all of them turn face-up again at the end of the round."
    ],
-   "ref": "Rulebook 5.3",
+   "ref": "Rulebook 4.11, 4.12.3, 5.3.3 (printed 5.4.3, p.87); FAQ J8, P6, P12; rulings I25, I26",
    "match": [
-    "remote access"
+    "remote access",
+    "terminal in each"
    ],
-   "text": "A Universal Action every Mech has in the Terminals missions (5.3.3). Performed in the End Phase with the Torso, Range 4, as a Short Tactic: make an Electronic Counter-roll against the Terminal, whose Electronic Value is 3; success accesses it.\n\nDirect Access is the other way: at the End Phase a Terminal is accessed by a side with a Mech outside Shutdown Stance or a Drone inside its Tactical Zone and no enemy Unit there.\n\nA Terminal can be accessed once per Round; its token is flipped face-down when taken and every Terminal token is flipped back face-up at the End Phase."
+   "text": "A Terminal is a Task Item with no footprint. Its token sits in its Tactical Zone, and its Access Range is the whole zone (5.3.3, printed as 5.4.3 on p.87). The Terminals missions put one in each zone they name (Data Theft: Bravo, Charlie, Golf, Hotel; Geological Exploration: Bravo, Delta, Foxtrot, Hotel; Receive Signal: Bravo, Echo, Hotel) and pay 2 Victory Points for each Terminal a player accesses.\n\nThere are two ways to access one:\n- Direct Access, at the End Phase: at least one of your Mechs not in Shutdown Stance, or one of your Drones, is in any Grid of the zone, and no enemy Unit is (FAQ P6). A Low Value Unit never accesses one (p.82), but an enemy one in the zone still stands in the way, as it does for Control.\n- Remote Access, a Universal Action every Mech gains in these missions: a Tactical Short Action (the hourglass icon, 1 Action Tick) in the Mech's own Action Opportunity, performed with the Torso, Range 4. The Range may run to any Grid of the Terminal's zone (FAQ P6).\n\nRemote Access is an Electronic Counter-roll (4.11.2): the Mech rolls Yellow Dice equal to its Electronic Value, and the opponent rolls the Terminal's 3 Yellow Dice, which never Focus and whose hollow faces count nothing. More Lightning wins, then more Light Hits, and a full tie goes to the Mech. Like all Electronic Warfare it ignores terrain and line of sight (4.11.1).\n\nIt is Electronic Warfare but neither an Electronic Attack nor Electronic Support (FAQ P12), so nothing that improves those reaches it: the Raven EC Type cannot relay it, and the KeyHole pilot's +1 Range does not apply. It has no Silence, so it Reveals a Mech in Optical Camouflage and removes a Low Profile Token (4.12.3).\n\nEach Terminal may be accessed once per round. A successful access turns its token face-down at once. At the End Phase, after the Tasks are checked, every Terminal token turns face-up again, so it can be accessed, and scored, again the next round. With no face-up Terminal in Range, a Remote Access could change nothing, so it cannot be performed (as FAQ J8 rules for any Action)."
   },
   {
    "id": "detonation",
@@ -351,54 +353,63 @@
   {
    "id": "victory_points",
    "name": "Victory Points and winning",
-   "basic": "Victory Points (VP) decide the game.",
+   "basic": "Victory Points (VP) come from the Main Task, each player's Secondary Task and a few Parts that print them. After five full rounds, the side with more VP wins.",
    "points": [
-    "Take VP tokens as they are earned.",
-    "At the end of the game, the side with more VP wins.",
-    "On a tie, the side with more Mech Parts and Drones still on the board wins."
+    "Destroying every enemy unit does not end the game: the other side plays on alone to the end of the last round.",
+    "A kill belongs to the unit that made it. A Projectile's blast is the Projectile's kill, not the launcher's.",
+    "A Mech removed in the End Phase for having 2 or fewer Parts is the kill of the last unit that destroyed one of its Parts.",
+    "Destroying a Low Value unit never scores. Destroying your own unit is your own kill, never the enemy's.",
+    "Tied on VP, the side with more Mech Parts and Drones left on the board wins. Low Value Drones do not count."
    ],
-   "ref": "Rulebook 5.2.4",
+   "ref": "Rulebook 3.7.3, 3.7.4, 5.2.4, p.82; FAQ P4, P13, P21, P22; rulings I1, I2, I15, I18",
    "match": [],
-   "text": "Track Victory Points with VP tokens as they are earned. At the end of the game the side with more VP wins. If VP are equal, the winner is the side with more Mech Parts and Drones still on the board."
+   "text": "Victory Points are kept with VP Tokens as they are gained (5.2.4), and the End Phase is where the Tasks are checked and paid (3.7.3). A standard game lasts five rounds. After the fifth, the game ends and both sides total their VP: the side with more wins. On a tie, the side with more Mech Parts and Drones remaining on the board wins. Low Value Drones are not part of the squad, so they do not count (p.82).\n\nWiping out the enemy is not a win on the spot (FAQ P21). The game still runs its rounds, and the player with units left plays on alone to score more. A player may concede instead, and the other side then wins.\n\nThe one early end is VIP: Assassination. When a Commander is destroyed, the game ends at that round's End Phase, once the round's Victory Points and every end-of-game line are paid, and the side with more VP wins. If both Commanders fall in the same round, both sides score their 10.\n\nVP come from:\n- the Main Task, which both sides play;\n- each player's own Secondary Task;\n- two Parts that print a VP line: the OCS85 Black Box Carrying Pack (Black Box Main Task only) and the HD-2 Data Backpack (on an Escort target only, FAQ P22).\n\nWho made a kill (FAQ P4):\n- a Melee or Firing Action: the attacker;\n- a Projectile's Explosion: the Projectile, so its launcher earns no Weapons Test point;\n- a Mech removed for Integrity Loss: the last unit that destroyed one of its Parts;\n- a unit destroyed by its own side: that side's own kill, which never costs the other player Mercy.\n\nDestroying a Low Value unit never scores (p.82). The same unit may be the target of several Tasks at once (FAQ P13), and a named target pays its Task however it is destroyed, by its own side included."
   },
   {
    "id": "main_task_cards",
    "name": "Main Task Cards",
-   "basic": "The Main Task is the mission both sides play for, and it also sets both deployment zones.",
+   "basic": "The Main Task is the mission both sides play for. The card names the Tactical Areas in play, both Deployment Zones and how Victory Points are scored.",
    "points": [
-    "In setup, draw 3 Main Task Cards; each side discards 1, and the last card is the mission.",
-    "The card shows the Tactical Areas, both deployment zones, the task, its Victory Points and the Task Item Tokens used."
+    "In setup, draw 3 Main Task Cards. Each side discards 1, and the card left is the mission.",
+    "Black Box: each Box a side holds after the last round scores. Asset Preservation counts only Boxes held inside Echo.",
+    "Occupation: from Round 2, each Control Zone a side holds scores at the close of every round.",
+    "Terminals: each Terminal a side accesses scores. Each Terminal can be accessed once a round.",
+    "VIP: each side names a Commander. Destroy the enemy's for 10 VP and the game ends that round; if neither falls, 3 VP per destroyed Part."
    ],
-   "ref": "Rulebook 5.2.3",
+   "ref": "Rulebook 5.2.1, 5.2.3, 5.3.1-5.3.3; FAQ M15, P1, P5, P6; rulings I2, I14, I23",
    "match": [],
-   "text": "The Main Task sets the encounter objective and also prints both deployment zones. During setup draw 3 Main Task Cards, each side discards 1, and the remaining card is the mission.\n\nA card shows the Tactical Areas in play, both deployment zones (for example Black 3x5 and White 3x5 strips on opposite edges), the task text, the VP values, and which Task Item Tokens are used."
+   "text": "The Main Task describes the encounter and prints both Deployment Zones (5.2.3). In setup, once the First Player is known, draw 3 Main Task Cards: each side discards 1 and the remaining card is the mission (FAQ P1). The First Player then chooses its side, and once both Secondary Tasks are revealed, the Task Items are placed, starting with the First Player and alternating (5.2.1).\n\nThe four kinds:\n- Black Box (Fragment Recovery 2 VP, Key Facility 4, Asset Preservation 4): each player scores for every Black Box they hold after five rounds. Asset Preservation counts only Boxes held inside Echo, so they must be carried there.\n- Occupation (Outflank 1 VP, Forward Advance 2, Long and Deep 2): at the close of each round from Round 2, each player scores for every Control Zone they hold.\n- Terminals (Data Theft, Receive Signal, Geological Exploration, 2 VP each): a player scores for each Terminal they access, every round.\n- VIP: Assassination: each player names one of their own Mechs as Commander. When one is destroyed the other player gains 10 VP, and the game ends at that round's End Phase. If neither is destroyed after five rounds, each player gains 3 VP for each destroyed Part of the enemy Commander.\n\nOne printing of Fragment Recovery shows 3 VP a Box; the other printing and the rulebook's own picture of the card show 2, which is used here.\n\nControl (5.3.2): at the End Phase a player takes a Control Zone when at least one of their Mechs not in Shutdown, or one of their Drones, is in it and no enemy unit is. The number of units does not matter: a zone with both sides in it stays with whoever held it (FAQ P5). A captured zone scores from that round. A Low Value unit can never take one (FAQ M15), but an enemy Low Value unit in the zone still stops the other side taking it.\n\nTerminals (5.3.3): Direct Access is taken like Control, at the End Phase, from any Grid of the Terminal's Tactical Area (FAQ P6). Remote Access is a Mech's Short Tactical Action in its own Action Opportunity: an Electronic Counter-roll at Range 4 against the Terminal's Electronic Value of 3. Each Terminal can be accessed once a round and turns face-up again at the End Phase."
   },
   {
    "id": "secondary_task_cards",
    "name": "Secondary Task Cards",
-   "basic": "Each player also picks a Secondary Task for extra Victory Points, and shows it to the other player.",
+   "basic": "Each player also picks one Secondary Task for their own Victory Points and shows it to the other player. Most name a Mech or a Tactical Area as they are picked.",
    "points": [
-    "Pick during setup, the First Player first.",
-    "Some score through one of your own Mechs: Escort, Weapons Test and Disposal Procedure.",
-    "Some target an enemy Mech: Behead and Bounty Hunt.",
-    "The rest score by how the battle goes: Annihilation, Mercy and Excavation Claim."
+    "The First Player picks and reveals first, then the other player. A revealed pick is final, and no two players share a card.",
+    "Behead 5 and Bounty Hunt 4 score when that enemy Mech is destroyed. Your opponent names the Head; you name the Bounty.",
+    "Escort 3 if your Mech survives. Weapons Test 1 per enemy Part or Drone it destroys. Planned Obsolescence 2 when it dies.",
+    "Annihilation: 2 per enemy Mech, 1 per enemy Drone. Mercy: 2 if you destroy no enemy Mech, not counting Integrity Loss.",
+    "Excavation Claim: 2 if only your units stand in your chosen Tactical Area at the end. Low Value units never count."
    ],
-   "ref": "Rulebook 5.2.3",
+   "ref": "Rulebook 5.2.1, 5.2.3, p.82; FAQ P1, P4, P13, P22; rulings I5, I15-I17",
    "match": [],
-   "text": "Starting with the First Player, each player picks 1 Secondary Task during setup and shows it to the other player (5.2.1). The core box has 8.\n\n- Three designate one of your own Mechs: Escort scores 3 VP if it survives, Weapons Test scores 1 VP each time it destroys a Part or a Drone, and Disposal Procedure scores 2 VP when it is destroyed.\n- Two target the enemy: Behead is worth 5 VP and your opponent names which of their Mechs is the target; Bounty Hunt is worth 4 VP and you name it.\n- Annihilation scores 2 VP per enemy Mech and 1 VP per Drone destroyed, Mercy scores 2 VP for destroying no enemy Mech, and Excavation Claim scores 2 VP if only your Units stand in a Tactical Zone you designate at the end of the game (Low Value Units do not count).\n\nThe English text is a translation of the printed cards."
+   "text": "Starting with the First Player, each player picks one Secondary Task Card and shows it to the other (5.2.1, FAQ P1). A revealed pick is final once the other player has chosen. The core box holds eight, one of each, so the two players never hold the same card. A card that names a Mech or a Tactical Area is set before any unit deploys, starting with the First Player and alternating. The same unit may be named by several Tasks at once (FAQ P13).\n\n- Behead (5 VP): the opposing player names one of their own Mechs as the Head; you score when it is destroyed.\n- Bounty Hunt (4 VP): you name one enemy Mech; you score when it is destroyed.\n- Escort (3 VP): you name one of your Mechs; you score if it has not been destroyed by the end of the game.\n- Weapons Test (1 VP each): you name one of your Mechs; you score each time it destroys an enemy Part or Drone.\n- Planned Obsolescence (2 VP): you name one of your Mechs; you score when it is destroyed.\n- Annihilation: 2 VP for each enemy Mech and 1 VP for each enemy Drone destroyed.\n- Mercy (2 VP): you score if no enemy Mech was destroyed by the end of the game. Enemy Mechs removed for Integrity Loss do not count.\n- Excavation Claim (2 VP): you name any Tactical Area; you score if only your units are in it at the end of the game. Low Value units do not count.\n\nKills are credited as FAQ P4 says: a Projectile's blast is the Projectile's kill, so its launcher earns no Weapons Test point, and a side that destroys its own unit does not cost the other player Mercy. A named Mech pays its card however it is destroyed, by its own side included. Destroying a Low Value unit never scores (p.82). The HD-2 Data Backpack's +1 and -1 count only on an Escort target (FAQ P22).\n\nThe card text here follows the printed English cards."
   },
   {
    "id": "tactics_cards",
    "name": "Tactics Cards",
-   "basic": "Tactics Cards are one-use commander actions, bought with squad points.",
+   "basic": "A Tactics Card is a one-use order bought with squad points. Play it at the moment its text names, at most one per round, and then it is discarded.",
    "points": [
-    "Each costs 30 points, and a squad may take at most one copy of each.",
-    "Each player may play only 1 per round, and a used card is gone for the game.",
-    "They are not bound by the faction rule, so any squad may take any of them."
+    "Its Points Value counts against the squad's limit, and a squad holds at most one copy of each card.",
+    "Each player plays at most 1 Tactics Card per round. A played card is discarded for the rest of the game.",
+    "Play it only when its text says: in the Command Phase, in the End Phase, or during or as an ally Mech's Action Opportunity ends.",
+    "It acts on your own units only, and any squad may take any card: the faction emblem it prints does not bind it."
    ],
-   "ref": "Rulebook 5.4.2",
-   "match": [],
-   "text": "Six Tactics Cards come in the core box, each costing 30 points against the squad total: Additional Instructions and Battlefield Recovery (GoF), Hit and Run and Tactical Disposition (UN), System Repair and Remote Restart (RDL). They are bought during list building, one copy of each at most (FAQ P2).\n\nEach player may play only 1 Tactics Card per round, and a card once used is discarded for the rest of the game. A Tactics Card is an action the commander takes rather than a Unit (5.4.2), so it is not bound by the faction rule that applies to Units and Parts."
+   "ref": "Rulebook 5.4.2, p.88; FAQ K23, O14, P2; rulings I28, I29, I33, I34",
+   "match": [
+    "tactics card"
+   ],
+   "text": "Tactics Cards are extra actions you take as the commander. To use one you must add it to your squad, and its Points Value counts against the squad's points limit. You may buy any number of different Tactics Cards, but only one copy of each (FAQ P2). The card's points box is left blank because the value is kept online behind its QR code; each of the six is 30 points in the current list.\n\nEach player may use only 1 Tactics Card per round, and a card once used is discarded and cannot be used again in that game (5.4.2, FAQ P2). A card is played at the moment its own text gives, and its effect is carried out then. Ally means one of your own units.\n\nThe six cards of the Game Pack:\n- Additional Instructions, in the Command Phase: 1 Ally Drone performs 1 additional Command Action. A Drone that has already acted may act again, and this Command Action consumes no Command Token (FAQ O14). It buys a Command Action, not a Move.\n- Hit and Run, as an Ally Mech's Action Opportunity ends: that Mech performs a Maneuver. It is the Mech whose Opportunity is ending, an Extra one included, and the Maneuver belongs to no Opportunity. A Mech that cannot Maneuver cannot be chosen.\n- System Repair, during an Ally Mech's Action Opportunity: remove 1 Square Token or 1 Hexagon Token from 1 Ally Unit.\n- Tactical Disposition, during an Ally Mech's Action Opportunity: 1 Ally Mech not in Shutdown Stance changes its Stance, even after acting has fixed it. Hammerhead Domestic Expert may take its Offensive Tick, change Stance with a Tactics Card, then Maneuver (FAQ K23).\n- Battlefield Recovery, in the End Phase: 1 Ally Mech not in Shutdown Stance restores 1 Link.\n- Remote Restart, in the End Phase: 1 Ally Mech in Shutdown Stance changes its Stance and restores 1 Link.\n\n\"During the Action Opportunity of an Ally Mech\" means an ally Mech's own Opportunity in the Action Phase, an Extra one included. A Drone's activation or a Remote Weapon's Command is not one.\n\nNo card chooses Shutdown: a Stance a card sets is Defensive, Mobility or Offensive. A White Dwarf in Cruise Mode may select only Mobility Stance, so a Remote Restart brings it back in Mobility, as a Reboot does.\n\nTactics Cards are not bound by the faction rule. Each prints a faction emblem, but any squad may take any of them: they are commander actions rather than Units (5.4.2), and tournament play treats them so."
   },
   {
    "id": "ticks",
@@ -595,38 +606,43 @@
   {
    "id": "token_duration",
    "name": "Token duration colours",
-   "basic": "A token's background colour says how long it lasts.",
+   "basic": "A token's background colour says how long it lasts. Green stays until something removes it. Yellow turns red at the end of the round, and red comes off at the end of the round.",
    "points": [
-    "Green stays until something removes it.",
-    "Yellow flips to its reverse, usually red, at the end of the round.",
-    "Red is removed at the end of the round.",
-    "So a yellow token lasts two rounds."
+    "A token arrives yellow side up unless its card says otherwise, so it lasts the rest of this round and all of the next.",
+    "Square tokens stack, and each one ages on its own. A unit holds one Hexagon token: a new one replaces the old.",
+    "Gaining a Highlight while it shows red turns it back to yellow. Low Profile is green: it never ages and cannot be refreshed.",
+    "A token printed red on both faces, such as the Pursuit Token, comes off at the end of the round it arrives in.",
+    "Shutdown removes nothing. A Shutdown unit's tokens keep working and still age at the end of each round."
    ],
-   "ref": "Rulebook 2.5.3",
+   "ref": "Rulebook 2.5.3, 3.7.2, 6.3; FAQ I1, J3, J10-J14, J16, J22; GoF 1.021; rulings I9, I12",
    "match": [
     "token duration",
     "yellow token",
-    "red token"
+    "red token",
+    "green token",
+    "hexagon token",
+    "square token"
    ],
-   "text": "The background colour of a Square or Hexagon Token says how long it lasts (2.5.3).\n- Green stays until an Action or effect removes it.\n- Yellow is flipped to its reverse at the end of the round; the reverse is usually red.\n- Red is removed at the end of the round.\n\nSo a yellow token lasts two rounds: it flips at the first End Phase and comes off at the second. The Low Profile Token is green on its face and red on its reverse. Fragile, Fire Control Interference, Immobilized and Highlight are yellow on their face and red on their reverse."
+   "text": "The background colour of a Square or Hexagon Token says how long it lasts (2.5.3). The End Phase's Token Management removes every red token first, then turns every yellow one over (3.7.2), so no token turns and leaves in the same End Phase.\n- Green: stays until an Action or effect removes it. It never turns over.\n- Yellow: turned to its reverse side, usually red, at the End Phase.\n- Red: removed at the End Phase.\n\nA token is gained yellow side up unless its card says otherwise (FAQ J11). A yellow token therefore lasts the rest of the round it arrives in and all of the next one. A token printed red on both faces lasts only until the End Phase of the round it arrives in.\n\nWhich colour each token is (6.3):\n- Yellow, with red on the reverse: Fire Control Interference, Fragile, Immobilized, Highlight, Target Tracer, and the GoF list's Hindered.\n- Red on both faces: the GoF Pursuit Token, as the GoF glossary prints it.\n- Green: Low Profile. Only its green face is printed, and it cannot be refreshed (FAQ J22).\n- Triangle Tokens (Damaged, Repaired) sit on the Part Card and never age. Command Tokens are Round Tokens, and every one comes off at the End Phase.\n\nShapes (2.5.3):\n- Square Tokens stack, and each one ages on its own, so a unit can carry a red and a yellow Fire Control Interference at once (FAQ J16).\n- A unit carries one Hexagon Token, and gaining a different one removes the old. Gaining a Highlight while it shows red turns it back to yellow and restarts it (FAQ J22).\n- A Highlight Token and a Low Profile that an effect gives, such as an ally's Aura, the KeyHole pilot's concealment or a Misty Eagle's aura around the shooter: neither applies and no token is removed, until that effect is lost (FAQ J12).\n- Activating Optical Camouflage removes every Hexagon Token. A Low Profile or Target Tracer Token may still be gained, a Highlight may not (FAQ J14, I1).\n- A Low Value unit, every Projectile included, never gains a Hexagon Token (FAQ J3).\n\nShutdown removes no token. Tokens on a Shutdown unit keep working, and keep turning and coming off at the end of each round (FAQ J10, J13).\n\nTaking one off early:\n- Stabilize System or System Repair: one Square or Hexagon Token, either face.\n- System Cleanup: one Square Token.\n- A Low Profile Token: a successful Scan, any Action without Silence, or any Maneuver."
   },
   {
    "id": "deployment",
    "name": "Deployment",
-   "basic": "How the squads are placed before the first round.",
+   "basic": "Before round 1 the table is set up in a fixed order. Then the squads are placed one unit at a time, First Player first, each unit in an empty Grid of its own Deployment Zone.",
    "points": [
-    "Both players roll 2 dice; the side with more Hits is the First Player and picks the board edge.",
-    "The First Player places one Unit in its Deployment Zone, then the players alternate one at a time.",
-    "Once one side has placed everything, the other places the rest.",
-    "A Mech picks its Stance as it is placed, and a unit able to activate Optical Camouflage may deploy already in it."
+    "Order: battlefield, First Player roll, Main Task, the First Player's edge, Secondary Tasks, Task Items and targets, then units.",
+    "Each player rolls 2 yellow dice. More Hits makes you First Player, and you choose the Black or White edge.",
+    "Place one unit at a time, one to a Grid of your zone. When one side runs out, the other places the rest.",
+    "A Mech needs a Torso, a Chassis, an Arm and a Pilot. It picks its Stance as it lands; with none it is Offensive.",
+    "Projectiles and Low Value units are never deployed. A unit that can activate Optical Camouflage may start in it."
    ],
-   "ref": "Rulebook 3.1.2 and 3.1.4",
+   "ref": "Rulebook 2.2.2, 3.1, 5.2.1, 5.2.3, 5.4.1, p.82; FAQ I6, P1, P14, P16, P23; rulings I3-I6",
    "match": [
     "deployment zone",
-    "deployment phase",
+    "deployment stage",
     "first player token"
    ],
-   "text": "Before the first round both players roll 2 dice; the side with more Hits is the First Player and chooses which board edge to play from (3.1.2). A tie is rolled again.\n\nThe First Player deploys one Unit wholly within an unoccupied Grid of its Deployment Zone, then the players alternate one Unit at a time; once one side has placed everything, the other places all its remaining Units (3.1.4).\n\nA Mech chooses its Stance as it is deployed and is Offensive if none is set. A Unit able to activate Optical Camouflage may be deployed directly into it."
+   "text": "Setup runs in this order (FAQ P1, 3.1):\n- agree the battlefield. Environment Cards, if used, go down now, alternately, no more than the Battlefield Card allows (5.4.1);\n- roll for First Player;\n- fix the Main Task. Its card shows both Deployment Zones (5.2.3);\n- the First Player chooses the Black or White side (3.1.2), knowing now where both zones lie;\n- the First Player chooses and reveals a Secondary Task, then the other player does (3.1.3);\n- place the Task Items and name the Task targets, alternately from the First Player (5.2.1);\n- deploy, then start round 1.\n\nBoth players roll 2 yellow dice, and more Hits makes that side First Player (3.1.2). A hollow Hit counts nothing. The book gives no tie rule; the app has both players roll again.\n\nThe First Player deploys one unit wholly within an unoccupied Grid of its Deployment Zone. The players then alternate one unit at a time, and once one side has placed everything, the other places all its remaining units (3.1.4). A Grid here is a Large Grid, so each holds one unit, and terrain in it does not matter if the base fits. If every Grid of the zone is taken, the rest go in the Grids next to the zone's edge, working outward (FAQ P23).\n\nWhat may be deployed:\n- A Mech needs at least a Torso, a Chassis and one Arm, and must be assigned a Pilot; the other Parts may be left out (2.2.2, 5.1, FAQ P14, P16).\n- A Mech picks its Stance as it lands. One found without a Stance Token is Offensive.\n- A unit able to activate Optical Camouflage may deploy already in it (FAQ I6).\n- Projectiles and Low Value units are never placed at deployment (p.82).\n- The opponent may look over a deployed Mech's cards, except Covert Parts (3.1.4)."
   },
   {
    "id": "interception",
@@ -649,38 +665,39 @@
   {
    "id": "end_phase",
    "name": "The End Phase",
-   "basic": "The last phase of each round, in four steps.",
+   "basic": "The last phase of every round, in a fixed order: remove wrecked Mechs, clear tokens, score the Tasks, then the First Player swaps. The game ends after round 5.",
    "points": [
-    "Remove units: every Mech with 2 or fewer Parts, and anything removed at the end of the round.",
-    "Tokens: remove red tokens, flip yellow ones, and remove every Command Token.",
-    "Score: check Tasks, award Victory Points and check for victory.",
-    "Pass the First Player Token, and start the next round."
+    "First, every Mech down to 2 or fewer Parts leaves. The last unit to destroy one of its Parts gets the kill.",
+    "Then red tokens come off, yellow ones flip to red, and every Command Token is removed, wherever it sits.",
+    "Then the Tasks: settle Control and Terminals, award the round's Victory Points, and see whether a Task ends the game.",
+    "Last, the First Player swaps. After round 5 the side with more Victory Points wins; a tie goes to Parts and Drones left.",
+    "Losing every unit does not end the game: the other side plays on alone to the last round to score."
    ],
-   "ref": "Rulebook 3.7",
+   "ref": "Rulebook 3.7, 4.4.4, 4.16, 5.2.4, 5.3.2, 5.3.3; FAQ J13, J21, P4, P21; ruling I2",
    "match": [
     "end phase",
     "end of the round"
    ],
-   "text": "Four steps, in this order.\n- First remove units: every Mech left with 2 or fewer Parts goes, along with anything that says it is removed at the end of the round, alternating from the First Player if the order could matter.\n- Second, token management: remove all Red Square and Hexagon Tokens, flip all Yellow ones to their reverse side, and remove every Command Token.\n- Third, check Tasks, award Victory Points and test the victory conditions including the round limit.\n- Fourth, flip the First Player Token so the other side goes first, and begin the next round.\n\nA standard game runs five rounds, after which Victory Points are totalled."
+   "text": "The End Phase closes every round, and its steps are done in this order (3.7).\n\nRemove units (3.7.1).\n- Every Mech with 2 or fewer Parts left is removed, along with any unit that says it is removed or destroyed at the end of the round. A Mech that fell to 2 Parts during the round acted normally until now (4.4.4).\n- A Repaired Part still counts as destroyed (FAQ J21).\n- The kill goes to the last unit that destroyed one of its Parts (FAQ P4).\n- If the order of removals could matter, alternate them starting with the First Player.\n\nToken management (3.7.2).\n- Red Square and Hexagon Tokens come off, then Yellow ones flip to their red side. Green ones stay. This happens in Shutdown too (FAQ J13).\n- Every Command Token is removed, on Mechs and Drones, used or not.\n- Smoke Screens also dissipate in the End Phase (4.16).\n\nTasks and victory (3.7.3).\n- Control Zones and Terminal Direct Access are judged now (5.3.2, 5.3.3), and the round's Victory Points are awarded, once.\n- A Task may end the game here. Under VIP the game ends at the End Phase of the round a Commander is destroyed: that Award also settles every end-of-game line, and if both Commanders fell that round, both sides score their 10.\n- After round 5 the game ends.\n\nEnd of round (3.7.4).\n- If the game goes on, the First Player Token flips and the next round begins. Terminal Tokens turn face-up again.\n- Some Tactics Cards are played during the End Phase.\n\nWhen the game ends, the side with more Victory Points wins. On a tie, the side with more Mech Parts and Drones left on the board wins (5.2.4). Destroying every enemy unit does not end the game: the other side plays on alone to the last round to score (FAQ P21)."
   },
   {
    "id": "squad_building",
    "name": "Building a squad",
-   "basic": "Build a squad up to an agreed points limit, from one faction.",
+   "basic": "Build your squad from one faction, up to the agreed points limit. Planetring Dynamics and White Dwarf units are mercenaries and may join any squad.",
    "points": [
-    "The limits: 600 for a skirmish, 900 for a standard game, 1200 or more for a large one.",
-    "Every card costs its Points Value, and each Mech gets a Pilot.",
-    "A Mech's Parts and Pilot come from one faction, and RDL, UN and GoF do not mix in a squad.",
-    "Mercenary units (Planetring Dynamics, White Dwarf) may join any squad as whole units.",
-    "Two Pilots with the same ID cannot be in one squad."
+    "Points limits: 600 for a Skirmish, 900 for a Standard Battle, 1200 or more for a Large Battle. The total may not go over it.",
+    "Every Part, Pilot, Drone, carried Load and Tactics Card costs its Points Value. Projectiles, Deployables and Low Value Drones cost 0.",
+    "A Mech needs at least a Torso, a Chassis and one Arm, plus a Pilot. Its Parts and its Pilot all come from one faction.",
+    "Two Pilots with the same printed ID may not share a squad, even two different versions of that Pilot.",
+    "RDL, UN and GoF never share a squad. Identical Mechs and Drones are allowed; Pilots and Tactics Cards are one each."
    ],
-   "ref": "Rulebook 5.1",
+   "ref": "Rulebook 2.2.2, 5.1, 5.4.2, p.81, p.82, p.84; FAQ N6, P2, P14, P16, P17, P18; rulings I30-I32",
    "match": [
     "squad building",
     "single faction",
     "mercenary"
    ],
-   "text": "Agree a points limit: 600 for a skirmish, 900 for a standard game, 1200 or more for a large one (5.1). Every card taken costs its Points Value against that total. Each Mech is assigned a Pilot, and two Pilots with the same ID cannot be in one squad.\n\nA Mech is built entirely from one faction's Parts, and its Pilot is of that faction too. Across the squad RDL, UN and GoF do not mix. Planetring Dynamics and the White Dwarf collaboration are mercenaries: their Units may join an RDL, UN or GoF squad as complete Units, never as a Part on another faction's Mech. Tactics Cards are not bound by the faction rule (5.4.2).\n\nA White Dwarf Bit, like every Low Value Unit, is not part of the Squad (p.82). The White Dwarf belongs to Ace Strategy: a Planetring Dynamics Mech cannot take its Parts (FAQ N6)."
+   "text": "Before the game each player builds a squad (5.1). Choose a faction and take its Mechs and Drones: a squad holds Units of a single faction, and a Unit that several factions may use says so in its own rules. RDL, UN and GoF never share a squad. Planetring Dynamics and the White Dwarf collaboration are mercenaries: their Units may join an RDL, UN or GoF squad, and a squad of mercenaries alone is legal (FAQ P17, P18).\n\nA Mech:\n- is built from one faction's Parts only, and its Pilot is of that faction too, a Planetring Dynamics or White Dwarf Mech included (the Pilot's lock is tournament practice; 5.1 prints the Parts);\n- needs at least a Torso, a Chassis and a Left or Right Arm to be deployed, the White Dwarf too (2.2.2, FAQ P14, P16); the Backpack and the other Arm are optional;\n- must be assigned a Pilot, and two Pilots with the same printed ID cannot be in one squad, even two versions of one Pilot: the rulebook's example is two Keyhole cards, both ID 06 (5.1, p.81). So the Raid box's two Hammerheads cannot share a squad, nor can its two Onyxes.\n\nEvery Unit in a squad has a Points Value, each Part and each Pilot of a Mech included (p.82), and so does each Tactics Card (5.4.2). The squad's total may not exceed the limit of the battle: 600 for a Skirmish, 900 for a Standard Battle, or an agreed limit of 1200 or more for a Large Battle, which is played on a 1200 x 1200 mm board (p.84). Current values are kept online behind each card's QR code.\n\nThe special cases:\n- A Carrier's Load is a Part: it costs its Points Value and must be of the Carrier's faction.\n- Projectiles, Deployables and Drones with the Low Value tag have no Point Value, are not part of the squad and are never placed at deployment (p.82). A White Dwarf Bit is one of them; the Bit Port launches it.\n- The White Dwarf belongs to Ace Strategy: a Planetring Dynamics Mech cannot take its Parts (FAQ N6).\n- A Part not yet sold in any box takes the faction the publisher's parts lists give it: the unsold UN Parts and the KK9 are UN, and the two Reapers are Planetring Dynamics.\n\nA squad may hold several identical Mechs or Drones: only Pilots (by printed ID) and Tactics Cards (one copy each, FAQ P2) are limited. Tactics Cards are not bound by the faction rule (see Tactics Cards)."
   },
   {
    "id": "mines",
@@ -759,7 +776,7 @@
    "basic": "An Automatic attack must shoot the nearest enemy it may target, and the Drone must take it.",
    "points": [
     "Firing and Melee ones count only enemies in sight, and in the Forward Arc unless Omni-directional.",
-    "A Highlighted enemy comes first for Firing, and a Target Tracer lets a Drone take a bearer farther off.",
+    "A Highlighted enemy comes first for Firing, and a Drone must take a Target Tracer's bearer even farther off.",
     "Range counts Large Grids in straight lines, so a diagonal neighbour is 2 away. A tie is the controller's choice.",
     "Melee never targets an Aerial unit, and a Melee reach of \"--\" is the Adjacent Grids, diagonals included.",
     "With no enemy in Range, it may shoot the nearest Breakable Terrain it could target instead."
@@ -770,7 +787,7 @@
     "auto action",
     "自动攻击"
    ],
-   "text": "An Automatic Action targets the nearest enemy Unit it may target (3.5.2), and it is obligatory: a Drone with a legal target must take it (3.5; ruling I4). For a Firing or Melee Action the enemies counted are those within the Action's Range and line of sight, and only those in its Forward Arc unless the Action is Omni-directional (4.2.5). Range is counted across Large Grids, not diagonally, so a diagonal neighbour is 2 away. A tie is the controller's choice.\n\nWhat changes the pick:\n- Highlight binds Firing Actions only (FAQ J18): if an enemy counted bears a Highlight Token, the nearest Highlighted one is taken (FAQ O21).\n- A Target Tracer lets a Drone take its bearer even when it is not the nearest (6.3.3).\n- An Electronic Attack may be measured from an allied Repeater, and the nearest is then counted from there (FAQ O19, O20).\n- The Unit types a card names limit what it may take.\n- Melee never targets an Aerial Unit, and a Melee Action printing \"--\" reaches the Adjacent Grids, diagonals included (4.2.2).\n- The Unfolded Pholcus needs no line of sight for its jump (FAQ M28).\n\nIf no enemy is in Range, the Action may instead target the nearest Neutral Unit it could target: a 1-inch Breakable Terrain container in sight, in the arc and within any lengthened Range (FAQ O9; ruling I5). Buildings and Defense Walls are never valid targets. Beacons and Mines are enemy Units, never Neutral, so they are targeted before Breakable Terrain (FAQ O10)."
+   "text": "An Automatic Action targets the nearest enemy Unit it may target (3.5.2), and it is obligatory: a Drone with a legal target must take it (3.5; ruling I4). For a Firing or Melee Action the enemies counted are those within the Action's Range and line of sight, and only those in its Forward Arc unless the Action is Omni-directional (4.2.5). Range is counted across Large Grids, not diagonally, so a diagonal neighbour is 2 away. A tie is the controller's choice.\n\nWhat changes the pick:\n- Highlight binds Firing Actions only (FAQ J18): if an enemy counted bears a Highlight Token, the nearest Highlighted one is taken (FAQ O21).\n- A Drone must take a Target Tracer's bearer even when it is not the nearest (6.3.3, p.97; ruling I10).\n- An Electronic Attack may be measured from an allied Repeater, and the nearest is then counted from there (FAQ O19, O20).\n- The Unit types a card names limit what it may take.\n- Melee never targets an Aerial Unit, and a Melee Action printing \"--\" reaches the Adjacent Grids, diagonals included (4.2.2).\n- The Unfolded Pholcus needs no line of sight for its jump (FAQ M28).\n\nIf no enemy is in Range, the Action may instead target the nearest Neutral Unit it could target: a 1-inch Breakable Terrain container in sight, in the arc and within any lengthened Range (FAQ O9; ruling I5). Buildings and Defense Walls are never valid targets. Beacons and Mines are enemy Units, never Neutral, so they are targeted before Breakable Terrain (FAQ O10)."
   },
   {
    "id": "smoke_screen",
@@ -794,19 +811,20 @@
   {
    "id": "black_box",
    "name": "Black Boxes",
-   "basic": "A Task Item worth Victory Points in the missions that use it.",
+   "basic": "A Task Item the Black Box missions score. A unit with a free Freehand Part may carry one, and it always drops when the bearer is Penetrated.",
    "points": [
-    "Pick it up by moving through it, or by ending an Action Opportunity in its Grid, using a Part with the Freehand tag.",
-    "That Part's Freehand then counts as used.",
-    "A bearer that is Penetrated drops it, and the attacker places it touching the bearer.",
-    "It blocks neither Line of Sight nor Movement."
+    "Pick one up by moving through it or by ending your own Action Opportunity in its Grid. Picking it up is optional.",
+    "It rides on the Freehand Part that took it, whose Freehand then counts as gone. Each Freehand carries one.",
+    "When the bearer is Penetrated it must drop: the attacker places it touching the bearer's base, at ground level.",
+    "A Forced Movement from that attack happens first. A dropped Box is never handed straight to another unit.",
+    "It fills one small square, blocks nothing, may share a Grid with units, and Low Value units never take one."
    ],
-   "ref": "Rulebook 5.3.1",
+   "ref": "Rulebook 3.4.4, 4.2.3, 5.2.1, 5.3.1 (p.86); FAQ E19, N1, N2, P1, P3, P7-P11; rulings I19-I24, I27",
    "match": [
     "black box",
-    "黑匣"
+    "黑箱"
    ],
-   "text": "A Task Item worth Victory Points in the missions built around it (5.3.1). On the board it occupies 1 small Grid, may overlap Units, and blocks neither Line of Sight nor Movement.\n\nA Unit picks one up by moving through its position or by ending an Action Opportunity in its Grid, using a Part with the Freehand tag; that Freehand then counts as occupied. The token is placed on the Part or Unit Card that holds it. A bearer that is Penetrated drops the Black Box: the Attacker places it in contact with the bearer's base.\n\nScoring is per Main Task card, which may require the box to be held in a named zone at a named time."
+   "text": "Black Boxes are the Task Items of the Black Box missions (5.3.1, p.86). At setup the players place them, one in each Tactical Zone the card names, taking turns from the First Player (5.2.1; FAQ P1): Fragment Recovery 7 (Bravo, Charlie, Delta, Echo, Foxtrot, Golf, Hotel), Key Facility 5 (Bravo, Delta, Echo, Foxtrot, Hotel), Asset Preservation 4 (Alpha, Charlie, Golf, India). A Box fills a 1x1 Small Grid, may overlap Units, and blocks neither line of sight nor Movement.\n\nPicking one up:\n- A Unit may take a Box when it moves through the Box's position, or when its own Action Opportunity ends with it in the Box's Grid (3.4.4; FAQ P8). Another unit's action ending never hands it over, and taking it is always optional (FAQ P10).\n- A flight takes one only in the Grid it leaves or the Grid it lands in, and a Forced Movement through a Box never picks it up.\n- The Unit needs a Part with the Freehand tag. The token goes on that Part's card, and while it bears the Box that Part's Freehand is invalid: no second Box on it, and it cannot support a [Two-Handed] or Throw Action. Each Freehand carries one Box (FAQ P7).\n- A Carrier Tarantula may carry one on a Freehand Load (FAQ P11). A White Dwarf in Cruise Mode with a Freehand arm may take one, and keeps one it took in Mech form (FAQ N1, N2).\n- Low Value Units never interact with Task Items (p.82).\n\nDropping it: a bearer that is Penetrated always drops its Box (FAQ P3). The Attacker places it in contact with the bearer's base (4.2.3), at ground level and in view, never on top of a building (FAQ P9). For a Mech that is one of the four Grids that share an edge with its own, never under it and never on terrain.\n\nIf the same attack moves the target, the Forced Movement comes first and the Box drops at the new position (FAQ E19). A Box that lands in another unit's Grid stays there until that unit meets a pick-up condition (FAQ P8). A bearer that leaves the board without a Penetration, as a Mech removed for Integrity Loss does, leaves its Box in the Grid it stood in.\n\nScoring is per Main Task card. Fragment Recovery and Key Facility pay for each Box a player holds after Round 5; Asset Preservation pays only for Boxes held inside Echo then."
   },
   {
    "id": "overwatch",

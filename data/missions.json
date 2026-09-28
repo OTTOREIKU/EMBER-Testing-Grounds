@@ -7,11 +7,12 @@
    "id": "blackbox",
    "name": "Black Box",
    "nameKo": "블랙박스",
-   "text": "Black boxes are artefacts of an ancient civilisation recovered from the ruins, and both factions want them. A black box on the board is shown with a mission marker, counts as a 1x1 grid, may overlap a unit, and blocks neither movement nor line of sight.\n\nA unit picks one up by passing through or standing in its grid, and the unit must have the Freehand keyword to carry it. Show a carried black box by putting the mission marker on that unit or part card; while it is carried, that part's discard state does not apply.\n\nIf any part of a carrying unit is hit by an attack, the black box drops onto the board. The attacker chooses where it lands, and it must be in contact with the carrier's chassis.",
+   "text": "Black boxes are artefacts of an ancient civilisation recovered from the ruins, and both factions want them. A black box on the board is shown with a mission marker, fills a 1x1 small grid, may overlap a unit, and blocks neither movement nor line of sight. The players place them at setup, one in each tactical zone the card names, taking turns from the First Player.\n\nA unit picks one up when it moves through the box's position, or when its own Action Opportunity ends in the box's grid, and picking it up is optional. It needs a Part with the Freehand keyword: put the mission marker on that Part's card, and while it carries the box that Part's Freehand does not count.\n\nWhen a carrying unit is Penetrated, the black box drops. The attacker places it in contact with the carrier's base, at ground level and never on top of a building.",
    "faq": [
-    { "q": "Can one unit hold more than one black box?", "a": "Yes. Discard states are tracked per part." },
-    { "q": "Is picking up a black box compulsory?", "a": "No, it is optional." },
-    { "q": "If a black box is dropped, can a unit in contact with it pick it up?", "a": "Yes." }
+    { "q": "Can one unit hold more than one black box?", "a": "Yes, one for each Freehand keyword it has (FAQ P7)." },
+    { "q": "Is picking up a black box compulsory?", "a": "No, it is optional (FAQ P10)." },
+    { "q": "Can the attacker choose not to make a Penetrated carrier drop its black box?", "a": "No. The box always drops (FAQ P3)." },
+    { "q": "If a black box drops into another unit's grid, does that unit pick it up?", "a": "No. A unit picks one up only by moving through it or by ending its own Action Opportunity in its grid, never because another unit's action ended (FAQ P8)." }
    ]
   },
   {
@@ -29,17 +30,17 @@
    "id": "terminal",
    "name": "Terminals",
    "nameKo": "단말기",
-   "text": "A terminal is an object you access to score. Terminals are placed in a tactical area, and the area you can access them from is all the grids of that tactical area. A mission marker shows the terminal's position, and in missions where only one side may connect, the marker's colour shows who is connected.\n\nThere are two ways in. Direct access: at the End Phase, if you have a mech that is not in Shutdown stance, or one drone, within the terminal's range, and there are no enemy units within its range, you access it successfully. Remote access: every mech has the Remote Access action, a Tactical Action performed with the Torso at Range 4 in the End Phase. Perform the action, then run an electronic warfare roll against the terminal, which has an Electronic value of 3; on success you access it.\n\nEach terminal can only be accessed once per round.",
+   "text": "A terminal is an object you access to score. Terminals are placed in a tactical area, and the area you can access them from is all the grids of that tactical area. A mission marker shows the terminal's position. It is turned face-down when the terminal is accessed, and every marker turns face-up again at the End Phase.\n\nThere are two ways in. Direct access: at the End Phase, if you have a mech that is not in Shutdown stance, or one drone, anywhere in the terminal's tactical area, and there are no enemy units there, you access it. Remote access: in these missions every mech has the Remote Access action, a Short Tactical Action performed with the Torso in its own Action Opportunity, at Range 4 of any grid of the terminal's area. It is an electronic warfare roll against the terminal, whose Electronic value is 3, and a tie goes to the mech; on success you access it.\n\nEach terminal can only be accessed once per round.",
    "faq": [
-    { "q": "For direct access, does the unit have to be in the terminal's own grid?", "a": "No. Direct access works from any grid of the tactical area the terminal sits in. Remote access is different again: it is a Range 4 action, so the mech performing it needs the terminal within 4, not to be standing in the area." },
-    { "q": "Is remote access an Electronic Attack?", "a": "No. It is electronic warfare (ECM), but it is neither an Electronic Attack nor Electronic Support, so the UN's Relay and the RDL's KeyHole do not affect it." }
+    { "q": "For direct access, does the unit have to be in the terminal's own grid?", "a": "No. Direct access works from any grid of the tactical area the terminal sits in, and remote access may measure its Range 4 to any grid of that area (FAQ P6)." },
+    { "q": "Is remote access an Electronic Attack?", "a": "No. It is electronic warfare, but it is neither an Electronic Attack nor Electronic Support, so the ADK60EC Raven EC Type's Repeater and the RDL's KeyHole do not affect it (FAQ P12)." }
    ]
   },
   {
    "id": "vip",
    "name": "VIP",
    "nameKo": "VIP",
-   "text": "A VIP mission turns one mech on each side into a target. The card names which mech qualifies and what destroying it is worth.",
+   "text": "A VIP mission turns one mech on each side into a Commander, named by its own player at setup. Destroying the enemy's Commander scores, and the game then ends at that round's End Phase.",
    "faq": []
   }
  ],
@@ -177,8 +178,9 @@
    "name": "VIP: Assassination",
    "nameKo": "VIP - 지휘관 암살",
    "setup": "In the mission preparation step each player designates one of their own mechs as the Commander.",
-   "scoring": "Destroying a Commander scores the attacking side 10 VP and ends the game immediately. If neither Commander has been destroyed by the end of Round 5, score 3 VP for each part of the enemy Commander you destroyed.",
+   "scoring": "When one player's Commander is Destroyed, the other player gains 10 Victory Points and the game ends. If neither Commander is destroyed after 5 rounds, each player gains 3 Victory Points for each Part of the Enemy Commander that has been Destroyed.",
    "vp": 10,
+   "vpPerPart": 3,
    "fromRound": 1,
    "cadence": "per-round",
    "zones": [],

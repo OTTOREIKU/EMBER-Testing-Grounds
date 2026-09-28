@@ -119,7 +119,7 @@
         "torso"
       ],
       "description": {
-        "en": "· Range 4. Performed with Torso.\n· Electronic Counter-roll against the Terminal (Electronic Value 3). If successful, the Terminal is Accessed.\n· Each Terminal may be accessed once per round."
+        "en": "· Range 4, to any Grid of the Terminal's Tactical Zone. Performed with Torso.\n· Electronic Counter-roll against the Terminal (Electronic Value 3); a tie goes to this Mech. If successful, the Terminal is Accessed.\n· Each Terminal may be accessed once per round."
       }
     },
     {

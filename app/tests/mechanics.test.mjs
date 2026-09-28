@@ -43,7 +43,7 @@ check('names are unique',
   Object.entries(list.reduce((a, m) => ((a[m.name] = (a[m.name] ?? 0) + 1), a), {})).filter(([, n]) => n > 1).map(([k]) => k),
   []);
 // A one-character term matches most of the set. Chinese carries a whole term in
-// two characters (烟幕, 监视, 黑匣), so the floor differs by script.
+// two characters (烟幕, 监视, 黑箱), so the floor differs by script.
 const CJK_ANY = /[぀-ヿ一-鿿]/;
 check('no match term is too short to be a term',
   list.flatMap((m) => m.match
@@ -94,7 +94,7 @@ for (const m of missions.cards ?? []) {
 check('only the Rules-tab generals reach no card or mission',
   [...reach].filter(([, n]) => n === 0).map(([id]) => id).sort(),
   ['activation_order', 'deployment', 'end_phase', 'integrity_loss', 'main_task_cards',
-   'reboot', 'remote_access', 'secondary_task_cards', 'squad_building', 'tactics_cards',
+   'reboot', 'secondary_task_cards', 'squad_building', 'tactics_cards',
    'victory_points']);
 
 // The four written for the reference audit, pinned to what they should hit so a
@@ -102,6 +102,11 @@ check('only the Rules-tab generals reach no card or mission',
 const hitCount = (id) => reach.get(id);
 check('overwatch reaches only the Cobra and its Snake Eye', hitCount('overwatch'), 2);
 check('black_box reaches the carrying pack and its three missions', hitCount('black_box'), 4);
+// No Terminal card said "remote access", so the entry reached nothing and a
+// Terminals mission never showed it (audit Phase 6, J). "terminal in each" is
+// the setup line of all three; "terminal" alone would also catch the Rumba
+// Terminal Guidance Beacon.
+check('remote_access reaches the three Terminals missions', hitCount('remote_access'), 3);
 check('extra_action_opportunity reaches only the Echoes backpack', hitCount('extra_action_opportunity'), 1);
 check('smoke_screen reaches the ten smoke cards', hitCount('smoke_screen'), 10);
 // The same pin for Armor Piercing. Nine, not eleven: 穿甲 also appears inside
