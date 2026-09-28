@@ -105,10 +105,12 @@ check('no keyword is listed twice under one English name', twins, []);
 // These are the card-banner archetype and subtype tags, plus the handful of
 // real keywords the community bundle simply lacks. Anything else here is a
 // key that failed to match the entry it meant to patch.
+// 低价值 Low Value joined them with the Phase 5 audit: the rule is printed on
+// the cards' banners and the bundle has no entry for it.
 const INTENTIONAL = [
   '信标', '命中', '地雷', '墙', '导弹', '导弹组X', '巡航', '抛射物', '机动掩体',
   '榴弹', '牵引X', '火箭', '烟幕弹', '电子对抗', '自行地雷', '设置物',
-  '路障', '智能榴弹',
+  '路障', '智能榴弹', '低价值',
 ].sort();
 const surprises = appended.slice().sort().filter((k) => !INTENTIONAL.includes(k));
 check('no override key silently appended a new entry', surprises, []);

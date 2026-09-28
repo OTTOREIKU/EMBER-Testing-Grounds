@@ -294,7 +294,7 @@
     "弹药",
     "充能"
    ],
-   "text": "Two separate token economies printed as icons on an Action.\n\nAmmo caps how many times an Action can be used: place one face-up Ammo Token per Ammo Icon at deployment, flip one face-down per use, and once they are all spent the Action cannot be performed (4.13). A Projectile Action consumes its Ammo as each Projectile is placed, one per Projectile, so Volley X can spend X (4.7).\n\nAn attack that fails, such as one on a camouflaged unit whose Scan fails, still consumes its Ammo and Charge (4.12.2). Some Actions replenish Ammo by naming a Unit or Part and flipping consumed tokens back face-up, never above the starting number, and repairing a Part does not restore its Ammo (FAQ J15).\n\nCharge is a one-shot state instead. The token starts face-down, and the Charge Action, a Tactical Short Action with Silence (6.1), flips one named Part's token face-up: one Part per Charge Action, and a Part already Charged cannot be Charged again until it is spent (4.14, FAQ H1, H3). A Mech with two Parts that can be Charged may perform two Charge Actions in one Opportunity, one for each Part (FAQ H6, H7), and one with nothing left to Charge cannot perform it at all (FAQ H2).\n\nAn Action with a Charge-conditional effect may consume the token by flipping it back down, and never has to, even as an Automatic Action (FAQ H4, H8). KC Armor needs a consumed Charge, is declared after the unit is targeted and before the Hit Location Die (FAQ H5, H9), and holds through Surplus Damage (FAQ D11).\n\nWhen a Part is Discarded or Disarmed, its Ammo and Charge carry to the Discard Card only for an Action there that uses them, and are otherwise removed (4.17)."
+   "text": "Two separate token economies printed as icons on an Action.\n\nAmmo caps how many times an Action can be used: place one face-up Ammo Token per Ammo Icon at deployment, flip one face-down per use, and once they are all spent the Action cannot be performed (4.13). A Projectile Action consumes its Ammo as each Projectile is placed, one per Projectile, so Volley X can spend X (4.7).\n\nAn attack that fails, such as one on a camouflaged unit whose Scan fails, still consumes its Ammo and Charge (4.12.2). Some Actions replenish Ammo by naming a Unit or Part and flipping consumed tokens back face-up, never above the starting number, and repairing a Part does not restore its Ammo (FAQ J15).\n\nCharge is a one-shot state instead. The token starts face-down, and the Charge Action, a Tactical Short Action with Silence (6.1), flips one named Part's token face-up: one Part per Charge Action, and a Part already Charged cannot be Charged again until it is spent (4.14, FAQ H1, H3). A Mech with two Parts that can be Charged may perform two Charge Actions in one Opportunity, one for each Part (FAQ H6, H7), and one with nothing left to Charge cannot perform it at all (FAQ H2).\n\nAn Action with a Charge-conditional effect may consume the token by flipping it back down, and never has to, even as an Automatic Action (FAQ H4, H8). KC Armor needs a consumed Charge, is declared after the unit is targeted and before the Hit Location Die (FAQ H5, H9), and holds through Surplus Damage (FAQ D11).\n\nWhen a Part is Discarded or Disarmed, its Ammo and Charge carry to the Discard Card only for an Action there that uses them, and are otherwise removed (4.17).\n\nA Missile Group is one Launch and one Ammo Token for its X Units (6.2)."
   },
   {
    "id": "screeching",
@@ -333,18 +333,20 @@
   {
    "id": "detonation",
    "name": "Detonation",
-   "basic": "How a Projectile delivers its payload: it detonates, and is destroyed.",
+   "basic": "How a Projectile delivers its payload. It attacks a unit or a Grid, and a Projectile that Detonates is destroyed.",
    "points": [
-    "Explosion damage hits everything in the affected Grids.",
-    "It needs no line of sight or facing, and no Protection dice are rolled.",
-    "Only the defender may Focus."
+    "A Projectile acts as it lands, in the Delay Phase, or all the time, as its Action says.",
+    "It targets what its card names: a free pick among enemies, the nearest where printed, a named Unit type first.",
+    "Destructible Terrain in Range is always a choice. With no target at all it is destroyed, unless its card says otherwise.",
+    "A Missile flies to its target first, and that flight can be Intercepted.",
+    "Explosion damage needs no sight or facing, allows no Protection, and each unit caught rolls on its own."
    ],
-   "ref": "Rulebook 4.7.5",
+   "ref": "Rulebook 4.7.4-4.7.6, 3.6, p.67, p.71, p.94; FAQ M4, M12, M16, M18, M21, M25; GoF 1.021",
    "match": [
     "detonat",
     "引爆"
    ],
-   "text": "A projectile resolving its payload. Detonation destroys the projectile itself.\n\nExplosion damage hits everything in the affected grid(s) with no line-of-sight or facing requirement and no protection dice; only the defender may Focus."
+   "text": "Every Projectile Action puts a Projectile on the board, and the Projectile then acts on its own (4.7.4). An Immediate Action resolves the moment it lands. A Delayed Action resolves in the Delay Phase, when the Projectile is designated in turn (3.6). A Passive one is always on, or fires on a trigger such as a unit entering a Mine's Grid.\n\nTarget choice (4.7.5):\n- \"Target 1 Enemy Unit\" is a free pick among the enemies in Range.\n- \"The nearest Unit\" follows that rule, as the Unfolded Pholcus does (FAQ M18).\n- A Unit Type the card names comes first while one is in Range, then any other: the PK3 takes an Enemy Mech before anything else.\n- Destructible Terrain in Range is always a legal target unless the card says otherwise, and a Neutral target is never forced on a Missile (FAQ M12).\n- A Missile Group's Units attack one target: the first Unit designated picks it, and the rest follow (p.94).\n\nA Projectile whose Delayed Action needs a target, and finds none in Range when it is designated, is destroyed unless its card says otherwise (4.7.5). The PK3 prints that it is not removed then (GoF 1.021). A Deployable whose Delayed Action is not a Detonation, such as a Link Beacon, stays and acts again each Delay Phase.\n\nA Missile flies from its Landing Point into its target's Grid before it Detonates, and that flight is Movement: the enemies in Range of either end Intercept it (p.67, 4.9). A Missile Group's Units are Intercepted one by one.\n\nOptical Camouflage (p.71): a Projectile that targets a Unit and has an Electronic Value Scans a camouflaged target first, as the Initiator, and one with no Electronic Value cannot pick it. After the Reveal the Explosion follows only if the target is still in Range (FAQ M16). One that attacks every Unit in its Range needs no Scan, and a failed Scan still spends the Projectile.\n\nExplosion damage (4.7.6) needs no line of sight or facing, the defender claims no Terrain or Unit Protection, and only the defender may Focus. A Projectile never makes a Back Attack, though against a Shutdown target it designates the Part hit (FAQ M4).\n\nAn attack on every Unit in Range hits allies too, and each Unit caught makes its own Attack and Defense Rolls (FAQ M21). Allied Missiles targeting a Unit near an allied Rumba Beacon may reroll {Eye} (FAQ M25). A Projectile that Detonates is destroyed."
   },
   {
    "id": "victory_points",
@@ -510,55 +512,58 @@
     "防御姿态",
     "机动姿态"
    ],
-   "text": "An Action that names a Stance in brackets only applies that part of its text while the Mech is in that Stance, checked as the Action is performed. A Mech chooses its Stance at the start of each of its own Action Opportunities, before it Maneuvers or acts (4.1), and only Defensive, Mobility or Offensive may be chosen (3.4.2).\n\nThe Stance lasts until changed: Offensive converts hollow attack icons to solid, Defensive converts hollow defence icons to solid, and Mobility adds Dodge dice and doubles the Maneuver.\n\nShutdown is never chosen. A Mech falls into it at 0 Link, or when an effect forces it, as the Lightning of the Valkyrie and the Harpy can, and only a Reboot takes it out again. A Shutdown Mech may do nothing but Reboot and gains no benefit when rolling. When it is the target of an Action the attacker designates the Part, and no Part ability such as Parry defends it. It triggers nothing of its own, Passive effects and pilot skills included (4.1, FAQ L3); Anser alone is the exception (FAQ L5).\n\nA Drone keeps the Stance printed on its card and cannot be switched out of it (FAQ O2). An Action's Stance change, such as Suppression, happens before the Attack Roll."
+   "text": "An Action that names a Stance in brackets only applies that part of its text while the Mech is in that Stance, checked as the Action is performed. A Mech chooses its Stance at the start of each of its own Action Opportunities, before it Maneuvers or acts (4.1), and only Defensive, Mobility or Offensive may be chosen (3.4.2).\n\nThe Stance lasts until changed: Offensive converts hollow attack icons to solid, Defensive converts hollow defence icons to solid, and Mobility adds Dodge dice and doubles the Maneuver.\n\nShutdown is never chosen. A Mech falls into it at 0 Link, or when an effect forces it, as the Lightning of the Valkyrie and the Harpy can, and only a Reboot takes it out again. A Shutdown Mech may do nothing but Reboot and gains no benefit when rolling. When it is the target of an Action the attacker designates the Part, and no Part ability such as Parry defends it. It triggers nothing of its own, Passive effects and pilot skills included (4.1, FAQ L3); Anser alone is the exception (FAQ L5).\n\nA Drone keeps the Stance printed on its card and cannot be switched out of it (FAQ O2). An Action's Stance change, such as Suppression, happens before the Attack Roll.\n\nA White Dwarf Bit changes Stance by turning its card over, and keeps every Token on it (FAQ N8)."
   },
   {
    "id": "low_value_unit",
    "name": "Low Value Units",
-   "basic": "Low Value Units are minor pieces: every Projectile, and any Drone printed at 0 points.",
+   "basic": "A Low Value Unit is a minor piece: every Projectile, and every Drone printed with the Low Value tag.",
    "points": [
-    "They cannot interact with Task Items, so they cannot take a Control Zone or access a Terminal.",
-    "They cannot be placed during Deployment.",
-    "They are worth no Victory Points when destroyed.",
-    "They can still deny a Zone, since a Zone is held only with no enemy unit inside."
+    "It is not part of the Squad: it has no Points Value and is never placed during Deployment.",
+    "It cannot interact with Task Items, so it takes no Control Zone and accesses no Terminal.",
+    "It is worth no Victory Points when destroyed, its own detonation included.",
+    "It cannot gain Hexagon Tokens such as Highlight, though Auras still reach it.",
+    "It can still deny a Zone, since a Zone is held only with no enemy unit inside."
    ],
-   "ref": "Rulebook p.82",
+   "ref": "Rulebook p.82, 5.1; Rules Supplement 1.6; FAQ J3, M8, M15, M17, M23",
    "match": [
     "low value",
     "低价值"
    ],
-   "text": "A Low Value Unit may not interact with a Task Item, cannot be placed during Deployment, and is worth no Victory Points when destroyed (p.82, 5.1). Projectiles are Low Value by default, and so is any Drone printed at 0 points.\n\nTaking a Control Zone or accessing a Terminal is interacting with a Task Item, so a Low Value Unit cannot do either. Blocking is not: a Zone is held only if no enemy Units are present, with no exclusion, so a Low Value Unit still denies it. The Excavation Claim card prints its own exclusion for Low Value Units."
+   "text": "Low Value Units are not part of the Squad and have no Points Value (p.82). Every Projectile is one (5.1), and so is every Drone printed with the Low Value tag: the SU1 and SU2 swarms, the White Dwarf's Bits, the Dragonfly, the KK9, the Delphinium and the Unfolded Pholcus. They arrive when a card puts them down, never at Deployment.\n\nA Low Value Unit may not interact with a Task Item and is worth no Victory Points when destroyed, its own detonation included (FAQ M8). Taking a Control Zone or accessing a Terminal is interacting with a Task Item, so it can do neither (FAQ M15). Blocking is not: a Zone is held only if no enemy Units are present, so a Low Value Unit still denies it. The Excavation Claim card prints its own exclusion.\n\nIt cannot gain Hexagon Tokens, so it never bears Highlight (Rules Supplement 1.6; FAQ J3, M23), though Auras still reach it: allied Missiles and Mines near an MES Beacon share its Low Profile (FAQ M17)."
   },
   {
    "id": "drone_action_speed",
    "name": "Automatic and Command Actions",
    "basic": "The boxed icon beside a Drone Action's name says when it happens: by itself, on a Command, or always.",
    "points": [
-    "An Automatic Action {!} resolves by itself in the Automatic Phase.",
-    "A Command Action {?} happens only when a Command Token is spent on the Drone in the Command Phase.",
+    "An Automatic Action {!} resolves by itself in the Automatic Phase, and a Drone with a target must take it.",
+    "A Command Action {?} happens when the Drone is given a Command: it then moves or performs that one Action.",
     "An Action with no box is Passive, and always on.",
+    "A Drone takes one Command per Phase, and keeps the Stance printed on its card.",
     "A commanded Drone still performs its Automatic Actions later in the round."
    ],
-   "ref": "Rulebook 3.2 and 3.5",
+   "ref": "Rulebook 3.2, 3.5, 4.1, 4.15; FAQ A21, N8, O1, O2, O14; ruling I4",
    "match": [
     "automatic action",
     "command action",
     "commanded drone",
     "action speed"
    ],
-   "text": "Every Action on a Drone card is marked with a boxed icon beside its name that says when it happens.\n- {!} is an Automatic Action: it resolves by itself in the Automatic Phase without being told to.\n- {?} is a Command Action: it only happens if you spend a Command Token on that Drone in the Command Phase.\n- An Action with neither box is Passive and is always on.\n\nMechs generate Command Tokens (1 each unless the Torso prints Command Generation X) and Drones receive them. A commanded Drone acts immediately and either moves or performs one Command Action, so an Automatic Action cannot be taken on a Command.\n\nA Drone that took a Command still performs its Automatic Actions in the Automatic Phase: the two phases are separate activations (3.2.2, 3.5), and nothing makes a Command cost the Automatic Action. Unspent Command Tokens are removed at the end of the phase."
+   "text": "Every Action on a Drone card is marked with a boxed icon beside its name that says when it happens.\n- {!} is an Automatic Action: it resolves by itself in the Automatic Phase, and Automatic Actions are obligatory (3.5): a Drone with a legal target must take it (ruling I4).\n- {?} is a Command Action: it happens when the Drone is given a Command.\n- An Action with neither box is Passive and is always on.\n\nA Command comes three ways: a Command Token spent in the Command Phase (3.2.2), a Command Coordination later in the round (4.15.3), or the Additional Instructions Tactics Card (FAQ O14). A commanded Drone acts at once and either moves or performs one Command Action. A Drone moves only on a Command, never in the Automatic Phase. It takes one Command per Phase (FAQ O1), and one bearing a Command Token cannot take another (FAQ N8).\n\nThe Automatic Phase alternates like the Command Phase: the players take turns activating their Drones, each performing its Automatic Action, until both pass (3.5.1). A Drone that took a Command still performs its Automatic Actions, since the two phases are separate activations. A Drone keeps the Stance printed on its card and cannot be switched out of it (FAQ O2).\n\nA Command Token given to a Drone is removed when the Command Phase ends (3.2.3). A Mech's own unspent tokens stay until the End Phase (4.15)."
   },
   {
    "id": "command_tokens",
    "name": "Command Tokens",
    "basic": "Mechs make Command Tokens and spend them to give Drones orders.",
    "points": [
-    "Each Mech makes 1 Command Token at the start of the Command Phase, or more with Command Generation.",
-    "Spend one on an ally Drone: it moves or performs one Command Action straight away.",
-    "A Drone holds only one, and Drones' tokens are removed when the Command Phase ends.",
-    "A Mech's unspent tokens stay for later, until the End Phase removes them all."
+    "Each Mech makes 1 face-up Command Token at the start of the Command Phase, or more with Command Generation.",
+    "The players take turns giving Commands, and a player who passes gives no more that phase.",
+    "A Command lays the token face-down on an ally Drone, which moves or performs one Command Action at once.",
+    "A Mech's unspent tokens stay for Command Coordination or for Actions that use one, until the End Phase.",
+    "The Additional Instructions card gives a Drone one more Command Action, without a token."
    ],
-   "ref": "Rulebook 3.2 and 4.15",
+   "ref": "Rulebook 3.2, 4.15; FAQ A21, N8, O1, O14; GoF 1.021; ruling I1",
    "match": [
     "command token",
     "command generation",
@@ -567,7 +572,7 @@
     "指令生成",
     "指令协调"
    ],
-   "text": "At the start of the Command Phase every Mech generates 1 face-up Command Token on its Torso card, or X if the Torso prints Command Generation X (3.2.1).\n\nIssuing a Command takes a token from a Mech of your choice and lays it face-down on an Ally Drone, which immediately moves or performs one Command Action; a Drone holds only one, and the Drones' tokens are removed when the Command Phase ends.\n\nA Mech's unspent tokens stay on it: an Action with Command Coordination X hands up to X of them to X different Drones later in the round (a Drone that already acted in the Command Phase may take one), and an Action that consumes a Command Token flips it face-down. The End Phase removes every Command Token wherever it lies (4.15)."
+   "text": "At the start of the Command Phase every Mech generates 1 face-up Command Token on its Torso card, or X if the Torso prints Command Generation X (3.2.1). A Mech in Shutdown still generates its default token (ruled 2026-09-25).\n\nThe GoF Command cards are read at their 1.021 text (ruling I1):\n- the Integrated Data Link Pod gives Command Generation +1;\n- the P24 Chariot's Command Coordination may issue up to 2 Commands;\n- the P28 Dragoon may perform one Command Coordination after a Maneuver;\n- the P7 Warrior's Swarm Tactics takes the token back after it commands a GoF Medium Drone, to issue again to another Drone.\n\nThe players alternate giving Commands (3.2.3), and a player who passes forfeits every remaining Command that phase (FAQ A21). Issuing one takes a token from a Mech of your choice and lays it face-down on an Ally Drone, which immediately moves or performs one Command Action. A Drone holds only one token and takes one Command per Phase (FAQ N8, O1). The Drones' tokens are removed when the Command Phase ends.\n\nA Mech's unspent tokens stay on it. An Action with Command Coordination X hands up to X of them to X different Drones later in the round, each acting at once as on a Command (4.15.3); a Drone that already acted in the Command Phase may take one. An Action that consumes a Command Token flips it face-down (4.15.4). Additional Instructions lets a Drone take one more Command Action without a token, and the Drone keeps its own Command (FAQ O14). The End Phase removes every Command Token wherever it lies."
   },
   {
    "id": "activation_order",
@@ -626,20 +631,20 @@
   {
    "id": "interception",
    "name": "Interception",
-   "basic": "Interception shoots down Missiles and other Aerial units as they move through Range.",
+   "basic": "Interception shoots down enemy Missiles and other Aerial units as they are Launched or move.",
    "points": [
-    "Intercept X on an Action gives it X Interception Tokens for the whole game.",
-    "It triggers when an enemy Aerial unit starts or ends a move within the Action's Range.",
-    "Each try spends 1 token and fires at that unit, with no arc needed and no Protection for the target.",
-    "Terrain never blocks the shot but Smoke does, and a Melee Locked unit may still intercept.",
-    "If the target survives, keep intercepting until the tokens run out or it is destroyed."
+    "Intercept X gives an Action X Interception Tokens for the whole game. Spent ones never come back.",
+    "A Launch, or an enemy Aerial unit's move, owes an attempt from each unit with its start or end Grid in Range.",
+    "It is not a choice: while an attempt can be made it must be, again and again until the Tokens run out or the target dies.",
+    "It is a Firing Action, so Smoke stops it and Firing bonuses apply, but it needs no arc and the target gets no Protection.",
+    "Deploying or Laying a Projectile owes none, and allied Projectiles are never Intercepted."
    ],
-   "ref": "Rulebook 4.9; FAQ F3, M26",
+   "ref": "Rulebook 4.7.2, 4.9, p.67, p.73; FAQ F3, F5, M1, M5, M9, M20, M26, M27, O11-O13, O15",
    "match": [
     "interception",
     "intercept"
    ],
-   "text": "Interception is how Aerial Units such as Missiles and Projectiles are shot down. Intercept X on an Action puts X Interception Tokens on that Card at Deployment. Interception triggers the moment an enemy Aerial Unit Moves or is Launched, if either the starting Grid or the ending Grid of that movement is within the Action's Range.\n\nEach attempt spends one Token and attacks as a Firing Attack, except that the target must be the Unit that triggered it, no Forward Arc is required, and no Terrain or Unit Protection may be claimed. Terrain never blocks a line to an Aerial Unit, but a Smoke Screen does: an Interception is a Firing Action (FAQ M26), so it cannot be made from or into Smoke, and a Projectile whose starting or landing Grid is in Smoke cannot be Intercepted at that Grid (FAQ F3).\n\nA Melee Locked Unit may still Intercept (ruled 2026-09-25). If the target survives, that Unit MUST intercept again until its Tokens run out or the target is destroyed, and several Units in range intercept in sequence.\n\nTokens are never restored, so what is spent is gone for the rest of the game. A Passive Action with Intercept can only ever attack through Interception, never as a normal Firing Attack."
+   "text": "Intercept X on an Action puts X Interception Tokens on that Card at Deployment, and they are never restored (FAQ M27). An attempt is owed when an enemy Aerial Unit Moves or is Launched and either its starting Grid or its ending Grid is within the Action's Range (4.9). Only those two Grids count, never the path between (FAQ M9). Forced Movement and Teleportation of an enemy Aerial Unit count the same way (ruled 2026-09-26).\n\nWhat triggers it:\n- A Launch: a Projectile is Aerial at both ends of it whatever it is, a Beacon included (4.7.2, FAQ M20). Deploy and Lay never trigger it.\n- Aerial Drones and Mechs, when they move (FAQ O11, O15), and a Missile's flight into its target's Grid in the Delay Phase (p.67).\n- Never an allied Projectile (FAQ M1).\n\nInterception is mandatory (FAQ M5): while its conditions are met it must be made, and it repeats until no valid target is left in Range or the Tokens run out. If the target survives, the same Part must try again. Several units in Range Intercept in sequence, and a Missile Group's Units are each Intercepted on their own.\n\nEach attempt spends one Token and is a Firing Action for all its bonuses and penalties, a Passive Intercept included (FAQ M26): the Caracal's reroll, Smoke and Low Profile all apply. Its own target rule stands: the target is the Unit that triggered it, Highlight never changes that, no Forward Arc is needed, and the target claims no Terrain or Unit Protection. Terrain never blocks a line to an Aerial Unit, but Smoke does (FAQ F3).\n\nFire Control Interference stops it, and so does Shutdown; a destroyed Part cannot Intercept. A Melee Locked Unit may still Intercept (ruled 2026-09-25). It neither Reveals a camouflaged interceptor nor removes a Low Profile Token (p.73). The Hyena Radar's {Eye} counts as a Light Hit for Interception alone (FAQ O12, O13)."
   },
   {
    "id": "end_phase",
@@ -675,74 +680,97 @@
     "single faction",
     "mercenary"
    ],
-   "text": "Agree a points limit: 600 for a skirmish, 900 for a standard game, 1200 or more for a large one (5.1). Every card taken costs its Points Value against that total. Each Mech is assigned a Pilot, and two Pilots with the same ID cannot be in one squad.\n\nA Mech is built entirely from one faction's Parts, and its Pilot is of that faction too. Across the squad RDL, UN and GoF do not mix. Planetring Dynamics and the White Dwarf collaboration are mercenaries: their Units may join an RDL, UN or GoF squad as complete Units, never as a Part on another faction's Mech. Tactics Cards are not bound by the faction rule (5.4.2)."
+   "text": "Agree a points limit: 600 for a skirmish, 900 for a standard game, 1200 or more for a large one (5.1). Every card taken costs its Points Value against that total. Each Mech is assigned a Pilot, and two Pilots with the same ID cannot be in one squad.\n\nA Mech is built entirely from one faction's Parts, and its Pilot is of that faction too. Across the squad RDL, UN and GoF do not mix. Planetring Dynamics and the White Dwarf collaboration are mercenaries: their Units may join an RDL, UN or GoF squad as complete Units, never as a Part on another faction's Mech. Tactics Cards are not bound by the faction rule (5.4.2).\n\nA White Dwarf Bit, like every Low Value Unit, is not part of the Squad (p.82). The White Dwarf belongs to Ace Strategy: a Planetring Dynamics Mech cannot take its Parts (FAQ N6)."
   },
   {
    "id": "mines",
    "name": "Mines",
-   "basic": "A Mine sits in a Grid and explodes when a ground unit ends up there.",
+   "basic": "A Mine sits in a Grid and explodes when a ground unit enters it. The blast catches everything there.",
    "points": [
-    "It goes off however the unit arrives: moving in, Knockback, or being pushed there by a Crush.",
-    "A Mine counts as Aerial, so a ground unit sets it off instead of Crushing it.",
-    "A Flying unit can land on it without setting it off.",
-    "The Mine's owner resolves the blast."
+    "Any ground unit entering sets it off, ally or enemy, even one passing through, and a camouflaged one is not Revealed.",
+    "A unit already standing there when the Mine arrives does not set it off until it moves in again.",
+    "The blast hits every unit in the Grid, flying and Aerial ones too. Mines in one Grid go off together.",
+    "A Mine blocks nothing and is never Crushed. Flying units may land on it, and Melee may attack it.",
+    "The Mine Layer backpack Lays Mines along its own route for 1 Move Range each, or Deploys one within 1 Grid."
    ],
-   "ref": "Official FAQ M3, M6, M7, M19, M22, M24",
+   "ref": "Rulebook 4.7.6, p.64, p.82; FAQ E10, I10, I13, I24, M3, M6, M7, M10, M14, M19, M22, M24, M29, O10; rulings I14-I17",
    "match": [
     "地雷"
    ],
-   "text": "A Mine sits in a Grid and detonates when a Ground Unit is in that Grid, however the Unit arrived: by moving in, by Knockback, or by being displaced there by a Crush (FAQ M3, M6, M7).\n\nA Mine is treated as an Aerial Unit: a Ground Unit entering its Grid sets it off rather than Crushing it, and a Flying Unit may land on it without triggering it (FAQ E10, M24). The Mine's owner resolves the blast (FAQ M19, M22)."
+   "text": "A Mine (the GM-35) detonates when a Ground Unit enters its Grid, whoever owns either (FAQ M6). Entering means moving in, being Knocked back or Crushed into it, or passing through: a unit walking through a mined Grid stops there, the blast resolves, and it goes on with the Range it has left unless its Chassis is destroyed (FAQ M19, I24; ruling I16). A camouflaged unit sets it off and is not Revealed.\n\nA Mine placed where a Ground Unit already stands waits for a unit to enter (ruling I15). A Mine laid in the layer's own end Grid goes off as the layer enters it. Deploying a Mine into a Grid that holds one sets off the one that was there, and the new Mine is Deployed if that blast does not destroy it (FAQ M6).\n\nThe blast catches everything in the Grid, Flying and Aerial Units included (FAQ M22; ruling I17), and each Unit makes its own Attack and Defense Rolls. Mines in one Grid go off at the same time: they resolve one by one, and none destroys another (FAQ I13). The Mine's owner resolves the blast (4.7.6, p.64).\n\nA Mine is its own kind of Unit (ruling I14):\n- It blocks nothing, units may be placed above it, and it is never Crushed (FAQ E10).\n- Flying Units may land on it, and a Flying or Aerial Unit never sets it off (FAQ M3, M24).\n- Melee may target it, and it gets Protection like any other Unit (FAQ M10, M14).\n- An enemy Mine placed in Contact with a camouflaged Unit ends the camouflage (FAQ I10).\n\nLaying (FAQ M7, M29): the GLP-15's Auto Mine Laying spends 1 Move Range per Mine during the Mech's Movement and puts it in any Grid of the route, and a Flight Move's route is only its two ends. The Lay comes before the Crush, so a Mine laid ahead catches the unit the Crush pushes into it. The GLP-15 also Deploys one Mine within Range 1.\n\nA Mine is a Low Value Unit (p.82), and an enemy one, never Neutral: a Drone's Automatic Action takes it before any Breakable Terrain (FAQ O10)."
   },
   {
    "id": "pholcus",
    "name": "Pholcus automatic mines",
-   "basic": "The Pholcus is a Mine that can move.",
+   "basic": "The Pholcus is Launched folded, then Unfolds into a Drone that hunts: it jumps to the nearest enemy and detonates.",
    "points": [
-    "It is laid folded, and becomes a Mine when it unfolds.",
-    "Unfolding into a Grid that already holds a unit sets it off at once.",
-    "Its folded and unfolded forms are separate cards with the same stats."
+    "It is launched like any Projectile, so it can be Intercepted, and it may land in an occupied Grid.",
+    "In the Delay Phase of that round it must Unfold into its Drone form.",
+    "Unfolding where a unit already stands sets it off at once, at one of them, ally or not.",
+    "From the next round it is a Drone. With an enemy in Range in the Automatic Phase, it must jump and detonate.",
+    "It is a Low Value Drone: destroying it scores nothing, and Crushing it causes no blast."
    ],
-   "ref": "Official FAQ M8, M18, M28",
+   "ref": "Card text (082, 156, 167); FAQ I10, M8, M18, M28, O10; rulings I18, I19",
    "match": [
     "自行地雷",
-    "pholcus"
+    "pholcus",
+    "jumps to the target grid"
    ],
-   "text": "The SGM-2 Pholcus is a Mine that moves. It is laid folded and unfolds into its deployed form, at which point it is a Mine. Unfolding into a Grid that already holds a Unit detonates it immediately (FAQ M18).\n\nThe folded and unfolded forms are printed as separate cards with the same stats (FAQ M8, M28)."
+   "text": "The SGM2 Pholcus Automatic Mine is Launched from the GSD2A Mine Rack as a Projectile with its own model, and it may be placed in an occupied Grid (FAQ M18.1, M18.2). It is a launch, so it is checked for Interception. The Rack never launches the Unfolded form. Landing in Contact with a camouflaged enemy ends the camouflage, as an enemy Deployable does (FAQ I10).\n\nIn the Delay Phase of the round it lands it must be replaced by its Unfolded Drone form (FAQ M18.3). If its Grid is occupied then, it detonates at once, even when the occupant is an ally (FAQ M18.4). Aerial Units and Mines are not occupants, and the blast takes one occupant, its owner choosing (rulings I18, I19). A unit sharing its Grid later sets nothing off.\n\nThe Unfolded Pholcus is a Drone from the next round and receives Commands (FAQ M18.5). In the Automatic Phase, with an enemy in its attack Range, it must jump to the nearest one and Detonate (FAQ M18.6), with no line of sight needed (FAQ M28). It cannot attack in the round it Unfolds, since the Automatic Phase comes before the Delay Phase (FAQ M8).\n\nIt is a Low Value Drone (FAQ M8): destroying it, or its own detonation, scores nothing, and a unit that Crushes it sets off no blast. Like every Mine it is an enemy Unit, never Neutral (FAQ O10)."
   },
   {
    "id": "loads",
    "name": "Loads",
-   "basic": "A Load is a Part that a Drone carries for a Mech to borrow.",
+   "basic": "A Load is a Backpack a Carrier Tarantula carries, for the Mechs in Contact with it to use.",
    "points": [
-    "The Drone cannot use the Part itself; it only carries it.",
-    "Ammo spent from a borrowed Part comes off the carrying Drone.",
-    "A borrowed Pod adds its Electronic Value when the Mech starts a Counter-roll, not when it defends against one.",
-    "Some Backpacks say they can never be carried as a Load."
+    "Only the Carrier Tarantula carries a Load, only a Backpack can be one, and some Backpacks never can.",
+    "The Carrier never uses its Load: it gains none of the Part's Actions or attributes.",
+    "A Mech in Contact may use the Load as its own Part while it acts: its Actions, bonuses, Dodge and Freehand.",
+    "Two Carriers lend two separate Parts, and their bonuses stack. Ammo spent comes off the Carrier.",
+    "A Load is its Carrier's faction, and it costs its Points like any Part."
    ],
-   "ref": "Official FAQ O3-O8, O16-O18",
+   "ref": "Rulebook p.94; FAQ N6, O3-O8, O16-O18; rulings I24-I27",
    "match": [
     "负载"
    ],
-   "text": "A Load is a Part carried by a Drone for a Mech to borrow. The Drone does not gain the Part's Actions or attributes - it is carrying it, not using it.\n\nA Mech may use a borrowed Part once per Carrier, so two Carriers lending the same Backpack lend two separate Parts and each may be used (O7). Ammo spent from a borrowed Part comes off the Drone carrying it, not the Mech. The loan only counts while the Mech is performing: a borrowed Pod adds its Electronic Value when the Mech is the Initiator of an Electronic Counter-roll, but never when it is the Responder rolling passively (O5).\n\nSeveral Backpacks print the Load keyword to say the opposite - that they can never be carried as a Load."
+   "text": "The ADK30C Tarantula Carrier Type carries one Backpack as its Load, or none (FAQ O8). Only a Backpack can be a Load, and several Backpacks print that they never can, the EBS/X40 among them (FAQ O18). A Load is a Part of the Carrier's faction (5.1, FAQ N6; ruling I26), and it costs its Points like any Part.\n\nThe Carrier does not gain the Load's Actions or attributes: it carries it, and never uses it (p.94). A Carrier holding an Electronic Warfare Backpack adds nothing to its own Counter-roll (FAQ O4).\n\nAn Ally Mech in Contact with the Carrier may regard the Load as its own Part when it performs Actions (FAQ O3, O16): its Actions, its passive bonuses, its Electronic Value, Dodge Value and Freehand. The Mech's own Backpack still works beside it, and two Carriers' Coolers stack on one Firing Action (FAQ O17). Two Carriers lend two separate Parts, so the same Action may be used once from each (FAQ O7).\n\nThe loan counts only while the Mech acts. A borrowed Electronic Value counts when the Mech Initiates a Counter-roll, never when it Responds (FAQ O5, O6), and a borrowed Dodge only when the Mech is attacked during its own Action, such as by a Mine it sets off (ruling I24). Ammo spent from a borrowed Part comes off the Carrier. A Mech in Contact may Intercept with a lent AMS, paying from the Carrier's Tokens (ruling I25).\n\nA Load's Freehand serves [Two-Handed] alone: a Black Box is never picked up with it (ruling I27)."
+  },
+  {
+   "id": "white_dwarf",
+   "name": "The White Dwarf",
+   "basic": "The White Dwarf is a transforming Mech: it flies in Cruise Mode, and launches Bits from its Bit Port.",
+   "points": [
+    "It Transforms between its Mech form and Cruise Mode, and may deploy in either.",
+    "In Cruise Mode it is in Mobility, always flying, and only its Torso acts or takes the hits.",
+    "Cruising, it sets off no Mines, is never Melee Locked and Locks nobody.",
+    "Its Bits are one Aerial Drone printed on three Stance cards, launched and recovered by the Bit Port.",
+    "A Bit keeps its Tokens when it changes Stance, and a recovered Bit comes back as a new unit."
+   ],
+   "ref": "Collab 1.02 (Ace Strategy) additional rules; Rulebook p.82; FAQ M24, N1-N8; rulings I23, I28, I29",
+   "match": [
+    "cruise mode",
+    "巡航模式"
+   ],
+   "text": "The White Dwarf (Ace Strategy) Transforms between its Mech form and Cruise Mode, turning its Parts over to their other faces. It may be deployed in either mode, and deployed in Cruise Mode it is in Mobility Stance (ruling I28).\n\nIn Cruise Mode:\n- Upon entering it, the Mech switches to Mobility Stance, and no other Stance may be selected.\n- It is always a Flying Unit: it may enter a mined Grid and sets off no Mine (FAQ M24).\n- No hit location is determined, and the Torso takes the hit. Scatter-shot's Surplus still reaches another Part, and Cleaving's too (FAQ N7; ruling I29).\n- Only the Torso acts, unless an Action says it may be used in Cruise Mode. A lent Load acts no more than an arm.\n- Suppression does not affect it, and it neither Melee Locks nor is Melee Locked (FAQ N3).\n- With Freehand it may take a Black Box, and it keeps one it already carries (FAQ N1, N2).\n\nThe Bits:\n- A \"White Dwarf\" Bit is one Drone printed on three cards, one per Stance. It is an Aerial Unit (FAQ N5) and a Low Value Unit, never part of the Squad (p.82).\n- The Bit Port Launches one in any Stance within Range 6, spending its Ammo Token, or Recovers one within Range 6, restoring the Token (ruling I23). A Launch is checked for Interception.\n- A Bit's Stance Change turns its card over and keeps everything on it, its Command Token included, so it cannot take another Command (FAQ N8).\n- A recovered Bit leaves play, and one launched again is a new unit with none of its old Tokens (FAQ N4, N8).\n- The Thruster: while the Bit Port holds its Ammo Token, a {Lightning} on the Blue dice may be exchanged for {Dodge}.\n\nThe White Dwarf belongs to Ace Strategy: it is Neutral and joins any squad as a whole Unit, but its Parts never go on a Planetring Dynamics Mech (FAQ N6)."
   },
   {
    "id": "auto_attack_targets",
    "name": "What an Automatic Attack Must Shoot",
-   "basic": "An Automatic attack always shoots the nearest enemy it may target: in Range, and in sight for Firing or Melee.",
+   "basic": "An Automatic attack must shoot the nearest enemy it may target, and the Drone must take it.",
    "points": [
-    "Firing and Melee ones count only enemies in line of sight, and in the Forward Arc unless Omni-directional.",
-    "If one of those has a Highlight Token, it must shoot the nearest Highlighted one.",
-    "A tie is the controller's choice.",
-    "Range is counted in Large Grids, not diagonally.",
-    "With no enemy in Range, it may shoot the nearest Breakable Terrain container instead."
+    "Firing and Melee ones count only enemies in sight, and in the Forward Arc unless Omni-directional.",
+    "A Highlighted enemy comes first for Firing, and a Target Tracer lets a Drone take a bearer farther off.",
+    "Range counts Large Grids in straight lines, so a diagonal neighbour is 2 away. A tie is the controller's choice.",
+    "Melee never targets an Aerial unit, and a Melee reach of \"--\" is the Adjacent Grids, diagonals included.",
+    "With no enemy in Range, it may shoot the nearest Breakable Terrain it could target instead."
    ],
-   "ref": "Rulebook 3.5.2, 4.2.5; FAQ O9, O10, O21",
+   "ref": "Rulebook 3.5, 3.5.2, 4.2.2, 4.2.5, 6.3.3; FAQ J18, M28, O9, O10, O19-O21; rulings I4, I5",
    "match": [
     "automatic attack",
     "auto action",
     "自动攻击"
    ],
-   "text": "An Automatic Action targets the nearest enemy Unit it may target (3.5.2). For a Firing or Melee Action that means the enemies within the Action's Range and also within line of sight, and only those in its Forward Arc unless the Action is Omni-directional (4.2.5); the nearest is taken among those. If any of them bears a Highlight Token, it must target the nearest Highlighted one instead (FAQ O21); a tie is the controller's choice. Range is counted across Large Grids, not diagonally.\n\nIf no enemy is in Range, the Action may instead target the nearest Neutral Unit, which means the 1-inch Breakable Terrain containers; Buildings and Defense Walls are never valid targets (FAQ O9, O10). Beacons and Mines are enemy Units, never Neutral, so they are targeted before Breakable Terrain."
+   "text": "An Automatic Action targets the nearest enemy Unit it may target (3.5.2), and it is obligatory: a Drone with a legal target must take it (3.5; ruling I4). For a Firing or Melee Action the enemies counted are those within the Action's Range and line of sight, and only those in its Forward Arc unless the Action is Omni-directional (4.2.5). Range is counted across Large Grids, not diagonally, so a diagonal neighbour is 2 away. A tie is the controller's choice.\n\nWhat changes the pick:\n- Highlight binds Firing Actions only (FAQ J18): if an enemy counted bears a Highlight Token, the nearest Highlighted one is taken (FAQ O21).\n- A Target Tracer lets a Drone take its bearer even when it is not the nearest (6.3.3).\n- An Electronic Attack may be measured from an allied Repeater, and the nearest is then counted from there (FAQ O19, O20).\n- The Unit types a card names limit what it may take.\n- Melee never targets an Aerial Unit, and a Melee Action printing \"--\" reaches the Adjacent Grids, diagonals included (4.2.2).\n- The Unfolded Pholcus needs no line of sight for its jump (FAQ M28).\n\nIf no enemy is in Range, the Action may instead target the nearest Neutral Unit it could target: a 1-inch Breakable Terrain container in sight, in the arc and within any lengthened Range (FAQ O9; ruling I5). Buildings and Defense Walls are never valid targets. Beacons and Mines are enemy Units, never Neutral, so they are targeted before Breakable Terrain (FAQ O10)."
   },
   {
    "id": "smoke_screen",
@@ -783,18 +811,19 @@
   {
    "id": "overwatch",
    "name": "Overwatch",
-   "basic": "A Firing Action held back and taken later, from the Cobra tactical core and its Snake Eye micro scout.",
+   "basic": "The KK9 Snake Eyes' Overwatch Strike names an enemy, and an ally Mech fires at it at once.",
    "points": [
-    "Overwatch Fire Token (Cobra): at the end of the Delay Phase, remove it, and the Mech may perform 1 Firing Action.",
-    "Overwatch Strike (Snake Eye): pick an enemy in Range; an ally Mech fires at it at once, then the drone is removed.",
-    "Either way it is one Firing Action, of any length."
+    "The KK9 performs it as a Command Action, naming 1 enemy within its Range.",
+    "One ally Mech then performs 1 Firing Action at that enemy, and at no other, straight away.",
+    "The Firing Action may be of any length, but it is one Action, and it costs the Mech no Ticks.",
+    "Then the KK9 is removed."
    ],
-   "ref": "Card text, and Official FAQ K15",
+   "ref": "Card text (LHDR-KK9, TM39D); FAQ K15; ruling I8",
    "match": [
     "overwatch",
     "监视"
    ],
-   "text": "A Firing Action held back and taken later; both printings belong to the TM39D Cobra tactical core and the KK9 Snake Eye micro scout it launches.\n\n- Overwatch Fire Token, on the Cobra: at the end of the Delay Phase, remove the token and the Mech may perform 1 Firing Action.\n- Overwatch Strike, on the Snake Eye (labelled Surveillance Strike in our translation): designate 1 enemy Unit within Range; 1 Ally Mech immediately performs 1 Firing Action against it, then the drone is removed. The shooter need not be the drone's launcher.\n\nThe Firing Action may be Short, Medium or Long, but it is one Action (FAQ K15)."
+   "text": "The KK9 Snake Eyes Micro Drone, which the TM39D Cobra launches, carries Overwatch Strike, a Command Action: designate 1 enemy Unit within its Range as the target, and 1 Ally Mech may immediately perform 1 Firing Action against it. Then the KK9 is removed. The shooter need not be the Mech that launched it.\n\nThe Firing Action belongs to the card, not to an Action Opportunity, so it costs no Ticks. It may be Short, Medium or Long, but it is one Action (FAQ K15), and it may be made at the designated enemy alone."
   },
   {
    "id": "repeaters_radar",

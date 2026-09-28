@@ -72,7 +72,7 @@
   "巡航": {
    "en": {
     "name": "Cruising",
-    "value": "If there is no target within Range, this Projectile is not destroyed. It flies to any Grid within Range instead and stays on the board."
+    "value": "Printed on the M707 \"Swift\" Missile before GoF 1.021: with no target within Range it was not destroyed, flying to a Grid within Range instead. GoF 1.021 prints no Cruising on the Swift, and no card carries it now. The White Dwarf's Cruise Mode is a different rule."
    }
   },
   "榴弹": {
@@ -101,8 +101,8 @@
   },
   "自行地雷": {
    "en": {
-    "name": "Self-propelled Mine",
-    "value": "Deployable subtype tag on the card banner: a mine able to move. See the card's own actions."
+    "name": "Automatic Mine",
+    "value": "The banner of the SGM2 \"Pholcus\", printed PROJECTILE / Automatic Mine. It is Launched folded, and Unfolds into a Low Value Drone in the Delay Phase of the round it lands, detonating at once if its Grid is occupied. As a Drone it jumps to the nearest enemy in Range and detonates."
    }
   },
   "墙": {
@@ -120,7 +120,7 @@
   "机动掩体": {
    "en": {
     "name": "Mobile Cover",
-    "value": "Deployable subtype tag on the card banner: deployable cover that can reposition. See the card's own actions."
+    "value": "The banner tag of the DBP \"Turtle Shell\", which is a Barricade: despite the name it can neither move nor be moved, and is never Crushed. When another Ally Unit is the target of an Attack, it counts as 3-inch high Terrain. See Barricade."
    }
   },
   "电子对抗": {
@@ -174,7 +174,7 @@
   "拦截X": {
    "en": {
     "name": "Intercept X",
-    "value": "This Action may be used for Interception, and starts the game with X Interception Tokens face-up on its Card. Interception triggers when an enemy Aerial Unit moves or is launched and either the starting or ending grid of that movement is within this Action's Range. Each attempt consumes 1 token and attacks like a Firing Action, except that the target must be the unit that triggered it, the target need not be in the Forward Arc, and line of sight always exists so neither Terrain nor Unit Protection can be claimed. If the target survives, you must keep attempting Interceptions until it is destroyed or the tokens run out."
+    "value": "This Action may be used for Interception, and starts the game with X Interception Tokens face-up on its Card. Interception triggers when an enemy Aerial Unit moves or is launched and either the starting or ending Grid of that movement is within this Action's Range, and it must be made while it can be. Each attempt consumes 1 Token and is a Firing Action for its bonuses and penalties, except that the target must be the unit that triggered it and need not be in the Forward Arc, and neither Terrain nor Unit Protection can be claimed. Terrain never blocks the line, but a Smoke Screen does. If the target survives, keep attempting Interceptions until it is destroyed or the Tokens run out. Tokens are never restored."
    }
   },
   "追击标记": {
@@ -216,7 +216,7 @@
   "指令生成X": {
    "en": {
     "name": "Command Generation X",
-    "value": "At the start of the Command Phase this Mech generates X Command Tokens instead of the default 1, placed face-up on its Torso Part Card. X REPLACES the 1 rather than adding to it (3.2.1). Six Torso cards print it: 4 on the P7 Warrior, P7-A3 Centurion and P22 Hunter, 2 on the P28 Dragoon, P24 Chariot and TM31Q Wild Cat."
+    "value": "At the start of the Command Phase this Mech generates X Command Tokens instead of the default 1, placed face-up on its Torso Part Card. X REPLACES the 1 rather than adding to it (3.2.1). Six Torso cards print it: 4 on the P7-A3 Centurion, P22 Hunter and YP23 Wanderer, 2 on the P28 Dragoon, P24 Chariot and TM31Q Wild Cat. GoF 1.021 took it off the P7 Warrior. The Integrated Data Link Pod prints \"Command Generation +1\", which adds 1 to whatever the Mech generates."
    }
   },
   "指令协调X": {
@@ -266,6 +266,12 @@
    "en": {
     "name": "Dense Armor",
     "value": "When this part is hit, may remove all Attack Dice with {}, {Lightning} and {Eye} before Reroll. (GoF 1.021; the printed card read \"{Defense} may offset {Heavy Hit}\".)"
+   }
+  },
+  "低价值": {
+   "en": {
+    "name": "Low Value",
+    "value": "This Unit is not part of the Squad and has no Points Value. It is never placed during Deployment, may not interact with Task Items, cannot gain Hexagon Tokens, and is worth no Victory Points when destroyed."
    }
   }
  }
