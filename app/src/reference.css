@@ -89,6 +89,8 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
   transition: background 0.12s, color 0.12s;
 }
 #ref-report:hover { background: var(--surface3); color: var(--text); }
+/* With the rulebook link hidden, the push to the right is this one's. */
+#ref-pdf[hidden] + #ref-report { margin-left: auto; }
 #ref-search {
   width: 100%; font-size: 16px;
   padding: 11px 13px; border-radius: var(--radius); border: none; outline: none;
