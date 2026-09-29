@@ -1,4 +1,4 @@
-import { ammoAvailable, ammoHolder, ammoPay, liveIntercepts, rebootOwed, rebootWhy, clearDroneCommands, missionZones, readyCommands, seedCommandTokens, strictNow, taskDesignations, type Command, type CheckResult, swarmFor } from './commands';
+import { ammoAvailable, ammoHolder, ammoPay, checkAfter, liveIntercepts, rebootOwed, rebootWhy, clearDroneCommands, missionZones, readyCommands, seedCommandTokens, strictNow, taskDesignations, type Command, type CheckResult, swarmFor } from './commands';
 import { choiceDialog } from './dialog';
 import { askIssuer, askTowFacing, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
@@ -6,11 +6,11 @@ import { actionIconUrl, cardName, isAerial, parseGridRef, secondaryImageUrl, squ
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { interceptHeld, allyRepairTargets, overwatchOf, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, blastScanState, mineStopIndex, chassisStop, bitPortOf, bitsToRecover, coordinationAfterManeuver, ownCards, electronicTargetWhy, scannable, controlledMoveActions, ewWinCommands, electronicAll, electronicAllTargets, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, interceptOwedAt, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply, actionIdleWhy } from './units';
+import { interceptHeld, allyRepairTargets, overwatchOf, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, blastScanState, mineStopIndex, chassisStop, bitPortOf, bitsToRecover, coordinationAfterManeuver, ownCards, electronicTargetWhy, scannable, controlledMoveActions, ewWinCommands, electronicAll, electronicAllTargets, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, interceptOwedAt, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply, actionIdleWhy, commonPartSlots, discardSlots, chassisGone, commonActionStop, commonPartKey, riposteMelees } from './units';
 import { ElectronicHelper, type EwAct, type EwArg } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
 import { boxDropCellIn, boxDropCells, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSight, losNote, smokeBlocks, pathCost, breakAwayLinkDue, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
-import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, obstructSurcharge, tetherCap, tetherNote } from './melee';
+import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, crawlHolders, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
 import { ensureScript, enterPhase, glueAfter as glueCore, idleWorldFor, makeInit, opportunity } from './glue';
@@ -403,33 +403,17 @@ function terrainOf(ctx: HudCtx) {
 // put a Mech into Flying Movement for this move only, and the highlight has to
 // answer to the plan or the toggle would change nothing on the board.
 function reachableFor(ctx: HudCtx, t: Token, steps = maneuverRange(ctx.data, t), asFlight?: boolean, actionId?: string) {
-  const terrain = terrainOf(ctx);
   // Same derivation as the freeplay board: a square-base flyer (moveAsFlight)
   // crosses terrain even though it is not Aerial. Reading only `aerial` here
   // grounded the Ravens on this page while the guide let them fly.
   const flying = asFlight ?? (!!ctx.data.byId.get(t.cardId)?.moveAsFlight || !!t.aerial || envFlightFrom(ctx.data, ctx.state, t));
-  // The Environment Cards, on the overlay as well as on the route, for the
-  // same reason as the leash below: this page builds MoveOpts twice.
-  const env = envMoveRules(ctx.data, ctx.state, t, flying);
-  const away = flying ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain);
-  const leash = tetherCap(t, ctx.state.tokens);
-  return reachableGrids(t, steps, terrain, ctx.state.tokens, flying, {
-    exitCost: away && env.exitCost ? (c, r) => away(c, r) + env.exitCost!(c, r) : away ?? env.exitCost,
-    crushable: (c, r) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
-    // The Tether leash, on the overlay as well as on the route: this function
-    // and moveOptsFor below both build their own opts, and a rule added to one
-    // of them only would paint reachable Grids the confirm step then refuses.
-    // The Abyss ban rides the same hook, and BOTH must pass.
-    allowed: leash && env.allowed ? (c, r) => leash(c, r) && env.allowed!(c, r) : leash ?? env.allowed,
-    stop: env.stop,
-    landing: env.landing,
-    // LPA-21 Firefly, on the OVERLAY as well as on the route below — this page
-    // builds MoveOpts twice and a rule added to one paints Grids the other
-    // refuses.
-    phaseThrough: phasesThroughUnits(ctx.data, ctx.state.tokens, t),
-    // [Moving in Straight Line] +N, on the overlay as well as on the route.
-    straightBonus: straightLineBonus(actionId ? actionOn(ctx, t, actionId) : null),
-  });
+  // The overlay and the route read ONE set of MoveOpts. They were built twice,
+  // and a rule added to one only painted Grids the confirm step refused, or
+  // left dark Grids it took: Obstruct's "or 1 Link" was on the route alone, so
+  // a Mech in a Panzer lock saw nothing lit it could reach (LPA-20; audit
+  // Phase 7, P7D 6). The leash, the Abyss, the Firefly, a Crawl's hold and the
+  // straight line all ride the same opts.
+  return reachableGrids(t, steps, terrainOf(ctx), ctx.state.tokens, flying, moveOptsFor(ctx, t, flying, actionId));
 }
 
 function canReach(ctx: HudCtx, t: Token, col: number, row: number): boolean {
@@ -442,7 +426,12 @@ function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean, actionId?: string) 
   const terrain = terrainOf(ctx);
   const env = envMoveRules(ctx.data, ctx.state, t, flying || !!t.aerial);
   const away = flying || t.aerial ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain);
-  const leash = tetherCap(t, ctx.state.tokens);
+  // A Crawl never leaves a Grid in which the Mech is Melee Locked, flown or
+  // walked (6.1; ruled R2, audit Phase 7, P7B 14), as main.ts moveOpts.
+  const home = crawlHolders(ctx.data, t, actionId ? actionOn(ctx, t, actionId) : null, ctx.state.tokens, terrain).length ? largeGridOf(t) : null;
+  const stay = home ? (c: number, r: number): boolean => c === home.c && r === home.r : undefined;
+  const tethered = tetherCap(t, ctx.state.tokens);
+  const leash = tethered && stay ? (c: number, r: number): boolean => tethered(c, r) && stay(c, r) : tethered ?? stay;
   return {
     exitCost: away && env.exitCost ? (c: number, r: number) => away(c, r) + env.exitCost!(c, r) : away ?? env.exitCost,
     crushable: (c: number, r: number) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
@@ -482,9 +471,9 @@ function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: st
   // FAQ E4: a Mech whose Chassis is destroyed cannot move, but its Maneuver
   // may still turn it. The planner refused to open at Range 0, and Q and E only
   // turn inside a plan, so the turn was out of reach here (audit Phase 4, E4).
-  // It opens at 0, and the commit sends the pivot as the Maneuver it is.
-  const pivotOnly = steps <= 0 && !opts.actionId && !opts.range && t.kind === 'mech'
-    && (t.partStates.chasis ?? 'intact') === 'destroyed';
+  // It opens at 0, and the commit sends the pivot as the Maneuver it is. A
+  // Repaired Chassis moves as normal (ruled R5; audit Phase 7, P7B 12).
+  const pivotOnly = steps <= 0 && !opts.actionId && !opts.range && chassisGone(t);
   if (steps <= 0 && !pivotOnly) {
     ctx.noteNow(`${t.label} has no Movement Range on its card.`);
     return;
@@ -668,10 +657,12 @@ function commitMove(ctx: HudCtx): void {
   }
   // A Mine in a Grid the route enters stops the walk there (ruling I16): the
   // Mine owes its blast, and the Range left is kept for a Go on once it is
-  // resolved (audit Phase 5, C1). Not a controlled move, whose route is the
-  // controller's, and never a flight, which enters only its landing.
-  const cut = m.controller ? -1 : mineStopIndex(ctx.data, ctx.state.tokens, t, m.path, m.flying);
-  const halt = cut > 0
+  // resolved (audit Phase 5, C1). Never a flight, which enters only its landing.
+  // A controlled route stops there too, and The Red Shoes' one Movement ends in
+  // the Mine's Grid: the rest is lost, so nothing is kept (ruled R5; audit
+  // Phase 7, P7D 7). It used to pass through.
+  const cut = mineStopIndex(ctx.data, ctx.state.tokens, t, m.path, m.flying);
+  const halt = cut > 0 && !m.controller
     ? Math.max(0, m.steps - pathCost(m.path.slice(0, cut + 1), m.flying || !!t.aerial, moveOptsFor(ctx, t, m.flying, m.actionId)))
     : undefined;
   if (cut > 0) m.path = m.path.slice(0, cut + 1);
@@ -705,14 +696,6 @@ function commitMove(ctx: HudCtx): void {
   // way before the crusher lands (4.3.6). The Movement ends there either way.
   const victims = crushTargets(t, goal.c, goal.r, terrain, ctx.state.tokens);
   const crushes = !!victims && (victims.units.length > 0 || victims.terrain.length > 0);
-  // A controlled move ends in no Crush: the victims' shuffle is a run of the
-  // crusher's own commands, and this unit is not the sender's. Asked before
-  // the plan is dropped, so the route can be redrawn.
-  if (m.controller && crushes) {
-    ctx.noteNow(`The Red Shoes steers ${t.label} into no Crush here: end the route in an empty Grid.`);
-    ctx.refresh();
-    return;
-  }
   movePlan = null;
   board.clearMovePath();
   board.clearHighlights();
@@ -720,14 +703,20 @@ function commitMove(ctx: HudCtx): void {
     ctx.refresh();
     return;
   }
-  if (m.controller) {
+  // A controlled move that ends in a Crush goes through the ordinary Crush
+  // below, with the controller as the one placing the victims (ruling I5): its
+  // seat sends every command, the exchange by the debt it holds (ruled R1;
+  // audit Phase 7, P7D 1). It was refused here.
+  if (m.controller && !(victims && crushes)) {
     const ctl = m.controller;
     const aerialStart = t.aerial ? { ...t } : null;
     board.animateMove(t.uid, stops, () => {
       const v = ctx.send({ kind: 'controlledMove', seat: ctl.side, uid: ctl.uid, targetUid: t.uid, to: last, via: stops, facing, actionId: m.actionId });
       if (!v.ok) ctx.noteNow(v.why ?? 'The move was refused.');
       else {
-        ctx.noteNow(`${t.label} moves under The Red Shoes' control.`, 'done');
+        ctx.noteNow(cut > 0
+          ? `A Mine stops ${t.label} in its Grid, and The Red Shoes' Movement ends there (M19).`
+          : `${t.label} moves under The Red Shoes' control.`, cut > 0 ? 'table' : 'done');
         // Its own Movement still triggers Interception by the side it is
         // moving against (4.9).
         const moved = aerialStart ? ctx.state.tokens.find((x) => x.uid === t.uid) : undefined;
@@ -765,6 +754,7 @@ function commitMove(ctx: HudCtx): void {
       actionId: m.actionId,
       breakAwayLink: linkDue,
       resume: m.resume,
+      controller: m.controller,
     };
     advanceCrush(ctx);
     ctx.refresh();
@@ -802,6 +792,39 @@ function commitMove(ctx: HudCtx): void {
     if (after) resumeShockAttack(ctx, t.uid, after);
     ctx.refresh();
   });
+}
+
+// A token dropped on the board in play is a Maneuver to that Grid, drawn by
+// the planner itself and committed the way the Confirm button commits it, so
+// the Crush, a Mine's stop, Obstruct's Link, the Boxes and the rest of the
+// route's rules run on it. It was a bare `maneuver` to the drop: two units
+// ended in one Grid, and a Mine was walked past (audit Phase 7, P7D 2). The
+// engine is asked first, so a drop that is not this unit's Maneuver to make
+// sends nothing.
+function dropAsManeuver(ctx: HudCtx, t: Token, at: { col: number; row: number }): void {
+  const goal = { c: Math.floor(at.col / 3), r: Math.floor(at.row / 3) };
+  // Its own Grid is no Movement: the standing spot inside it is the side
+  // panel's to change (placeInGrid).
+  if (goal.c === Math.floor(t.col / 3) && goal.r === Math.floor(t.row / 3)) { ctx.refresh(); return; }
+  const bare = ctx.check({ kind: 'maneuver', seat: t.side, uid: t.uid, to: at });
+  if (!bare.ok) {
+    ctx.noteNow(bare.why);
+    ctx.refresh();
+    return;
+  }
+  startMovePlan(ctx, t, { label: 'Maneuver', maneuver: true });
+  const m = movePlan;
+  if (!m || m.uid !== t.uid) { ctx.refresh(); return; }
+  const route = extendPath(m.path, goal, t, m.steps, terrainOf(ctx), ctx.state.tokens, m.flying, moveOptsFor(ctx, t, m.flying, m.actionId));
+  if (!route || route.length < 2) {
+    movePlan = null;
+    ctx.noteNow(`${t.label} has no route to that Grid within its Maneuver.`);
+    ctx.refresh();
+    return;
+  }
+  m.path = route;
+  commitMove(ctx);
+  ctx.refresh();
 }
 
 // A snapped footprint counts only when every cell sits inside the zone.
@@ -919,6 +942,10 @@ function boardCallbacks(): BoardCallbacks {
       if (ctx.networked && !ctx.seat) { ctx.refresh(); return; }
       const t = ctx.state.tokens.find((x) => x.uid === uid);
       if (!t) return;
+      // Only this player's own units. The relay takes only their seat, so a
+      // drag of the other squad's unit applied on this board alone and the two
+      // boards split (audit Phase 7, P7D 3). Solo, the dev harness walks both.
+      if (ctx.seat && t.side !== ctx.seat) { ctx.refresh(); return; }
       const snap = snapPlacement(col, row, (t.size ?? 1) as 1 | 2 | 3, gridsOf(ctx.state)) ?? { col, row };
       // During deployment a drag nudges the unit inside its zone; in play it
       // is a Maneuver attempt the engine judges.
@@ -932,8 +959,10 @@ function boardCallbacks(): BoardCallbacks {
         else ctx.send({ kind: 'deployUnit', seat: t.side, uid, to: snap });
       } else if (canReach(ctx, t, snap.col, snap.row)) {
         // The drop only lands inside the unit's real Movement Range — the
-        // same law the freeplay board enforces before offering a grid.
-        ctx.send({ kind: 'maneuver', seat: t.side, uid, to: snap });
+        // same law the freeplay board enforces before offering a grid — and
+        // it goes as the planner's own route to that Grid (dropAsManeuver).
+        dropAsManeuver(ctx, t, snap);
+        return;
       }
       ctx.refresh();
     },
@@ -1557,10 +1586,13 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const isPassive = (a: CardAction): boolean => a.type === 'Passive' || a.speed === 'passive';
   // The Part rides along: two R-20 Railguns, one per arm, print the same Action
   // and used to list as two identical rows with nothing to tell them apart.
+  // A Punch/Kick or Crawl is keyed to the first of its Parts still free, so a
+  // second one by another Part is its own Action (ruled R3; audit Phase 7,
+  // P7B 9); every other Common Action keeps its own id.
   const acts: { a: CardAction; key: string; slot?: PartSlot | 'pilot' | 'main'; cardId?: string }[] = [
     ...guided.filter((g) => !isPassive(g.action))
       .map((g) => ({ a: g.action, key: g.partKey, slot: g.slot, cardId: g.card.id })),
-    ...(t.kind === 'mech' ? ctx.data.commonActions.filter((a) => !isPassive(a) && (a.id !== 'COMMON_REMOTE_ACCESS' || hasTerminals)).map((a) => ({ a, key: a.id })) : []),
+    ...(t.kind === 'mech' ? ctx.data.commonActions.filter((a) => !isPassive(a) && (a.id !== 'COMMON_REMOTE_ACCESS' || hasTerminals)).map((a) => ({ a, key: commonPartKey(ctx.data, t, a, o.performed) })) : []),
   ];
   // RWS (遥控武器): a Mech activated in the Command Phase was sent a Command
   // for its autocannon, and that is the whole of what it may do here.
@@ -1603,8 +1635,12 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // lists destroyed, or any Part but the Torso in Cruise Mode, was offered
       // here with no gate at all (audit Phase 2, B5).
       const partWhy = t.kind === 'mech' ? actionPartWhy(ctx.data, t, a) : null;
+      // Shutdown, and for the Crawl Immobilized, as check() refuses them: a
+      // Common row was drawn live under the Reboot line (audit Phase 7, P7B 7).
+      const commonStop = t.kind === 'mech' && !slot ? commonActionStop(t, a) : null;
       const idle = actionIdleWhy(ctx.data, t, a, idleWorld);
       const v: TickVerdict = chained ? { ok: false, why: chained } : stopped ? { ok: false, why: stopped }
+        : commonStop ? { ok: false, why: commonStop }
         : partWhy ? { ok: false, why: partWhy } : idle ? { ok: false, why: idle } : phased ? { ok: false, why: phased } : ticks;
       const cost = costOf(priced);
       const kind = (a.type ?? '').toLowerCase();
@@ -1645,13 +1681,17 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const droneMoveBlock = t.kind === 'drone' && isLoopPhase(dronePh) ? droneMoveWhy(dronePh) : null;
   // 4.1.1: a Mech in Shutdown Stance cannot Maneuver or perform any Action
   // other than Reboot. The engine refuses it too; this is the row's reason.
-  const man = t.kind === 'mech'
+  const man0 = t.kind === 'mech'
     ? (t.stance === 'shutdown'
       ? { ok: false as const, why: 'A Mech in Shutdown Stance cannot Maneuver or act until it Reboots (4.1.1).' }
       : rwsOnly
         ? { ok: false as const, why: 'A Mech commanded through RWS fires that Part and does not move (遥控武器); it Maneuvers in its own Action Opportunity.' }
         : canManeuver(o))
     : droneMoveBlock ? { ok: false as const, why: droneMoveBlock } : canActivate(o);
+  // Immobilized: no Maneuver, not even a turn (6.3.2). The row was live and
+  // the planner refused it after the press (audit Phase 7, P7B 7).
+  const pinned = man0.ok ? immobilizedStop(t, null) : null;
+  const man = pinned ? { ok: false as const, why: pinned } : man0;
   // Ticks are a Mech's Action Opportunity (3.4). A Drone or Projectile gets an
   // activation instead — one Action, no price printed on any of them — so the
   // pool is left off the way the freeplay guide leaves it off its phase panels.
@@ -1735,7 +1775,9 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // just moves, so calling its one option a Maneuver invented a distinction the
   // card never makes.
   const moveWord = t.kind === 'mech' ? 'Maneuver' : 'Movement';
-  const moveTip = t.kind === 'mech'
+  const moveTip = chassisGone(t)
+    ? 'Its Chassis is destroyed, so its Maneuver may only change its Facing (FAQ E4): Q or E turns it, then confirm.'
+    : t.kind === 'mech'
     ? `Draw a route, then confirm. The Maneuver Value comes off the Chassis Card${t.stance === 'mobility' ? ', doubled by Mobility Stance' : ''}. A Movement Action carries its own Range.`
     : 'Draw a route, then confirm. This activation buys a Movement or an Action, not both (2.4.1).';
   return `${ticks}${stanceRow}${rebootRow}
@@ -1743,7 +1785,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       <div class="tp-label">Actions</div>
       <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? ` title="${esc(moveTip)}"` : ` aria-disabled="true" data-why="${esc(man.why ?? '')}"`} data-act="maneuver">
         <span class="dotk"></span><span class="an">${moveWord}</span><span class="ac">${
-          t.kind === 'mech' && (t.partStates.chasis ?? 'intact') === 'destroyed'
+          chassisGone(t)
             ? 'turn only'
             : `${maneuverRange(ctx.data, t)} ${maneuverRange(ctx.data, t) === 1 ? 'grid' : 'grids'}`
         }</span></button>
@@ -1761,7 +1803,12 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
 function goOn(ctx: HudCtx, t: Token, o: Opportunity): string {
   const left = o.uid === t.uid ? o.mineHalt ?? 0 : 0;
   if (left <= 0) return '';
-  const stop = chassisStop(t);
+  // The engine's own reading: a destroyed Chassis ends it, and the Mine's
+  // blast comes first, which the other seat resolves. The row was live while
+  // the blast was still owed, and going on walked the unit out of it (ruled
+  // R4; audit Phase 7, P7D 4).
+  const v = ctx.check({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, resume: true });
+  const stop = v.ok ? null : v.why;
   return `<button class="actrow k-moving${stop ? ' warn' : ''}"${stop ? ` aria-disabled="true" data-why="${esc(stop)}"` : ` title="${esc('The rest of the Movement a Mine stopped (M19).')}"`} data-act="goon">
     <span class="dotk"></span><span class="an">Go on</span><span class="ac">${left} ${left === 1 ? 'grid' : 'grids'}</span></button>`;
 }
@@ -1900,7 +1947,10 @@ function endPanel(ctx: HudCtx): string {
     .map((st) => {
       const done = at(st.id);
       const wait = (before[st.id] ?? []).some((x) => !at(x));
-      return `<button class="rowwide${done ? ' donerow' : ''}" data-endstep="${st.id}"${done || wait ? ' disabled' : ''}${wait && !done ? ' title="The steps above come first (3.7)"' : ''}>${done ? '✓ ' : ''}${esc(st.label)}</button>`;
+      // Greyed with its reason, which a hold or a hover says in the notice
+      // line; a truly disabled row hears neither (audit Phase 7, P7D 9).
+      const why = done ? 'This step is done for this round.' : wait ? 'The steps above come first (3.7).' : '';
+      return `<button class="rowwide${done ? ' donerow' : ''}" data-endstep="${st.id}"${why ? ` aria-disabled="true" data-why="${esc(why)}"` : ''}>${done ? '✓ ' : ''}${esc(st.label)}</button>`;
     })
     .join('');
   const all = steps.every((st) => sc.endDone.includes(`${s.round.n}:end:${st.id}`));
@@ -2096,6 +2146,7 @@ function panelHtml(ctx: HudCtx): string {
   if (formPick) return formPanel(ctx);
   if (repairPick) return repairPanel(ctx);
   if (chargePlan) return chargePanel(ctx);
+  if (discardPick) return discardPanel(ctx);
   if (stabilisePick) return stabilisePanel(ctx);
   if (shockPick) return shockPanel(ctx);
   if (attackPick) return attackPanel(ctx);
@@ -2104,7 +2155,11 @@ function panelHtml(ctx: HudCtx): string {
   if (smokeOwedOf(ctx.state).length) return smokeChoicePanel(ctx);
   pushOnReady(ctx);
   if (shovePlan) return shovePanel(ctx);
-  if (detonateNow) return detonatePanel(ctx);
+  // A Detonation waits for the Interception its own flight owes (4.9): the
+  // other seat's attempts at this Projectile come first. Its panel stood above
+  // theirs, so the Explosion could be opened before them (audit Phase 7, P7D 5).
+  const flightOwed = !!detonateNow && owedItems(ctx).some((x) => x.targetUid === detonateNow!.uid);
+  if (detonateNow && !flightOwed) return detonatePanel(ctx);
   // Interception fires the instant a Projectile is Launched and is resolved
   // before play goes on (4.9), so it outranks the phase — but only while there
   // is something drawable. Dead debt, whose Part or target has left the board,
@@ -2749,6 +2804,10 @@ function moveBarHtml(ctx: HudCtx, t: Token, ticks = ''): string {
           // LPA-20's Obstruct is the first lock that costs something a player
           // cannot count off the board, and the "or 1 Link" alternative is only
           // usable if the app says it exists.
+          // A Crawl says why it lights only its own Grid, flown or walked (6.1;
+          // ruled R2, audit Phase 7, P7B 14).
+          const held = crawlHolders(ctx.data, t, movePlan.actionId ? actionOn(ctx, t, movePlan.actionId) : null, ctx.state.tokens, terrainOf(ctx));
+          if (held.length) return `<p class="tp-note">${esc(`Melee Locked by ${held.map((x) => x.label).join(', ')}, and a Crawl cannot be used to Break Away (6.1): it may only turn in its Grid.`)}</p>`;
           const lock = movePlan.flying || t.aerial ? '' : breakAwayNote(ctx.data, t, ctx.state.tokens, terrainOf(ctx));
           return lock ? `<p class="tp-note">${esc(lock)}</p>` : '';
         })()}
@@ -2812,7 +2871,8 @@ function overwatchPanel(ctx: HudCtx): string {
   const foe = s.tokens.find((x) => x.uid === m.targetUid);
   const rows = s.tokens
     .filter((x) => x.side === kk9.side && x.kind === 'mech' && alive(x))
-    .map((x) => `<button class="rowwide" data-owmech="${x.uid}"${x.stance === 'shutdown' ? ' disabled' : ''}>${esc(x.label)}<span class="ct">${x.stance === 'shutdown' ? 'Shutdown' : 'fires'}</span></button>`)
+    // Greyed with the reason for the notice line (audit Phase 7, P7D 9).
+    .map((x) => `<button class="rowwide" data-owmech="${x.uid}"${x.stance === 'shutdown' ? ` aria-disabled="true" data-why="${esc(`${x.label} is in Shutdown Stance, so it performs nothing (4.1.1).`)}"` : ''}>${esc(x.label)}<span class="ct">${x.stance === 'shutdown' ? 'Shutdown' : 'fires'}</span></button>`)
     .join('');
   return head('Your move', 'Which Ally Mech fires?', `At ${esc(foe?.label ?? 'the enemy')}, 1 Firing Action of any length, for no Ticks (FAQ K15). Then ${esc(kk9.label)} is removed.`, true)
     + `<div class="tp-body">${rows || '<p class="tp-note">No Ally Mech can fire.</p>'}</div>
@@ -2905,14 +2965,13 @@ function reactionPanel(ctx: HudCtx): string {
   // whole thing leaves their turn alone, which is why there is a Skip.
   if (r.kind === 'riposte') {
     const from = ctx.state.tokens.find((x) => x.uid === r.fromUid);
-    const melees = tokenCards(ctx.data, t)
-      .filter((x) => x.slot !== 'pilot' && (t.partStates[x.slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
-      .flatMap(({ card }) => card.actions ?? [])
-      .filter((a) => a.type === 'Melee');
+    // Punch/Kick is a Melee Action every Mech has (ruled R4; audit Phase 7,
+    // P7B 6), and a "--" reach reads as printed rather than "R0".
+    const melees = riposteMelees(ctx.data, t);
     return head('Your move', `${esc(t.label)}: ${esc(name)}`,
       `${esc(t.label)} parried, so ${esc(from?.label ?? 'the attacker')} must end its Action Opportunity at once, and then ${esc(t.label)} may perform a Melee Action immediately.`, true)
       + `<div class="tp-body"><p class="tp-dim">The Action costs no Ticks: it belongs to the card, not to an Action Opportunity. Pick the one to make.</p>
-         ${melees.map((a) => `<button class="rowwide" data-ripostego="${t.uid}:${esc(a.id)}">${esc(a.name?.en || a.name?.zh || a.id)}<span class="ct">R${a.range ?? 1}</span></button>`).join('')
+         ${melees.map((a) => `<button class="rowwide" data-ripostego="${t.uid}:${esc(a.id)}">${esc(a.name?.en || a.name?.zh || a.id)}<span class="ct">${a.range ? `R${a.range}` : 'R --'}</span></button>`).join('')
            || '<p class="tp-note">No Melee Action is left to make, so only the Opportunity ends.</p>'}</div>
          <div class="tp-foot"><button class="bigbtn" data-ripostego="${t.uid}:">End the Opportunity only</button>
          <button class="bigbtn ghost2" data-reactskip="${t.uid}:${esc(r.actionId)}" style="margin-top:6px">Skip it</button></div>`;
@@ -2963,12 +3022,19 @@ function answerReaction(ctx: HudCtx, key: string, place: boolean): void {
   const trace = r.kind === 'trace';
   const stance = r.kind === 'stance';
   const what = trace ? 'Target Tracing' : stance ? 'Defense Reaction' : r.kind === 'control' ? 'control of the unit (The Red Shoes)' : 'Emergency Smoke';
-  if (!ctx.send({ kind: 'resolveReaction', seat: t.side, uid, actionId, placed: place }).ok) { ctx.refresh(); return; }
   // The Scan debt has no decline: 4.12.4 Reveals the target on a success and
   // the only open question is WHERE it appears, which openManifest asks. Its
-  // panel offers no Skip for the same reason.
-  if (r.kind === 'manifest') {
+  // panel offers no Skip for the same reason. The Reveal itself pays the debt,
+  // so a reload before the panel leaves it owed rather than lost (ruled R7;
+  // audit Phase 7, P7C 7); it was cleared first. Only a unit no longer hidden
+  // has it cleared here, with nothing left to Reveal.
+  if (r.kind === 'manifest' && statusCount(t.statuses, 'camouflage') > 0) {
     openManifest(ctx, t, 'Scanned:');
+    ctx.refresh();
+    return;
+  }
+  if (!ctx.send({ kind: 'resolveReaction', seat: t.side, uid, actionId, placed: place }).ok) { ctx.refresh(); return; }
+  if (r.kind === 'manifest') {
     ctx.refresh();
     return;
   }
@@ -3122,15 +3188,19 @@ function interceptPanel(ctx: HudCtx): string {
       ? s.tokens.filter((x) => x.side !== by.side && x.deployed !== false && ((x.aerial && rangeBetween(by, x).range <= reach) || owed(x)))
       : [];
     // An Interception is a Firing Action (FAQ M26), so a Smoke Screen over
-    // every line to the target takes it away (FAQ F3). Shown and disabled,
-    // so the player sees why rather than an empty list.
+    // every line to the target takes it away (FAQ F3). Shown and greyed, with
+    // the reason for the notice line, so the player sees why rather than an
+    // empty list (audit Phase 7, P7D 9).
     const rows = targets
       .map((x) => {
         const smoked = !owed(x) && smokeBlocks(by!, x, s.smoke ?? []);
         // A strict table makes only an owed attempt (ruling I11; audit Phase
         // 5, B9): the rest are shown and greyed.
         const unowed = !owed(x) && strictNow(s);
-        return `<button class="rowwide${smoked ? ' warn' : ''}" data-inttarget="${x.uid}"${smoked || unowed ? ' disabled' : ''}>${esc(x.label)}<span class="ct">${
+        const why = smoked
+          ? `Every line from ${by!.label} to ${x.label} crosses a Smoke Screen, and an Interception is a Firing Action (4.16, FAQ F3).`
+          : unowed ? `No Interception is owed at ${x.label}: only an owed attempt is made (4.9).` : '';
+        return `<button class="rowwide${smoked ? ' warn' : ''}" data-inttarget="${x.uid}"${why ? ` aria-disabled="true" data-why="${esc(why)}"` : ''}>${esc(x.label)}<span class="ct">${
           smoked ? 'every line crosses a Smoke Screen' : unowed ? 'not owed' : `Range ${rangeBetween(by!, x).range}`}</span></button>`;
       })
       .join('');
@@ -3307,8 +3377,9 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
   if (act === 'roll' && unit) {
     // electronicStrength, not electronicValue: the Initiator's Tarantula Loads
     // (FAQ O5) and the EW Suppression aura of ZHDR-202_B / PDTR-202_B both ride
-    // on the pool, and rolling the printed stat drops them. So does the
-    // Action's Strength +X, the Initiator's only (Scream; audit Phase 3, D2).
+    // on the pool, and rolling the printed stat drops them. So would an
+    // Action's Strength +X, the Initiator's only (audit Phase 3, D2), though
+    // no card prints one since the 2026-09-28 list ruling retired Scream's.
     const ev = unit.uid === init.uid
       ? electronicStrength(ctx.data, s.tokens, unit, 'initiator', actionOn(ctx, init, c.actionId))
       : electronicStrength(ctx.data, s.tokens, unit, 'responder');
@@ -3403,10 +3474,23 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
     // A free Scan that was not applied ends the attack that earned it (FAQ
     // I11): the Tick is spent, the remaining Ticks are not. Said by whoever
     // closes the window, once, and only when no attack was queued behind it.
-    if (c.thenAttack && !(ensureScript(s).reactions ?? []).some((r) => r.kind === 'scanAttack' && r.uid === init.uid)) {
-      ctx.noteNow(`${init.label}'s Scan was not applied, so its attack on ${resp.label} ends. The Action Tick is spent; any remaining Ticks may still be used (FAQ I11).`, 'done');
+    // A Multi-Target's extra designation queues none: its applied Scan owes
+    // the Reveal alone, and a failed one drops only that designation (ruled
+    // R3; audit Phase 7, P7C 4).
+    const owed = ensureScript(s).reactions ?? [];
+    const applied = c.thenAttack?.extra
+      ? owed.some((r) => r.kind === 'manifest' && r.uid === resp.uid) || statusCount(resp.statuses, 'camouflage') === 0
+      : owed.some((r) => r.kind === 'scanAttack' && r.uid === init.uid);
+    // Only the Initiator's seat closes it until the Initiator has lost (ruled
+    // R3; audit Phase 7, P7D 1), so the line waits for the close to land.
+    const closed = ctx.send({ kind: 'clearCounterRoll', seat: seatOf(ctx) });
+    if (!closed.ok) {
+      if (closed.why) ctx.noteNow(closed.why);
+    } else if (c.thenAttack && !applied) {
+      ctx.noteNow(c.thenAttack.extra
+        ? `${init.label}'s Scan was not applied, so its attack cannot designate ${resp.label}. Its other targets stand (FAQ I11).`
+        : `${init.label}'s Scan was not applied, so its attack on ${resp.label} ends. The Action Tick is spent; any remaining Ticks may still be used (FAQ I11).`, 'done');
     }
-    ctx.send({ kind: 'clearCounterRoll', seat: seatOf(ctx) });
     ctx.refresh();
   }
 }
@@ -3782,7 +3866,18 @@ let crushPlan: {
   breakAwayLink?: number;
   // The rest of a Movement a Mine stopped (C1).
   resume?: boolean;
+  // The Red Shoes' controller, when the crusher is the unit it steers: its
+  // seat makes the Crush (ruling I5; ruled R1, audit Phase 7, P7D 1).
+  controller?: { uid: number; side: Side };
 } | null = null;
+
+// Who a Crush's commands travel under: the crusher's own seat, or, when The
+// Red Shoes steers it, the controller's own unit. The relay takes only the
+// sender's seat, and a unit destroyed by the Crush scores for the controller's
+// side (ruled R1, R2; audit Phase 7, P7D 1).
+function crushActor(m: { controller?: { uid: number; side: Side } }, crusher: Token): { seat: Side; uid: number } {
+  return m.controller ? { seat: m.controller.side, uid: m.controller.uid } : { seat: crusher.side, uid: crusher.uid };
+}
 
 // Where a crushed Unit may be pushed: rules.ts crushEscapeGrids, the one copy
 // both boards read, with the crusher standing in the Grid it steps out of
@@ -3804,16 +3899,18 @@ function advanceCrush(ctx: HudCtx): void {
   const s = ctx.state;
   const crusher = s.tokens.find((x) => x.uid === m.uid);
   if (!crusher) { crushPlan = null; ctx.refresh(); return; }
+  const by = crushActor(m, crusher);
   if (m.terrain.length) {
-    if (ctx.send({ kind: 'destroyTerrain', seat: crusher.side, uid: crusher.uid, pieces: m.terrain }).ok) ctx.noteNow(`${crusher.label} crushes ${m.terrain.length === 1 ? 'a piece of' : `${m.terrain.length} pieces of`} Destructible Terrain in ${gridName(m.goal.c, m.goal.r)}.`, 'done');
+    if (ctx.send({ kind: 'destroyTerrain', ...by, pieces: m.terrain }).ok) ctx.noteNow(`${crusher.label} crushes ${m.terrain.length === 1 ? 'a piece of' : `${m.terrain.length} pieces of`} Destructible Terrain in ${gridName(m.goal.c, m.goal.r)}.`, 'done');
     m.terrain = [];
   }
   while (m.queue.length) {
     const v = s.tokens.find((x) => x.uid === m.queue[0]);
     if (!v) { m.queue.shift(); continue; }
     if (!canBeForceMoved(ctx.data, v)) {
-      // A kill credited to the crusher; `despawn` recorded none (audit Phase 4, C6).
-      if (ctx.send({ kind: 'recordKill', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, what: 'unit' }).ok) ctx.noteNow(`${v.label} cannot be Force-Moved, so being crushed destroys it (4.3.6).`, 'done');
+      // A kill credited to the crusher, or to The Red Shoes' controller when it
+      // steers the crusher (ruled R2); `despawn` recorded none (audit Phase 4, C6).
+      if (ctx.send({ kind: 'recordKill', ...by, targetUid: v.uid, what: 'unit' }).ok) ctx.noteNow(`${v.label} cannot be Force-Moved, so being crushed destroys it (4.3.6).`, 'done');
       m.queue.shift();
       continue;
     }
@@ -3928,15 +4025,33 @@ function finishCrush(ctx: HudCtx): void {
   // "was refused" are the same outcome for the player and must read the same.
   const walk = m.stops.slice(0, -1);
   const held = walk[walk.length - 1] ?? { col: t.col, row: t.row };
+  // The Movement is recorded by its own command: the crusher's `maneuver`, or
+  // under The Red Shoes the controller's `controlledMove`, which spends the
+  // debt (ruled R1; audit Phase 7, P7D 1).
+  const ctl = m.controller;
+  // controlledMove carries no `from`: after the exchange has placed the unit,
+  // the Grid the Movement began in is left out of `via` instead, so the High
+  // Temperature walk does not count it as entered.
+  const startG = { c: Math.floor(began.col / 3), r: Math.floor(began.row / 3) };
+  const walked = (via: { col: number; row: number }[]) => via.filter((p) => Math.floor(p.col / 3) !== startG.c || Math.floor(p.row / 3) !== startG.r);
+  const record = (to: { col: number; row: number }, via: { col: number; row: number }[], from?: { col: number; row: number }): boolean => (ctl
+    ? ctx.send({ kind: 'controlledMove', seat: ctl.side, uid: ctl.uid, targetUid: t.uid, to, via: from ? walked(via) : via, facing: m.facing, actionId: m.actionId }).ok
+    : ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to, free: m.free, granted: m.granted, via, facing: m.facing, from, actionId: m.actionId, breakAwayLink: m.breakAwayLink, ...(m.resume ? { resume: true } : {}) }).ok);
+  // What follows a Movement is its own player's: the tow, the Mines, the Boxes,
+  // a shove and a Shock strike. The controller offers none of it, as the plain
+  // controlled route offers none.
+  const after = (): void => {
+    if (ctl) return;
+    if (m.drag) towDraggedAlly(ctx, t, m.path, m.drag);
+    offerMinesOn(ctx, t, m.path, m.steps, m.flying);
+    offerBoxesOn(ctx, t.uid, m.path, m.flying || !!t.aerial);
+    if (m.shoveActionId) startShove(t.uid, m.shoveActionId);
+    if (m.attackAfter) resumeShockAttack(ctx, t.uid, m.attackAfter);
+  };
   const stopShort = (why: string): void => {
     board?.animateMove(t.uid, walk, () => {
-      const stopped = ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: held, free: m.free, granted: m.granted, via: walk, facing: m.facing, actionId: m.actionId, breakAwayLink: m.breakAwayLink, ...(m.resume ? { resume: true } : {}) }).ok;
-      if (stopped) ctx.noteNow(why, 'warn');
-      if (m.drag) towDraggedAlly(ctx, t, m.path, m.drag);
-      offerMinesOn(ctx, t, m.path, m.steps, m.flying);
-      offerBoxesOn(ctx, t.uid, m.path, m.flying || !!t.aerial);
-      if (m.shoveActionId) startShove(t.uid, m.shoveActionId);
-      if (m.attackAfter) resumeShockAttack(ctx, t.uid, m.attackAfter);
+      if (record(held, walk)) ctx.noteNow(why, 'warn');
+      after();
       ctx.refresh();
     });
   };
@@ -3953,9 +4068,11 @@ function finishCrush(ctx: HudCtx): void {
       // nudge it would leave a board on which the crusher stands on the unit it
       // is trading places with, and both the undo ring and the networked
       // rollback take their snapshots between commands.
+      // Under The Red Shoes the controller's seat makes it, by the debt it
+      // holds, and the exchange stamps that debt (ruled R1; P7D 1).
       const verdict = ctx.send({
         kind: 'crushSwap',
-        seat: t.side,
+        seat: ctl?.side ?? t.side,
         uid: t.uid,
         to: spot,
         facing: m.facing,
@@ -3974,16 +4091,13 @@ function finishCrush(ctx: HudCtx): void {
     // The Movement itself is recorded either way, and this is where the Maneuver
     // Tick is spent — crushSwap deliberately charges nothing, because a Crush
     // can end a Movement Action just as easily as a Maneuver. `from` is only
-    // sent when the exchange has already placed the unit.
-    const crushedIn = ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: spot, free: m.free, granted: m.granted, via: stops, facing: m.facing, from: pair ? began : undefined, actionId: m.actionId, breakAwayLink: m.breakAwayLink, ...(m.resume ? { resume: true } : {}) }).ok;
+    // sent when the exchange has already placed the unit. A controlled one is
+    // recorded where the exchange stamped the debt, the `to` its check holds.
+    const crushedIn = record(spot, stops, pair ? began : undefined);
     if (crushedIn && !pair) ctx.noteNow(`${t.label} crushes into ${gridName(m.goal.c, m.goal.r)}, and its Movement ends there (4.3.6).`, 'done');
     // After the crusher has landed, exactly as on the plain settle: the Grid it
     // vacated is only free once it has actually left it.
-    if (m.drag) towDraggedAlly(ctx, t, m.path, m.drag);
-    offerMinesOn(ctx, t, m.path, m.steps, m.flying);
-    offerBoxesOn(ctx, t.uid, m.path, m.flying || !!t.aerial);
-    if (m.shoveActionId) startShove(t.uid, m.shoveActionId);
-    if (m.attackAfter) resumeShockAttack(ctx, t.uid, m.attackAfter);
+    after();
     ctx.refresh();
   });
 }
@@ -4015,7 +4129,8 @@ function confirmCrushed(ctx: HudCtx): void {
     // left yet.
     m.exchanges = [...m.exchanges, { uid: v.uid, facing: p.facing }];
   } else {
-    if (ctx.send({ kind: 'forceMove', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, to: { col: p.col, row: p.row }, facing: p.facing }).ok) ctx.noteNow(`${crusher.label} crushes ${v.label}, Force-Moved to ${gridName(p.c, p.r)}.`, 'done');
+    // Under The Red Shoes the shove travels as the controller's (ruled R1).
+    if (ctx.send({ kind: 'forceMove', ...crushActor(m, crusher), targetUid: v.uid, to: { col: p.col, row: p.row }, facing: p.facing }).ok) ctx.noteNow(`${crusher.label} crushes ${v.label}, Force-Moved to ${gridName(p.c, p.r)}.`, 'done');
   }
   m.pendingSpot = undefined;
   m.queue.shift();
@@ -4257,7 +4372,14 @@ function resupplyPanel(ctx: HudCtx): string {
 // may flip it back down for its stronger effect, and keeping it for later is a
 // real choice, so both are asked rather than assumed.
 
-let chargePlan: { uid: number; on: boolean; actionId?: string } | null = null;
+// `only` rides a spend for the KK9's Overwatch Strike, whose attack may target
+// the designated enemy alone (FAQ K15).
+let chargePlan: { uid: number; on: boolean; actionId?: string; only?: number } | null = null;
+// |Discard| (6.1, 4.17): which Handheld Part, asked before the Tick is paid;
+// the Action's own command turns it over (ruled R2). The panel paid the Tick
+// and said to follow the card text, and no control here could turn a Part
+// over (audit Phase 7, P7A 2).
+let discardPick: { uid: number } | null = null;
 // Stabilize System's one question (units.ts stabiliseAsk, shared with the
 // tabletop and the pad): which Square or Hexagon Token comes off, face
 // included, or none of them when a Link is missing (FAQ J4, J8). Asked BEFORE
@@ -4381,10 +4503,19 @@ function chargePanel(ctx: HudCtx): string {
   // Multi-target 3 or Suppression), so each arm is its own button (E9).
   const act = !m.on && m.actionId ? actionOn(ctx, t, m.actionId) : undefined;
   const arms = act ? chargeChoices(act) : [];
+  // A Common Charge is paid under the Part it names, so each row asks the
+  // engine about that key: the same Part twice in one Opportunity is a repeat,
+  // which this page used to flip anyway (audit Phase 7, P7A 7).
+  const paying = m.on && pendingAction?.kind === 'performAction' && pendingAction.actionId === 'COMMON_CHARGE' ? pendingAction : null;
+  const refused = (slot: string): string => {
+    if (!paying) return '';
+    const v = ctx.check({ ...paying, partKey: `COMMON_CHARGE@${slot}` });
+    return v.ok ? '' : ` aria-disabled="true" data-why="${esc(v.why ?? 'Not now.')}"`;
+  };
   const rows = slots
     .map((x) => arms.length && !m.on
       ? arms.map((arm) => `<button class="rowwide" data-chargeslot="${esc(String(x.slot))}" data-choice="${esc(arm.id)}">${esc(x.label)}<span class="ct">spend it: ${esc(arm.label)}</span></button>`).join('')
-      : `<button class="rowwide" data-chargeslot="${esc(String(x.slot))}">${esc(x.label)}<span class="ct">${m.on ? 'turn face-up' : 'spend it'}</span></button>`)
+      : `<button class="rowwide" data-chargeslot="${esc(String(x.slot))}"${refused(String(x.slot))}>${esc(x.label)}<span class="ct">${m.on ? 'turn face-up' : 'spend it'}</span></button>`)
     .join('');
   const why = m.on
     ? 'Only one Part may be Charged per Charge Action, and only one whose token is still face-down.'
@@ -4395,6 +4526,21 @@ function chargePanel(ctx: HudCtx): string {
   return head('Your move', m.on ? 'Charge which Part?' : 'Consume the Charge?', why, true)
     + `<div class="tp-body">${rows || `<p class="tp-note">${empty}</p>`}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="chargecancel">${m.on ? 'Cancel' : 'Keep it'}</button></div>`;
+}
+
+// Each Handheld Part that may Discard now (units.ts discardSlots: a Repaired
+// one included, FAQ J23), checked against the engine under its own key.
+function discardPanel(ctx: HudCtx): string {
+  const m = discardPick!;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const held = t ? discardSlots(ctx.data, t) : [];
+  const rows = t && pendingAction?.kind === 'performAction' ? held.map((x) => {
+    const v = ctx.check({ ...(pendingAction as Command & { kind: 'performAction' }), partKey: `COMMON_DISCARD@${x.slot}` });
+    return `<button class="rowwide" data-discardslot="${esc(x.slot)}"${v.ok ? '' : ` aria-disabled="true" data-why="${esc(v.why ?? 'Not now.')}"`}>${esc(SLOT_LABEL[x.slot])}<span class="ct">${esc(cardName(x.card))} → ${esc(cardName(x.into))}</span></button>`;
+  }).join('') : '';
+  return head('Your move', 'Discard which Part?', 'It turns over to its Discard Card, and a Discard drops one Part only (FAQ K5). Ammo, Charge and Interception Tokens go with it only to an Action there that uses them (4.17).', true)
+    + `<div class="tp-body">${rows || `<p class="tp-note">${esc(t ? `${t.label} holds nothing it can Discard.` : 'That unit is gone.')}</p>`}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="discardcancel">Cancel</button></div>`;
 }
 
 // ---------- what an Action opens ----------
@@ -4430,6 +4576,14 @@ function commitAction(ctx: HudCtx): CheckResult {
   // — so hanging the offer here is what stops it going missing down one route.
   if (verdict.ok && cmd.kind === 'performAction') offerCoordinationFor(ctx, cmd.uid, cmd.actionId);
   return verdict;
+}
+
+// A command asked of the table as it will stand once the Action in hand is
+// paid. The engine opens only the Counter-roll a paid Action buys (ruled R2;
+// audit Phase 7, P7C 2), and a refused target must still cost nothing, so the
+// payment waits for the answer.
+function checkPaid(ctx: HudCtx, then: Command): CheckResult {
+  return pendingAction ? checkAfter(ctx.data, ctx.state, pendingAction, then) : ctx.check(then);
 }
 
 // The Mech may hand out up to X of its reserved Command Tokens, to X different
@@ -4506,6 +4660,7 @@ export function resetHudTools(): void {
   shockPick = null;
   repairPick = null;
   chargePlan = null;
+  discardPick = null;
   stabilisePick = null;
   linkPick = null;
   cleanPick = null;
@@ -4531,7 +4686,7 @@ export function resetHudTools(): void {
 // attack that never happened. The spend has to land before the targeting (the
 // Charge is what the Action is being performed WITH, and the panel offers it
 // first), so the only honest fix is to undo it when the attack is abandoned.
-function openAttackPick(t: Token, a: CardAction, refund?: { uid: number; slot: string; choice?: string }, shockAsked = false): void {
+function openAttackPick(t: Token, a: CardAction, refund?: { uid: number; slot: string; choice?: string }, shockAsked = false, only?: number): void {
   // A Scan opens the same Counter-roll picker: it used to open the Firing and
   // Melee one (audit Phase 3, A1).
   if (isElectronicAttack(a) || isScanAction(a)) { ewPick = { uid: t.uid, actionId: a.id, refund }; return; }
@@ -4551,7 +4706,7 @@ function openAttackPick(t: Token, a: CardAction, refund?: { uid: number; slot: s
       return;
     }
   }
-  attackPick = { uid: t.uid, actionId: a.id, refund };
+  attackPick = { uid: t.uid, actionId: a.id, refund, ...(only !== undefined ? { only } : {}) };
 }
 
 // Put a spent Charge Token back, face-up, and say so. Called from every path
@@ -4574,6 +4729,12 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // "follow the card text" and a Terminals mission could not be scored online.
   if (a.id === 'COMMON_REMOTE_ACCESS') {
     terminalPick = { uid: t.uid, actionId: a.id, reach: a.range ?? 4 };
+    return true;
+  }
+  // 6.1: Discard is performed by one Handheld Part, so it asks which one
+  // before it pays (audit Phase 7, P7A 2).
+  if (a.id === 'COMMON_DISCARD') {
+    discardPick = { uid: t.uid };
     return true;
   }
   // Stabilize System asks before it pays. A Mech wearing no Square or Hexagon
@@ -5023,7 +5184,7 @@ function attackPanel(ctx: HudCtx): string {
       // 自动盾牌 Automatic Shield: read-only disclosure, and the row stays
       // pressable. The redirect is mandatory (FAQ A12), so this is not a veto to
       // offer — the attacker's real choice is a DIFFERENT target, and that
-      // choice is this list. Rows are only ever disabled on ✕ blocked line of
+      // choice is this list. Rows are only ever greyed on ✕ blocked line of
       // sight, and a unit in the way obstructs without blocking.
       const shield = automaticShieldFor(ctx.data, s.tokens, by, t, a);
       // Armor Piercing (6.2.1), on the row rather than only in the combat
@@ -5039,7 +5200,10 @@ function attackPanel(ctx: HudCtx): string {
           : prot.note && !blocked ? [prot.note] : [],
         ap.total ? [`Armor Piercing ${ap.total}: −${ap.total} White off their roll${ap.granted ? ' (Spike adds 1)' : ''}`] : [],
         shield ? [`⤳ Automatic Shield: ${shield.shield.label} takes this shot (FAQ A12)`] : []);
-      return `<button class="rowwide targrow${bad ? ' warn' : ''}"${blocked ? ' disabled' : ''} data-attacktarget="${t.uid}">
+      // A blocked row is greyed and its ✕ reason goes to the notice line too;
+      // the row still prints it (audit Phase 7, P7D 9).
+      const why = blocked ? bits.filter((b) => b.includes('✕')).map((b) => b.replace(/^✕\s*/, '')).join('; ') : '';
+      return `<button class="rowwide targrow${bad ? ' warn' : ''}"${blocked ? ` aria-disabled="true" data-why="${esc(`${why || 'This target cannot be attacked'}.`)}"` : ''} data-attacktarget="${t.uid}">
         <span class="tgname">${esc(t.label)}</span>
         <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;
     })
@@ -5500,7 +5664,9 @@ function detonatePanel(ctx: HudCtx): string {
       const barred = !!camo && ('why' in camo || !!state);
       const tip = camo && 'why' in camo ? camo.why : state === 'appearing' ? `${t.label} has not appeared yet: its Reveal comes first.` : state === 'failed' ? 'The Scan failed: the Explosion finds nothing, and the Projectile is Destroyed (p.71).' : '';
       const tag = done ? 'resolved' : bar || (state === 'appearing' ? 'appearing' : state === 'failed' ? 'Scan failed' : barred ? 'hidden' : camo ? 'Scan first' : `R${dist}`);
-      return `<button class="rowwide" ${camo && !barred ? 'data-detscan' : 'data-dettarget'}="${t.uid}"${done || barred || bar ? ' disabled' : ''}${tip ? ` title="${esc(tip)}"` : ''}><span class="${t.side}">${t.side === proj.side ? 'ALLY' : 'ENEMY'}</span> ${esc(t.label)}<span class="ct">${tag}</span></button>`;
+      // Greyed with the reason for the notice line, no title (audit Phase 7, P7D 9).
+      const why = done ? `${t.label} has already taken this Explosion.` : bar ? `${t.label} is not this Detonation's target: ${bar}.` : barred ? tip || `${t.label} cannot be picked now.` : '';
+      return `<button class="rowwide" ${camo && !barred ? 'data-detscan' : 'data-dettarget'}="${t.uid}"${why ? ` aria-disabled="true" data-why="${esc(why)}"` : ''}><span class="${t.side}">${t.side === proj.side ? 'ALLY' : 'ENEMY'}</span> ${esc(t.label)}<span class="ct">${tag}</span></button>`;
     })
     .join('');
   const terrainRows = terrain
@@ -5880,10 +6046,11 @@ function tacticsHtml(ctx: HudCtx): string {
       const spec = tacticSpec(id);
       const moment = spec ? tacticWindowWhy(spec, s, side) : null;
       const off = usedIn !== null || spent.length > 0 || !!moment;
-      const why = usedIn !== null ? `Used in round ${usedIn}, and discarded for the game (FAQ P2)` : spent.length ? 'Only 1 Tactics Card per player per round (5.4.2)' : moment ?? '';
+      const why = usedIn !== null ? `Used in round ${usedIn}, and discarded for the game (FAQ P2).` : spent.length ? 'Only 1 Tactics Card per player per round (5.4.2).' : moment ?? '';
+      // Greyed with the reason for the notice line, no title (audit Phase 7, P7D 9).
       rows.push(`<div class="dialrow"><span class="nm ${side}">${esc(cardName(card))}</span>
         <span class="tp-dim">${esc(when)}</span>
-        <button class="rowbtn" data-tactic="${side}:${esc(id)}"${off ? ` disabled title="${esc(why)}"` : ''}>${usedIn !== null ? `Used, round ${usedIn}` : spent.length ? 'Spent' : 'Play'}</button></div>`);
+        <button class="rowbtn" data-tactic="${side}:${esc(id)}"${off ? ` aria-disabled="true" data-why="${esc(why || 'Not now.')}"` : ''}>${usedIn !== null ? `Used, round ${usedIn}` : spent.length ? 'Spent' : 'Play'}</button></div>`);
     }
   }
   if (!rows.length) return '';
@@ -6565,13 +6732,23 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
         // pendingAction until the Action's tool actually does something, so a
         // misclick that gets cancelled leaves the Opportunity intact.
         const key = el.dataset.doact!;
-        const v = ctx.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: actionIdOf(key), partKey: key });
+        // The Charge and the Discard are paid under the Part they name, which a
+        // guided game requires (ruled R2), so legality is read under the first
+        // Part the engine takes; the pick then names the real one. A Punch/Kick
+        // or a Crawl is paid under that first Part itself: which of them makes
+        // it changes nothing else, and a second one by another Part is its own
+        // Action (ruled R3; audit Phase 7, P7B 9).
+        const named = commonPartSlots(ctx.data, t, performed).map((s) => `${performed.id}@${s}`);
+        const probe = (k: string): CheckResult => ctx.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: actionIdOf(k), partKey: k });
+        const first = named.find((k) => probe(k).ok);
+        const v = named.length ? probe(first ?? named[0]) : probe(key);
         if (!v.ok) {
           if (v.why) ctx.noteNow(v.why);
           ctx.refresh();
           return;
         }
-        pendingAction = { kind: 'performAction', seat: t.side, uid: t.uid, actionId: actionIdOf(key), partKey: key };
+        const own = performed.id === 'COMMON_PUNCH_MELEE' || performed.id === 'COMMON_CRAWL';
+        pendingAction = { kind: 'performAction', seat: t.side, uid: t.uid, actionId: actionIdOf(key), partKey: own && first ? first : key };
       }
       const grant = act ? extraActivationOf(act.action) : undefined;
       if (grant) grantPick = { from: t.uid, grant };
@@ -6619,9 +6796,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-act="launchpickcancel"]', () => { launchPick = null; dropAction(); ctx.refresh(); });
   on('[data-attacktarget]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const m = attackPick;
     if (m) {
-      // The disabled row is the gate; this re-check is for a stale panel,
+      // The greyed row is the gate; this re-check is for a stale panel,
       // where the board changed after the rows were drawn. Recomputed rather
       // than trusted, and BEFORE commitAction so a refused attack costs
       // nothing.
@@ -6651,7 +6829,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
             ...(m.twoHanded === 'declined' ? { twoHandedDeclined: true } : {}),
           },
         };
-        const can = ctx.check(scan);
+        const can = checkPaid(ctx, scan);
         if (!can.ok) {
           ctx.noteNow(`${by.label} cannot Scan ${t.label}, so it cannot attack it while it is in Optical Camouflage (4.12.2). ${can.why ?? ''}`);
           ctx.refresh();
@@ -6679,15 +6857,20 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
         ? losNote(by, t, { ...a, range: actionRange(ctx.data, s.tokens, by, a), anyDistance: linkShockOf(a) },
             terrainOf(ctx), s.tokens, s.smoke ?? [], true)
         : '';
-      if (note.includes('✕')) {
+      // Read off the refusals alone: the note's own "adjacent (R1)" made a
+      // Punch stopped by a wall read as out of Range (audit Phase 7, P7B 1).
+      const bad = note.split(' · ').filter((x) => x.startsWith('✕')).join(' · ');
+      if (bad) {
         // Which of the two it was, because "cannot be made" with no reason is
         // the kind of refusal a player argues with.
-        ctx.noteNow(note.includes('Aerial')
+        ctx.noteNow(bad.includes('Aerial')
           ? `${t?.label ?? 'That target'} is an Aerial unit, and a Melee Action may not target one (4.4.1).`
-          : note.includes('✕ NOT in forward arc')
+          : bad.includes('NOT in forward arc')
           ? `${t?.label ?? 'That target'} is outside the Forward Arc, so the attack cannot be made (4.2.5).`
-          : note.includes('range') || note.includes('adjacent')
+          : bad.includes('range') || bad.includes('adjacent')
           ? `${t?.label ?? 'That target'} is outside this Action's Range, so the attack cannot be made (4.4.1).`
+          : bad.includes('Melee needs line of sight')
+          ? `3" terrain blocks the line of sight to ${t?.label ?? 'that target'}, and a Melee Action needs it (4.6), so the attack cannot be made.`
           : 'Line of sight is blocked, so this attack cannot be made (4.4.1).');
         ctx.refresh();
         return;
@@ -6733,7 +6916,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (m && by) {
       // Asked before the Tick is paid, so a refused target costs nothing.
       const open = { kind: 'startCounterRoll' as const, seat: by.side, uid: by.uid, actionId: m.actionId, targetUid: Number(el.dataset.ewtarget) };
-      const can = ctx.check(open);
+      const can = checkPaid(ctx, open);
       if (!can.ok) { ctx.noteNow(can.why ?? 'That Counter-roll cannot be opened.'); ctx.refresh(); return; }
       ewPick = null;
       commitAction(ctx);
@@ -6754,6 +6937,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   // of them in one place -- see syncContest. A second set here is how the two
   // surfaces would come to disagree about what a Focus costs.
   on('[data-tactic]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const [side, id] = el.dataset.tactic!.split(':');
     startTactic(ctx, side as Side, id);
     ctx.refresh();
@@ -6766,29 +6950,36 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-tacticpick]', (el) => playTactic(ctx, el.dataset.tacticpick!));
   on('[data-act="tacticcancel"]', () => { tacticPlan = null; ctx.refresh(); });
   on('[data-chargeslot]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const m = chargePlan;
     const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
     chargePlan = null;
     if (m && t) {
       const slot = el.dataset.chargeslot!;
-      // Charging is the whole Action; spending is the run-up to an attack, and
-      // that attack is the tool the Ticks are waiting on. The shared Charge
-      // Action is keyed to the Part charged (FAQ H6/H7; audit Phase 2, E7).
-      if (m.on && pendingAction?.kind === 'performAction' && pendingAction.actionId === 'COMMON_CHARGE') {
-        pendingAction = { ...pendingAction, partKey: `COMMON_CHARGE@${slot}` };
-      }
-      if (m.on) commitAction(ctx);
-      if (ctx.send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot, on: m.on }).ok) {
-        ctx.noteNow(m.on
-          ? `${t.label}: the Charge Token on ${slot} is now face-up.`
-          : `${t.label}: the Charge Token on ${slot} is spent.`, 'done');
+      const part = SLOT_LABEL[slot as PartSlot] ?? slot;
+      if (m.on) {
+        // Charging is the whole Action, and its own command turns the token
+        // face-up (ruled R2; audit Phase 7, P7A 7): this page flipped it after
+        // a payment it never checked, so a refused repeat was a free Charge.
+        // The shared Charge Action is keyed to the Part charged (FAQ H6/H7;
+        // audit Phase 2, E7); a Drone's own Charge (543_B) Charges its hull.
+        if (pendingAction?.kind === 'performAction' && pendingAction.actionId === 'COMMON_CHARGE') {
+          pendingAction = { ...pendingAction, partKey: `COMMON_CHARGE@${slot}` };
+        }
+        const paid = commitAction(ctx);
+        if (paid.ok) ctx.noteNow(`${t.label}: the Charge Token on its ${part} is now face-up.`, 'done');
+        else ctx.noteNow(paid.why ?? 'The Charge was refused.');
+      } else if (ctx.send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot, on: false }).ok) {
+        // Spending is the run-up to an attack, and that attack is the tool the
+        // Ticks are waiting on.
+        ctx.noteNow(`${t.label}: the Charge Token on its ${part} is spent.`, 'done');
       }
       const next = m.actionId ? actionOn(ctx, t, m.actionId) : undefined;
       // A SPEND (`!m.on`) is refundable if the attack it paid for is abandoned;
       // charging a Part face-up is an Action in its own right and is not. The
       // arm of an either/or line rides the refund to chargeAdjusted (E9).
       const choice = el.dataset.choice || undefined;
-      if (next) openAttackPick(t, next, m.on ? undefined : { uid: t.uid, slot, ...(choice ? { choice } : {}) });
+      if (next) openAttackPick(t, next, m.on ? undefined : { uid: t.uid, slot, ...(choice ? { choice } : {}) }, false, m.only);
     }
     ctx.refresh();
   });
@@ -6799,10 +6990,32 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
     chargePlan = null;
     const next = m?.actionId && t ? actionOn(ctx, t, m.actionId) : undefined;
-    if (next && t) openAttackPick(t, next);
+    if (next && t) openAttackPick(t, next, undefined, false, m?.only);
     else dropAction();
     ctx.refresh();
   });
+  // The Discard names its Part, and the Action's own command turns it over
+  // (ruled R2; audit Phase 7, P7A 2). Keyed to the hand, so the other hand may
+  // Discard too (audit Phase 2, E7).
+  on('[data-discardslot]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
+    const m = discardPick;
+    const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    discardPick = null;
+    const slot = el.dataset.discardslot as PartSlot | undefined;
+    if (t && slot && pendingAction?.kind === 'performAction' && pendingAction.actionId === 'COMMON_DISCARD') {
+      pendingAction = { ...pendingAction, partKey: `COMMON_DISCARD@${slot}` };
+      const was = t.mech?.[slot];
+      const paid = commitAction(ctx);
+      const now = paid.ok && t.mech?.[slot] !== was ? ctx.data.byId.get(t.mech?.[slot] ?? '') : undefined;
+      if (now) ctx.noteNow(`${t.label} Discards: the ${SLOT_LABEL[slot]} is now ${cardName(now)}.`, 'done');
+      else if (!paid.ok) ctx.noteNow(paid.why ?? 'The Discard was refused.');
+    } else {
+      dropAction();
+    }
+    ctx.refresh();
+  });
+  on('[data-act="discardcancel"]', () => { discardPick = null; dropAction(); ctx.refresh(); });
   on('[data-resupply]', (el) => {
     const m = resupplyPick;
     const to = s.tokens.find((x) => x.uid === Number(el.dataset.resupply));
@@ -7007,7 +7220,11 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (!t || !r || !actionId) { ctx.refresh(); return; }
     // The designated enemy, and only it; the grant pays for the Action.
     pendingAction = { kind: 'performAction', seat: t.side, uid, actionId, granted: true };
-    startAttackPick(uid, actionId, r.fromUid);
+    // A Charged gun may consume its token as on any door: 4.14 makes no
+    // exception for a granted Action (ruled R8; audit Phase 7, P7A 11).
+    const gun = guidedActions(ctx.data, t, { tokens: s.tokens, terrain: terrainOf(ctx) }).find((g) => g.action.id === actionId);
+    if (gun?.charge?.charged) chargePlan = { uid, on: false, actionId, only: r.fromUid };
+    else startAttackPick(uid, actionId, r.fromUid);
     ctx.refresh();
   });
   on('[data-owtarget]', (el) => {
@@ -7015,6 +7232,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-owmech]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const m = overwatchPick;
     const kk9 = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
     if (!m || !kk9 || m.targetUid === undefined) { ctx.refresh(); return; }
@@ -7102,6 +7320,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   // The Explosion is the same pipeline as any other attack, just with facing,
   // sight and Protection all out of scope (4.7.6).
   on('[data-dettarget]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const proj = s.tokens.find((x) => x.uid === detonateNow?.uid);
     const target = s.tokens.find((x) => x.uid === Number(el.dataset.dettarget));
     const a = proj && detonateNow ? actionOn(ctx, proj, detonateNow.actionId) : undefined;
@@ -7125,6 +7344,14 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
         return;
       }
     }
+    // And the Explosion waits while that Interception is owed: a second press
+    // opened it with every attempt still to make (4.9; audit Phase 7, P7D 5).
+    const owed = liveIntercepts(s).filter((x) => x.targetUid === proj.uid).length;
+    if (owed) {
+      ctx.noteNow(`${proj.label} still owes ${owed} Interception attempt${owed === 1 ? '' : 's'} from its flight, which come${owed === 1 ? 's' : ''} first (4.9).`);
+      ctx.refresh();
+      return;
+    }
     ctx.startAttack(proj.uid, detonateNow.actionId, target.uid, 'explosion');
     ctx.refresh();
   });
@@ -7132,6 +7359,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   // Counter-roll outranks this panel while it runs, and the panel comes back
   // with the result read off the board.
   on('[data-detscan]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const proj = s.tokens.find((x) => x.uid === detonateNow?.uid);
     const uid = Number(el.dataset.detscan);
     if (!proj || !detonateNow) { ctx.refresh(); return; }
@@ -7208,11 +7436,12 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-inttarget]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const pick = interceptPick;
     const by = pick ? s.tokens.find((x) => x.uid === pick.uid) : undefined;
     const at = s.tokens.find((x) => x.uid === Number(el.dataset.inttarget));
     if (!pick || !by || !at) { ctx.refresh(); return; }
-    // The row is disabled when smoke takes every line; the Token is not spent
+    // The row is greyed when smoke takes every line; the Token is not spent
     // on a shot that cannot be made (FAQ F3).
     if (!interceptOwedAt(s, by.uid, actionIdOf(pick.actionId), at.uid) && smokeBlocks(by, at, s.smoke ?? [])) {
       ctx.noteNow(`Every line from ${by.label} to ${at.label} crosses a Smoke Screen, and an Interception is a Firing Action (4.16, FAQ F3).`);
@@ -7396,7 +7625,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="endopp"]', () => endOpportunityNow(ctx));
-  on('[data-endstep]', (el) => settleEndStep(ctx, me(), el.dataset.endstep!));
+  on('[data-endstep]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
+    settleEndStep(ctx, me(), el.dataset.endstep!);
+  });
   on('[data-act="advance"]', () => {
     // Networked, the press is one half of the two-player agreement: mark this
     // seat ready (or take it back). The completer's client sends the actual

@@ -215,6 +215,17 @@ function announceRemote(cmd: Command): void {
       : `${squadLabel(cmd.seat)}: ${unit(cmd.uid)} spends the Charge on its ${SLOT_LABEL[cmd.slot as keyof typeof SLOT_LABEL] ?? cmd.slot}.`);
     return;
   }
+  // The Charge and the Discard now travel as the Action itself, which turns the
+  // token or the card (ruled R2; audit Phase 7, P7A 2, 7): said the way the
+  // setCharge it replaced was, since the other player's Part changed.
+  if (cmd.kind === 'performAction' && (cmd.actionId === 'COMMON_CHARGE' || cmd.actionId === 'COMMON_DISCARD') && cmd.partKey?.startsWith(`${cmd.actionId}@`)) {
+    const slot = cmd.partKey.slice(cmd.actionId.length + 1);
+    const part = SLOT_LABEL[slot as keyof typeof SLOT_LABEL] ?? slot;
+    say('event', cmd.actionId === 'COMMON_CHARGE'
+      ? `${squadLabel(cmd.seat)}: ${unit(cmd.uid)} Charges its ${part}.`
+      : `${squadLabel(cmd.seat)}: ${unit(cmd.uid)} Discards its ${part}.`);
+    return;
+  }
   if (!data) return;
   const c = cmd as Command & { uid?: number; targetUid?: number };
   const target = state.tokens.find((t) => t.uid === (c.targetUid ?? c.uid));
@@ -1259,6 +1270,20 @@ function mountSide(): void {
     );
     attackHelper.tokens = () => state.tokens;
     attackHelper.boxHands = (uid) => boxHands(state.tasks, uid);
+    // A Multi-Target's camouflaged extra target earns its own free Scan (p.71,
+    // FAQ I12; ruled 2026-09-25, F3), which this page never offered: the
+    // engine's free Scan, judged at the marker by the attack's reach, arc and
+    // sight (F8), whose win owes the target's player the Reveal alone, and
+    // whose failure drops only that designation (ruled R3; audit Phase 7, P7C
+    // 4). It opens in the shared window, over the split, which is drawn again
+    // once the window closes (refreshSplit, syncCombatMirror).
+    attackHelper.freeScan = (attacker, target, action) => {
+      const v = send({ kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId: 'COMMON_SCAN', targetUid: target.uid, thenAttack: { actionId: action.id, extra: true } });
+      if (!v.ok) say('refused', v.why ?? `${target.label} cannot be Scanned for this attack.`);
+      else say('done', `${attacker.label} designates ${target.label}, which is in Optical Camouflage: one free Scan first (4.12.2, FAQ I12).`);
+      render();
+      return v.ok;
+    };
     // Whose Action is running, for a lent Load's Dodge (ruling I24).
     attackHelper.actingUid = () => state.script?.opp?.uid ?? null;
     attackHelper.terrain = () => terrainNow();
@@ -2547,6 +2572,10 @@ function syncCombatMirror(): boolean {
   // the attack, and this would be a drawing of it.
   if (!attackHelper || !view || combatBusy()) {
     attackHelper?.closeMirror();
+    // The attacker's own Multi-Target split, drawn again once a free Scan's
+    // window has given the panel back or the Scanned unit has Revealed (audit
+    // Phase 7, P7C 4).
+    if (combatBusy()) attackHelper?.refreshSplit();
     return false;
   }
   const at = state.tokens.find((t) => t.uid === view.attackerUid);

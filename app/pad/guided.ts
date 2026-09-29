@@ -18,7 +18,7 @@ import { alive, canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, ne
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript, idleWorldFor } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
-import { allyRepairTargets, overwatchOf, firewatchOn, electronicStrength, interceptorsAgainst, bitPortOf, coordinationAfterManeuver, canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed, actionIdleWhy } from '../src/units';
+import { allyRepairTargets, overwatchOf, firewatchOn, electronicStrength, interceptorsAgainst, bitPortOf, coordinationAfterManeuver, canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed, actionIdleWhy, commonPartSlots, chassisGone, commonPartKey, riposteMelees } from '../src/units';
 import { boxHands, normaliseTasks, remoteAccessWhy, terminalsInReach } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
 import { PHASES, removableTokens, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Stance, type Timing, type Token, type TokenPick } from '../src/types';
@@ -331,12 +331,16 @@ function answerReaction(api: GuideApi, uid: number, actionId: string, take: bool
     void steerControlled(api, t, r.fromUid);
     return;
   }
-  // A declined Emergency Smoke keeps its one use (audit Phase 4, G9).
-  if (!api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId, placed: take })) return;
   // Scanned: the unit leaves the Optical Camouflage State; where it appears
   // is settled on the table. The answer used to clear the debt and nothing
   // else, so the unit stayed camouflaged on every phone (audit Phase 3, A2).
-  if (r.kind === 'manifest') { api.send({ kind: 'reveal', seat: t.side, uid, chain: 'join' }); return; }
+  // The Reveal pays the debt itself, so it is the one command: the debt went
+  // first, which a strict table now refuses while the unit is still hidden
+  // (ruled R7; audit Phase 7, P7C 7). One no longer hidden has only the debt.
+  if (r.kind === 'manifest' && (t.statuses ?? []).includes('camouflage')) { api.send({ kind: 'reveal', seat: t.side, uid }); return; }
+  // A declined Emergency Smoke keeps its one use (audit Phase 4, G9).
+  if (!api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId, placed: take })) return;
+  if (r.kind === 'manifest') return;
   if (!take) return;
   // Against the Revealed unit only, and not paid again: the Tick went at the
   // designation (FAQ I12). It opened a fresh, paid attack on anyone.
@@ -574,11 +578,19 @@ function actionHtml(api: GuideApi): string {
   }
   // The Ticks are drawn on the acting Mech's sheet, just above the Actions they
   // pay for (pad.ts ticksRow), rather than up here.
+  // The Maneuver as the engine takes it: greyed with its reason once an Action
+  // is spent or while Immobilized, where it was live and refused after the tap,
+  // and only a turn on a destroyed Chassis (FAQ E4; audit Phase 7, P7B 7, 15).
+  const moveCheck = !opp.maneuvered && opp.maneuver > 0 && t.stance !== 'shutdown'
+    ? api.check({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: 0, row: 0 } })
+    : null;
+  const turnOnly = chassisGone(t);
+  const moved = moveCheck ? btn(api, 'g-moved', turnOnly ? 'Turned (M)' : 'Moved (M)', moveCheck.ok ? '' : refused(api, moveCheck.why)) : '';
   return head(api, t.label, tm || 'Action Phase', owner)
     + (owner
-      ? `${tieHtml(api)}<div class="pad-chips">${!opp.maneuvered && opp.maneuver > 0 && t.stance !== 'shutdown' ? btn(api, 'g-moved', 'Moved (M)') : ''}${btn(api, 'g-end', 'End Opportunity', '', 'pad-chip on')}</div>
+      ? `${tieHtml(api)}<div class="pad-chips">${moved}${btn(api, 'g-end', 'End Opportunity', '', 'pad-chip on')}</div>
          ${extrasHtml(api, t, opp)}
-         <p class="pad-turn-note">Actions are performed from the list below.</p>`
+         <p class="pad-turn-note">${turnOnly && moveCheck ? 'Its Chassis is destroyed, so its Maneuver may only turn it (FAQ E4). ' : ''}Actions are performed from the list below.</p>`
       : waiting(api, t.side, 'taking its Action Opportunity'));
 }
 
@@ -898,17 +910,28 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     if (chargeSlot === null) return;
   }
   // The shared Charge Action is that Part's Action (FAQ H6/H7; audit Phase 2, E7).
-  const partKey = a.id === 'COMMON_CHARGE' && chargeSlot ? `COMMON_CHARGE@${chargeSlot}` : undefined;
+  // A Crawl is too, the first of its Parts still free (ruled R3; audit Phase 7,
+  // P7B 9).
+  const opp = api.state().script?.opp;
+  const own = commonPartKey(d, t, a, opp?.uid === t.uid ? opp.performed : []);
+  const partKey = a.id === 'COMMON_CHARGE' && chargeSlot ? `COMMON_CHARGE@${chargeSlot}` : own !== a.id ? own : undefined;
   if (!api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, ...(partKey ? { partKey } : {}), ...(twoHandedUse(d, t, a, boxHands(api.state().tasks, t.uid)) ? { twoHanded: true } : {}) })) return;
   // A Moving Action that shoves - 181 Centaur's Push 1 onto an enemy Ground
   // unit in the grid in front. The pad has no board to find the victim on, so
   // it says what the table owes; it said nothing (audit 2026-09-25).
   const shove = a.type === 'Moving' ? knockbackOf(a, d.actionTranslation(a.id)?.english ?? undefined) : undefined;
+  // The Crawl says what the table moves: 1 Grid, and never out of a Melee
+  // Lock, flown or walked (6.1; ruled R2). It said only "Crawl" (audit Phase
+  // 7, P7B 15).
+  const part = partKey?.startsWith(`${a.id}@`) ? SLOT_LABEL[partKey.slice(a.id.length + 1) as PartSlot] : undefined;
+  const crawl = a.id === 'COMMON_CRAWL'
+    ? `${t.label}: Crawl, 1 Grid${part ? ` with its ${part}` : ''}. It cannot be used to Break Away, so while Melee Locked it may only turn in its Grid (6.1).`
+    : null;
   api.toast(shove
     ? `${t.label}: ${a.name.en}. ${shove.push
       ? `Push ${shove.grids}: an enemy Ground unit in the grid in front may be moved ${shove.grids} in a straight line, any direction you choose; settle it on the table.`
       : `Knockback ${shove.grids}: an enemy Ground unit in the grid in front may be moved ${shove.grids}, settle it on the table.`}`
-    : `${t.label}: ${a.name.en}.`, shove ? 'table' : 'done');
+    : crawl ?? `${t.label}: ${a.name.en}.`, shove || crawl ? 'table' : 'done');
   // Push costs a pushed MECH 1 Link. The pad cannot see who stood in front, so
   // it asks; the toast said nothing and the Link never came off (audit Phase
   // 4, B4).
@@ -942,7 +965,8 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     api.send({ kind: 'unfold', seat, uid, chain, ...(occupied !== undefined ? { occupied } : {}) });
     if (occupied) api.toast(`${t.label} Unfolded into an occupied Grid: it detonates at once, at one of the units there (FAQ M18.4).`, 'table');
   }
-  if (chargeSlot) api.send({ kind: 'setCharge', seat, uid, slot: chargeSlot as PartSlot, on: true, chain });
+  // The Charge Action's own command turned the token face-up (ruled R2; audit
+  // Phase 7, P7A 7), a Drone's own Charge (543_B) included.
   if (tagged) api.send({ kind: 'applyStatus', seat, uid, targetUid: tagged.uid, statusId: tagged.statusId, stacks: tagged.stacks, chain });
   if (resupply) api.send({ kind: 'restoreAmmo', seat: resupply.to.side, uid: resupply.to.uid, actionId: resupply.actionId, amount: resupply.amount, chain });
   if (linkTo && linkRule) {
@@ -1070,7 +1094,12 @@ export function performButton(api: GuideApi, t: Token, a: CardAction, partKey: s
   // An Action with nothing to do first (units.ts actionIdleWhy, the reading
   // every page greys by), then the engine's own answer.
   const idle = actionIdleWhy(api.data, t, a, idleWorldFor(api.data, s));
-  const chk = api.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, partKey, ...(hands ? { twoHanded: true } : {}) });
+  // The Charge and the Discard are paid under the Part they name, which a
+  // guided game requires (ruled R2), so the button reads the engine under the
+  // first Part it takes; the flow then asks for the real one.
+  const named = commonPartSlots(api.data, t, a).map((x) => `${a.id}@${x}`);
+  const probe = (key: string): CheckResult => api.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, partKey: key, ...(hands ? { twoHanded: true } : {}) });
+  const chk = named.length ? probe(named.find((k) => probe(k).ok) ?? named[0]) : probe(partKey);
   const v: TickVerdict = idle ? { ok: false, why: idle } : chk.ok ? { ok: true } : { ok: false, why: chk.why ?? 'Not now' };
   void opp;
   const cost = costOf(paidAs);
@@ -1294,13 +1323,14 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
           return true;
         }
         // |Discard| names its Part BEFORE the Ticks are paid, so backing out of
-        // the question costs nothing; then the flip is the engine's `disarm`.
+        // the question costs nothing; then the Action's own command turns it
+        // over (ruled R2; audit Phase 7, P7A 2). Keyed to the hand discarded,
+        // so the other hand may Discard too (E7).
         if (c.id === 'COMMON_DISCARD' && api.pickDiscard) {
           void api.pickDiscard(t.uid).then((slot) => {
             if (slot === null) return;
-            // Keyed to the hand discarded, so the other hand may Discard too (E7).
             if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id, partKey: `COMMON_DISCARD@${slot}` })) {
-              api.send({ kind: 'disarm', seat: t.side, uid: t.uid, targetUid: t.uid, slot, chain: 'join' });
+              api.toast(`${t.label}: ${SLOT_LABEL[slot as PartSlot] ?? slot} Discarded.`, 'done');
             }
           });
           return true;
@@ -1373,7 +1403,9 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       if (ended && !api.send({ kind: 'riposte', seat: t.side, uid, fromUid: r.fromUid! })) return true;
       const rides = ended ? { chain: 'join' as const } : {};
       if (el.dataset.only) { api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId: r.actionId, ...rides }); return true; }
-      const melees = guidedActions(api.data, t).filter((g) => g.action.type === 'Melee').map((g) => g.action);
+      // Punch/Kick is a Melee Action every Mech has (ruled R4; audit Phase 7,
+      // P7B 6), read the way every page reads the list.
+      const melees = riposteMelees(api.data, t);
       if (!melees.length) { api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId: r.actionId, ...rides }); return true; }
       void (async () => {
         const pick = melees.length === 1 ? melees[0].id : await choiceDialog({

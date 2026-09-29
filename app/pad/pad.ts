@@ -40,7 +40,7 @@ import { ammoAvailable, applyRemote, check, rebootWhy, onBeforeApply, onPerforme
 import { glueAfter, idleWorldFor } from '../src/glue';
 import { askDesignation, askLinkSupport, askRemoteAccess, askTokenCleanup, designationsFor, activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
 import { countHits, normaliseSetup, tasksLocked } from '../src/setup';
-import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack, isAttackAction, mountAttack, sweepView, syncMirror, type TableVerdict } from './attack';
+import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack, isAttackAction, mountAttack, refreshSplit, sweepView, syncMirror, type TableVerdict } from './attack';
 import { registerOffline } from '../src/offline';
 import { askTablePool, askTableRoll, askTargetPart } from './tabledice';
 import type { RollGroup } from '../src/combat';
@@ -71,7 +71,7 @@ import { gameEndsThisRound, lowValueOf, previewScore, vipFallen } from '../src/s
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from '../src/tactics';
 import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop } from '../src/units';
 import { gameResult } from '../src/tasks';
-import { isSilentAction, actionSilenceDenier, auraReach, auraEffectsOf, auraActionOf, auraCanReach, auraReachable, inAuraReach, aurasAtRoll, type AuraAtRoll, actionRange, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
+import { isSilentAction, actionSilenceDenier, auraReach, auraEffectsOf, auraActionOf, auraCanReach, auraReachable, inAuraReach, aurasAtRoll, type AuraAtRoll, actionRange, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf, discardSlots, commonActionStop, commonPartKey } from '../src/units';
 import { canManeuver, canPerform, costOf, lengthOf, LENGTH_NAME, markAction, markExtra, markManeuver, spendAction, spendManeuver, tickBarState, timingOf } from '../src/ticks';
 import { actionIdleWhy, cardFitsSquad, extrasFor, factionProblems, squadPoints, startOpts } from '../src/units';
 import { tickBar, type CapsuleShort } from '../src/glyphs';
@@ -366,8 +366,8 @@ function resetSheetViews(): void {
 // The server reaps an idle room after an hour, so a code older than that is a
 // code for a table that is not there. Same window the Match Centre uses.
 const ROOM_WINDOW_MS = 60 * 60 * 1000;
-// A Black Box nobody on the table could carry (boxTakers).
-const NO_BOX_TAKER = 'No unit has a free Freehand Part to carry it (5.3.1).';
+// A Black Box nobody this pad records for could carry (boxTakers).
+const NO_BOX_TAKER = 'No unit you record for has a free Freehand Part to carry it (5.3.1).';
 
 // localStorage can throw outright in a private window, so every touch of it
 // is guarded, and a phone with site data blocked tracks for this session only.
@@ -1378,6 +1378,9 @@ initAttack({
     }));
     return askTargetPart(d.dice!, defender.label, parts);
   } : null),
+  // The Scan opens in the Counter-roll window beside the split; the table
+  // judges the reach, as it judges the attack's.
+  freeScan: (attacker, target, action) => beginFreeScan(attacker, action.id, target, false, true),
 });
 
 initEw({
@@ -1390,7 +1393,9 @@ initEw({
   toast: (text, kind) => toast(text, kind),
   render: () => render(),
   openCombat: () => { if (panel !== 'combat') { panel = 'combat'; render(); } },
-  closeCombat: () => { if (panel === 'combat') { panel = null; render(); } },
+  // Kept open while an attack is in hand: a Multi-Target's free Scan runs
+  // beside its split (audit Phase 7, P7C 4).
+  closeCombat: () => { if (panel === 'combat' && !attackActive()) { panel = null; render(); } },
   rollFaces: (n, label, groups) => rollFaces(n, label, groups),
 });
 
@@ -1431,6 +1436,17 @@ function lentPay(t: Token, actionId: string): { partKey?: string } {
   if (!l || l.uid !== t.uid || l.actionId !== actionId) return {};
   lentPart = null;
   return { partKey: l.key };
+}
+
+// The key a Punch/Kick or a Crawl is paid under, the first of its Parts still
+// free, so a second one by another Part is its own Action (ruled R3; audit
+// Phase 7, P7B 9): read against the engine's Opportunity in a guided game and
+// the sheet's own bar on a free table. Undefined for any other Action.
+function commonKey(t: Token, a: CardAction | undefined): string | undefined {
+  if (!data || !a || (a.id !== 'COMMON_PUNCH_MELEE' && a.id !== 'COMMON_CRAWL')) return undefined;
+  const opp = guidedOn(table) ? (table.script?.opp?.uid === t.uid ? table.script.opp : null) : freeTicksOn(t) ? freeOpp(t) : null;
+  const key = commonPartKey(data, t, a, opp?.performed ?? []);
+  return key === a.id ? undefined : key;
 }
 
 // The Action as this unit carries it, or the Common one.
@@ -1543,8 +1559,10 @@ function loseSilence(t: Token, a: CardAction, by?: string): void {
 // The target list tags such a unit "Scan first"; the pick opens one step in
 // the Target panel that says what follows, and its Scan button pays.
 async function scanFirst(attacker: Token, actionId: string, defender: Token): Promise<void> {
-  if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...bothHands(attacker, actionId) })) return;
-  spendFree(attacker, actionId);
+  // A Punch/Kick names its Part here too (ruled R3; audit Phase 7, P7B 9).
+  const part = commonKey(attacker, actionOfUnit(attacker, actionId));
+  if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...bothHands(attacker, actionId), ...(part ? { partKey: part } : {}) })) return;
+  spendFree(attacker, actionId, part);
   panel = 'combat';
   render();
   if (!beginFreeScan(attacker, actionId, defender, guidedOn(table))) { panel = null; render(); }
@@ -1626,8 +1644,10 @@ let declaring: Declaring | null = null;
 
 // The Charge Token this Action could consume (4.14): a face-up one on the
 // Part the Action comes from, when its text marks a [Charged] effect.
-function chargeSlotFor(attacker: Token, a: CardAction | undefined, actionId: string, granted: boolean): { slot: string | number; label: string } | undefined {
-  if (!a || granted || !/\[Charged\]|\[充能\]/i.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`)) return undefined;
+// A granted attack asks too: the KK9's Overwatch Strike hands a Mech a Firing
+// Action, and 4.14 makes no exception for it (ruled R8; audit Phase 7, P7A 11).
+function chargeSlotFor(attacker: Token, a: CardAction | undefined, actionId: string): { slot: string | number; label: string } | undefined {
+  if (!a || !/\[Charged\]|\[充能\]/i.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`)) return undefined;
   return chargeableSlots(data!, attacker).find((x) => x.charged
     && tokenCards(data!, attacker).some((c) => String(c.slot) === String(x.slot) && (c.card.actions ?? []).some((y) => y.id === actionId)));
 }
@@ -1673,8 +1693,10 @@ function declareRows(attacker: Token, a: CardAction | undefined, defender: Token
   if (a?.type === 'Firing' && effectLowProfileCould(data!, table.tokens, defender)) {
     rows.push({ key: 'lowprof', label: 'Low Profile from an effect', options: [{ id: 'no', label: 'No' }, { id: 'yes', label: 'Yes' }] });
   }
-  // FAQ A16: [Two-Handed] may be declined.
-  const hands = a && !d.granted ? twoHandedUse(data!, attacker, a, boxHands(table.tasks, attacker.uid)) : null;
+  // FAQ A16: [Two-Handed] may be declined. A granted attack (a Riposte, the
+  // Overwatch Strike) too: its window applies the designation all the same,
+  // and this row is the only place to decline it (audit Phase 7, P7A 11).
+  const hands = a ? twoHandedUse(data!, attacker, a, boxHands(table.tasks, attacker.uid)) : null;
   if (hands) {
     rows.push({
       key: 'hands', label: 'Two-Handed', note: `${hands.note.replace(/^\[Two-Handed\]: /, '')}.`,
@@ -1683,7 +1705,7 @@ function declareRows(attacker: Token, a: CardAction | undefined, defender: Token
   }
   // 4.14: a [Charged] effect applies only if the Token is consumed, and an
   // either/or line is spent on ONE arm (R7MG 556_A; audit Phase 2, C3/E9).
-  const charged = chargeSlotFor(attacker, a, d.actionId, d.granted);
+  const charged = chargeSlotFor(attacker, a, d.actionId);
   if (charged && a) {
     const arms = chargeChoices(a);
     rows.push({
@@ -1719,7 +1741,8 @@ function declarePanel(d: Declaring): string {
   const melee = a?.type === 'Melee';
   const extended = melee && (a?.range ?? 0) > 0;
   // A Melee Action's "--" is the Adjacent Grids; one printing a Range is
-  // Extended Melee, which needs line of sight (4.6.2, p.59; audit Phase 4, D4).
+  // Extended Melee. Both need line of sight (4.6, 4.6.2, p.59; audit Phase 4,
+  // D4; Phase 7, P7B 1), which the table judges.
   const range = melee
     ? (extended ? `Extended Melee, Range ${a!.range}` : 'Adjacent Grids')
     : a?.range !== undefined ? `Range ${actionRange(data!, table.tokens, t, a)}` : 'Range as printed';
@@ -1746,7 +1769,12 @@ function declarePanel(d: Declaring): string {
 
 // The one-tap kinds: what follows the pick, and the button that pays for it.
 function declareStartPanel(d: Declaring, t: Token, foe: Token, a: CardAction | undefined): string {
-  const range = a?.range !== undefined ? `Range ${a.range}` : 'Range as printed';
+  // "--" as printed: Punch/Kick carries its Range 0 now, and read "Range 0"
+  // here like every Part "--" Melee (audit Phase 7, P7B 13). Otherwise the
+  // effective Range, as the attack's own panel reads it: the free Scan reaches
+  // as far as the attack (FAQ I18), which 032_A's [Stationary] makes 8, and
+  // KeyHole's Amplify adds 1 to an Electronic Attack (audit Phase 7, P7C 12).
+  const range = a?.range === 0 ? 'Range --' : a?.range !== undefined ? `Range ${actionRange(data!, table.tokens, t, a)}` : 'Range as printed';
   const lead = d.kind === 'scan'
     ? `${foe.label} is in Optical Camouflage, so ${t.label} Scans it first (${range}, judged on the table). Won, it is Revealed and the attack goes on; lost, the attack ends and the Action is spent.`
     : d.kind === 'intercept'
@@ -1813,7 +1841,7 @@ function commitDeclared(): void {
   };
   payAndOpenAttack(attacker, d.actionId, defender, verdict, {
     granted: d.granted, resumed: d.resumed, shocked: ans('shock') === 'moved',
-    chargeSlot: verdict.chargeSpent ? chargeSlotFor(attacker, a, d.actionId, d.granted) : undefined,
+    chargeSlot: verdict.chargeSpent ? chargeSlotFor(attacker, a, d.actionId) : undefined,
   });
 }
 
@@ -1827,10 +1855,12 @@ function payAndOpenAttack(
   const a = actionOfUnit(attacker, actionId);
   attackDepth = historyDepth();
   const lent = lentPay(attacker, actionId);
-  if (guidedOn(table) && !o.resumed && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(o.granted ? { granted: true } : verdict.twoHanded ? {} : bothHands(attacker, actionId)), ...lent })) return;
+  // A Punch/Kick names its Part (ruled R3); a granted one costs no Ticks.
+  const part = o.granted ? undefined : commonKey(attacker, a);
+  if (guidedOn(table) && !o.resumed && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(o.granted ? { granted: true } : verdict.twoHanded ? {} : bothHands(attacker, actionId)), ...lent, ...(part ? { partKey: part } : {}) })) return;
   // Freeform takes the same cost off the bar. A granted attack (a Riposte)
   // costs no Ticks, and a resumed one was paid before its Scan.
-  if (!o.granted && !o.resumed) spendFree(attacker, actionId, lent.partKey);
+  if (!o.granted && !o.resumed) spendFree(attacker, actionId, lent.partKey ?? part);
   // The walk recorded as this Action's own Movement, now the Action is paid:
   // a free move rides only an Action already performed. Checked first, so a
   // granted Riposte, which owes no Movement, records nothing and shows no error.
@@ -2569,7 +2599,10 @@ function ticksRow(t: Token, mine: boolean): string {
   if (guidedOn(table)) {
     const opp = table.script?.opp;
     if (!opp || opp.uid !== t.uid) return '';
-    const mayMove = mine && canManeuver(opp).ok && t.stance !== 'shutdown';
+    // Only while the engine would take it, as the Moved (M) chip reads it:
+    // Immobilized refuses a turn too (6.3.2; audit Phase 7, P7B 7).
+    const mayMove = mine && canManeuver(opp).ok && t.stance !== 'shutdown'
+      && check(data!, table, { kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: 0, row: 0 } }).ok;
     return `<div class="pad-row wrap pad-ticks-row">
         <span class="pad-label">Ticks</span>
         <div class="pad-ticks">${tickBar(tickBarState(opp), mayMove ? { maneuverAct: 'g-moved' } : {})}</div>
@@ -2734,13 +2767,15 @@ function partName(t: Token, slot: string): string {
   return card ? cardName(card) : slot;
 }
 
-// |Discard| (6.1, 4.17): a Handheld Part goes to its Discard Card. The flip is
-// the engine's `disarm`, aimed at the Mech's own Part - the same procedure the
-// book gives a forced Disarm.
+// |Discard| (6.1, 4.17): a Handheld Part goes to its Discard Card. In a guided
+// game the Discard Action's own command turns it over; on a free table the flip
+// is the engine's `disarm`, aimed at the Mech's own Part - the same procedure
+// the book gives a forced Disarm. The Parts offered are the engine's reading
+// (units.ts discardSlots): a Repaired one still acts (FAQ J23; ruled R4, audit
+// Phase 7, P7A 10).
 async function pickDiscard(t: Token): Promise<string | null> {
   if (!data) return null;
-  const held = tokenCards(data, t).filter(({ slot, card }) => slot !== 'pilot'
-    && (t.partStates[slot as PartSlot] ?? 'intact') !== 'destroyed' && !!discardFaceOf(data!, card));
+  const held = discardSlots(data, t);
   if (!held.length) {
     // The reading its chip is greyed by (units.ts actionIdleWhy).
     const discard = data.commonActions.find((x) => x.id === 'COMMON_DISCARD');
@@ -2756,7 +2791,9 @@ async function pickDiscard(t: Token): Promise<string | null> {
 async function discardPart(t: Token): Promise<void> {
   const slot = await pickDiscard(t);
   if (slot === null) return;
-  const paid = spendFree(t, 'COMMON_DISCARD');
+  // Keyed to the hand discarded, so the other hand may Discard too: under the
+  // bare key the chip greyed as used after one (audit Phase 7, P7A 12).
+  const paid = spendFree(t, 'COMMON_DISCARD', `COMMON_DISCARD@${slot}`);
   send({ kind: 'disarm', seat: t.side, uid: t.uid, targetUid: t.uid, slot, ...(paid ? { chain: 'join' as const } : {}) });
 }
 
@@ -2781,14 +2818,23 @@ function commonRows(t: Token, mine: boolean): string[] {
     const slots = (a as { slots?: string[] }).slots ?? [];
     // The engine's own reading (units.ts actionPartWhy): a Repaired Part still
     // acts (FAQ J23) and in Cruise Mode only the Torso does, neither of which
-    // the old "any listed slot intact" test knew.
-    const reason = actionPartWhy(d, t, a) ?? undefined;
+    // the old "any listed slot intact" test knew. Shutdown, and Immobilized
+    // for the Crawl, take the chip off as they take a Part Action's (audit
+    // Phase 7, P7B 7).
+    const reason = commonActionStop(t, a) ?? actionPartWhy(d, t, a) ?? undefined;
     const available = !reason;
+    // A Punch/Kick or a Crawl is paid under its Part (ruled R3; P7B 9).
+    const key = commonKey(t, a) ?? a.id;
     const open = sheetView[drawSide].action === a.id;
     const len = lengthOf(a);
     const tm = timingOf(a);
+    // The Charge and the Discard are performed by the Part they act on, so the
+    // row names those Parts rather than every slot the Action lists (audit
+    // Phase 7, P7A 13).
+    const performers = a.id === 'COMMON_CHARGE' ? chargeableSlots(d, t).map((x) => String(x.slot))
+      : a.id === 'COMMON_DISCARD' ? discardSlots(d, t).map((x) => String(x.slot)) : slots;
     const meta = [
-      slots.map((s) => SLOT_LABEL[s] ?? s).join(' / '),
+      performers.map((s) => SLOT_LABEL[s as PartSlot] ?? s).join(' / '),
       tm ? (TIMINGS.find((x) => x.id === tm)?.name ?? tm) : '',
       len ? LENGTH_NAME[len] : '',
     ].filter(Boolean).join(' · ');
@@ -2815,10 +2861,10 @@ function commonRows(t: Token, mine: boolean): string[] {
                   : mine && available && a.id === 'COMMON_REMOTE_ACCESS'
                     ? `<button class="pad-chip on pad-perform" data-act="remote-access">Access</button>`
                   : fo && available && costOf(a)
-                    ? useChip(t, a, a.id)
+                    ? useChip(t, a, key)
                     : '');
-    const nofit = fo && available ? fitShort(t, fo, a, a.id) : null;
-    const short = nofit && fo ? capShort(t, fo, a, a.id) : undefined;
+    const nofit = fo && available ? fitShort(t, fo, a, key) : null;
+    const short = nofit && fo ? capShort(t, fo, a, key) : undefined;
     const idle = mine && available ? actionIdleWhy(d, t, a, idleWorld) : null;
     const grey = idle ?? nofit;
     rows.push(`<div class="pad-act${open ? ' open' : ''}${available ? '' : ' off'}" data-act="open-action" data-id="${esc(a.id)}" role="button" aria-expanded="${open}">
@@ -2977,7 +3023,10 @@ function tokenRow(t: Token): string {
   // own shape with its code, so every icon in the grid lines up. Its own class,
   // not .pad-tok: the hold that opens a WORN Token's rule matches
   // .pad-tok[data-tok], and used to fire on these too.
-  const add = statusesFor(t.kind).filter((d) => d.handPlaced !== false).map((d) => {
+  // A Guided game puts a unit into Optical Camouflage only through the
+  // Action that Activates it, which the engine now asks for (ruled R1; audit
+  // Phase 7, P7C 1): the tile skipped 096_B's two Ticks.
+  const add = statusesFor(t.kind).filter((d) => d.handPlaced !== false && !(d.id === 'camouflage' && guidedOn(table))).map((d) => {
     const art = tokenArt(d.id, false);
     return `<button class="pad-toktile" data-act="tok-add" data-tok="${esc(d.id)}">
       ${art ? `<img src="${esc(art)}" alt="" />` : `<span class="pad-tokbadge" data-shape="${esc(d.shape)}">${esc(d.icon)}</span>`}
@@ -3349,7 +3398,10 @@ function dropBoxesOf(t: Token): void {
   const held = normaliseTasks(table.tasks).items.filter((i) => i.kind === 'blackbox' && i.bearerUid === t.uid);
   for (const box of held) {
     if (box.accessed) send({ kind: 'claimItem', seat: mySeat(), itemId: box.id, side: null, chain: 'join' });
-    send({ kind: 'dropBlackBox', seat: mySeat(), uid: t.uid, itemId: box.id, to: { col: t.col, row: t.row }, chain: 'join' });
+    // Recorded by whoever keeps the sheet, under one of their own units: a
+    // drop is actor-optional, but an actor of the other squad was refused
+    // (ruled R6; audit Phase 7, P7D 3).
+    send({ kind: 'dropBlackBox', ...sourceFor(t), itemId: box.id, to: { col: t.col, row: t.row }, chain: 'join' });
   }
   if (held.length) {
     toast(`${t.label} was Penetrated carrying ${held.length === 1 ? 'a Black Box, which drops' : `${held.length} Black Boxes, which drop`} in Contact with its base. The attacker places ${held.length === 1 ? 'it' : 'them'} on the table (5.3.1).`, 'table');
@@ -3357,11 +3409,13 @@ function dropBoxesOf(t: Token): void {
 }
 
 // Who could carry a Black Box: a unit with a free Freehand Part (5.3.1). The
-// "Picked up" button is greyed by it and the tap reads it again.
+// "Picked up" button is greyed by it and the tap reads it again. In a room
+// only this pad's own squad: the pick-up is its bearer's command, and one
+// sent for the other squad is refused (ruled R6; audit Phase 7, P7D 3).
 function boxTakers(): { u: Token; hands: ReturnType<typeof freehandSlots> }[] {
   if (!data) return [];
   const tasks = normaliseTasks(table.tasks);
-  return table.tokens.filter((u) => u.kind !== 'projectile' && u.deployed !== false && !isDead(u))
+  return table.tokens.filter((u) => u.kind !== 'projectile' && u.deployed !== false && !isDead(u) && canCommand(u))
     .map((u) => ({ u, hands: freehandSlots(data!, u, boxHands(tasks, u.uid), [], true) }))
     .filter((x) => x.hands.length);
 }
@@ -4906,7 +4960,7 @@ function render(): void {
       const ew = document.getElementById('ew-body');
       if (ew) mountEw(ew);
     }
-    if (data) { syncMirror(); syncContest(); }
+    if (data) { syncMirror(); syncContest(); refreshSplit(); }
   } else if (panel) {
     if (paint('pad-panel', panelHtml())) {
       fillPortraits(p, true);
@@ -5103,7 +5157,9 @@ function act(el: HTMLElement, ev: Event): void {
       if (!box || !bearer) return;
       // Off the Box first, so a later carrier does not inherit the claim.
       const unclaimed = !!box.accessed && send({ kind: 'claimItem', seat: mySeat(), itemId: box.id, side: null });
-      send({ kind: 'dropBlackBox', seat: bearer.side, uid: bearer.uid, itemId: box.id, to: { col: bearer.col, row: bearer.row }, ...(unclaimed ? { chain: 'join' as const } : {}) });
+      // Under one of this pad's own units in a room, as any bookkeeping is
+      // (ruled R6; audit Phase 7, P7D 3).
+      send({ kind: 'dropBlackBox', ...sourceFor(bearer), itemId: box.id, to: { col: bearer.col, row: bearer.row }, ...(unclaimed ? { chain: 'join' as const } : {}) });
       return;
     }
     case 'award':
@@ -5396,7 +5452,15 @@ function act(el: HTMLElement, ev: Event): void {
     case 'link-up': if (t) send({ kind: 'recoverLink', seat: t.side, uid: t.uid, targetUid: t.uid }); return;
     case 'link-support': { const by = unitOf(Number(el.dataset.uid)); if (by) void linkSupportFrom(by, el.dataset.id!); return; }
     case 'token-cleanup': { const by = unitOf(Number(el.dataset.uid)); if (by) void tokenCleanupFrom(by, el.dataset.id!); return; }
-    case 'reveal': if (t) { const paid = spendFree(t, 'COMMON_REVEAL'); send({ kind: 'reveal', seat: t.side, uid: t.uid, ...(paid ? { chain: 'join' as const } : {}) }); } return;
+    // |Reveal| has no Silence, so a Low Profile Token comes off with the
+    // Reveal (4.12.3), as a Guided game's performAction takes it; Freeform
+    // kept it (audit Phase 7, P7C 9).
+    case 'reveal': if (t) {
+      const paid = spendFree(t, 'COMMON_REVEAL');
+      const shed = (t.statuses ?? []).includes('lowProfile')
+        && send({ kind: 'removeStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'lowProfile', ...(paid ? { chain: 'join' as const } : {}) });
+      send({ kind: 'reveal', seat: t.side, uid: t.uid, ...(paid || shed ? { chain: 'join' as const } : {}) });
+    } return;
     case 'link-down': if (t) send({ kind: 'drainLink', seat: t.side, uid: t.uid, targetUid: t.uid, n: 1 }); return;
     case 'ammo-down': if (t) send({ kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId: el.dataset.id! }); return;
     case 'ammo-up': if (t) send({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: el.dataset.id!, amount: 1 }); return;
@@ -5471,6 +5535,11 @@ function act(el: HTMLElement, ev: Event): void {
       void askRemoteAccess(data, table, t, a, toast).then((got) => {
         if (!got) return;
         const paid = spendFree(t, 'COMMON_REMOTE_ACCESS');
+        // It has no Silence: a camouflaged Mech Reveals and a Low Profile
+        // Token comes off (4.12.3), as the attack doors here and a Guided
+        // game's performAction have it; Freeform did neither (audit Phase 7,
+        // P7C 9).
+        freeformSilence(t, a);
         openTerminalRoll(t, 'COMMON_REMOTE_ACCESS', got.itemId, got.name, !!paid);
       });
       return;

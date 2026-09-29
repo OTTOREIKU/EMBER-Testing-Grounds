@@ -39,6 +39,10 @@ export interface AttackApi {
   blackDie(): ((defender: Token) => Promise<number>) | null;
   // Asked before a live attack is closed; false keeps the window open.
   confirmCancel(): Promise<boolean>;
+  // A Multi-Target's free Scan of a camouflaged extra target (FAQ I12; ruled
+  // R3, audit Phase 7, P7C 4), run in the Counter-roll window beside this one.
+  // False when it never opened.
+  freeScan?(attacker: Token, target: Token, action: CardAction): boolean;
 }
 
 // What the table is told before it rolls: what to keep in mind, and where
@@ -373,6 +377,9 @@ export function mountAttack(into: HTMLElement): AttackHelper | null {
   };
   h.mirrorAct = (act, arg) => mirrorAct(act, arg);
   h.focusRemote = (defender) => mirrored() && defender.side !== a.me();
+  // The pad never offered a camouflaged extra target a Scan, so a Multi-Target
+  // could not designate one at all (audit Phase 7, P7C 4).
+  h.freeScan = a.freeScan ? (attacker, target, action) => a.freeScan!(attacker, target, action) : null;
   // A reaction the attack earned the defender (Emergency Smoke, Defense
   // Reaction, Riposte, Target Tracing). A scripted game owes it on the record
   // and the turn strip asks; a free table is told.
@@ -463,6 +470,12 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
     false,
   );
   return true;
+}
+
+// A Multi-Target's split, drawn again once a Scanned unit has Revealed (audit
+// Phase 7, P7C 4). Run on every render of the combat panel.
+export function refreshSplit(): void {
+  helper?.refreshSplit();
 }
 
 // The defender's (or a spectator's) copy of a window published by the other

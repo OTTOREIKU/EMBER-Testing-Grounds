@@ -121,6 +121,11 @@ export interface PanelCallbacks {
   // nothing in front. Asked only where a page supplies it.
   // 'support': a Restore Link or Remove a Token with nothing in reach to do it to.
   blockedWhy?(t: Token, what: 'restoreAmmo' | 'restoreIntercept' | 'charge' | 'shove' | 'support', actionId: string): string | null;
+  // The Common Actions (6.1) this page drives from here, the ones no Part card
+  // prints: one row each, greyed with `why`. The sandbox had no door into a
+  // Discard at all (audit Phase 7, P7A 2). One place for every Common Action
+  // a page wants here, so the next one is a row rather than a panel.
+  commonActions?(t: Token): { id: string; label: string; tip: string; why: string | null; go(): void }[];
 }
 
 // The attributes of a greyed control whose reason goes to the notice line.
@@ -292,6 +297,31 @@ export class Panel {
       h.textContent = 'Actions (from this unit’s parts)';
       this.body.appendChild(h);
       for (const ga of actions) this.body.appendChild(this.actionRow(t, ga));
+    }
+    const common = this.cb.commonActions?.(t) ?? [];
+    if (common.length) {
+      const h = document.createElement('h4');
+      h.textContent = 'Common Actions';
+      this.body.appendChild(h);
+      const btns = document.createElement('div');
+      btns.className = 'action-btns common-btns';
+      for (const c of common) {
+        const b = document.createElement('button');
+        b.className = 'shove-btn';
+        b.dataset.common = c.id;
+        b.textContent = c.label;
+        // Greyed with the reason, which the notice line gives on a hover or a
+        // long press; a plain tap on a greyed control does nothing.
+        if (c.why) {
+          b.setAttribute('aria-disabled', 'true');
+          b.dataset.why = c.why;
+        } else {
+          inspectOnHover(b, { title: c.label.replace(/…$/, ''), sub: 'Common Action', lines: [c.tip] });
+        }
+        b.addEventListener('click', () => c.go());
+        btns.appendChild(b);
+      }
+      this.body.appendChild(btns);
     }
 
     const cards = tokenCards(this.data, t);

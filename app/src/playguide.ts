@@ -5,7 +5,7 @@ import { BASE, cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { actionPartWhy, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, firewatchOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, actionIdleWhy, type IdleWorld } from './units';
+import { actionPartWhy, chassisGone, commonActionStop, commonPartKey, immobilizedStop, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, firewatchOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, actionIdleWhy, type IdleWorld } from './units';
 import { actionPipCount, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens, strictNow, taskDesignations, swarmFor } from './commands';
 import { idleWorldFor, openActivation, popDeadExtras } from './glue';
@@ -1327,12 +1327,17 @@ export class PlayGuide {
       const nothing = c.id === 'COMMON_REMOTE_ACCESS' && s
         ? remoteAccessWhy(items, t, c.range ?? 4, s.noBoard ? null : zoneCellsOf(this.data, s))
         : null;
+      // A Punch/Kick or Crawl names its Part, the first one still free, so a
+      // second one by another Part is its own Action (ruled R3; audit Phase 7,
+      // P7B 9). The Crawl greys while Immobilized, as the engine refuses it
+      // (P7B 7).
+      const opp = s?.script?.opp?.uid === t.uid ? s.script.opp : null;
       out.push({
         action: c,
         label: c.name.en || c.id,
-        partKey: c.id,
+        partKey: commonPartKey(this.data, t, c, opp?.performed ?? []),
         note: 'Common',
-        blocked: actionPartWhy(this.data, t, c) ?? nothing ?? undefined,
+        blocked: commonActionStop(t, c) ?? actionPartWhy(this.data, t, c) ?? nothing ?? undefined,
         idle: actionIdleWhy(this.data, t, c, idleWorld) ?? undefined,
       });
     }
@@ -1425,8 +1430,14 @@ export class PlayGuide {
         <div class="pg-units">${tied.map((x) => `<button class="pg-unit" data-tiepick="${x.uid}">${esc(x.label)} goes first</button>`).join('')}</div>`
       : '';
 
-    const man = canManeuver(o);
+    // An Immobilized Mech cannot Maneuver, a turn included (6.3.2): the row was
+    // live and the planner refused it after the press. A destroyed Chassis
+    // leaves the Maneuver a turn on the spot (FAQ E4; audit Phase 7, P7B 2, 7).
+    const ticked = canManeuver(o);
+    const stuck = ticked.ok ? immobilizedStop(t, null) : null;
+    const man = stuck ? { ok: false, why: stuck } : ticked;
     const range = maneuverRange(this.data, t);
+    const turnOnly = range <= 0 && chassisGone(t);
     // A strict table greys what it would refuse; Teaching warns and lets it
     // through on a second press.
     const strict = strictNow(s);
@@ -1478,7 +1489,7 @@ export class PlayGuide {
     const maneuverRow = shutdown
       ? ''
       : `<div class="pg-units">
-        <button class="pg-unit${man.ok ? '' : ' warn'}" data-maneuver="1"${tipOr(man.ok, 'Maneuver', man.ok ? `Move up to ${range} Grid${range === 1 ? '' : 's'}. Maneuver is free once per Action Opportunity.` : man.why ?? '')}>Maneuver ${range}</button>
+        <button class="pg-unit${man.ok ? '' : ' warn'}" data-maneuver="1"${tipOr(man.ok, 'Maneuver', man.ok ? (turnOnly ? 'Its Chassis is destroyed, so its Maneuver may only change its Facing (FAQ E4). Maneuver is free once per Action Opportunity.' : `Move up to ${range} Grid${range === 1 ? '' : 's'}. Maneuver is free once per Action Opportunity.`) : man.why ?? '')}>${turnOnly ? 'Maneuver · turn only' : `Maneuver ${range}`}</button>
         ${ovl ? `<button class="pg-unit${ovl.ok ? '' : ' warn'}" data-overload="1"${tipOr(ovl.ok, 'Overload', ovlTip)}>Overload ${o.overload}/${OVERLOAD_MAX}</button>` : ''}
         ${bon && bonus ? `<button class="pg-unit${bon.ok ? '' : ' warn'}" data-attackmode="1"${tipOr(bon.ok, bonus.label, bonTip)}>${esc(bonus.label)} ${o.attackMode ? 'taken' : `+${bonus.actionPoints}`}</button>` : ''}
         ${trait && lt ? `<button class="pg-unit${lt.ok ? '' : ' warn'}" data-linktick="1"${tipOr(lt.ok, trait.label, ltTip)}>${esc(trait.label.replace(/^Hammerhead /, ''))} ${o.linkTicks ?? 0}/${trait.maxLink}</button>` : ''}
@@ -1806,7 +1817,13 @@ export class PlayGuide {
     const tickOpts = startOpts(this.data, s.tokens, t, row.action);
     const priced = stanceShaped(row.action, t.stance);
     const verdict = canPerform(o, priced, row.partKey, tickOpts);
-    const why = row.blocked ?? (verdict.ok ? undefined : verdict.why);
+    // A Movement Action moves the Mech before it is paid for, so the engine is
+    // asked first: a strict table refused the payment after the move had
+    // landed, and the Mech had moved for nothing (audit Phase 7, P7B 3).
+    const paid = row.action.type === 'Moving'
+      ? check(this.data, s, { kind: 'performAction', seat: t.side, uid: t.uid, actionId: row.action.id, partKey: row.partKey })
+      : null;
+    const why = row.blocked ?? (verdict.ok ? undefined : verdict.why) ?? (paid && !paid.ok ? paid.why : undefined);
     // Teaching warns once and lets a second press through; a strict game
     // refuses every press (the second one used to open the attack anyway).
     if (why && (strictNow(s) || this.warn !== why)) {
@@ -1840,15 +1857,23 @@ export class PlayGuide {
         const hop = range > 0
           ? ` It may then Manifest within Range ${range}, counted orthogonally (Stealth ${range}) - Teleportation, so terrain and units in between do not matter.`
           : '';
+        // |Reveal| is the Reveal itself (6.1): it is never waved away as a
+        // house rule, and it is not an Action that "is not Silent". It Reveals
+        // here now, after its payment, which a strict table asks of every
+        // Reveal (ruled R1; audit Phase 7, P7C 1).
+        const own = row.action.id === 'COMMON_REVEAL';
+        const why = own ? 'Reveal (6.1):' : `${row.action.name?.en || row.action.id} is not Silent${because}.`;
         // Through the board's picker when there is one, which Reveals and hops
         // as ONE command. The strict tracker Revealed in place first here, so
         // the Grid then picked on the board was refused, and the teaching path
         // offered no hop at all (audit Phase 3, C10).
         if (this.cb.onReveal) {
-          this.cb.onReveal(t, `${row.action.name?.en || row.action.id} is not Silent${because}.`, !this.script(s).strict);
-        } else if (this.script(s).strict) {
+          this.cb.onReveal(t, why, !own && !this.script(s).strict);
+        } else if (own || this.script(s).strict) {
           perform(this.data, s, { kind: 'reveal', seat: t.side, uid: t.uid });
-          this.cb.onNote(t, `${row.action.name?.en || row.action.id} is not Silent${because}, so the Optical Camouflage ends (4.12.2).${hop}`);
+          this.cb.onNote(t, own
+            ? `Reveal (6.1): the Optical Camouflage ends (4.12.2).${hop}`
+            : `${row.action.name?.en || row.action.id} is not Silent${because}, so the Optical Camouflage ends (4.12.2).${hop}`);
         } else {
           void choiceDialog({
             title: `${t.label} breaks camouflage`,

@@ -141,12 +141,15 @@ export function beginElectronicAll(attacker: Token, actionId: string, targets: T
 // command carries the attack behind it, and a win queues the Reveal and the
 // resumed attack through the shared reading (ewWinCommands). On one phone the
 // local exchange Scans, and its win queues the same resumed attack here.
-export function beginFreeScan(attacker: Token, attackId: string, defender: Token, joined = false): boolean {
+// `extra`: a Multi-Target's further designation, made from its split. Its win
+// owes the Reveal alone, the split offering the unit once it has appeared, and
+// a failure drops only that designation (ruled R3; audit Phase 7, P7C 4).
+export function beginFreeScan(attacker: Token, attackId: string, defender: Token, joined = false, extra = false): boolean {
   const a = api!;
   if (a.state().script && !a.solo) {
     return a.send({
       kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId: 'COMMON_SCAN',
-      targetUid: defender.uid, thenAttack: { actionId: attackId }, ...(joined ? { chain: 'join' as const } : {}),
+      targetUid: defender.uid, thenAttack: { actionId: attackId, ...(extra ? { extra: true } : {}) }, ...(joined ? { chain: 'join' as const } : {}),
     });
   }
   if (!root) return false;
@@ -157,8 +160,13 @@ export function beginFreeScan(attacker: Token, attackId: string, defender: Token
   h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
   h.start(attacker, scan, defender, {
     then: (win) => {
-      if (!win) { a.toast(`The Scan failed, so the attack on ${defender.label} ends. The Action Tick is spent (FAQ I11).`, 'warn'); return; }
-      a.send({ kind: 'queueReactions', seat: attacker.side, items: [{ uid: attacker.uid, actionId: attackId, count: 1, range: 0, kind: 'scanAttack', fromUid: defender.uid }] });
+      if (!win) {
+        a.toast(extra
+          ? `The Scan failed, so ${defender.label} cannot be designated by this attack. Its other targets stand (FAQ I11).`
+          : `The Scan failed, so the attack on ${defender.label} ends. The Action Tick is spent (FAQ I11).`, 'warn');
+        return;
+      }
+      if (!extra) a.send({ kind: 'queueReactions', seat: attacker.side, items: [{ uid: attacker.uid, actionId: attackId, count: 1, range: 0, kind: 'scanAttack', fromUid: defender.uid }] });
     },
   });
   a.openCombat();
@@ -288,8 +296,9 @@ function contestAct(act: EwAct, arg?: EwArg): void {
   }
   const unit = arg?.uid !== undefined ? s.tokens.find((x) => x.uid === arg.uid) : undefined;
   if (act === 'roll' && unit) {
-    // The Initiator's pool carries its Action's Strength +X (Scream; audit
-    // Phase 3, D2).
+    // The Initiator's pool carries its Action's Strength +X (audit Phase 3,
+    // D2), though no card prints one since the 2026-09-28 list ruling retired
+    // Scream's.
     const ev = unit.uid === init.uid
       ? electronicStrength(a.data, s.tokens, unit, 'initiator', actionOf(init, c.actionId))
       : electronicStrength(a.data, s.tokens, unit, 'responder');
