@@ -59,7 +59,8 @@ check('a Viper in Optical Camouflage may still Ambush (J19: Contact never remove
 const cmds = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
-const perf = cmds.slice(cmds.indexOf("case 'performAction': {"), cmds.indexOf("case 'performAction': {") + 2400);
+// Wider since P7A's Charge, Discard and Throw gates (audit Phase 7).
+const perf = cmds.slice(cmds.indexOf("case 'performAction': {"), cmds.indexOf("case 'performAction': {") + 4800);
 check('performAction refuses the grant the unit already wears', /const selfGrant = selfStatusGrant\(a\);\s*\n\s*if \(selfGrant\) \{\s*\n\s*const why = selfGrantWhy\(t, selfGrant\);\s*\n\s*if \(why\) return no\(why\);/.test(perf), true);
 check('freeplay places the Token through applyStatus', /const grant = selfStatusGrant\(action\);[\s\S]{0,700}?kind: 'applyStatus', seat: t\.side, uid: t\.uid, targetUid: t\.uid, statusId: grant\.statusId, stacks: grant\.stacks/.test(main), true);
 check('and refuses before the card text is shown', /selfGrantWhy\(t, grant\);[\s\S]{0,200}?return done\(false\);/.test(main), true);

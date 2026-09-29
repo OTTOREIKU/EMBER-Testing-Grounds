@@ -633,8 +633,10 @@ console.log('Phase 6: the round, missions and squads\n');
 
   // F5: a pick-up in the unit's own Opportunity, from a Grid it moved
   // through or stands in, on a guided board.
+  // 037 CC-4 Cleaver (L) is a real Freehand arm; 023 is Handheld, and lost the
+  // Freehand the bundle gave it (ruled R5; audit Phase 7, P7A 3).
   const d = table();
-  const mover = put(d, 's1', L({ leftHand: '023' }), 2, 2);
+  const mover = put(d, 's1', L({ leftHand: '037' }), 2, 2);
   const other = put(d, 's1', L(), 8, 8);
   box(d, { col: 4 * 3 + 1, row: 2 * 3 + 1 });
   const take = { kind: 'takeBlackBox', seat: 's1', uid: mover.uid, itemId: 'blackbox-t', slot: 'leftHand' };
@@ -648,20 +650,20 @@ console.log('Phase 6: the round, missions and squads\n');
   check('F5 so the Box it walked over is picked up', ok(d, take), true);
   // F10, I22: a flight enters only its start and landing Grids.
   const e = table();
-  const flier = put(e, 's1', L({ leftHand: '023' }), 2, 2);
+  const flier = put(e, 's1', L({ leftHand: '037' }), 2, 2);
   box(e, { col: 4 * 3 + 1, row: 2 * 3 + 1 });
   e.script.opp = opp(flier.uid);
   M.apply(data, e, { kind: 'maneuver', seat: 's1', uid: flier.uid, to: G(6, 2), via: [G(3, 2), G(4, 2), G(5, 2)], free: true, flying: true });
   check('F10 a flight records its start and landing only', e.script.opp.route, ['2,2', '6,2']);
   check('F10 so the Box it flew over is not picked up', ok(e, { ...take, uid: flier.uid }), false);
   const f = freeTable();
-  const loose = put(f, 's1', L({ leftHand: '023' }), 2, 2);
+  const loose = put(f, 's1', L({ leftHand: '037' }), 2, 2);
   box(f, { col: 8 * 3 + 1, row: 8 * 3 + 1 });
   check('F5 the control: a free table leaves the route to the page', ok(f, { ...take, uid: loose.uid }), true);
 
   // F7: a Part bearing a Box serves no [Two-Handed] (5.3.1).
   const g = table();
-  const burst = put(g, 's1', L({ leftHand: '023' }), 2, 2);
+  const burst = put(g, 's1', L({ leftHand: '037' }), 2, 2);
   const fire = actionOf('058', '058_A');
   check('F7 the control: a free Freehand serves Two-Handed', !!U.twoHandedUse(data, burst, fire, Tk.boxHands(g.tasks, burst.uid)), true);
   box(g, { bearerUid: burst.uid, bearerSlot: 'leftHand' });
@@ -1044,9 +1046,14 @@ console.log('Phase 6: the round, missions and squads\n');
   const me = put(s, 's1', L(), 6, 5);
   put(s, 's2', L(), 9, 9);
   s.script.opp = acted(me.uid);
+  // The paid Action's one roll, which a strict table now asks for (ruled R2; audit Phase 7, P7C 2).
+  const paidFor = (actionId) => { s.script.counterOwed = { uid: me.uid, actionId }; };
+  paidFor('COMMON_REMOTE_ACCESS');
   check('E5 the control: after Remote Access, the roll opens against a Terminal in reach', ok(s, open(s, me, 'bravo')), true);
   check('E5 never against one out of Range', ok(s, open(s, me, 'golf')), false);
+  paidFor('COMMON_SCAN');
   check('E5 only a Remote Access rolls against a Terminal', ok(s, open(s, me, 'bravo', { actionId: 'COMMON_SCAN' })), false);
+  paidFor('COMMON_REMOTE_ACCESS');
   const before = setUp();
   const mb = put(before, 's1', L(), 6, 5);
   before.script.opp = opp(mb.uid, { timing: 'tactical' });
@@ -1074,8 +1081,10 @@ console.log('Phase 6: the round, missions and squads\n');
   const c = s.script.counter;
   check('E5 the Responder is the stand-in, which has declared no Focus', [c.responderUid, c.terminal, c.respDeclare], [Tk.TERMINAL_UID, itemIn(s, 'bravo').id, false]);
   check('E5 a checkpoint keeps the Terminal', Ty.normaliseScript(JSON.parse(JSON.stringify(s.script))).counter.terminal, itemIn(s, 'bravo').id);
-  // Hotel face-up again, so only the open roll stands in the way.
+  // Hotel face-up again, so only the open roll stands in the way; paid again
+  // too, since opening the first spent its payment (R2, P7C 2).
   s.tasks.items.find((i) => i.zone === 'hotel').accessed = null;
+  paidFor('COMMON_REMOTE_ACCESS');
   check('E5 a second roll cannot open over it', ok(s, open(s, me, 'hotel')), false);
 
   // The stand-in's hand.

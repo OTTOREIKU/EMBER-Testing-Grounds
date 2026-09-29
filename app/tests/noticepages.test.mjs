@@ -39,9 +39,12 @@ check('Match Centre: the HUD\'s notes say what kind they are, and refuse by defa
     (hud.match(/, 'done'\)/g) ?? []).length >= 60, (hud.match(/, 'table'\)/g) ?? []).length >= 6, (hud.match(/, 'system'\)/g) ?? []).length >= 5],
   [true, true, true, true]);
 check('Match Centre: each player hears what the other did to their units or the table (pick 3)',
-  /const TABLE_WIDE = new Set\(\[[^\]]*\]\);[\s\S]{0,700}if \(!TABLE_WIDE\.has\(cmd\.kind\) && !\(target && target\.side === mySeat\(\)\)\) return;[\s\S]{0,200}if \(meta\.role === 'quiet'\) return;\s*say\('event', meta\.label\);/.test(match), true);
+  // Wider since P7A: the other player's Charge and Discard are said first (audit Phase 7).
+  /const TABLE_WIDE = new Set\(\[[^\]]*\]\);[\s\S]{0,1500}if \(!TABLE_WIDE\.has\(cmd\.kind\) && !\(target && target\.side === mySeat\(\)\)\) return;[\s\S]{0,200}if \(meta\.role === 'quiet'\) return;\s*say\('event', meta\.label\);/.test(match), true);
 check('Match Centre: a refused row is greyed, silent on a press, and says why on hover or a long press (pick 6)',
-  [(hud.match(/` aria-disabled="true" data-why="/g) ?? []).length, (hud.match(/` data-why="/g) ?? []).length], [9, 0]);
+  // Eleven since P7A: the Charge's and the Discard's refused Parts (audit Phase 7).
+  // Seventeen since P7D: the six list rows that were truly disabled (P7D 9).
+  [(hud.match(/` aria-disabled="true" data-why="/g) ?? []).length, (hud.match(/` data-why="/g) ?? []).length], [17, 0]);
 check('Match Centre: a refused row carries no title, so its reason is said once, in the line (pick 2)',
   [/data-why="\$\{esc\([^\n]*?\)\}" title=/.test(hud), /title="\$\{esc\(\w+\.ok\s*\?/.test(hud), /\.why \?\? ''\)\}"(?!`)/.test(hud.replace(/data-why="\$\{esc\(\w+\.why \?\? ''\)\}"/g, ''))],
   [false, false, false]);

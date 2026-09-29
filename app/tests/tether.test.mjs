@@ -303,10 +303,16 @@ const board = (tokens) => ({ tokens, nextUid: 99, round: { n: 1, phase: 2, first
 // leash is now COMPOSED with the Abyss ban at each site - both are legalities
 // on the same hook and both must pass - so the count moves to the compose
 // line, and a site that dropped either half fails one of the two.
+// Two sites fold a Crawl's hold on its Grid into the same leash, so the Tether
+// half is named `tethered` there (audit Phase 7, P7B 14).
+// Two now: the Match Centre's overlay reads moveOptsFor, so that page builds its
+// MoveOpts once (audit Phase 7, P7D 6), pinned by the third check.
 check('every MoveOpts site carries the leash',
-  (mainSrc + hudSrc).match(/const leash = tetherCap\(/g)?.length, 3);
+  (mainSrc + hudSrc).match(/const (?:leash|tethered) = tetherCap\(/g)?.length, 2);
 check('and every site composes it with the Abyss ban',
-  (mainSrc + hudSrc).match(/allowed: leash && env\.allowed/g)?.length, 3);
+  (mainSrc + hudSrc).match(/allowed: leash && env\.allowed/g)?.length, 2);
+check('and the Match Centre overlay reads the route\'s own opts',
+  /return reachableGrids\(t, steps, terrainOf\(ctx\), ctx\.state\.tokens, flying, moveOptsFor\(ctx, t, flying, actionId\)\);/.test(hudSrc), true);
 check('and each page imports it', [
   /import \{[^}]*tetherCap[^}]*\} from '\.\/melee'/.test(mainSrc),
   /import \{[^}]*tetherCap[^}]*\} from '\.\/melee'/.test(hudSrc),

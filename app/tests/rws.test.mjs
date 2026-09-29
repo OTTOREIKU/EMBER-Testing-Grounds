@@ -103,11 +103,12 @@ check('and every turn derivation in the command layer too',
 check('the one-token cap stays a Drone rule', /phase === 'Command' && t\.kind === 'drone' && !sc\.freeCommand\.includes\(cmd\.uid\) && heldCommands\(t\) > 0/.test(cmds), true);
 check('designating a Mech writes the Command to the ledger, not the commanded list',
   /if \(t\.kind === 'mech'\) sc\.oncePerRound\.push\(rwsCommandKey\(state\.round\.n, t\.uid\)\);\s*\n\s*else if \(free && !going\) \{[\s\S]*?\} else if \(!sc\.commanded\.includes\(cmd\.uid\)\) sc\.commanded\.push\(cmd\.uid\);/.test(cmds), true);
-const perf = cmds.slice(cmds.indexOf("case 'performAction': {"), cmds.indexOf("case 'performAction': {") + 7000);
+// Wider since P7A's Charge, Discard and Throw gates (audit Phase 7).
+const perf = cmds.slice(cmds.indexOf("case 'performAction': {"), cmds.indexOf("case 'performAction': {") + 9500);
 check('a Mech in the Command Phase performs only an RWS Action', /if \(!isRwsAction\(a\)\) return no\(/.test(perf), true);
 check('once per Part per round', /rwsFiredKey\(state\.round\.n, cmd\.uid, a\.id\)\)\)/.test(perf), true);
 check('and it costs the activation the Command bought, not Ticks', /return fromVerdict\(canActivate\(o\)\);\s*\n\s*\}\s*\n\s*\n\s*\/\/ Riposte/.test(perf), true);
-const applyPerf = cmds.slice(cmds.lastIndexOf("case 'performAction': {"), cmds.lastIndexOf("case 'performAction': {") + 4000);
+const applyPerf = cmds.slice(cmds.lastIndexOf("case 'performAction': {"), cmds.lastIndexOf("case 'performAction': {") + 5500);
 check('the apply marks the Part fired and spends the activation',
   /sc\.oncePerRound\.push\(rwsFiredKey\(state\.round\.n, t\.uid, a\.id\)\);\s*\n\s*if \(o\) sc\.opp = spendActivation\(o, a\);/.test(applyPerf), true);
 const man = cmds.slice(cmds.indexOf("case 'maneuver': {"), cmds.indexOf("case 'maneuver': {") + 2000);

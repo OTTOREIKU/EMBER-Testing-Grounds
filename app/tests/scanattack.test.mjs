@@ -36,10 +36,12 @@ check('the attacker\'s owed reaction is a kind the record keeps',
 
 // ---------- the command layer ----------
 const cmds = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8');
-const scan = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'startCounterRoll': {") + 6000);
+// Wider since the paid Action's gate is asked first (ruled R2; audit Phase 7, P7C 2).
+const scan = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'startCounterRoll': {") + 8500);
 // With the declaration's answers since the Phase 2 audit (C7): a Charge spent
 // for it, the arm of an either/or [Charged] line, a declined [Two-Handed].
-check('startCounterRoll carries the attack', /thenAttack\?: \{ actionId: string; charged\?: boolean; chargeChoice\?: string; twoHandedDeclined\?: boolean \};/.test(cmds), true);
+// And whether it is a Multi-Target's extra designation (ruled R3; audit Phase 7, P7C 4).
+check('startCounterRoll carries the attack', /thenAttack\?: \{ actionId: string; charged\?: boolean; chargeChoice\?: string; twoHandedDeclined\?: boolean; extra\?: boolean \};/.test(cmds), true);
 check('only a Scan may carry one', /if \(cmd\.thenAttack\) \{\s*\n\s*if \(!isScanAction\(a\)\) return no/.test(scan), true);
 check('only against a camouflaged target', /statusCount\(target\.statuses, 'camouflage'\) === 0\) return no\(`\$\{target\.label\} is not in the Optical Camouflage State/.test(scan), true);
 check('and only ahead of a Firing or Melee Action the unit has', /atk\.type !== 'Firing' && atk\.type !== 'Melee'\)\) return no/.test(scan), true);
@@ -60,7 +62,8 @@ const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8')
 check('a camouflaged target is a pressable row', /const blocked = \(!hidden && note\.includes\('✕'\)\) \|\| lit;/.test(hud), true);
 check('that says what will happen', /one free Scan first; the attack follows if it is Revealed \(4\.12\.2, FAQ I12\)/.test(hud), true);
 const press = hud.slice(hud.indexOf("on('[data-attacktarget]'"), hud.indexOf("on('[data-attacktarget]'") + 4200);
-check('the press asks the command before paying', /const can = ctx\.check\(scan\);\s*\n\s*if \(!can\.ok\)/.test(press), true);
+// As the table will stand once the attack is paid (ruled R2; audit Phase 7, P7C 2).
+check('the press asks the command before paying', /const can = checkPaid\(ctx, scan\);\s*\n\s*if \(!can\.ok\)/.test(press), true);
 check('then pays the Tick - the attack is declared (3.4.5)', /const paid = commitAction\(ctx\);[\s\S]{0,200}?ctx\.send\(scan\)/.test(press), true);
 check('and the Scan carries the attack', /actionId: 'COMMON_SCAN', targetUid: t\.uid,\s*thenAttack: \{\s*actionId: m\.actionId,\s*\.\.\.\(m\.refund \? \{ charged: true \} : \{\}\),/.test(press), true);
 const apply = hud.slice(hud.indexOf("if (act === 'apply') {"), hud.indexOf("if (act === 'apply') {") + 3000);
@@ -72,7 +75,9 @@ check('a successful Scan queues the attack behind the Reveal',
   /kind: 'scanAttack' as const, fromUid: resp\.uid/.test(win) && /ewWinCommands\(ctx\.data, init, resp, a, \{ reaction: !!c\.reaction, thenAttack: c\.thenAttack(, terminal: c\.terminal)? \}\)/.test(apply), true);
 // `uid` there is the Initiator's own, the attacker's.
 check('to the ATTACKER\'s seat', /const uid = init\.uid;[\s\S]*?\.\.\.\(then \? \[\{\s*uid, actionId: then\.actionId/.test(win), true);
-check('a Scan closed without applying ends the attack (I11)', /c\.thenAttack && !\(ensureScript\(s\)\.reactions \?\? \[\]\)\.some\(\(r\) => r\.kind === 'scanAttack'/.test(hud) && /any remaining Ticks may still be used \(FAQ I11\)/.test(hud), true);
+// A Multi-Target's extra designation queues no attack, so it is read apart (ruled R3; audit Phase 7, P7C 4).
+// Said once the close has landed: a refused one ends nothing (ruled R3; audit Phase 7, P7D 1).
+check('a Scan closed without applying ends the attack (I11)', /: owed\.some\(\(r\) => r\.kind === 'scanAttack' && r\.uid === init\.uid\);[\s\S]{0,300}?const closed = ctx\.send\(\{ kind: 'clearCounterRoll', seat: seatOf\(ctx\) \}\);[\s\S]{0,120}?\} else if \(c\.thenAttack && !applied\)/.test(hud) && /any remaining Ticks may still be used \(FAQ I11\)/.test(hud), true);
 check('the reaction panel waits while the target Reveals', /r\.kind === 'scanAttack'\) \{[\s\S]{0,600}?const hidden = !!target && statusCount\(target\.statuses, 'camouflage'\) > 0;/.test(hud), true);
 check('judges the attack from where it appeared', /r\.kind === 'scanAttack'\) \{[\s\S]{0,900}?losNote\(t, target, \{ \.\.\.act, range: actionRange\(ctx\.data, ctx\.state\.tokens, t, act\) \}/.test(hud), true);
 check('and resumes through the ordinary front door, as it was declared', /r\.kind === 'scanAttack'\) \{\s*\n\s*if \(!place\) \{[\s\S]{0,300}?ctx\.startAttack\(uid, actionId, r\.fromUid, 'attack', \{ charged: !!r\.charged, chargeChoice: r\.chargeChoice, twoHandedDeclined: !!r\.twoHandedDeclined \}\);/.test(hud), true);
@@ -84,7 +89,8 @@ check('the camouflaged branch runs the free Scan instead of refusing', /statusCo
 check('a Mech that cannot Scan cannot attack it (4.11.2)', /electronicValue\(data, attacker, loanedParts\(data, state\.tokens, attacker\)\) <= 0\) \{[\s\S]{0,400}?done\?\.\(false\);/.test(main), true);
 check('the window reports the verdict once, at Resolve', /c\.then\?\.\(win\);\s*\n\s*this\.onChanged\(\);/.test(combat), true);
 check('a failed Scan ends the attack with the Tick spent (I11)', /if \(!win\) \{\s*\n\s*logTo\(attacker, `The Scan failed, so the attack on \$\{defender\.label\} ends\. The Action Tick is spent; any remaining Ticks may still be used \(FAQ I11\)\.`\);\s*\n\s*done\?\.\(true\);/.test(main), true);
-check('a success waits for the manifest debt and then resumes', /offerManifestation\(defender, 'Scanned:'\)\.then\(\(\) => \{[\s\S]{0,300}?resumeScanAttack\(\);/.test(main), true);
+// The picker's answer runs `next`, which resumes it; the Reveal pays the debt (ruled R7; audit Phase 7, P7C 7).
+check('a success waits for the manifest debt and then resumes', /const next = \(\): void => \{[\s\S]{0,300}?resumeScanAttack\(\);[\s\S]{0,900}?offerManifestation\(defender, 'Scanned:'\)\.then\(\(\) => \{ revealOpen\.delete\(defender\.uid\); next\(\); \}/.test(main), true);
 // Strictly, at the effective reach: Range and the Forward Arc fail the attack as
 // much as line of sight (p.71, 4.2.5; audit Phase 3, C2). It stopped only on a
 // hard ✕ before.

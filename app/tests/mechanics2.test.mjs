@@ -258,6 +258,8 @@ check('A4 and not on a Shutdown one (4.1: no Passive effects)', await reactionsA
   const shut = ok(s, scan);
   hunter.stance = 'defensive';
   hunter.link = 3;
+  // The standing one's Scan paid, since a strict table opens only the roll a paid Action buys (ruled R2; audit Phase 7, P7C 2).
+  s.script.counterOwed = { uid: hunter.uid, actionId: 'COMMON_SCAN' };
   check('A5 a Shutdown Mech opens no Counter-roll as an Action either, where a standing one does', [shut, ok(s, scan)], [false, true]);
 }
 {
@@ -445,8 +447,10 @@ check('A4 and not on a Shutdown one (4.1: no Passive effects)', await reactionsA
   check('B5 a Punch with the Chassis and both arms gone is refused', ok(s, act(a, 'COMMON_PUNCH_MELEE')), false);
 }
 {
+  // Discard and Charge are Swift Actions (the p.91 icon; audit Phase 7, P7A 1),
+  // so the Starting Action takes a Swift dial.
   const s = table();
-  const a = put(s, 's1', L(), 1, 1, { timing: 'tactical' });
+  const a = put(s, 's1', L(), 1, 1, { timing: 'swift' });
   open(s);
   const discard = (slot) => act(a, 'COMMON_DISCARD', { partKey: `COMMON_DISCARD@${slot}` });
   check('E7 Discard is taken once per hand, not once per Opportunity (FAQ H6/H7)', send(s, discard('leftHand')).ok, true);
@@ -455,15 +459,16 @@ check('A4 and not on a Shutdown one (4.1: no Passive effects)', await reactionsA
 }
 {
   const s = table();
-  const a = put(s, 's1', L({ torso: '098', rightHand: '122' }), 1, 1, { timing: 'tactical' });
+  const a = put(s, 's1', L({ torso: '098', rightHand: '122' }), 1, 1, { timing: 'swift' });
   open(s);
   const charge = (slot) => act(a, 'COMMON_CHARGE', { partKey: `COMMON_CHARGE@${slot}` });
   send(s, charge('rightHand'));
   check('E7 the Charge Action is once per Part: the same Part refused, another taken', [ok(s, charge('rightHand')), ok(s, charge('torso'))], [false, true]);
   const s2 = table();
-  const b = put(s2, 's1', L({ torso: '091' }), 1, 1, { timing: 'tactical' });
+  const b = put(s2, 's1', L({ torso: '091' }), 1, 1, { timing: 'swift' });
   open(s2);
-  check('C9 with nothing to Charge, the Charge Action is refused (FAQ H2)', ok(s2, act(b, 'COMMON_CHARGE')), false);
+  // Named, since a guided game refuses an unnamed one first (ruled R2; P7A).
+  check('C9 with nothing to Charge, the Charge Action is refused (FAQ H2)', ok(s2, act(b, 'COMMON_CHARGE', { partKey: 'COMMON_CHARGE@torso' })), false);
 }
 
 // ---------- B6 / B7: a dead Mech holds no Opportunity ----------

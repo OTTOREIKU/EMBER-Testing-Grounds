@@ -135,8 +135,9 @@ check('an extra tick may repeat an action already performed', T.canPerform(withE
 
 // The shared Charge Action is the one exception to once-only (FAQ H6/H7):
 // each use Charges a different Part, so two may run in one Opportunity.
-const chargeAct = act('COMMON_CHARGE', 'Tactic', 's');
-const charged = { ...fresh(), timing: 'tactical', started: true, performed: ['COMMON_CHARGE'], action: 1 };
+// A Swift Action since P7A: the p.91 icon (audit Phase 7, P7A 1).
+const chargeAct = act('COMMON_CHARGE', 'Swift', 's');
+const charged = { ...fresh(), timing: 'swift', started: true, performed: ['COMMON_CHARGE'], action: 1 };
 check('the common Charge may repeat on base ticks (H6)', T.canPerform(charged, chargeAct).ok, true);
 check('other actions still refuse a repeat', T.canPerform({ ...charged, performed: ['f1'], timing: 'firing' }, fire.s).ok, false);
 check('a typed extra tick refuses another type', T.canPerform(withExtra, melee.s).ok, false);

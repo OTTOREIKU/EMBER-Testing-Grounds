@@ -155,8 +155,12 @@ check('a refused payment refunds the Charge', /if \(paid\.why\) ctx\.noteNow\(pa
 // The attack rides the plan the way the shove does, through every exit.
 check('the plan carries the attack', /attackAfter\?: \{ actionId: string/.test(hud), true);
 check('through a Crush as well', /shoveActionId: shoveId,\s*\r?\n\s*attackAfter: after,/.test(hud), true);
+// The Crush's two exits (stopped short, landed) now share one after() that
+// resumes it, so three sites cover the four exits (audit Phase 7, P7D 1).
 check('every shove exit also resumes the attack',
-  (hud.match(/resumeShockAttack\(ctx, t\.uid, (?:after|m\.attackAfter)\)/g) ?? []).length >= 4, true);
+  (hud.match(/resumeShockAttack\(ctx, t\.uid, (?:after|m\.attackAfter)\)/g) ?? []).length >= 3
+    && /const after = \(\): void => \{[\s\S]{0,400}?resumeShockAttack\(ctx, t\.uid, m\.attackAfter\)/.test(hud)
+    && (hud.match(/record\((?:held, walk|spot, stops, pair \? began : undefined)\)[\s\S]{0,300}?after\(\);/g) ?? []).length === 2, true);
 // Backing out of the OPTIONAL walk must not eat the paid Action.
 check('cancelling the walk still owes the attack', /function cancelMove[\s\S]{0,800}?resumeShockAttack\(ctx, uid, after\)/.test(hud), true);
 check('and the planner refusing to open falls through to it', /if \(!movePlan\) resumeShockAttack/.test(hud), true);

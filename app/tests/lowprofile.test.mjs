@@ -88,8 +88,11 @@ export const ownCards = tokenCards;
   + cut(units, '// A Part that can still initiate an Action', '// The Parts that may initiate this Common Action now', 'partUsable')
   + `
 // ---------- the two main.ts blocks, verbatim ----------
-export function settleShed(t: any, startPos: any, data: any, state: any, perform: any, logTo: any, m: any = {}, promptReveal: any = () => {}): void {
-${settleBlock}}
+// It hands back the Reveal it owes: the prompt waits until the Movement is
+// recorded, after m.done (audit Phase 7, P7C 1), and is pinned below.
+export function settleShed(t: any, startPos: any, data: any, state: any, perform: any, logTo: any, m: any = {}): string | null {
+${settleBlock}  return revealWhy;
+}
 export function makeDone(t: any, action: any, data: any, state: any, perform: any, logTo: any, report: any): any {
 ${doneBlock}  return done;
 }
@@ -221,22 +224,24 @@ const jetJump = data.byId.get('JET').actions[0];
   check('while the Chassis\'s own Sprint keeps it', r2.sent, []);
 }
 {
-  // The Reveal half reads the same answer, and asks the table (4.12.2).
-  const prompts = [];
+  // The Reveal half reads the same answer, and asks the table (4.12.2). The
+  // block now hands the reason on, asked once the Movement is recorded (P7C 1).
   const ghost = lp({ statuses: ['camouflage'] });
   const r = rig([ghost]);
-  M.settleShed(ghost, { col: 3, row: 3 }, data, r.state, r.perform, r.logTo, {}, (_t, why) => prompts.push(why));
-  check('a camouflaged unit\'s non-Silence Maneuver prompts the Reveal', prompts, ['Ghost moved without Silence.']);
-  const quiet = [];
+  check('a camouflaged unit\'s non-Silence Maneuver owes the Reveal',
+    M.settleShed(ghost, { col: 3, row: 3 }, data, r.state, r.perform, r.logTo, {}), 'Ghost moved without Silence.');
   const hidden = stealthy({ statuses: ['camouflage'] });
   const r2 = rig([hidden, eagle(6, 3)]);
-  M.settleShed(hidden, { col: 3, row: 3 }, data, r2.state, r2.perform, r2.logTo, {}, (_t, why) => quiet.push(why));
-  check('and a Stealth Chassis Maneuver beside an Eagle prompts nothing (F14)', quiet, []);
-  const named = [];
+  check('and a Stealth Chassis Maneuver beside an Eagle owes nothing (F14)',
+    M.settleShed(hidden, { col: 3, row: 3 }, data, r2.state, r2.perform, r2.logTo, {}), null);
   const r3 = rig([hidden, eagle(6, 3)]);
-  M.settleShed(hidden, { col: 3, row: 3 }, data, r3.state, r3.perform, r3.logTo, { action: stlSprint }, (_t, why) => named.push(why));
+  const named = M.settleShed(hidden, { col: 3, row: 3 }, data, r3.state, r3.perform, r3.logTo, { action: stlSprint });
   check('while its Sprint beside one names the Eagle as the reason',
-    /Patrol Eagle \(Dynamic Perception\) denies it/.test(named[0] ?? ''), true);
+    /Patrol Eagle \(Dynamic Perception\) denies it/.test(named ?? ''), true);
+  // Asked after m.done, which sends the Maneuver that owes it: a strict table
+  // refuses a Reveal nothing owes (ruled R1; audit Phase 7, P7C 1).
+  check('the Reveal is prompted once the Movement is recorded (structural)',
+    /m\.done\(true, halt\);\n\s*const now = state\.tokens\.find\(\(x\) => x\.uid === t\.uid\);\n\s*if \(revealWhy && now\) promptReveal\(now, revealWhy\);/.test(mainSrc), true);
 }
 
 // ---------- performGuided(): the board's Actions ----------

@@ -53,8 +53,11 @@ check('the grant is spent by the Action apply, so one Riposte cannot buy two',
 
 // ---------- Both screens ----------
 check('the Match Centre offers it', /r\.kind === 'riposte'/.test(hud), true);
+// The list is units.ts riposteMelees now, shared by every page, and it adds
+// Punch/Kick (ruled R4; audit Phase 7, P7B 6).
 check('and only lists Melee Actions to pick from',
-  /data-ripostego[\s\S]{0,60}<\/button>/.test(hud) && /\.filter\(\(a\) => a\.type === 'Melee'\)/.test(hud), true);
+  /data-ripostego[\s\S]{0,60}<\/button>/.test(hud) && /const melees = riposteMelees\(ctx\.data, t\)/.test(hud)
+    && /export function riposteMelees[\s\S]{0,700}a\.type === 'Melee'/.test(units), true);
 check('the picked Melee rides the ordinary attack pick with the flag set',
   /pendingAction = \{ kind: 'performAction'[\s\S]{0,80}granted: true \};[\s\S]{0,200}?startAttackPick\(/.test(hud), true);
 // FAQ C1: the Riposte's target can only be the attacker. The pick used to list
@@ -65,8 +68,10 @@ check('and its one target is the attacker (FAQ C1)',
 check('and re-entering does not re-send the ending',
   /ensureScript\(s\)\.opp\?\.uid === r\.fromUid\) \{/.test(hud), true);
 check('freeplay offers it too', /r\.kind === 'riposte'/.test(main), true);
+// It opens the swing [Two-Handed] and [Charged] made of it, not the raw Action
+// (audit Phase 7, P7B 6).
 check('and opens the Melee directly, since the play guide is built around an Opportunity',
-  /granted: true \}\);[\s\S]{0,200}attackHelper\.start\(defender, melee, from/.test(main), true);
+  /granted: true \}\);[\s\S]{0,300}attackHelper\.start\(defender, swing, from/.test(main), true);
 check('both senders tag the debt with the attacker',
   /kind: 'riposte' as const, fromUid: attacker\.uid/.test(match)
   && /kind: 'riposte' as const, fromUid: attacker\.uid/.test(main), true);

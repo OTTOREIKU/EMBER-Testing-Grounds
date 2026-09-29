@@ -2,11 +2,12 @@
 //   more [Lightning] wins; on a tie more [Light Hit] wins; level on both -> Initiator.
 import { readFileSync, writeFileSync } from 'node:fs';
 
-// Slice out just the exported comparator — combat.ts's other imports need the DOM.
-const srcUrl = process.argv[2] ?? new URL('../src/combat.ts', import.meta.url);
+// Slice out just the exported comparator. It lives in units.ts since the engine
+// reads a Terminal's roll with it (audit Phase 7, P7C 2); combat.ts re-exports it.
+const srcUrl = process.argv[2] ?? new URL('../src/units.ts', import.meta.url);
 const src = readFileSync(srcUrl, 'utf8');
 const start = src.indexOf('export function resolveCounterRoll');
-const end = src.indexOf('interface EwCtx');
+const end = src.indexOf('// Whether the Initiator won a SETTLED Counter-roll');
 if (start < 0 || end < 0) throw new Error('could not locate resolveCounterRoll in ' + srcUrl);
 const tmp = new URL('./_counterroll.slice.ts', import.meta.url);
 writeFileSync(tmp, src.slice(start, end));

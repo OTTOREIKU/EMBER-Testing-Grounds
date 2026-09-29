@@ -91,10 +91,13 @@ for (const m of missions.cards ?? []) {
   for (const x of mechanicsFor(String(m.setup ?? ''), String(m.scoring ?? ''))) reach.set(x.id, reach.get(x.id) + 1);
 }
 
+// Punch/Kick and Crawl are Common Actions no card prints, and "kick", "punch"
+// or "crawl" would reach the Part Kicks and the Electro Punch (audit Phase 7,
+// P7B).
 check('only the Rules-tab generals reach no card or mission',
   [...reach].filter(([, n]) => n === 0).map(([id]) => id).sort(),
-  ['activation_order', 'deployment', 'end_phase', 'integrity_loss', 'main_task_cards',
-   'reboot', 'secondary_task_cards', 'squad_building', 'tactics_cards',
+  ['activation_order', 'crawl', 'deployment', 'end_phase', 'integrity_loss', 'main_task_cards',
+   'punch_kick', 'reboot', 'secondary_task_cards', 'squad_building', 'tactics_cards',
    'victory_points']);
 
 // The four written for the reference audit, pinned to what they should hit so a

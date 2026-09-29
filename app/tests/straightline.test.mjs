@@ -99,7 +99,8 @@ const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8')
 check('the crushSwap ceiling knows the bonus reach',
   (cmds.match(/reach = Math\.max\(reach, \(a\.range \?\? 0\) \+ straightLineBonus\(a\)\)/g) ?? []).length, 2);
 check('freeplay hands the Movement Action to its MoveOpts', /straightBonus: straightLineBonus\(action\),/.test(main), true);
-check('and the Match Centre to both of its builders', (hud.match(/straightBonus: straightLineBonus\(actionId \? actionOn\(ctx, t, actionId\) : null\)/g) ?? []).length, 2);
+// One builder: the overlay reads moveOptsFor too (audit Phase 7, P7D 6).
+check('and the Match Centre to its one builder', (hud.match(/straightBonus: straightLineBonus\(actionId \? actionOn\(ctx, t, actionId\) : null\)/g) ?? []).length, 1);
 check('the Match Centre route extension names the Action', /moveOptsFor\(ctx, t, m\.flying, m\.actionId\)/.test(hud), true);
 check('and so does its overlay', /reachableFor\(ctx, t, movePlan\.steps, movePlan\.flying \|\| !!t\.aerial, movePlan\.actionId\)/.test(hud), true);
 

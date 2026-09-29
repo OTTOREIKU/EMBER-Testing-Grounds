@@ -120,7 +120,8 @@ check('the Mode-change branch pays before it returns',
 // takes the Bit back.
 // Twenty-seven since the second Phase 5 pass (F8): the KK9's Overwatch Strike
 // pays its Action, then calls the strike.
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 27);
+// Twenty-eight since P7A: the Discard names its Part, then pays (audit Phase 7).
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 28);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //
@@ -398,8 +399,9 @@ check('and freeplay now ends it in the same Grid',
   /const held = walk\[walk\.length - 1\] \?\? \{ col: t\.col, row: t\.row \};[\s\S]*?settle\(held\.col, held\.row\);/.test(commitFn), true);
 // The one settle that may still read the token is the exchange's, and only
 // because the crushSwap has already moved it there.
+// It says so now, for The Red Shoes' record of it (audit Phase 7, P7D 1).
 check('the crusher\'s own position is settled from the token only after it was placed',
-  /if \(placed\) \{\s*\n\s*settle\(t\.col, t\.row\);/.test(commitFn), true);
+  /if \(placed\) \{\s*\n\s*settle\(t\.col, t\.row, true\);/.test(commitFn), true);
 
 // ---------- Electronic Value "-" cannot be a Responder (4.11.2) ----------
 // Found re-reading 4.11 against the engine. The rule distinguishes two things

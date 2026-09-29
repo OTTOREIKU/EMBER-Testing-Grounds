@@ -70,11 +70,17 @@ check('so is the Crush exchange', /case 'crushSwap': \{\s*\n\s*if \(state\.noBoa
 // over the whole case, since a fixed window drifted past the Melee Lock.
 const perfAt = cmds.indexOf("case 'performAction': {");
 const perfCheck = cmds.slice(perfAt, cmds.indexOf("\n    case '", perfAt + 10));
-check('performAction reads the board in three places, and gates each',
-  (perfCheck.match(/noBoard/g) ?? []).length === 3
-    && /loanedParts\(data, state\.tokens, t, \{ anywhere: !!state\.noBoard \}\)/.test(perfCheck)
+// A fourth since P7A: a Throw's free hand may be a Load lent in Contact, which
+// a table with no board judges anywhere (audit Phase 7, P7A 6). A fifth since
+// P7C: a Reveal or Scan with nothing to change is refused through the rows'
+// own reading, told whether there is a board (audit Phase 7, P7C 8), which
+// names `noBoard` twice.
+check('performAction reads the board in five places, and gates each',
+  (perfCheck.match(/noBoard/g) ?? []).length === 6
+    && (perfCheck.match(/loanedParts\(data, state\.tokens, t, \{ anywhere: !!state\.noBoard \}\)/g) ?? []).length === 2
     && /remoteAccessWhy\(normaliseTasks\(state\.tasks\)\.items, t, a\.range \?\? 4, state\.noBoard \? null : zoneCells\(data, state\)\)/.test(perfCheck)
-    && /if \(a\.type === 'Firing' && !isMeleeFiring\(a\) && !state\.noBoard\)/.test(perfCheck), true);
+    && /if \(a\.type === 'Firing' && !isMeleeFiring\(a\) && !state\.noBoard\)/.test(perfCheck)
+    && /actionIdleWhy\(data, t, a, \{ tokens: state\.tokens, noBoard: !!state\.noBoard \}\)/.test(perfCheck), true);
 check('applyPenetration stays ungated', /noBoard/.test(cmds.slice(cmds.indexOf("case 'applyPenetration': {"), cmds.indexOf("case 'applyPenetration': {") + 1200)), false);
 
 check('the pad\'s tables are born without a board', /noBoard: true,\s*\n\s*\};\s*\n\}\s*\n\s*\nlet table: GameState = freshTable\(\);/.test(pad), true);

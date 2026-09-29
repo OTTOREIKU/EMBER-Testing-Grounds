@@ -184,7 +184,8 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   // Manifestation a single event, so a mirror replaying it sees one hop rather
   // than a unit standing revealed on its marker for a frame.
   check('the reveal command can carry a destination', /kind: 'reveal';[^\n]*to\?: \{ col: number; row: number \}/.test(cmds), true);
-  const rev = cmds.slice(cmds.indexOf("case 'reveal': {"), cmds.indexOf("case 'reveal': {") + 3800);
+  // Wider since a strict table's backing is asked first (ruled R1; audit Phase 7, P7C 1).
+  const rev = cmds.slice(cmds.indexOf("case 'reveal': {"), cmds.indexOf("case 'reveal': {") + 5200);
   check('and the command judges the distance itself', /manifestationRange\(data, t\)/.test(rev), true);
   check('refusing anything beyond the Stealth value', /if \(away > range\)/.test(rev), true);
   check('and anywhere the unit does not fit', /does not fit there/.test(rev), true);
@@ -258,12 +259,14 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
 
   // The debt is answerable: a panel for it, and an answer that opens the picker.
   check('the Match Centre draws a panel for the Scan debt', /r\.kind === 'manifest'/.test(hud), true);
+  // While the unit is still hidden: the Reveal itself pays the debt (ruled R7; audit Phase 7, P7C 7).
   check('whose answer opens the same Manifestation picker',
-    /r\.kind === 'manifest'\) \{\s*\n\s*openManifest\(ctx, t, 'Scanned:'\)/.test(hud), true);
+    /r\.kind === 'manifest' && statusCount\(t\.statuses, 'camouflage'\) > 0\) \{\s*\n\s*openManifest\(ctx, t, 'Scanned:'\)/.test(hud), true);
 
   // Targeting is a rule, so the COMMAND refuses a pointless Scan rather than
   // the button merely not being drawn.
-  const scanGate = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'startCounterRoll': {") + 5000);
+  // Wider since the paid Action's gate is asked first (ruled R2; audit Phase 7, P7C 2).
+  const scanGate = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'startCounterRoll': {") + 7500);
   check('the counter-roll command refuses a Scan with nothing to do',
     /isScanAction\(a\) && !scannable\(target\)/.test(scanGate), true);
 
@@ -288,16 +291,21 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
     /kind: 'manifest', fromUid: uid/.test(win) && /ewWinCommands\(/.test(hud), true);
   // 2. Freeplay consumes reactions per-kind and had no manifest branch, so a
   //    Scan debt fell through toward the Emergency Smoke default.
+  // The debt is no longer cleared before the picker: the Reveal pays it, so a
+  // reload leaves it owed, and one picker per unit (revealOpen) keeps the
+  // prompt from firing twice (ruled R7; audit Phase 7, P7C 7).
   check('freeplay answers a manifest debt with the picker',
-    /r\.kind === 'manifest'\) \{[\s\S]{0,400}?offerManifestation\(defender, 'Scanned:'\)/.test(main), true);
-  check('clearing the debt before the picker so it cannot re-fire',
-    /r\.kind === 'manifest'\) \{\s*\n\s*perform\(data, state, \{ kind: 'resolveReaction'/.test(main), true);
+    /r\.kind === 'manifest'\) \{[\s\S]{0,1400}?offerManifestation\(defender, 'Scanned:'\)/.test(main), true);
+  check('the Reveal pays the debt, and one picker per unit keeps it from re-firing',
+    /if \(revealOpen\.has\(defender\.uid\)\) return;\s*\n\s*revealOpen\.add\(defender\.uid\);\s*\n\s*void offerManifestation\(defender, 'Scanned:'\)/.test(main)
+      && /sc\.reactions = \(sc\.reactions \?\? \[\]\)\.filter\(\(r\) => !\(r\.uid === t\.uid && r\.kind === 'manifest'\)\);/.test(cmds), true);
   // 3. Freeplay opens the helper directly, never sending startCounterRoll, so
   //    the command-layer target gate cannot fire there - the click asks it,
   //    since the audit's Phase 3 (D6) by asking that command's own check,
   //    whose Scan clause is `isScanAction(a) && !scannable(target)`.
+  // Asked of the table as it will stand once the Action is paid (ruled R2; audit Phase 7, P7C 2).
   check('the freeplay click refuses a pointless Scan',
-    /const verdict = check\(data, state, \{ kind: 'startCounterRoll', seat: attacker\.side, uid: attacker\.uid, actionId: action\.id, targetUid: defender\.uid \}\);/.test(main)
+    /const verdict = checkAfter\(data, state, pay, \{ kind: 'startCounterRoll', seat: attacker\.side, uid: attacker\.uid, actionId: action\.id, targetUid: defender\.uid \}\);/.test(main)
       && /isScanAction\(a\) && !scannable\(target\)/.test(cmds), true);
 }
 

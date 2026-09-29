@@ -322,8 +322,10 @@ C.setLocalSeat(null);
 // button must go through the same function this file drives rather than a
 // second inlined copy of the sequence, and freeplay has to honour the verdict
 // too or the same press behaves differently on the two pages.
+// A greyed step (done, or waiting on the steps above) says its reason first
+// and sends nothing (audit Phase 7, P7D 9).
 check('the HUD button goes through settleEndStep',
-  /on\('\[data-endstep\]', \(el\) => settleEndStep\(ctx, me\(\), el\.dataset\.endstep!\)\);/.test(hud), true);
+  /on\('\[data-endstep\]', \(el\) => \{\s*if \(el\.dataset\.why\) \{ ctx\.noteNow\(el\.dataset\.why\); ctx\.refresh\(\); return; \}\s*settleEndStep\(ctx, me\(\), el\.dataset\.endstep!\);\s*\}\);/.test(hud), true);
 // One, and only one: the End Phase step above. The manual +1 a local game keeps
 // sends `adjustVp` now, which touches the VP and nothing else (audit Phase 6,
 // D3). A second Award would be a second copy of the sequence, which is how the

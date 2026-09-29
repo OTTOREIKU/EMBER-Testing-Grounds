@@ -743,8 +743,9 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
   const mainSrc = src('main.ts'), hud = src('matchhud.ts');
   check('the freeplay board fills the flag in its single moveOpts helper',
     (mainSrc.match(/phaseThrough: phasesThroughUnits\(data, state\.tokens, t\)/g) ?? []).length, 1);
-  check('and the Match Centre fills it in BOTH of its builders',
-    (hud.match(/phaseThrough: phasesThroughUnits\(ctx\.data, ctx\.state\.tokens, t\)/g) ?? []).length, 2);
+  // One builder now: the overlay reads moveOptsFor (audit Phase 7, P7D 6).
+  check('and the Match Centre fills it in its one builder',
+    (hud.match(/phaseThrough: phasesThroughUnits\(ctx\.data, ctx\.state\.tokens, t\)/g) ?? []).length, 1);
   // Route only: the landing test is untouched, so a phased Grid is crossable
   // but never a place to stop.
   // `found`, since the search runs over Grid and Link spent together (audit
@@ -999,8 +1000,9 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
   // read this function, and none of them had to learn about the trait.
   check('crushTargets still takes exactly its five original arguments',
     /export function crushTargets\(\s*t: Token,\s*c: number,\s*r: number,\s*terrain: TerrainPiece\[\],\s*tokens: Token\[\],\s*\): CrushVictims \| null/.test(rules), true);
-  check('so all six call sites are unchanged and cannot disagree',
-    ((src('main.ts') + src('matchhud.ts')).match(/crushTargets\(t, /g) ?? []).length, 6);
+  // Five: the Match Centre overlay's own copy went with its builder (P7D 6).
+  check('so all five call sites are unchanged and cannot disagree',
+    ((src('main.ts') + src('matchhud.ts')).match(/crushTargets\(t, /g) ?? []).length, 5);
   // The RULING, pinned: the trait adds a target class, not a crusher class.
   check('the "only a Large Unit Crushes" gate is untouched',
     /if \(t\.size !== 3 \|\| t\.aerial\) return null;/.test(rules), true);
@@ -1035,8 +1037,9 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
   // refuses.
   check('the freeplay board prices Break Away through breakAwayCost',
     (mainSrc.match(/const away = flying \|\| t\.aerial \? undefined : breakAwayCost\(/g) ?? []).length, 1);
-  check('and the Match Centre does it in BOTH of its builders',
-    (hud.match(/breakAwayCost\(ctx\.data, t, ctx\.state\.tokens, terrain\)/g) ?? []).length, 2);
+  // One builder now: the overlay reads moveOptsFor (audit Phase 7, P7D 6).
+  check('and the Match Centre does it in its one builder',
+    (hud.match(/breakAwayCost\(ctx\.data, t, ctx\.state\.tokens, terrain\)/g) ?? []).length, 1);
   // The disclosure has to reach both too, or the "or 1 Link" alternative exists
   // on one page only — which for this rule is the same as not existing.
   check('and both boards print the same Break Away sentence from the same helper',

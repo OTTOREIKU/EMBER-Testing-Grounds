@@ -53,8 +53,9 @@ check('no hand free means no designation, rather than a free upgrade',
   /if \(!hands\.length\) return null;/.test(units), true);
 // A hand carrying a Black Box is already excluded upstream, which is what makes
 // applying it safe rather than presumptuous.
+// The acting Part is left out, a separate Part being the rule (audit Phase 7, P7A 4).
 check('the free hands come from the same reader the Black Box rules use',
-  /const hands = freehandSlots\(data, t, taken, loans\);/.test(units), true);
+  /const hands = freehandSlots\(data, t, self \? \[\.\.\.taken, self\] : taken, loans\);/.test(units), true);
 
 // ---------- It is reported, not silent ----------
 // Keyed on the note itself, not on the icon that precedes it: this read `✋`

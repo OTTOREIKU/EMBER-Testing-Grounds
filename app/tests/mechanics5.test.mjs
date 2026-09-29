@@ -844,6 +844,11 @@ check('G4p the attack and launch find a lent Action', [/function commitDeclared\
   check('C1 the walk stops in the mined Grid with the rest kept back', [send(s, first).ok, s.script.opp?.mineHalt], [true, left]);
   check('C1 and the Mine owes its blast, the walker caught in it', U.minesOwed(data, s.tokens).some((x) => x.uid === mine.uid && x.victims.includes(walker.uid)), true);
   const on = { kind: 'maneuver', seat: 's1', uid: walker.uid, to: G(5, 6 - left), resume: true };
+  // The blast first: the Go on waits while it is owed on the walker, and its
+  // owner resolves it before the rest is judged (ruled R4; audit Phase 7, P7D 4).
+  check('C1 not while the Mine\'s blast is still owed on it', ok(s, on), false);
+  send(s, { kind: 'despawn', seat: 's2', uid: mine.uid, targetUid: mine.uid });
+  check('C1 the blast resolved, the Mine is gone', s.tokens.some((x) => x.uid === mine.uid), false);
   check('C1 it goes no further than the Grids left', ok(s, { ...on, to: G(5, 5 - left) }), false);
   walker.partStates.chasis = 'destroyed';
   check('C1 and not at all on a destroyed Chassis', ok(s, on), false);
@@ -1224,7 +1229,8 @@ check('G4p the attack and launch find a lent Action', [/function commitDeclared\
 
   // The Pholcus rack launches the folded Pholcus only (FAQ M18.3).
   const r = freeTable();
-  const rack = put(r, 's1', L({ backpack: '082' }), 5, 5);
+  // A free hand: the rack's Pholcus is Thrown (4.17; audit Phase 7, P7A 6).
+  const rack = put(r, 's1', L({ backpack: '082', leftHand: '037' }), 5, 5);
   const offered = U.guidedActions(data, rack).find((g) => g.action.id === '082_A')?.projectiles.map((c) => c.id);
   check('A8 the Pholcus rack offers the folded Pholcus, not the Unfolded Drone', offered, ['156']);
   const launch = (cardId) => ({ kind: 'launch', seat: 's1', uid: rack.uid, actionId: '082_A', cardId, to: G(5, 4), facing: 0 });

@@ -254,9 +254,13 @@ async function strike(cardId, actionId, slot, boost) {
   const chk = cmdsSrc.slice(cmdsSrc.indexOf("case 'disarm': {"), cmdsSrc.indexOf("case 'disarm': {") + 1300);
   check('the command refuses a Part with no Discard Card', /has no Discard Card/.test(chk), true);
   check('and a destroyed Part', /destroyed, so there is no card left to flip/.test(chk), true);
-  const apply = cmdsSrc.slice(cmdsSrc.lastIndexOf("case 'disarm': {"), cmdsSrc.lastIndexOf("case 'disarm': {") + 700);
+  const apply = cmdsSrc.slice(cmdsSrc.lastIndexOf("case 'disarm': {"), cmdsSrc.lastIndexOf("case 'disarm': {") + 900);
+  // The flip moved into units.ts discardPartOn, the one door the Discard Action
+  // shares, which also drops the old card's pools (audit Phase 7, P7A 5).
+  const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
+  const door = unitsSrc.slice(unitsSrc.indexOf('export function discardPartOn'), unitsSrc.indexOf('export function discardPartOn') + 900);
   check('the face is DERIVED in apply, never carried on the wire',
-    /discardFaceOf\(data, from\)/.test(apply) && /far\.id/.test(apply), true);
+    /discardPartOn\(data, target, cmd\.slot as PartSlot\)/.test(apply) && /discardFaceOf\(data, from\)/.test(door) && /into\.id/.test(door), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

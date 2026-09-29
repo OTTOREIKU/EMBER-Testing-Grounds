@@ -278,6 +278,11 @@ const grantBlock = unitsSrc.slice(
   unitsSrc.indexOf('// Pulse Weapon: "May exchange'),
 );
 if (!grantBlock) throw new Error('could not locate the grant block in units.ts');
+// disarmOn: performAction records the Disarm an Action printing it may cause,
+// and `disarm` spends it (ruled R3; audit Phase 7, P7A 8). The DISARM block's
+// own export, which no other cut here touches.
+const disarmReader = unitsSrc.slice(unitsSrc.indexOf('export function disarmOn'), unitsSrc.indexOf("// The other half of 050's choice"));
+if (!disarmReader) throw new Error('could not locate disarmOn in units.ts');
 // The Maneuver Value, and the Part bonuses that raise it (3.4.3, 4.1, FAQ
 // E21/E23). Sliced rather than stubbed for the reason every other cut here is:
 // HOW FAR a Unit can move is the rule the crushSwap reach bound is measured
@@ -524,6 +529,7 @@ writeFileSync(
     + phase2
     + grants
     + grantBlock
+    + disarmReader
     // The name cleaner commands.ts imports (renameUnit, importSquad, rollbackRequest).
     + readFileSync(new URL('../src/safetext.ts', import.meta.url), 'utf8')
     + commands.replace(/^import[^\n]*\n/gm, ''),
@@ -617,7 +623,8 @@ const data = {
     // Movement by the Maneuver Value; audit Phase 4, E8).
     ['167', { id: '167', category: 'drone', stance: 'mobility', score: 0, move: 4, actions: [{ id: '167_A', type: 'Detonation', speed: 'auto', range: 1, yellowDice: 6, name: { en: 'Automatic Attack' } }] }],
   ]),
-  commonActions: [{ id: 'COMMON_CHARGE', type: 'Tactic', size: 's', name: { en: 'Charge' } }],
+  // Swift, as p.91 prints it (audit Phase 7, P7A 1).
+  commonActions: [{ id: 'COMMON_CHARGE', type: 'Swift', size: 's', name: { en: 'Charge' } }],
   overload: [{ actionId: '090_A', card: '090', label: 'Overload' }],
   zoneData: { zones: [] },
   secondary: [

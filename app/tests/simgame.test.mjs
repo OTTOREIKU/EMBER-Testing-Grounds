@@ -108,6 +108,25 @@ const grantBlock = unitsSrc.slice(
   unitsSrc.indexOf('// Pulse Weapon: "May exchange'),
 );
 if (!grantBlock) throw new Error('could not locate the grant block in units.ts');
+// disarmOn: every simulated performAction records the Disarm an Action printing
+// it may cause (ruled R3; audit Phase 7, P7A 8). No other cut touches it.
+const disarmReader = unitsSrc.slice(unitsSrc.indexOf('export function disarmOn'), unitsSrc.indexOf("// The other half of 050's choice"));
+if (!disarmReader) throw new Error('could not locate disarmOn in units.ts');
+// freehandSlots: a Throw Action needs a free hand, and a random game throws
+// Beacons (ruled R7; audit Phase 7, P7A 6). The cut ends where commandGen
+// begins and starts where `grants` ends, so nothing is declared twice.
+const freehand = unitsSrc.slice(unitsSrc.indexOf('export function freehandSlots'), unitsSrc.indexOf('// ---------- Commands (rulebook 3.2.1) ----------'));
+if (!freehand) throw new Error('could not locate freehandSlots in units.ts');
+// The Action classifiers every simulated performAction now asks, for the
+// Counter-roll and the camouflage it pays for (ruled R1, R2; audit Phase 7,
+// P7C 1, 2): the real ones, each a single function no other cut touches.
+const fnCut = (name) => {
+  const i = unitsSrc.indexOf(`export function ${name}(`);
+  if (i < 0) throw new Error(`could not locate ${name} in units.ts`);
+  return unitsSrc.slice(i, unitsSrc.indexOf('\n}\n', i) + 3);
+};
+const camoLine = unitsSrc.slice(unitsSrc.indexOf('const CAMO_ACTIVATES'), unitsSrc.indexOf('\n', unitsSrc.indexOf('const CAMO_ACTIVATES')) + 1);
+const classifiers = camoLine + fnCut('activatesCamo') + fnCut('isScanAction') + fnCut('isElectronicAttack');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_simgame.slice.ts', import.meta.url);
@@ -265,6 +284,13 @@ export function makeMechToken(state: any, data: any, loadout: any, side: any, na
 // files drive the real ones.
 export function selfStatusGrant(_a: any): any { return null; }
 export function selfGrantWhy(_t: any, _g: any): any { return null; }
+// Phase 7's P7C readers (audit Phase 7, P7C 1, 4, 8): no simulated game here
+// performs a Reveal or a Scan with nothing to change, hides a unit or makes a
+// Multi-Target, so each is stubbed neutral; mechanics7.test.mjs drives the
+// real ones.
+export function actionIdleWhy(_d: any, _t: any, _a: any, _w?: any): string | null { return null; }
+export function camoBrokenBy(_d: any, _tokens: any[], _t: any): any { return undefined; }
+export function multiTargetLimit(_a: any, _designated?: boolean): any { return undefined; }
 export function isRwsAction(_a: any): boolean { return false; }
 export function rwsCommandKey(round: number, uid: number): string { return round + ':rwscmd:' + uid; }
 export function rwsFiredKey(round: number, uid: number, id: string): string { return round + ':rws:' + uid + ':' + id; }
@@ -308,6 +334,9 @@ let sliceSrc =
   + grants
   + chargeParser
   + grantBlock
+  + disarmReader
+  + freehand
+  + classifiers
   // The name cleaner commands.ts imports (renameUnit, importSquad, rollbackRequest).
   + readFileSync(new URL('../src/safetext.ts', import.meta.url), 'utf8')
   + commands.replace(/^import[^\n]*\n/gm, '');

@@ -67,6 +67,10 @@ const send = (s, cmd) => {
   return v;
 };
 const ok = (s, cmd) => M.check(data, s, cmd).ok;
+// The Action a Counter-roll rides on, paid: a strict table opens only the roll it buys (ruled R2; audit Phase 7, P7C 2).
+const owe = (s, t, actionId) => { s.script.counterOwed = { uid: t.uid, actionId }; };
+// A Reveal owed, as a strict table now asks of every Reveal (ruled R1; audit Phase 7, P7C 1).
+const oweReveal = (s, t) => { s.script.revealDue = [...(s.script.revealDue ?? []), { uid: t.uid, why: 'act' }]; };
 const card = (cardId, actionId) => data.byId.get(cardId)?.actions?.find((a) => a.id === actionId);
 const common = (id) => data.commonActions.find((a) => a.id === id);
 const due = (s) => (s.script.revealDue ?? []).map((d) => `${d.uid}:${d.why}${d.byUid !== undefined ? `@${d.byUid}` : ''}`);
@@ -107,6 +111,7 @@ console.log('Phase 3: stealth and electronic warfare\n');
   // C1: Range counted orthogonally (4.2.1): Stealth 2 reaches 12 Grids, not 24.
   const s = table();
   const oct = put(s, 's1', L({ torso: '096' }), 6, 6, { statuses: ['camouflage'] });
+  oweReveal(s, oct);
   const spots = U.manifestTargets(data, s.tokens, [], oct, s);
   check('C1 Stealth 2 offers the 12 Grids within Range 2', spots.length, 12);
   check('C1 the reveal refuses a diagonal two Grids out (Range 4)', ok(s, { kind: 'reveal', seat: 's1', uid: oct.uid, to: G(8, 8) }), false);
@@ -123,6 +128,7 @@ console.log('Phase 3: stealth and electronic warfare\n');
   // C6: FAQ I20, "Revealed in place, but it cannot move".
   const s = table();
   const oct = put(s, 's1', L({ torso: '096' }), 6, 6, { statuses: ['camouflage', 'immobilized'] });
+  oweReveal(s, oct);
   check('C6 an Immobilized unit is offered nowhere', U.manifestTargets(data, s.tokens, [], oct, s).length, 0);
   check('C6 a hop is refused, a Reveal in place is not',
     [ok(s, { kind: 'reveal', seat: 's1', uid: oct.uid, to: G(7, 6) }), ok(s, { kind: 'reveal', seat: 's1', uid: oct.uid })], [false, true]);
@@ -206,6 +212,8 @@ console.log('Phase 3: stealth and electronic warfare\n');
   const plain = put(s, 's1', L(), 5, 2);
   const foe = put(s, 's2', L({ torso: '096', pilot: 'FPA-01' }), 8, 2);
   const cam = (seat, t) => ok(s, { kind: 'applyStatus', seat, uid: t.uid, targetUid: t.uid, statusId: 'camouflage' });
+  // Its Activate Optical Camouflage Action paid, which a strict table now asks for (ruled R1; audit Phase 7, P7C 1).
+  s.script.camoOwed = { uid: oct.uid, actionId: '096_B' };
   check('C11 camouflage goes on one\'s own unit with a camouflage Part',
     [cam('s1', oct), cam('s1', plain), ok(s, { kind: 'applyStatus', seat: 's1', uid: oct.uid, targetUid: foe.uid, statusId: 'camouflage' })], [true, false, false]);
   const cloak = put(s, 's1', L({ backpack: 'ZYBP-201' }), 11, 2, { statuses: ['camouflage'] });
@@ -234,6 +242,7 @@ console.log('Phase 3: stealth and electronic warfare\n');
   const hidden = put(s, 's2', L({ torso: '096', pilot: 'FPA-01' }), 9, 2, { statuses: ['camouflage'] });
   const free = (actionId, over = {}) => ({ kind: 'startCounterRoll', seat: 's1', uid: gun.uid, actionId: 'COMMON_SCAN', targetUid: hidden.uid, thenAttack: { actionId }, ...over });
   // A3/F8: the free Scan at the attack's own reach: R6 rifle, target at Range 7.
+  owe(s, gun, '058_A');
   check('A3 a free Scan past the attack\'s reach is refused', ok(s, free('058_A')), false);
   hidden.col = G(8, 2).col;
   check('A3 at the attack\'s Range 6 it opens, where the Common Scan is Range 6 too', ok(s, free('058_A')), true);
@@ -241,10 +250,13 @@ console.log('Phase 3: stealth and electronic warfare\n');
   // Common Action: Scan, aside from its range" (FAQ I18).
   const sniper = put(s, 's1', L({ leftHand: '552' }), 2, 8, { facing: 1 });
   const distant = put(s, 's2', L({ torso: '096', pilot: 'FPA-01' }), 10, 8, { statuses: ['camouflage'] });
+  owe(s, sniper, '552_B');
+  const far12 = ok(s, { kind: 'startCounterRoll', seat: 's1', uid: sniper.uid, actionId: 'COMMON_SCAN', targetUid: distant.uid, thenAttack: { actionId: '552_B' } });
+  owe(s, sniper, 'COMMON_SCAN');
   check('A3 a free Scan reaches as far as an R12 attack, past the Common Scan\'s 6',
-    [ok(s, { kind: 'startCounterRoll', seat: 's1', uid: sniper.uid, actionId: 'COMMON_SCAN', targetUid: distant.uid, thenAttack: { actionId: '552_B' } }),
-      ok(s, { kind: 'startCounterRoll', seat: 's1', uid: sniper.uid, actionId: 'COMMON_SCAN', targetUid: distant.uid })], [true, false]);
+    [far12, ok(s, { kind: 'startCounterRoll', seat: 's1', uid: sniper.uid, actionId: 'COMMON_SCAN', targetUid: distant.uid })], [true, false]);
   const behind = put(s, 's2', L({ torso: '096', pilot: 'FPA-01' }), 1, 2, { statuses: ['camouflage'] });
+  owe(s, gun, '058_A');
   check('F8 and the attack must be able to designate the marker: not behind it', ok(s, free('058_A', { targetUid: behind.uid })), false);
   // A1/D1: the one reading of a won Scan: Tokens off, the Reveal and the attack queued.
   const win = U.ewWinCommands(data, gun, hidden, common('COMMON_SCAN'), { thenAttack: { actionId: '058_A' } });
@@ -253,8 +265,10 @@ console.log('Phase 3: stealth and electronic warfare\n');
   // A5/F9: a Scan measures from the scanner, never through a Repeater.
   const far = put(s, 's2', L({ torso: '096', pilot: 'FPA-01' }), 2, 11, { statuses: ['camouflage'] });
   droneOn(s, 's1', '165', 2, 6);
+  owe(s, gun, 'COMMON_SCAN');
   check('A5 a Scan out of its own Range is refused, a Repeater near or not',
     ok(s, { kind: 'startCounterRoll', seat: 's1', uid: gun.uid, actionId: 'COMMON_SCAN', targetUid: far.uid }), false);
+  owe(s, gun, '089_A');
   check('A5 while an Electronic Attack at the same unit goes through the Repeater',
     ok(s, { kind: 'startCounterRoll', seat: 's1', uid: gun.uid, actionId: '089_A', targetUid: far.uid }), true);
 }
@@ -267,6 +281,7 @@ console.log('Phase 3: stealth and electronic warfare\n');
   put(s, 's2', L({ pilot: 'FPA-01' }), 4, 2);
   check('A4 080_A is a Scan', U.isScanAction(card('080', '080_A')), true);
   check('A4 it names the scannable enemies in Range', U.electronicAllTargets(data, s.tokens, hyena, card('080', '080_A')).map((x) => x.uid), [a.uid, b.uid]);
+  owe(s, hyena, '080_A');
   send(s, { kind: 'startCounterRoll', seat: 's1', uid: hyena.uid, actionId: '080_A', targetUid: a.uid });
   check('A4 one Counter-roll now, the rest queued', [s.script.counter?.responderUid, s.script.counter?.rest], [a.uid, [b.uid]]);
   send(s, { kind: 'clearCounterRoll', seat: 's1' });
@@ -291,8 +306,10 @@ console.log('Phase 3: stealth and electronic warfare\n');
     U.ewWinCommands(data, al, foe, card('TM35NA', 'TM35NA_B')).cmds.flatMap((c) => c.items ?? []).map((i) => `${i.kind}:${i.uid}>${i.fromUid}`), [`control:${al.uid}>${foe.uid}`]);
   // D5: only an Electronic Attack, a Scan or Target Tracing opens one, and
   // only at the kinds the card prints.
+  owe(s, al, '041_A');
   check('D5 a Firing Action opens no Counter-roll', ok(s, { kind: 'startCounterRoll', seat: 's1', uid: al.uid, actionId: '041_A', targetUid: foe.uid }), false);
   const missile = droneOn(s, 's2', '075', 3, 3, { kind: 'projectile' });
+  owe(s, al, '097_B');
   check('D5 Manipulation Interference names a Mech or a Drone, not a Projectile',
     [ok(s, { kind: 'startCounterRoll', seat: 's1', uid: al.uid, actionId: '097_B', targetUid: foe.uid }), ok(s, { kind: 'startCounterRoll', seat: 's1', uid: al.uid, actionId: '097_B', targetUid: missile.uid })], [true, false]);
   // D4: a "-" cannot be the Responder (4.11.2, I25).
@@ -301,6 +318,7 @@ console.log('Phase 3: stealth and electronic warfare\n');
   // Through the EC50 Pod, whose Fire Control Interference names any unit, so
   // only the dash can be what refuses the Mine.
   const pod = put(s, 's1', L({ backpack: '089' }), 2, 6);
+  owe(s, pod, '089_A');
   check('D4 and cannot be the Responder of an Action that names any unit',
     [ok(s, { kind: 'startCounterRoll', seat: 's1', uid: pod.uid, actionId: '089_A', targetUid: foe.uid }), ok(s, { kind: 'startCounterRoll', seat: 's1', uid: pod.uid, actionId: '089_A', targetUid: mine.uid })], [true, false]);
 }

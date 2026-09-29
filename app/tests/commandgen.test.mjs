@@ -425,8 +425,12 @@ const pickSrc = readFileSync(new URL('../src/commandpick.ts', import.meta.url), 
 // to spot (BUG-2). The ordering pinned here is unchanged: declare, then set the
 // allowance, because the -1 comes out of the allowance (GoF 1.021; was -2
 // when this pin was written from the card scan).
+// A turn-only Maneuver on a destroyed Chassis moves nowhere, so it is offered
+// no drag (FAQ E4; audit Phase 7, P7B 2).
+// Nor is a Movement The Red Shoes steers, whose player's Command Token is not
+// the controller's to spend (audit Phase 7, P7D).
 check('the Harpy drag is declared before the move',
-  /const drag = await offerHarpyDrag\(t, steps\);[\s\S]{0,600}?const range = drag \? steps - 1 : steps/.test(mainSrc), true);
+  /const drag = (?:pivotOnly (?:\|\| opts\.controller )?\? null : )?await offerHarpyDrag\(t, steps\);[\s\S]{0,600}?const range = drag \? steps - 1 : steps/.test(mainSrc), true);
 check('and the plan and the paint both take that one allowance',
   /steps: range/.test(mainSrc) && /showReachable\([^)]*range/.test(mainSrc), true);
 check('and it needs a Mech holding a face-up token', /readyCommands\(m\) > 0/.test(pickSrc), true);
