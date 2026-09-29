@@ -58,6 +58,15 @@ check('a parenthesis that is not a reference stays', [
   terse('Harpy drags Dragoon along (-1 Movement, 1 Command Token consumed).'), terse('Ammo left (3).'), terse('Pick a target (Esc cancels).')],
   ['Harpy drags Dragoon along (-1 Movement, 1 Command Token consumed).', 'Ammo left (3).', 'Pick a target (Esc cancels).']);
 check('the teaching voice keeps every word', N.speak('Reboot only (4.1.1).', 'teaching'), 'Reboot only (4.1.1).');
+// Drawn text in play (pick 4, 2026-09-29): the same cut, and nothing else moves.
+check('drawn text: a combat step loses its rule number and keeps its full stop',
+  N.stripRefs('Back Attack: choose the target Part below. No roll is needed (4.4.1).'), 'Back Attack: choose the target Part below. No roll is needed.');
+check('drawn text: a FAQ row goes the same way',
+  N.stripRefs(' [Two-Handed] declined: performed one-handed, with none of the rider (FAQ A16).'), ' [Two-Handed] declined: performed one-handed, with none of the rider.');
+check('drawn text: words beside a number stay', N.stripRefs('Flexible Timing (Command Coordination, 4.15.3)'), 'Flexible Timing (Command Coordination)');
+check('drawn text: the spaces a text node shares with its neighbours survive',
+  [N.stripRefs(' attacks '), N.stripRefs('Range 3 (4.2.2) '), N.stripRefs('Volley (3) ')], [' attacks ', 'Range 3 ', 'Volley (3) ']);
+check('drawn text: nothing to cut hands back the very same string', (() => { const t = 'Roll 3Y vs 4Y'; return N.stripRefs(t) === t; })(), true);
 
 // ---------- one line, one notice ----------
 const host = el('div');

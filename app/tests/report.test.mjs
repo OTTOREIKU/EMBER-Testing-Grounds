@@ -260,6 +260,11 @@ const index = src('../table/index.html');
 const refhtml = src('../reference/index.html');
 ok('freeplay has one in the setup rail', /id="btn-report"/.test(index));
 ok('the reference has one in its header', /id="ref-report"/.test(refhtml));
+// OTTO 2026-09-29: the publisher's rulebook page broke and looks unsafe, so the
+// Rules PDF link is hidden, and the report button takes the push to the right.
+ok('the Rules PDF link stays hidden while the publisher\'s page is broken', /<a id="ref-pdf" hidden /.test(refhtml));
+ok('and the report button takes its place on the right',
+  /#ref-pdf\[hidden\] \+ #ref-report \{ margin-left: auto; \}/.test(src('reference.css')));
 ok('the match centre has one in its bar', /id="mc-report"/.test(src('match.ts')));
 
 // TWO DOORS on the reference, and this is why: the detail sheet is a modal over

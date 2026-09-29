@@ -231,9 +231,17 @@ check('a watcher is never offered a rollback', /if \(!ctx\.networked \|\| !ctx\.
 const units = read('units.ts');
 check('electronicStrength is the one home for the rolled pool',
   units.includes('export function electronicStrength'), true);
-check('and it is the only place the EW Suppression aura is read',
+// The one other mention (2026-09-29) is aurasAtRoll, which only LISTS the aura
+// for a board-less table to confirm at the roll; the pool is still sized once.
+check('and it is the only place the EW Suppression aura sizes a pool',
   [main, hud, guide, read('combat.ts'), read('commands.ts'), units]
-    .reduce((n, src) => n + (src.match(/electronic_contest_strength_penalty/g) ?? []).length, 0), 1);
+    .reduce((n, src) => n + (src.match(/electronic_contest_strength_penalty/g) ?? []).length, 0), 2);
+check('...the other mention being the list the table confirms at the roll, which never sums a Strength',
+  (() => {
+    const at = units.indexOf('export function aurasAtRoll');
+    const body = units.slice(at, units.indexOf('\n}\n', at));
+    return at > 0 && body.includes('electronic_contest_strength_penalty') && !/auraValueOn|electronicStrength/.test(body);
+  })(), true);
 // The Match Centre's seams MOVED: Electronic Warfare is resolved in the combat
 // window now, so the pool is sized by the one renderer (showContest, both
 // hands) and the page only rolls what it is asked for (contestAct).

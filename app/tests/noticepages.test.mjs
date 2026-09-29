@@ -93,6 +93,21 @@ check('tabletop: the Details pips a table will not correct by hand, and a Shove 
 check('tabletop: the toolbar Undo is greyed with nothing to take back, and names what it takes otherwise',
   [/syncSquadTints\(\);\s*syncUndoButton\(\);/.test(main), /b\.dataset\.why = 'Nothing left to undo\.';/.test(main)], [true, true]);
 
+// ---------- smoke on the table marks its units (OTTO, 2026-09-29) ----------
+check('pad: after a Smoke Screen is placed, one popup marks every unit now in smoke',
+  [/toast\(`\$\{proj\.label\}: \$\{smoke\.count\} Smoke Screen[\s\S]{0,260}await askInSmoke\(proj\.uid\);\s*nextDetonation\(\);/.test(pad),
+    /title: 'Are any units now in smoke\?',/.test(pad), /confirmLabel: 'Mark In smoke',\s*cancelLabel: 'None are',/.test(pad),
+    /statusCount\(u\.statuses, 'smoke'\) === 0/.test(pad),
+    /send\(\{ kind: 'applyStatus', \.\.\.sourceFor\(u\), targetUid: u\.uid, statusId: 'smoke', chain: 'join' \}\);/.test(pad)],
+  [true, true, true, true, true]);
+
+// ---------- no rule numbers in play (pick 4, OTTO 2026-09-29) ----------
+check('play pages read their drawn text in the line\'s voice, the Reference\'s own sheets kept',
+  [/speakInPlace\(document\.body, \{ keep: '#ref-detail, \.pad-find, \.ref-mech' \}\);/.test(pad),
+    /speakInPlace\(document\.body, \{ keep: '#card-tip, \.ref-mech', active: \(\) => !\(normaliseSetup\(state\.setup\) && !strictNow\(state\)\) \}\);/.test(main),
+    /speakInPlace\(document\.body, \{ keep: '#card-tip, \.ref-mech' \}\);/.test(match)],
+  [true, true, true]);
+
 // ---------- the pad's attack: declared in one panel (OTTO, 2026-09-29) ----------
 check('pad attack: the dialogs before the dice are gone, one declaration panel asks what they asked',
   [['Shock Attack ${shock}`,\n      body', "title: 'Arc',", "title: 'Grace Note',", "title: 'Stationary',", "title: 'Low Profile',",
@@ -123,8 +138,10 @@ check('review: a Scan first, an Electronic Attack and an Interception stop on th
     /case 'pick-target': \{[\s\S]{0,300}pickTarget\(targetFor, t, d\);/.test(pad),
     /void askTableAndIntercept\(t, actionId, d\)|void askTableAndElectronic\(t, actionId, d\)/.test(pad)],
   [true, true, false]);
-check('review: an aura taking Silence is the table\'s to judge with no board, and one line says both losses',
-  [/actionSilenceDenier\(data!, table\.tokens, now, a, undefined, undefined, \{ anywhere: true \}\);\s*if \(aura\) \{ void askSilenceAura\(now, a, aura\); return; \}/.test(pad),
+// Superseded the same day by the table's In reach record (aurareach.test.mjs):
+// the aura is read off the record and named in the line, which keeps its Undo.
+check('review: an aura taking Silence is read off the table\'s record, and one line says both losses',
+  [/const aura = actionSilenceDenier\(data!, table\.tokens, now, a\);\s*loseSilence\(now, a, aura \? /.test(pad),
     /\$\{shed \? ', and its Low Profile Token comes off' : ''\}/.test(pad)],
   [true, true]);
 check('review: the pad\'s Overwatch keeps its own checks where the shared reading defers to a board',
