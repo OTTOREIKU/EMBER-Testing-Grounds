@@ -65,13 +65,13 @@ import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { bindCollection, builtOnlyOn, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setBuiltOnly, setCollectionOn, shortfalls, type Collection } from '../src/collection';
 import { choiceDialog, confirmDialog, pickManyDialog, promptDialog } from '../src/dialog';
 import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updates';
-import { configureNotices, explainOnHold, notify, redrawNotice, type NoticeKind } from '../src/notices';
+import { configureNotices, explainOnHold, notify, redrawNotice, speakInPlace, type NoticeKind } from '../src/notices';
 import { boxHands, normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, vipFallen } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from '../src/tactics';
 import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop } from '../src/units';
 import { gameResult } from '../src/tasks';
-import { isSilentAction, actionSilenceDenier, auraReach, type AuraSource, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
+import { isSilentAction, actionSilenceDenier, auraReach, auraEffectsOf, auraActionOf, auraCanReach, auraReachable, inAuraReach, aurasAtRoll, type AuraAtRoll, actionRange, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { canManeuver, canPerform, costOf, lengthOf, LENGTH_NAME, markAction, markExtra, markManeuver, spendAction, spendManeuver, tickBarState, timingOf } from '../src/ticks';
 import { actionIdleWhy, cardFitsSquad, extrasFor, factionProblems, squadPoints, startOpts } from '../src/units';
 import { tickBar, type CapsuleShort } from '../src/glyphs';
@@ -273,7 +273,7 @@ onRefused((why) => refuse(why));
 // set up ahead of sitting down with someone.
 type Screen = 'signin' | 'register' | 'lobby' | 'collection' | 'table';
 // The panels that slide over the sheet. Null is the resting state: the sheet.
-type Panel = 'tasks' | 'find' | 'more' | 'build' | 'setup' | 'target' | 'combat' | 'inventory' | null;
+type Panel = 'tasks' | 'find' | 'more' | 'build' | 'setup' | 'target' | 'combat' | 'inventory' | 'aura' | null;
 type FindScope = 'all' | 'table' | 'parts' | 'units' | 'pilots' | 'tactics' | 'keywords' | 'tasks' | 'rules';
 
 let account: Account | null = null;
@@ -869,14 +869,21 @@ async function askAppease(): Promise<void> {
     const allies = table.tokens.filter((x) => x.kind === 'mech' && x.side === v.side && x.deployed !== false
       && !isDead(x) && (x.link ?? 0) < maxLink(d, x));
     if (!allies.length) continue;
+    // The ticks start from the aura's In reach record, and the answer is the
+    // record from then on (OTTO, 2026-09-29).
     const ids = await pickManyDialog({
       title: `${a.name.en ?? 'Appease'}: ${v.label}`,
-      body: `The round has ended. Every Ally Mech within Range ${a.range ?? 0} of ${v.label} recovers 1 Link, even one in Shutdown (FAQ L3). Untick any that stood out of range.`,
-      rows: allies.map((x) => ({ id: String(x.uid), label: x.label, note: `Link ${x.link ?? 0}/${maxLink(d, x)}${x.stance === 'shutdown' ? ', Shutdown' : ''}`, on: true })),
+      body: `The round has ended. Every Ally Mech within Range ${a.range ?? 0} of ${v.label} recovers 1 Link, even one in Shutdown (FAQ L3). Tick each one that stood within it.`,
+      rows: allies.map((x) => ({ id: String(x.uid), label: x.label, note: `Link ${x.link ?? 0}/${maxLink(d, x)}${x.stance === 'shutdown' ? ', Shutdown' : ''}`, on: inAuraReach(v, a.id, x) })),
       confirmLabel: 'Restore Link',
       allowNone: true,
     });
-    if (!ids?.length) continue;
+    if (!ids) continue;
+    for (const x of allies) {
+      const now = ids.includes(String(x.uid));
+      if (now !== inAuraReach(v, a.id, x) && auraCanReach(v, a, x)) send({ kind: 'setAuraReach', ...sourceFor(x), sourceUid: v.uid, actionId: a.id, targetUid: x.uid, on: now });
+    }
+    if (!ids.length) continue;
     ids.forEach((id, i) => {
       send({ kind: 'recoverLink', seat: v.side, uid: v.uid, targetUid: Number(id), actionId: a.id, ...(i ? { chain: 'join' as const } : {}) });
     });
@@ -1293,6 +1300,8 @@ type PickMode = 'attack' | 'intercept' | 'electronic';
 // paid at the designation, so it is not paid again.
 type TargetRequest = { uid: number; actionId: string; mode: PickMode; granted?: boolean; only?: number; resumed?: boolean };
 let targetFor: TargetRequest | null = null;
+// The aura whose In reach list is open.
+let auraFor: { uid: number; actionId: string } | null = null;
 
 initAttack({
   get data() { return data!; },
@@ -1499,27 +1508,12 @@ function freeformSilence(t: Token, a: CardAction | undefined): void {
   if (guidedOn(table) || !a || activatesCamo(a)) return;
   const now = unitOf(t.uid) ?? t;
   if (!(now.statuses ?? []).some((x) => x === 'lowProfile' || x === 'camouflage')) return;
-  // An aura that takes a printed Silence away (ZHDR-206_A) reaches only so
-  // far, and with no board that is the table's to judge: asked, never read off
-  // the placeholder cells, where every unit stands in reach or none does
-  // (review 2026-09-29). A plain non-Silent Action needs no judging.
-  const aura = actionSilenceDenier(data!, table.tokens, now, a, undefined, undefined, { anywhere: true });
-  if (aura) { void askSilenceAura(now, a, aura); return; }
-  if (!isSilentAction(data!, table.tokens, now, a)) loseSilence(now, a);
-}
-
-// The table says whether the unit stood within the aura that takes its Silence.
-async function askSilenceAura(t: Token, a: CardAction, aura: AuraSource): Promise<void> {
-  const src = aura.source;
-  const act = tokenCards(data!, src).flatMap((c) => c.card.actions ?? []).find((x) => x.id === aura.actionId);
-  const reach = act ? `Range ${auraReach(data!, src, act)}` : 'its Range';
-  const pick = await choiceDialog({
-    title: `${t.label}: is Silence lost?`,
-    body: `${a.name.en ?? a.id} prints Silence, but ${src.label}'s ${aura.label} takes it from an enemy within ${reach}. Did ${t.label} stand within it?`,
-    choices: [{ id: 'in', label: 'Within it: Silence is lost' }, { id: 'out', label: 'Out of it: still Silent', cancel: true }],
-    stacked: true,
-  });
-  if (pick === 'in') loseSilence(unitOf(t.uid) ?? t, a, `${src.label}'s ${aura.label}`);
+  if (isSilentAction(data!, table.tokens, now, a)) return;
+  // An aura that takes a printed Silence away (ZHDR-206_A) is read off the
+  // table's In reach record, never the placeholder cells, and named in the
+  // line; its Undo is there if the record was stale (OTTO, 2026-09-29).
+  const aura = actionSilenceDenier(data!, table.tokens, now, a);
+  loseSilence(now, a, aura ? `${aura.source.label}'s ${aura.label}` : undefined);
 }
 
 // Both consequences, done at once and said in ONE line, so the Low Profile
@@ -1554,6 +1548,51 @@ async function scanFirst(attacker: Token, actionId: string, defender: Token): Pr
   panel = 'combat';
   render();
   if (!beginFreeScan(attacker, actionId, defender, guidedOn(table))) { panel = null; render(); }
+}
+
+// ---------- who stands inside an aura (OTTO, 2026-09-29) ----------
+//
+// No board measures an aura's Range here, so the table says who stands inside
+// (units.ts, "Who stands inside an aura"). The count sits on the aura's own
+// Action row and opens its In reach list, which offers only the units the aura
+// can touch; an attack shows the auras that change its numbers, lit as the
+// record stands, so a stale tick is caught where it matters. Either player may
+// tick, as either may place a Token.
+
+function reachChip(t: Token, a: CardAction, working: boolean): string {
+  if (!data || !table.noBoard || !working || !auraEffectsOf(a).length) return '';
+  const n = auraReachable(table.tokens, t, a).filter((u) => inAuraReach(t, a.id, u)).length;
+  return `<button class="pad-reach${n ? '' : ' zero'}" data-act="aura-open" data-uid="${t.uid}" data-id="${esc(a.id)}">${n} in reach</button>`;
+}
+
+function auraPanel(): string {
+  const src = auraFor ? unitOf(auraFor.uid) : null;
+  const a = src && data && auraFor ? auraActionOf(data, src, auraFor.actionId) : undefined;
+  if (!src || !a || !data) return `<div class="pad-panel-in">${panelHead('Aura')}<p class="pad-status">That aura is no longer on the table.</p></div>`;
+  const units = auraReachable(table.tokens, src, a);
+  const ally = auraEffectsOf(a).some((e) => !e.enemy);
+  return `<div class="pad-panel-in">${panelHead(a.name.en ?? a.id)}
+    <p class="pad-lead">${esc(`Aura, Range ${auraReach(data, src, a)}. Tick who stands inside it on the table${ally ? `; ${src.label} itself always counts` : ''}.`)}</p>
+    ${units.length ? units.map((u) => {
+      const on = inAuraReach(src, a.id, u);
+      return `<button class="pad-seat${on ? ' in' : ''}" data-act="aura-tick" data-uid="${u.uid}" aria-pressed="${on}"><span class="pad-seat-name">${esc(u.label)}</span><span class="pad-seat-tag">${on ? 'In reach' : esc(KIND_LABEL[u.kind])}</span></button>`;
+    }).join('') : '<p class="pad-note">No unit it could reach is on the table.</p>'}
+  </div>`;
+}
+
+// The auras that change this exchange's numbers (units.ts aurasAtRoll), lit as
+// the record stands; only where no board measures them.
+function auraChips(attacker: Token, defender: Token, a: CardAction | undefined, electronic: boolean): AuraAtRoll[] {
+  return data && table.noBoard ? aurasAtRoll(data, table.tokens, attacker, defender, a, electronic) : [];
+}
+
+function auraRow(chips: AuraAtRoll[]): string {
+  if (!chips.length) return '';
+  return `<p class="pad-label pad-sec">Auras</p>
+    <div class="pad-chips">${chips.map((c) => {
+      const on = inAuraReach(c.src, c.act.id, c.unit);
+      return `<button class="pad-chip${on ? ' on' : ''}" data-act="aura-at" data-src="${c.src.uid}" data-id="${esc(c.act.id)}" data-uid="${c.unit.uid}" aria-pressed="${on}">${esc(c.act.name.en ?? c.act.id)}<small>${esc(c.text)}</small></button>`;
+    }).join('')}</div>`;
 }
 
 // ---------- declaring an attack (the Target panel's second step) ----------
@@ -1683,7 +1722,7 @@ function declarePanel(d: Declaring): string {
   // Extended Melee, which needs line of sight (4.6.2, p.59; audit Phase 4, D4).
   const range = melee
     ? (extended ? `Extended Melee, Range ${a!.range}` : 'Adjacent Grids')
-    : a?.range !== undefined ? `Range ${a.range}` : 'Range as printed';
+    : a?.range !== undefined ? `Range ${actionRange(data!, table.tokens, t, a)}` : 'Range as printed';
   // The table's "In smoke" record, said where it decides the shot (audit
   // Phase 4, G12): no line of sight into or out of a Smoke Screen's Grid for a
   // Firing Action, an Aerial unit no exception (FAQ F1, F2).
@@ -1697,6 +1736,7 @@ function declarePanel(d: Declaring): string {
       ${r.note ? `<p class="pad-note pad-decl-note">${esc(r.note)}</p>` : ''}
       <div class="pad-chips">${r.options.map((o) => `<button class="pad-chip${o.id === now ? ' on' : ''}" data-act="decl" data-key="${esc(r.key)}" data-val="${esc(o.id)}"${greyWhy(!!r.grey?.[o.id], r.grey?.[o.id] ?? '')}>${esc(o.label)}</button>`).join('')}</div>`;
     }).join('')}
+    ${auraRow(auraChips(t, foe, a, false))}
     <div class="pad-chips pad-decl-go">
       <button class="pad-btn primary" data-act="decl-go">Attack</button>
       <button class="pad-btn" data-act="decl-back">Another target</button>
@@ -1716,6 +1756,7 @@ function declareStartPanel(d: Declaring, t: Token, foe: Token, a: CardAction | u
   const go = d.kind === 'scan' ? 'Scan' : d.kind === 'intercept' ? 'Intercept' : 'Counter-roll';
   return `<div class="pad-panel-in">${panelHead(a?.name.en ?? (d.kind === 'intercept' ? 'Intercept' : 'Attack'))}
     <p class="pad-lead">${esc(lead)}</p>
+    ${d.kind === 'intercept' ? '' : auraRow(auraChips(t, foe, a, true))}
     <div class="pad-chips pad-decl-go">
       <button class="pad-btn primary" data-act="decl-go"${greyWhy(!!smoke, smoke ?? '')}>${go}</button>
       <button class="pad-btn" data-act="decl-back">Another target</button>
@@ -2650,9 +2691,10 @@ function actionList(t: Token, mine: boolean): string {
     const short = nofit && fo ? capShort(t, fo, g.action, key) : undefined;
     const idle = mine && g.available ? actionIdleWhy(d, t, g.action, idleWorld) : null;
     const grey = idle ?? nofit;
+    const reach = reachChip(t, g.action, g.available);
     rows.push(`<div class="pad-act${open ? ' open' : ''}${g.available ? '' : ' off'}" data-act="open-action" data-id="${esc(g.action.id)}" role="button" aria-expanded="${open}">
       ${actionBlock(g.card, g.action, short)}
-      <div class="pad-act-meta">${esc(meta)}${!g.available && g.reason ? ` · <em>${esc(g.reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${grey ? inert(perform, grey) : perform}</span>` : ''}</div>
+      <div class="pad-act-meta${reach ? ' has-reach' : ''}"><span>${esc(meta)}${!g.available && g.reason ? ` · <em>${esc(g.reason)}</em>` : ''}</span>${reach}${perform ? `<span class="pad-act-go">${grey ? inert(perform, grey) : perform}</span>` : ''}</div>
     </div>`);
   }
   // A Carrier's Load lends its Actions only while it is in Contact (FAQ O3),
@@ -3047,6 +3089,7 @@ function panelHtml(): string {
   if (!data) return `<div class="pad-panel-in"><p class="pad-status">Loading the card database…</p></div>`;
   if (panel === 'setup') return setupPanel();
   if (panel === 'target') return targetPanel();
+  if (panel === 'aura') return auraPanel();
   if (panel === 'combat') return combatPanel();
   if (panel === 'tasks') return tasksPanel();
   if (panel === 'find') return findPanel();
@@ -3620,11 +3663,32 @@ async function detonate(proj: Token, actionId: string, joined = false): Promise<
   if (smoke) {
     toast(`${proj.label}: ${smoke.count} Smoke Screen${smoke.count === 1 ? '' : 's'} on the table.`, 'table');
     send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid, ...(joined ? { chain: 'join' as const } : {}) });
+    await askInSmoke(proj.uid);
     nextDetonation();
     return;
   }
   detonating = { uid: proj.uid, actionId };
   await continueDetonation();
+}
+
+// Once the Screens are on the table: which units now stand in one, marked In
+// smoke in one go rather than a unit at a time (OTTO, 2026-09-29). A unit
+// already marked is left as it is, and so not offered. The marks join the
+// smoke in the History, so one Undo takes the lot back.
+async function askInSmoke(gone: number): Promise<void> {
+  const units = table.tokens.filter((u) => u.uid !== gone && u.deployed !== false && !isDead(u) && statusCount(u.statuses, 'smoke') === 0);
+  if (!units.length) return;
+  const ids = await pickManyDialog({
+    title: 'Are any units now in smoke?',
+    body: 'Pick each unit that stands in a Smoke Screen on the table.',
+    rows: units.map((u) => ({ id: String(u.uid), label: u.label, note: sideName(u.side), on: false })),
+    confirmLabel: 'Mark In smoke',
+    cancelLabel: 'None are',
+  });
+  for (const id of ids ?? []) {
+    const u = unitOf(Number(id));
+    if (u) send({ kind: 'applyStatus', ...sourceFor(u), targetUid: u.uid, statusId: 'smoke', chain: 'join' });
+  }
 }
 
 // Asks for the next unit the blast reaches; the window's close brings the
@@ -5079,6 +5143,26 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     case 'decl-go': commitDeclared(); return;
     case 'decl-back': declaring = null; render(); return;
+    case 'aura-open':
+      auraFor = { uid: Number(el.dataset.uid), actionId: el.dataset.id! };
+      panel = 'aura';
+      render();
+      return;
+    case 'aura-tick': {
+      const src = auraFor ? unitOf(auraFor.uid) : null;
+      const u = unitOf(Number(el.dataset.uid));
+      if (!src || !u || !auraFor) return;
+      send({ kind: 'setAuraReach', ...sourceFor(u), sourceUid: src.uid, actionId: auraFor.actionId, targetUid: u.uid, on: !inAuraReach(src, auraFor.actionId, u) });
+      return;
+    }
+    case 'aura-at': {
+      const src = unitOf(Number(el.dataset.src));
+      const u = unitOf(Number(el.dataset.uid));
+      const id = el.dataset.id;
+      if (!src || !u || !id) return;
+      send({ kind: 'setAuraReach', ...sourceFor(u), sourceUid: src.uid, actionId: id, targetUid: u.uid, on: !inAuraReach(src, id, u) });
+      return;
+    }
     case 'g-start':
       if (!table.tokens.length) { toast('Add the squads first.', 'refused'); return; }
       startGuided(guide);
@@ -6075,6 +6159,10 @@ void (async () => {
   // its Undo is the pad's own.
   configureNotices({ host: () => document.getElementById('pad-notice'), voice: 'terse', onUndo: () => undo() });
   explainOnHold(root);
+  // Rule numbers stay in the Reference (pick 4): the look sheet, Find and a
+  // card's rulebook blocks keep theirs, and the rest of the page, its dialogs
+  // included, reads the words.
+  speakInPlace(document.body, { keep: '#ref-detail, .pad-find, .ref-mech' });
   // The collection follows the account: pulled when one appears, pushed after
   // every change. The panel and the pickers redraw when it moves.
   bindCollection(api);
