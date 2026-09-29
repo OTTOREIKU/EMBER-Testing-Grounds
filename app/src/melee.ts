@@ -189,6 +189,17 @@ export function breakAwayNote(
   return ` Melee Locked by ${locked.map((o) => o.label).join(', ')}, so leaving a Grid costs ${cost} extra Movement Range (4.3.5).${obstruct}`;
 }
 
+// The Crawl "Cannot be used to Break Away" (6.1, p.91): it never takes a Mech
+// out of a Grid in which it is Melee Locked, walked or flown (ruled R2; audit
+// Phase 7, P7B 14). Break Away's extra Range already holds a walked Crawl,
+// whose Range is 1. A matched pair of Fairy arms flies every move, and a flight
+// ignores the Lock (4.3.2), which is the case this holds: the units locking the
+// Mech where it stands, or none. The Crawl may still turn it.
+export function crawlHolders(data: GameData, t: Token, a: { id?: string } | null | undefined, tokens: Token[], terrain: TerrainPiece[]): Token[] {
+  if (a?.id !== 'COMMON_CRAWL') return [];
+  return lockersOf(data, t, tokens, terrain);
+}
+
 // ---------- Tether X (PDLH-202 Ols1B "Harpoon") ----------
 
 // Where a Tethered unit is still allowed to stand: "the tethered unit cannot

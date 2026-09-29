@@ -690,6 +690,12 @@
   background: var(--surface3); color: var(--text3); filter: none;
 }
 .ah-ghost:disabled, .ah-ghost:disabled:hover { background: transparent; color: var(--text3); }
+/* A close the viewer may not make yet (the Responder's, while the Initiator
+   may still win and Apply: ruled R3, audit Phase 7) is greyed, not disabled,
+   so a hold or a hover says why in the notice line (notices.ts). */
+.attack-helper button[aria-disabled="true"] { cursor: default; }
+.ah-cancel[aria-disabled="true"], .ah-cancel[aria-disabled="true"]:hover { background: var(--surface3); color: var(--text3); opacity: 0.55; }
+.ah-primary[aria-disabled="true"], .ah-primary[aria-disabled="true"]:hover { background: var(--surface3); color: var(--text3); filter: none; }
 .attack-helper .chip:disabled, .attack-helper .die:disabled { opacity: 0.55; }
 .pool-die button:disabled { opacity: 0.5; }
 .pool-die button:disabled:hover { background: transparent; }

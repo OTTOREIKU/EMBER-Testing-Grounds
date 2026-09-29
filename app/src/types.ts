@@ -973,8 +973,10 @@ export interface ScriptState {
   // `charged`/`twoHandedDeclined` ride a scanAttack debt: the attack a free
   // Scan interrupted resumes as it was declared (audit Phase 2, C7).
   // `control` is The Red Shoes (TM35NA_B): owed to the INITIATOR, whose player
-  // now moves the Responder named by `fromUid` (audit Phase 3, D3).
-  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack' | 'control' | 'overwatch'; fromUid?: number; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean }[];
+  // now moves the Responder named by `fromUid` (audit Phase 3, D3). `placed` is
+  // where the controller's Crush exchange left that unit: its Movement ended
+  // there (4.3.6; ruled R1, audit Phase 7, P7D 1).
+  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack' | 'control' | 'overwatch'; fromUid?: number; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean; placed?: { col: number; row: number } }[];
   // An Electronic Counter-roll in progress (4.11.2). It lives in shared state
   // rather than on one client because BOTH sides roll and either may spend Link
   // to Focus, and a player may only ever send commands for their own units.
@@ -990,6 +992,28 @@ export interface ScriptState {
   // Run is played "when the Action Opportunity of an Ally Mech ends", on that
   // Mech, until the next unit starts acting (ruling I28; audit Phase 6, H2).
   lastEnded?: { uid: number; round: number };
+  // The Charge Token a unit last spent, for an attack it may still abandon: on
+  // a strict guided table the one hand flip allowed is its refund. Recorded by
+  // the spend, and gone with the next Action or the phase turning (audit Phase
+  // 7, P7A 9).
+  chargeBack?: { uid: number; slot: string };
+  // The Disarm the last Action performed may still cause with its hit (4.17):
+  // recorded as an Action printing Disarm is paid, and spent by the `disarm`
+  // it allows, the one door on a strict guided table (ruled R3; P7A 8).
+  disarmOwed?: { uid: number; actionId: string };
+  // The Counter-roll the last Action paid for (4.11.2): an Electronic Attack,
+  // a Scan or a Remote Access buys one, and a Firing or Melee Action one free
+  // Scan for each camouflaged unit it designates (FAQ I12), `scanned` listing
+  // those it has Scanned. Recorded as the Action is paid, spent by the
+  // `startCounterRoll` it allows on a strict guided table, and gone with the
+  // next Action, the Opportunity's end or the phase turning (ruled R2; audit
+  // Phase 7, P7C 2).
+  counterOwed?: { uid: number; actionId: string; scanned?: number[] };
+  // The Optical Camouflage the last Action paid for may put on (4.12.2):
+  // recorded as an Action that Activates it is paid, and spent by the
+  // `applyStatus` it allows, the one door on a strict guided table (ruled R1;
+  // P7C 1). Deploying in the State is `deployUnit`'s.
+  camoOwed?: { uid: number; actionId: string };
   // Abilities capped at once per round, keyed `${round}:${ability}:${uid}`.
   // Aster's Link restore is the first; anything else printed "once per round"
   // belongs here rather than in a flag of its own. Pruned each round the way
@@ -1223,7 +1247,10 @@ export interface CounterRoll {
   // success the attacker is owed a `scanAttack` reaction once the target has
   // Revealed; on a failure the attack ends (I11) and this is simply dropped.
   // With the declaration's answers, so the resumed attack is the one declared.
-  thenAttack?: { actionId: string; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean } | null;
+  // `extra`: the Scan is for a Multi-Target's extra designation, so a success
+  // owes only the Reveal, and the target joins the split once it has appeared
+  // (ruled R3; audit Phase 7, P7C 4).
+  thenAttack?: { actionId: string; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean; extra?: boolean } | null;
   // Target Tracing (174), opened as the reaction. startCounterRoll spent its
   // Command Token, so a won roll cannot ask targetTracingOn, which wants one
   // still face-up, whether this was the reaction (audit Phase 3, D8).
@@ -1492,6 +1519,7 @@ function normaliseCounter(raw: unknown): CounterRoll | null {
       ...(c.thenAttack.charged === true ? { charged: true } : {}),
       ...(typeof c.thenAttack.chargeChoice === 'string' ? { chargeChoice: c.thenAttack.chargeChoice } : {}),
       ...(c.thenAttack.twoHandedDeclined === true ? { twoHandedDeclined: true } : {}),
+      ...(c.thenAttack.extra === true ? { extra: true } : {}),
     } : null,
     // The sixth: a checkpoint that dropped these would forget the trace's Link
     // and the rest of a Scream (audit Phase 3).
@@ -1555,7 +1583,14 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
             // carried across a reload as a row that strands the panel. Nor a
             // control debt with no unit to move.
             && ((x.kind !== 'trace' && x.kind !== 'control' && x.kind !== 'overwatch') || typeof x.fromUid === 'number'),
-        )
+        ).map((x) => {
+          // The Red Shoes' stamp is a place on the board or nothing: the
+          // controlledMove check compares against it (audit Phase 7, P7D 1).
+          if (x.placed === undefined || (!!x.placed && Number.isInteger(x.placed.col) && Number.isInteger(x.placed.row))) return x;
+          const copy = { ...x };
+          delete copy.placed;
+          return copy;
+        })
       : base.reactions,
     counter: normaliseCounter(s.counter),
     // Absent stays absent, so a script with nothing owed has the same keys as
@@ -1564,6 +1599,24 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     endDone: Array.isArray(s.endDone) ? s.endDone.filter((x) => typeof x === 'string') : base.endDone,
     ...(s.lastEnded && typeof s.lastEnded.uid === 'number' && typeof s.lastEnded.round === 'number'
       ? { lastEnded: { uid: s.lastEnded.uid, round: s.lastEnded.round } }
+      : {}),
+    ...(s.chargeBack && typeof s.chargeBack.uid === 'number' && typeof s.chargeBack.slot === 'string'
+      ? { chargeBack: { uid: s.chargeBack.uid, slot: s.chargeBack.slot } }
+      : {}),
+    ...(s.disarmOwed && typeof s.disarmOwed.uid === 'number' && typeof s.disarmOwed.actionId === 'string'
+      ? { disarmOwed: { uid: s.disarmOwed.uid, actionId: s.disarmOwed.actionId } }
+      : {}),
+    ...(s.counterOwed && typeof s.counterOwed.uid === 'number' && typeof s.counterOwed.actionId === 'string'
+      ? {
+        counterOwed: {
+          uid: s.counterOwed.uid,
+          actionId: s.counterOwed.actionId,
+          ...(Array.isArray(s.counterOwed.scanned) ? { scanned: s.counterOwed.scanned.filter((x): x is number => typeof x === 'number') } : {}),
+        },
+      }
+      : {}),
+    ...(s.camoOwed && typeof s.camoOwed.uid === 'number' && typeof s.camoOwed.actionId === 'string'
+      ? { camoOwed: { uid: s.camoOwed.uid, actionId: s.camoOwed.actionId } }
       : {}),
     oncePerRound: Array.isArray(s.oncePerRound) ? s.oncePerRound.filter((x) => typeof x === 'string') : base.oncePerRound,
     rollback: normaliseRollback(s.rollback),

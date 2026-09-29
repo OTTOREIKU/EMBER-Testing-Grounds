@@ -1,13 +1,13 @@
 import type { BoardGrids, CardAction, CombatView, Facing, FreeTicks, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
 import { addStatus, ageTokens, cellsOf, isLineUnit, gridsOf, newOpportunity, normaliseCatalog, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
-import { cardName, isUnfolded, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { auraActionOf, auraCanReach, interceptPayer, repairSpec, fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
-import { canBeForceMoved, isMeleeFiring, lockersOf, tetherCap } from './melee';
+import { cardName, isUnfolded, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance, squadLabel } from './data';
+import { auraActionOf, auraCanReach, interceptPayer, repairSpec, fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, minesOwed, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources, chargeSlotOf, discardPartOn, disarmOn, partUsable, throwWhy, shockMoveAllowed, actionIdleWhy, counterWon, multiTargetLimit, camoBrokenBy } from './units';
+import { canBeForceMoved, crawlHolders, isMeleeFiring, lockersOf, tetherCap } from './melee';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, rebooted, REBOOT_ID, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload, untouched } from './ticks';
 import { tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, incompleteMechWhy, newSetup, normaliseSetup, tasksLocked } from './setup';
-import { applyKill, boxHands, boxPlaceTurn, cellToGrid, deployGrids, deployOpenGrids, leaveBoxes, newTaskState, normaliseTasks, taskItemsFor, type TaskItem, type TaskState, pendingDesignations, rangeToZone, recordPartLoss, recordUnitLoss, remoteAccessWhy, settleControl, TERMINAL_EV, TERMINAL_UID, type Designation, retractKill, unrecordPartLoss } from './tasks';
+import { applyKill, boxHands, boxPlaceTurn, cellToGrid, deployGrids, deployOpenGrids, leaveBoxes, newTaskState, normaliseTasks, taskItemsFor, type TaskItem, type TaskState, pendingDesignations, rangeToZone, recordPartLoss, recordUnitLoss, remoteAccessWhy, settleControl, TERMINAL_EV, TERMINAL_UID, terminalStandIn, type Designation, retractKill, unrecordPartLoss } from './tasks';
 import { alive, canAct, dialHidden, droneActionWhy, droneLockPhase, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity, tiedChoiceWhy } from './loop';
 import { boxDropCells, dissipationFor, losNote, rangeBetween, spotsInGrid } from './rules';
 import { cleanName } from './safetext';
@@ -292,8 +292,10 @@ export type Command = (
       // (4.12.2, FAQ I12): the attack that waits behind this Counter-roll. It
       // carries the declaration's two answers, a Charge spent for it and a
       // declined [Two-Handed], which the resumed attack used to lose (audit
-      // Phase 2, C7).
-      thenAttack?: { actionId: string; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean };
+      // Phase 2, C7). `extra`: the Scan of a Multi-Target's extra camouflaged
+      // target, whose success owes only the Reveal (ruled R3; audit Phase 7,
+      // P7C 4).
+      thenAttack?: { actionId: string; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean; extra?: boolean };
       // An Action on every enemy in Range, on a table with no board: the other
       // enemies the table judged in Range, in the order they roll. A board
       // derives them instead (audit Phase 3, D2 and A4).
@@ -821,6 +823,16 @@ function guidedGame(state: GameState): boolean {
 function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | 'resolveIntercept' | 'dropBlackBox' | 'drainLink' } {
   return cmd.kind === 'forceMove' || cmd.kind === 'recordKill' || cmd.kind === 'destroyTerrain' || cmd.kind === 'drainLink'
     || cmd.kind === 'resolveIntercept' || cmd.kind === 'dropBlackBox';
+}
+
+// The Red Shoes' live debt over a unit, held by one of `seat`'s own units: the
+// proof that a Movement of that unit is the controller's to make. Only a won
+// TM35NA_B queues it (ewWinCommands), and only the controlledMove that makes
+// the Movement spends it, so it lives exactly as long as the control does
+// (ruled R1; audit Phase 7, P7D 1).
+function controlOver(state: GameState, uid: number, seat: Side): ScriptState['reactions'][number] | undefined {
+  return (state.script?.reactions ?? []).find((r) => r.kind === 'control' && r.fromUid === uid
+    && state.tokens.some((c) => c.uid === r.uid && c.side === seat));
 }
 
 // The round track, the pre-game stages, the smoke and intercept books, the
@@ -1627,7 +1639,27 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'clearCounterRoll': {
-      if (!state.script?.counter) return no('No Electronic Counter-roll is open.');
+      const c = state.script?.counter;
+      if (!c) return no('No Electronic Counter-roll is open.');
+      // Only the Initiator's seat closes it, at any stage, except that either
+      // seat may once the verdict is in and the Initiator lost. The Responder's
+      // Done closed a WON Electronic Attack or free Scan before its Apply, and
+      // the win was lost on both boards with the Tick spent (ruled R3; audit
+      // Phase 7, P7D 1). Across a table only, where a seat is a player: one
+      // device holds both hands, and a stuck exchange in a room is covered by
+      // the pause when a seat drops.
+      if (getLocalSeat()) {
+        const init = state.tokens.find((x) => x.uid === c.initiatorUid);
+        if (init && cmd.seat !== init.side) {
+          const item = c.terminal !== undefined ? normaliseTasks(state.tasks).items.find((i) => i.id === c.terminal) : undefined;
+          const resp = c.terminal !== undefined
+            ? (item ? terminalStandIn(item, init.side, item.zone) : undefined)
+            : state.tokens.find((x) => x.uid === c.responderUid);
+          if (resp && counterWon(data, state.tokens, c, init, resp) !== false) {
+            return no(`${init.label}'s player closes this Electronic Counter-roll: a win is theirs to Apply, and either side may close it only once the Initiator has lost (4.11.2).`);
+          }
+        }
+      }
       return ok;
     }
     case 'rollTerminal': {
@@ -1912,12 +1944,30 @@ function movementCeiling(data: GameData, state: GameState, t: Token, a: CardActi
   return Math.max(base, shockAttackOf(grantAdjusted(a, t, o?.uid === t.uid ? o : null)));
 }
 
+// Whether `then` would be accepted once `first` has landed. The pages ask a
+// Counter-roll's target before they pay its Action, so a refused target costs
+// nothing, and the Counter-roll check asks that the Action be paid (ruled R2;
+// audit Phase 7, P7C 2): the target is judged on a copy of the table with the
+// payment made. A `first` the table refuses is not applied, and `then` is
+// judged as the table stands.
+export function checkAfter(data: GameData, state: GameState, first: Command, then: Command): CheckResult {
+  if (!check(data, state, first).ok) return check(data, state, then);
+  const next = JSON.parse(JSON.stringify(state)) as GameState;
+  apply(data, next, first);
+  return check(data, next, then);
+}
+
 export function check(data: GameData, state: GameState, cmd: Command): CheckResult {
   if (tableLevel(cmd)) return checkTable(data, state, cmd);
   const t = state.tokens.find((x) => x.uid === cmd.uid);
   if (!actorOptional(cmd)) {
     if (!t) return no('That unit is not on the board.');
-    if (t.side !== cmd.seat) return no(`${t.label} belongs to the other squad, and a player may only command their own units.`);
+    // The one exception: The Red Shoes' controller makes the 4.3.6 exchange of
+    // the unit it is steering, since that unit's own player never makes this
+    // Movement (ruling I5). The debt is the proof, and the exchange is judged
+    // against the crusher like any other (ruled R1; audit Phase 7, P7D 1).
+    const steering = cmd.kind === 'crushSwap' && !!controlOver(state, t.uid, cmd.seat);
+    if (t.side !== cmd.seat && !steering) return no(`${t.label} belongs to the other squad, and a player may only command their own units.`);
     return checkActed(data, state, cmd, t);
   }
   if (t && t.side !== cmd.seat) return no(`${t.label} belongs to the other squad, and a player may only command their own units.`);
@@ -2319,10 +2369,32 @@ function checkActed(
         return no(`${t.label} is Tethered and cannot voluntarily move beyond ${x} Grids of the unit holding it (PDLH-202).`);
       }
       // A Movement Action is still one after it is paid: a destroyed Chassis
-      // performs none (4.3.4; ruled 2026-09-25, audit Phase 4, I10).
+      // performs none but a Crawl (4.3.4; ruled 2026-09-25, audit Phase 4, I10;
+      // ruled R1, audit Phase 7, P7B 3).
       if (moveAction?.type === 'Moving') {
-        const chassis = chassisStop(t);
+        const chassis = chassisStop(t, moveAction);
         if (chassis) return no(chassis);
+      }
+      // Shock Attack X's move needs the Chassis: "Mechs require a chasis to
+      // perform this Action", 冲锋X "does not take effect when the Mech's lower
+      // limbs are destroyed". The pages held it and this did not, so a stale
+      // or hostile peer walked a Mech with no legs (audit Phase 7, P7B 10). A
+      // Repaired Chassis carries it (ruled R5). Immobilized stops it above (R6).
+      if (cmd.free && moveAction && moveAction.type !== 'Moving' && t.kind === 'mech' && !shockMoveAllowed(t)) {
+        const o0 = oppOf(state, t.uid);
+        if (shockAttackOf(grantAdjusted(moveAction, t, o0 ?? null)) > 0) {
+          return no(`${t.label}'s Chassis is destroyed, so it cannot make the move of Shock Attack: a Mech needs its Chassis for it (6.2.1).`);
+        }
+      }
+      // The Crawl "Cannot be used to Break Away" (6.1): it never takes a Mech
+      // out of a Grid in which it is Melee Locked, walked or flown (ruled R2;
+      // audit Phase 7, P7B 14). Judged on the terrain the engine knows, from
+      // where the Mech stands; a table with no board judges it itself.
+      if (moveAction?.id === 'COMMON_CRAWL' && !state.noBoard && !cmd.from
+        && (Math.floor(col / 3) !== Math.floor(t.col / 3) || Math.floor(row / 3) !== Math.floor(t.row / 3))) {
+        const terrain = knownTerrain(data, state);
+        const held = terrain ? crawlHolders(data, t, moveAction, state.tokens, terrain) : [];
+        if (held.length) return no(`${t.label} is Melee Locked by ${held.map((x) => x.label).join(', ')}, and a Crawl cannot be used to Break Away (6.1): it may only turn in its Grid.`);
       }
       // HOW FAR, measured from where the unit stands, which is where every
       // Movement either page sends begins. Not for a table, which has no
@@ -2373,6 +2445,13 @@ function checkActed(
       if (cmd.resume) {
         const left = o.mineHalt ?? 0;
         if (left <= 0) return no('No Mine stopped this unit\'s Movement, so there is nothing to go on with.');
+        // The blast first: "The unit stops and the blast resolves; then the
+        // unit goes on" (ruling I16, M19). Going on while it was still owed
+        // walked the unit out of the Mine's Grid, and the blast then caught
+        // nobody (ruled R4; audit Phase 7, P7D 4).
+        if (minesOwed(data, state.tokens).some((x) => x.victims.includes(t.uid))) {
+          return no(`A Mine's blast is still owed on ${t.label}: it resolves first, then the Movement goes on (M19).`);
+        }
         const stop = chassisStop(t);
         if (stop) return no(stop);
         if (!state.noBoard) {
@@ -2401,6 +2480,13 @@ function checkActed(
       // crushExchange is the one place it is worked out, and both pages call it
       // — so this covers what a stale networked client could still get wrong.
       if (!cmd.swaps.length) return no('A Crush exchange has to name the Unit being exchanged.');
+      // The Red Shoes' one exchange: 4.3.6 ends the Movement in the Crush, so
+      // a debt the controller's exchange has stamped makes no second one (ruled
+      // R1; audit Phase 7, P7D 1). A chained exchange walked the steered unit
+      // one Grid further on each time.
+      if (t.side !== cmd.seat && controlOver(state, t.uid, cmd.seat)?.placed) {
+        return no(`${t.label}'s Movement under The Red Shoes has already ended in its Crush (4.3.6).`);
+      }
       for (const p of [cmd.to, ...cmd.swaps.map((s) => s.to)]) {
         if (!Number.isInteger(p.col) || !Number.isInteger(p.row) || p.col < 0 || p.row < 0 || p.col >= cellsOf(state) || p.row >= cellsOf(state)) {
           return no('That is not a place on the board.');
@@ -2623,11 +2709,34 @@ function checkActed(
     case 'performAction': {
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       if (!a) return no('This unit has no such Action.');
+      // The Common Actions are a Mech's (3.4.3: "all Mechs have access to" them).
+      // findAction falls back to them for any unit, so a Drone took a Punch, a
+      // Crawl or a Stabilize, and a Projectile a Punch (audit Phase 7, P7B 11).
+      if (t.kind !== 'mech' && (data.commonActions ?? []).some((c) => c.id === a.id)) {
+        return no(`${a.name?.en || a.id} is a Common Action, and only a Mech has those (3.4.3).`);
+      }
       if (t.kind === 'mech' && t.stance === 'shutdown') return no('A Mech in Shutdown Stance cannot Maneuver or perform any Action other than Reboot (4.1.1).');
+      // The Charge and the Discard act on the Part that performs them, and the
+      // Action's own apply Charges it or turns it over, so a guided game names
+      // that Part (`id@slot`; ruled R2, audit Phase 7, P7A 2, 7).
+      if ((a.id === 'COMMON_CHARGE' || a.id === 'COMMON_DISCARD') && guidedGame(state) && !cmd.partKey?.startsWith(`${a.id}@`)) {
+        return no(`Name the Part that performs ${a.name?.en || a.id}: it acts on that one Part (FAQ H7, K5).`);
+      }
       // Initiated through a Part that can still act (3.4.3), the Common Actions
       // included, and only the Torso in Cruise Mode.
-      const partWhy = actionPartWhy(data, t, a, cmd.partKey);
+      const partWhy = actionPartWhy(data, t, a, cmd.partKey, true);
       if (partWhy) return no(partWhy);
+      // A unit's own Charge Action (543_B) turns its token face-up in its apply
+      // as the Common Charge does, so a Charged one has nothing to Charge (FAQ H1).
+      const ownCharge = a.id !== 'COMMON_CHARGE' ? chargeSlotOf(data, t, a, cmd.partKey) : null;
+      if (ownCharge && (t.charge ?? []).includes(ownCharge)) {
+        return no(`${t.label} is already Charged, and a Charged Action cannot be Charged again until the token is spent (4.14, FAQ H1).`);
+      }
+      // 4.17 ②: a Throw Action needs a free Freehand Part to designate, and a
+      // hand bearing a Black Box is not free (5.3.1; ruled R7, audit Phase 7,
+      // P7A 6). A Load lent in Contact may be the hand (FAQ O16).
+      const thrown = throwWhy(data, t, a, boxHands(state.tasks, t.uid), loanedParts(data, state.tokens, t, { anywhere: !!state.noBoard }));
+      if (thrown) return no(thrown);
       // A lent Action names its Carrier (FAQ O7), and the loan has to be real:
       // a Carrier in Contact holding that Load (FAQ O3; audit Phase 5, G5). A
       // table with no board judges the Contact itself.
@@ -2659,12 +2768,21 @@ function checkActed(
         // Value 0 cannot do (4.11.2): refused here, before the Tick is paid.
         if (electronicValue(data, t, loanedParts(data, state.tokens, t)) <= 0) return no(`${t.label} has an Electronic Value of 0, so it cannot Initiate the Counter-roll a Remote Access makes (4.11.2).`);
       }
+      // As is |Reveal| out of the Optical Camouflage State, and a Scan with no
+      // enemy anywhere on the table in the State or bearing a Low Profile
+      // Token: p.31 (Note 2) and FAQ H2/J8, in the words their greyed rows
+      // give. Only the pages refused them (audit Phase 7, P7C 8).
+      if (a.id === 'COMMON_REVEAL' || isScanAction(a)) {
+        const idle = actionIdleWhy(data, t, a, { tokens: state.tokens, noBoard: !!state.noBoard });
+        if (idle) return no(idle);
+      }
       // Movement Actions (6.3.2, 4.3.4): Immobilized stops them unless the
       // Action is Unstoppable, and so does a destroyed Chassis, whichever Part
       // prints them (ruled 2026-09-25, audit Phase 4, E7 and I10). Only the
-      // pages asked, and the strict guide let an Immobilized Taurus Blink.
+      // pages asked, and the strict guide let an Immobilized Taurus Blink. The
+      // Crawl is the exception an arm makes (ruled R1; audit Phase 7, P7B 3).
       if (a.type === 'Moving') {
-        const stop = immobilizedStop(t, a) ?? chassisStop(t);
+        const stop = immobilizedStop(t, a) ?? chassisStop(t, a);
         if (stop) return no(stop);
       }
       // Non-humanoid X: "When performing this Action, -X Link Value", and a
@@ -2928,6 +3046,13 @@ function checkActed(
       if (cmd.statusId === 'camouflage') {
         if (target.side !== cmd.seat) return no('Optical Camouflage is Activated by the unit\'s own Action, never placed on an enemy (4.12.2).');
         if (!canActivateCamo(data, target)) return no(`${target.label} has no Part that Activates Optical Camouflage (4.12.2).`);
+        // On a strict guided table only by that Action, just paid (`camoOwed`):
+        // it went on by hand at any moment, and with a free `reveal` the two
+        // made a repeatable hop. Deploying in the State is `deployUnit`'s, and a
+        // free table keeps its hand tool (ruled R1; audit Phase 7, P7C 1).
+        if (strictGuided(state) && state.script?.camoOwed?.uid !== target.uid) {
+          return no(`Optical Camouflage is Activated by an Action (4.12.2): ${target.label} performs its Activate Optical Camouflage Action first.`);
+        }
       }
       return ok;
     }
@@ -3087,6 +3212,31 @@ function checkActed(
       // and a Shutdown Mech performs no Action but Reboot and triggers nothing
       // of its own (4.1, FAQ L3). Target Tracing still opened one (Phase 2, A4).
       if (t.kind === 'mech' && t.stance === 'shutdown') return no(`${t.label} is in Shutdown Stance, so it cannot open an Electronic Counter-roll (4.1).`);
+      // One paid Action, one Counter-roll (ruled R2; audit Phase 7, P7C 2). On
+      // a strict guided table an Electronic Attack, a Scan or a Remote Access
+      // opens the roll its Action paid for, once, and a free Scan rides the
+      // attack that designates the camouflaged unit, once for each unit (FAQ
+      // I11, I12). The command took any roll at any moment: in the enemy's
+      // Opportunity, in the End Phase, a lost Terminal roll again on one Tick,
+      // and a Drone's Common Scan. Target Tracing is a reaction with its own
+      // proof (the Passive and its Command Token), and a Projectile Scans as
+      // its Detonation resolves (FAQ M16).
+      if (strictGuided(state) && !cmd.reaction && t.kind !== 'projectile') {
+        const owed = state.script?.counterOwed;
+        if (!owed || owed.uid !== t.uid || owed.actionId !== (cmd.thenAttack?.actionId ?? cmd.actionId)) {
+          return no(cmd.thenAttack
+            ? 'A free Scan comes with the attack that designates the camouflaged unit (FAQ I12): declare the attack first.'
+            : `${t.label} has no Counter-roll paid for: the Action that makes it opens one roll, once (4.11.2).`);
+        }
+        if (cmd.thenAttack && (owed.scanned ?? []).includes(cmd.targetUid)) {
+          return no('This attack has already made its free Scan of that unit: a failed Scan ends the attack on it (FAQ I11).');
+        }
+        // The designation the attack was declared at comes first; only a
+        // Multi-Target designates more, each an `extra` one.
+        if (cmd.thenAttack && !cmd.thenAttack.extra && (owed.scanned ?? []).length) {
+          return no('This attack has already made its free Scan: it designated that target, and a failed Scan ends the attack (FAQ I11).');
+        }
+      }
       // A Remote Access against a Terminal (p.87; ruling I25). The Responder is
       // the Terminal's stand-in rather than a unit, so none of the target rules
       // below apply; the access rule does, since the Tick is already paid.
@@ -3146,6 +3296,10 @@ function checkActed(
         if (statusCount(target.statuses, 'camouflage') === 0) return no(`${target.label} is not in the Optical Camouflage State, so no free Scan is owed: attack it directly.`);
         const atk = findAction(data, state, cmd.uid, cmd.thenAttack.actionId);
         if (!atk || (atk.type !== 'Firing' && atk.type !== 'Melee')) return no('The free Scan precedes a Firing or Melee Action that designates the camouflaged unit (FAQ I12).');
+        // An extra designation belongs to a Multi-Target Action, which selects
+        // its targets at once and earns a free Scan for each camouflaged one
+        // (the glossary's Multi-target X; ruled 2026-09-25, F3; R3, P7C 4).
+        if (cmd.thenAttack.extra && !multiTargetLimit(atk)) return no(`${atk.name?.en || atk.id} takes one target, so it designates no extra one (Multi-target X).`);
         // The attack designates the marker, so it has to be an attack this unit
         // could make at the marker: its Range, its arc, its line of sight, not
         // an Aerial unit for a Melee (ruled 2026-09-25, audit Phase 3, F8). The
@@ -3248,12 +3402,25 @@ function checkActed(
       const held = target.mech[cmd.slot as PartSlot];
       const from = held ? data.byId.get(held) : undefined;
       if (!from) return no(`${target.label} has nothing in that slot.`);
-      if ((target.partStates[cmd.slot as PartSlot] ?? 'intact') === 'destroyed') {
+      // A Repaired Part still acts (FAQ J23), so a free table may turn it over
+      // for its own Discard; p.78's example carries its Repaired Token to the
+      // Discard Card (ruled R4; audit Phase 7, P7A 10). A hit on one breaks it
+      // first (J23), so a Disarm never finds one standing.
+      if (!partUsable(target, cmd.slot)) {
         return no(`${target.label}'s ${SLOT_LABEL[cmd.slot as PartSlot]} is destroyed, so there is no card left to flip.`);
       }
       // The legality IS the pointer: a Part with no Discard Card has no
       // discard state (4.17), so a torso or a chassis cannot be disarmed.
       if (!discardFaceOf(data, from)) return no(`${cardName(from)} has no Discard Card, so it has no Discard State to change to.`);
+      // On a strict guided table a Part turns over only through a Disarm the
+      // last Action owes, recorded as that Action was paid, or through its own
+      // Discard Action, whose apply turns it (ruled R3; audit Phase 7, P7A 8).
+      // A free table keeps the hand tool.
+      if (strictGuided(state)) {
+        if (cmd.targetUid === cmd.uid) return no('A Mech drops its own equipment through the Discard Action (6.1).');
+        const owed = state.script?.disarmOwed;
+        if (!owed || owed.uid !== cmd.uid) return no(`${t.label} has no Disarm to cause: a Part turns to its Discard Card through a hit with Disarm (4.17).`);
+      }
       return ok;
     }
     case 'suppress': {
@@ -3273,12 +3440,12 @@ function checkActed(
       if (!target) return no('That target is not on the board.');
       const why = provokeWhy(data, t, target);
       if (why) return no(why);
-      // The VERDICT is not re-judged here, and cannot be: reading the faces
-      // takes dice.json, which the command layer deliberately does not hold --
-      // "Dice ride inside their commands as rolled faces". Exactly the same
-      // line the `applyStatus` that lands a won Electronic Attack sits on. What
-      // IS judged is that the answer belongs to the exchange it claims: the
-      // Counter-roll below, and Yoyu's own seat above.
+      // The VERDICT is not re-judged here: "Dice ride inside their commands as
+      // rolled faces". Exactly the same line the `applyStatus` that lands a won
+      // Electronic Attack sits on; only a Terminal's access reads its roll's
+      // faces (counterWon; ruled R2, audit Phase 7, P7C 2). What IS judged is
+      // that the answer belongs to the exchange it claims: the Counter-roll
+      // below, and Yoyu's own seat above.
       const c = state.script?.counter;
       if (c) {
         // Yoyu answers in EITHER role (4.11.2: an on-success Passive fires
@@ -3304,6 +3471,15 @@ function checkActed(
       const already = (t.charge ?? []).includes(cmd.slot);
       if (cmd.on && already) return no('That Part is already Charged, and a Charged Action cannot be Charged again until the token is spent (4.14).');
       if (!cmd.on && !already) return no('That Part is not holding a Charge Token.');
+      // A token turns face-up through a Charge Action, whose own apply does it
+      // (ruled R2), so on a strict guided table the hand flip is only the
+      // refund of the token this unit last spent, for an attack it then
+      // abandoned. Freeform and the sandbox keep the hand tool (audit Phase 7,
+      // P7A 9).
+      if (cmd.on && strictGuided(state)) {
+        const back = state.script?.chargeBack;
+        if (!back || back.uid !== cmd.uid || back.slot !== cmd.slot) return no('A Charge Token turns face-up through the Charge Action (4.14). Undo takes back a mistake.');
+      }
       return ok;
     }
     case 'endOpportunity': {
@@ -3317,6 +3493,13 @@ function checkActed(
         }
       }
       if (rebootOwed(state, t)) return no(`${t.label} is in Shutdown Stance and its Action Opportunity has come, so it Reboots now: choose the Stance it Reboots into (FAQ K17).`);
+      // A Reveal is made at once (4.12.2): on a strict guided table the unit
+      // that owes one ends no Action Opportunity of its own before making it.
+      // It entered the enemy's turn still camouflaged, where an attack on it
+      // needed a Scan the rules no longer asked (ruled R7; audit Phase 7, P7C 7).
+      if (strictGuided(state) && statusCount(t.statuses, 'camouflage') > 0 && (state.script?.revealDue ?? []).some((x) => x.uid === t.uid)) {
+        return no(`${t.label} owes its Reveal (4.12.2): make it, and choose where it appears, before its Action Opportunity ends.`);
+      }
       return ok;
     }
     case 'chooseTied': {
@@ -3492,6 +3675,25 @@ function checkActed(
     }
     case 'reveal': {
       if (!(t.statuses ?? []).includes('camouflage')) return no('This unit is not in the Optical Camouflage State.');
+      // What Reveals a unit is 4.12.2's list: |Reveal| or an Action or a
+      // Maneuver without Silence, and a Movement ending in Contact, each
+      // recorded as it lands (`revealDue`); and an enemy's won Scan, whose
+      // `manifest` debt this pays. The fifth, its activating Part destroyed,
+      // needs no command. A strict guided table refuses any other Reveal, which
+      // was a free Manifestation hop at any moment, the enemy's Opportunity and
+      // the End Phase included (ruled R1; audit Phase 7, P7C 1).
+      if (strictGuided(state)) {
+        const sc0 = state.script!;
+        // The Contact is read off the board as well as the record: the
+        // tabletop walks a token before it records the walk, and a Movement
+        // Action's walk not at all, so the engine never sees that Movement end
+        // in Contact. A unit standing in Contact with an enemy that breaks
+        // camouflage may Reveal; a table with no board judges Contact itself.
+        const owed = (sc0.revealDue ?? []).some((x) => x.uid === t.uid)
+          || (sc0.reactions ?? []).some((r) => r.uid === t.uid && r.kind === 'manifest')
+          || (!state.noBoard && !!camoBrokenBy(data, state.tokens, t));
+        if (!owed) return no(`Nothing Reveals ${t.label} now: a unit leaves Optical Camouflage when it performs |Reveal| or an Action or Maneuver without Silence, when a Movement ends with an enemy in Contact, or when an enemy's Scan against it succeeds (4.12.2).`);
+      }
       // MANIFESTATION MOVEMENT (4.12.2): "the Mech may appear within X Grids".
       // Teleportation, so nothing between the two Grids is consulted - only the
       // distance and whether the unit fits. The destination is judged HERE
@@ -3609,6 +3811,11 @@ function checkActed(
       if (mag.ammo[poolId] !== undefined && mag.ammo[poolId] <= 0) {
         return no('No Ammo Tokens left for this Action (4.13).');
       }
+      // Throw (4.17 ②) is a rule of the Action, like its Ammo, so every table
+      // holds it: the card's Launch door sends no performAction (ruled R7;
+      // audit Phase 7, P7A 6).
+      const thrown = throwWhy(data, t, launcher, boxHands(state.tasks, t.uid), loanedParts(data, state.tokens, t, { anywhere: !!state.noBoard }));
+      if (thrown) return no(thrown);
       // Volley X: one performance launches at most X (4.7.3). Counted inside
       // the Opportunity, launches whose Units are still on the board, so a
       // take-back frees its shot. The pages capped it; this did not, and four
@@ -3655,25 +3862,40 @@ function checkActed(
     }
     case 'resolveReaction': {
       if (!t) return no('That unit is not on the board.');
-      const owed = (state.script?.reactions ?? []).some((r) => r.uid === cmd.uid && r.actionId === cmd.actionId);
+      const owed = (state.script?.reactions ?? []).find((r) => r.uid === cmd.uid && r.actionId === cmd.actionId);
       if (!owed) return no('That unit is owed no reaction.');
+      // An enemy's won Scan Reveals the unit (4.12.4), and its `manifest` debt
+      // is paid by that Reveal, the `reveal` apply clearing it: on a strict
+      // guided table it is not waved away while the unit is still camouflaged
+      // (ruled R7; audit Phase 7, P7C 7).
+      if (owed.kind === 'manifest' && strictGuided(state) && statusCount(t.statuses, 'camouflage') > 0) {
+        return no(`${t.label} has been Scanned, so it Reveals (4.12.4): its player chooses where it appears, and that answers the Scan.`);
+      }
       return ok;
     }
     case 'controlledMove': {
       // The Red Shoes' debt, owed to this unit for this target: the actor gate
       // above has already made the controller the sender's own unit.
-      const owed = (state.script?.reactions ?? []).some((r) => r.uid === cmd.uid && r.kind === 'control' && r.fromUid === cmd.targetUid);
+      const owed = (state.script?.reactions ?? []).find((r) => r.uid === cmd.uid && r.kind === 'control' && r.fromUid === cmd.targetUid);
       if (!owed) return no(`${t.label} has taken control of nothing (The Red Shoes).`);
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return no('That unit is not on the board.');
+      // The Crush ended this Movement where the exchange placed the unit
+      // (4.3.6): the stamp is that spot, and the controlledMove recording the
+      // Movement lands there and nowhere further (ruled R1; audit Phase 7,
+      // P7D 1). Without it the exchange and then a Sprint moved it twice.
+      if (owed.placed && (owed.placed.col !== cmd.to.col || owed.placed.row !== cmd.to.row)) {
+        return no(`${target.label}'s Movement ended in the Crush exchange (4.3.6), so The Red Shoes leaves it where the exchange put it.`);
+      }
       const act = cmd.actionId ? findAction(data, state, target.uid, cmd.actionId) : null;
       if (cmd.actionId && (!act || act.type !== 'Moving')) return no(`${target.label} has no such Move Action.`);
       // Still stopped by Immobilized (6.3.2), whoever is moving it.
       const stop = immobilizedStop(target, act);
       if (stop) return no(stop);
-      // And a Move Action still needs the Chassis (4.3.4, audit Phase 4, I10).
+      // And a Move Action still needs the Chassis (4.3.4, audit Phase 4, I10),
+      // but a Crawl, which an arm makes (ruled R1; audit Phase 7, P7B 3).
       if (act) {
-        const chassis = chassisStop(target);
+        const chassis = chassisStop(target, act);
         if (chassis) return no(chassis);
       }
       if (!state.noBoard) {
@@ -3696,13 +3918,44 @@ function checkActed(
         if (crossed > reach) {
           return no(`The Red Shoes moves ${target.label} with its own Movement, which reaches at most ${reach} Grid${reach === 1 ? '' : 's'}, and that Grid is ${crossed} away.`);
         }
+        // Its own Crawl still cannot Break Away (6.1; ruled R2, audit Phase 7,
+        // P7B 14).
+        const terrain = crossed ? knownTerrain(data, state) : null;
+        const held = terrain ? crawlHolders(data, target, act, state.tokens, terrain) : [];
+        if (held.length) return no(`${target.label} is Melee Locked by ${held.map((x) => x.label).join(', ')}, and a Crawl cannot be used to Break Away (6.1).`);
       }
       return ok;
     }
     case 'accessTerminal': {
       if (!t) return no('That unit is not on the board.');
       const why = terminalAccessWhy(data, state, t, cmd.itemId);
-      return why ? no(why) : ok;
+      if (why) return no(why);
+      // Only a won roll accesses it (p.87; ruled R2, audit Phase 7, P7C 2).
+      // The shared window sends the access while the roll's record is still
+      // open, so the record is read: settled, this Mech's, and won, the faces
+      // judged the way both windows judge them (counterWon). A board that ran
+      // the roll in its own local window keeps no record, and its window is
+      // the judge there; at a strict guided table in a room that is only while
+      // the paid Remote Access is still unspent, one access for one payment,
+      // since a shared window spent it opening the record. A Freeform table
+      // keeps its own judgement. The access was accepted straight after the
+      // Tick, with no roll at all.
+      const c = state.script?.counter;
+      if (c && c.terminal === cmd.itemId) {
+        if (c.initiatorUid !== t.uid) return no('That Counter-roll is not this Mech\'s.');
+        const item = normaliseTasks(state.tasks).items.find((i) => i.id === cmd.itemId);
+        const won = item ? counterWon(data, state.tokens, c, t, terminalStandIn(item, t.side, item.zone)) : null;
+        if (won === null && (!c.initRoll || !c.respRoll || counterStage(data, state.tokens, c) !== 'done')) {
+          return no('The Counter-roll against the Terminal is not settled yet: both hands and any Focus first (FAQ G4).');
+        }
+        if (won === false) return no('The Terminal held: a Remote Access that loses its Counter-roll accesses nothing (p.87).');
+      } else if (getLocalSeat() && strictGuided(state)) {
+        const owed = state.script?.counterOwed;
+        if (owed?.uid !== t.uid || owed.actionId !== 'COMMON_REMOTE_ACCESS') {
+          return no('A Terminal is accessed by winning the Counter-roll a Remote Access makes against it (p.87).');
+        }
+      }
+      return ok;
     }
     case 'blink': {
       if (!t) return no('That unit is not on the board.');
@@ -3715,7 +3968,7 @@ function checkActed(
       // it is performed inside this unit's own Opportunity. The swap passed
       // Immobilized, with no Chassis and with no Opportunity at all (audit
       // Phase 4, E7). The sandbox has no Opportunities, so that half is guided.
-      const stop = immobilizedStop(t, a) ?? chassisStop(t);
+      const stop = immobilizedStop(t, a) ?? chassisStop(t, a);
       if (stop) return no(stop);
       if (guidedGame(state) && !oppOf(state, cmd.uid)) return no('It is not this unit\'s Action Opportunity.');
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
@@ -4128,6 +4381,12 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     if (state.script) {
       state.script.combat = null;
       state.script.combatView = null;
+      // Nor a Charge refund or a Disarm the last hit owed (audit Phase 7, P7A 8, 9),
+      // nor a Counter-roll or a camouflage an Action paid for (P7C 1, 2).
+      delete state.script.chargeBack;
+      delete state.script.disarmOwed;
+      delete state.script.counterOwed;
+      delete state.script.camoOwed;
     }
     // The both-ready agreement is consumed by the turn it authorised, so
     // every phase asks afresh — and a racing second advance finds the flags
@@ -5037,6 +5296,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // Movement: 3.4.4 hands out the Facing of the unit being MOVED BY someone,
       // and nothing turns the Crushing Unit as a consequence of the exchange.
       if (cmd.facing !== undefined) t.facing = cmd.facing;
+      // An exchange The Red Shoes' controller made stamps its debt with where
+      // it left the unit: the controlledMove that spends the debt records the
+      // Movement ending there (ruled R1; audit Phase 7, P7D 1).
+      if (t.side !== cmd.seat) {
+        const debt = controlOver(state, t.uid, cmd.seat);
+        if (debt) debt.placed = { col: cmd.to.col, row: cmd.to.row };
+      }
       // No Opportunity accounting, deliberately — see check(). The Movement that
       // caused this is recorded by its own `maneuver`, which is where the
       // Maneuver Tick is spent on both pages.
@@ -5214,6 +5480,30 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         const cost = nonHumanoidCost(a);
         if (cost > 0) t.link = Math.max(0, (t.link ?? 0) - cost);
       }
+      // A new Action closes what the last one left open: the refund of a Charge
+      // spent for an attack then abandoned (the attack is being made now, or
+      // another Action has begun), and the Disarm the last hit could cause.
+      // An Action printing Disarm records that one as it is paid, before the
+      // granted return, since a Riposte's Grappling Hook may Disarm too: every
+      // page's attack window resolves the hit after the Action is paid (ruled
+      // R3; audit Phase 7, P7A 8, 9).
+      if (sc) {
+        delete sc.chargeBack;
+        if (a && disarmOn(a)) sc.disarmOwed = { uid: t.uid, actionId: a.id };
+        else delete sc.disarmOwed;
+        // The same for the Counter-roll this Action pays for: an Electronic
+        // Attack, a Scan or a Remote Access buys one, and a Firing or Melee
+        // Action the free Scan of each camouflaged unit it designates (FAQ
+        // I12). A granted attack earns one too, so this comes before the
+        // granted return (ruled R2; audit Phase 7, P7C 2).
+        if (a && (isElectronicAttack(a) || isScanAction(a) || a.id === 'COMMON_REMOTE_ACCESS' || a.type === 'Firing' || a.type === 'Melee')) {
+          sc.counterOwed = { uid: t.uid, actionId: a.id };
+        } else delete sc.counterOwed;
+        // And the Optical Camouflage an Action that Activates it may put on
+        // (4.12.2; ruled R1, P7C 1).
+        if (a && activatesCamo(a)) sc.camoOwed = { uid: t.uid, actionId: a.id };
+        else delete sc.camoOwed;
+      }
       // A granted Action spends its grant HERE, so taking the Action and
       // spending it are one step. Clearing the debt from the panel instead
       // leaves a window in which one Riposte buys several Melee Actions.
@@ -5248,6 +5538,18 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         if (sc.opp && extraActivationOf(a)) sc.opp.grantOwed = a.id;
         // And the Movement it carries, until a `free` maneuver makes it (B8).
         if (sc.opp && actionMoves(a)) sc.opp.moveOwed = true;
+      }
+      // The Charge and the Discard do their work in their own apply: the Part
+      // the Action names is Charged (4.14) or turned over to its Discard Card
+      // (4.17) by the command that pays for it. One command, one Undo, and no
+      // page can pay without the effect or take the effect without paying (ruled
+      // R2; audit Phase 7, P7A 2, 7). A unit's own Charge Action (543_B)
+      // Charges the Part printing it. A bare key names nothing, and a table with
+      // no guided game leaves the Part to its own tool.
+      const chargeTo = a ? chargeSlotOf(data, t, a, cmd.partKey) : null;
+      if (chargeTo && !(t.charge ?? []).includes(chargeTo)) t.charge = [...(t.charge ?? []), chargeTo];
+      if (a?.id === 'COMMON_DISCARD' && t.kind === 'mech' && cmd.partKey?.startsWith('COMMON_DISCARD@')) {
+        discardPartOn(data, t, cmd.partKey.slice('COMMON_DISCARD@'.length) as PartSlot);
       }
       // 045_B Barricade: "Switch this mech to Defensive Stance." An Action that
       // changes the Stance it is performed in, so it acts after the 4.1 lock the
@@ -5395,6 +5697,8 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // addStatus owns the single-Hexagon rule (2.5.3), so stacking through it
       // keeps the displacement identical on every seat.
       for (let i = 0; i < (cmd.stacks ?? 1); i++) target.statuses = addStatus(target.statuses, cmd.statusId);
+      // The camouflage its Action paid for is on (ruled R1; audit Phase 7, P7C 1).
+      if (cmd.statusId === 'camouflage' && sc?.camoOwed?.uid === target.uid) delete sc.camoOwed;
       // A replaced or refreshed Hexagon starts on its yellow face (FAQ J22):
       // the stale red marker would otherwise remove the fresh token a round
       // early. Squares keep theirs — each stacked entry ages on its own.
@@ -5561,8 +5865,17 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
           ...(cmd.thenAttack.charged ? { charged: true } : {}),
           ...(cmd.thenAttack.chargeChoice ? { chargeChoice: cmd.thenAttack.chargeChoice } : {}),
           ...(cmd.thenAttack.twoHandedDeclined ? { twoHandedDeclined: true } : {}),
+          ...(cmd.thenAttack.extra ? { extra: true } : {}),
         } : null,
       };
+      // The roll its Action paid for is spent; a free Scan marks the unit its
+      // attack has now Scanned, since that attack may designate others (ruled
+      // R2; audit Phase 7, P7C 2).
+      const owed = sc.counterOwed;
+      if (owed && owed.uid === cmd.uid && !cmd.reaction) {
+        if (cmd.thenAttack) owed.scanned = [...(owed.scanned ?? []), cmd.targetUid];
+        else if (owed.actionId === cmd.actionId) delete sc.counterOwed;
+      }
       // Target Tracing's Command Token, spent by the command that opens it. The
       // pages sent spendCommand first, and a Mech with one token then had none
       // face-up for this check to find: the roll was refused after the token
@@ -5613,13 +5926,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     case 'disarm': {
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target || target.kind !== 'mech' || !target.mech) return;
-      const held = target.mech[cmd.slot as PartSlot];
-      const from = held ? data.byId.get(held) : undefined;
-      const far = from ? discardFaceOf(data, from) : null;
-      // Derived here rather than carried on the command, so the wire cannot
-      // name a face the pointer does not: the same single-source rule the
-      // crushSwap step-out grid follows.
-      if (far) transformPartOn(data, target, cmd.slot as PartSlot, far.id);
+      // The Disarm it paid for is spent (ruled R3; audit Phase 7, P7A 8).
+      if (sc?.disarmOwed?.uid === cmd.uid) delete sc.disarmOwed;
+      // The far face is derived here rather than carried on the command, so the
+      // wire cannot name a face the pointer does not: the same single-source
+      // rule the crushSwap step-out grid follows. The Discard Action turns a
+      // Part over through the same door (units.ts discardPartOn).
+      discardPartOn(data, target, cmd.slot as PartSlot);
       return;
     }
     case 'suppress': {
@@ -5662,6 +5975,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (cmd.on) held.add(cmd.slot);
       else held.delete(cmd.slot);
       t.charge = held.size ? [...held] : undefined;
+      // A spend may be refunded if the attack it paid for is abandoned before
+      // any Action is performed; a refund uses that up (audit Phase 7, P7A 9).
+      if (sc && !cmd.on) sc.chargeBack = { uid: t.uid, slot: cmd.slot };
+      else if (sc?.chargeBack?.uid === t.uid && sc.chargeBack.slot === cmd.slot) delete sc.chargeBack;
       return;
     }
     case 'riposte': {
@@ -5685,6 +6002,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'endOpportunity': {
       if (!sc) return;
+      // A Counter-roll or a camouflage its Actions paid for is made in the
+      // Opportunity or not at all (ruled R1, R2; audit Phase 7, P7C 1, 2).
+      if (sc.counterOwed?.uid === cmd.uid) delete sc.counterOwed;
+      if (sc.camoOwed?.uid === cmd.uid) delete sc.camoOwed;
       // Swarm Tactics goes on at once or not at all (172_B): the Warrior's
       // Opportunity ending with its token still waiting to move lets it lapse.
       if (sc.swarm?.issuer === cmd.uid) sc.swarm = null;
@@ -5899,8 +6220,14 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'reveal': {
       t.statuses = (t.statuses ?? []).filter((id) => id !== 'camouflage');
-      // Whatever it owed is paid: one Reveal answers every trigger.
-      if (sc) sc.revealDue = (sc.revealDue ?? []).filter((x) => x.uid !== t.uid);
+      // Whatever it owed is paid: one Reveal answers every trigger, an enemy
+      // Scan's `manifest` debt included. That debt used to be answered first and
+      // on its own, so a reload before the picker left the unit camouflaged
+      // with nothing owed (ruled R7; audit Phase 7, P7C 7).
+      if (sc) {
+        sc.revealDue = (sc.revealDue ?? []).filter((x) => x.uid !== t.uid);
+        sc.reactions = (sc.reactions ?? []).filter((r) => !(r.uid === t.uid && r.kind === 'manifest'));
+      }
       // Manifestation Movement rides the same command, so the unit never sits
       // revealed at the marker position for a frame - the two halves are one
       // event (4.12.2) and a mirror replaying this sees one hop.
@@ -5963,6 +6290,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (!item) return;
       item.accessed = t.side;
       state.tasks = tasks;
+      // The access spends the Remote Access that paid for it, where no shared
+      // record did (ruled R2, P7C 2).
+      if (sc?.counterOwed?.uid === t.uid && sc.counterOwed.actionId === 'COMMON_REMOTE_ACCESS') delete sc.counterOwed;
       return;
     }
 
@@ -6400,6 +6730,17 @@ export function perform(data: GameData, state: GameState, cmd: Command): CheckRe
   // so a table command clicked from either chair both applies and travels.
   const me = getLocalSeat();
   if (me && ATTRIBUTED.has(cmd.kind) && cmd.seat !== me) cmd = { ...cmd, seat: me };
+  // In a room a player sends only their own squad's commands, the relay's own
+  // rule (ATTRIBUTED above): one sent under the other seat applied on this
+  // board and never reached the other, and the two split in silence, as a drag
+  // of the other squad's unit did. Refused here instead, where the page says
+  // why. Solo and pass-and-play hold no local seat (ruled R6; audit Phase 7,
+  // P7D 3).
+  if (me && cmd.seat !== me) {
+    const why = `That is ${squadLabel(cmd.seat)}'s to do: in an online game each player acts only for their own squad.`;
+    refused?.(why);
+    return no(why);
+  }
   const verdict = check(data, state, cmd);
   // An online game is always strict, whatever the guide is set to. Both
   // clients have to refuse the same things or their boards drift apart, and a

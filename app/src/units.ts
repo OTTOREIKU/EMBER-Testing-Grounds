@@ -1,7 +1,7 @@
 import { clampBoardArt, clampGridColour, DEFAULT_BOARD } from './boards';
 import type { CommonAction, GameData } from './data';
 import { cardName, discardFaceOf, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
-import type { ExtraTick, Card, CardAction, CounterRoll, GameRuleEffect, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
+import type { ExtraTick, Card, CardAction, CounterRoll, DiceData, GameRuleEffect, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
 import type { Command } from './commands';
 import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseFreeTicks, normaliseScript, removableTokens, statusCount, STATUSES, TIMINGS } from './types';
 import { incompleteMechWhy, normaliseSetup } from './setup';
@@ -239,10 +239,25 @@ export function immobilizedStop(t: Token, action?: CardAction | null): string | 
 // Jetpack's Jump or the Taurus's Blink as much as the Chassis's own Sprint.
 // FAQ E4 still lets its Maneuver turn it (ruled 2026-09-25, audit Phase 4, I10).
 // A Repaired Chassis acts (FAQ J23). The engine let a Chassis-less Mech Jump.
-export function chassisStop(t: Token): string | null {
+//
+// The one exception is the Crawl, "Performed with Chassis, Left Arm or Right
+// Arm" (6.1, p.91): the arm is what a Mech with its legs gone crawls on, so an
+// arm may still Crawl 1 Grid (ruled R1; audit Phase 7, P7B 3). `action` is the
+// Movement Action being performed; a Crawl named to the dead Chassis is
+// actionPartWhy's to refuse.
+export function chassisStop(t: Token, action?: CardAction | null): string | null {
   if (t.kind !== 'mech') return null;
   if ((t.partStates.chasis ?? 'intact') !== 'destroyed' || (t.repairedSlots ?? []).includes('chasis')) return null;
-  return `${t.label}'s Chassis is destroyed, so it cannot perform Movement Actions (4.3.4). Its Maneuver may still change its facing (FAQ E4).`;
+  if (action?.id === 'COMMON_CRAWL') return null;
+  return `${t.label}'s Chassis is destroyed, so it cannot perform Movement Actions but a Crawl with an arm (4.3.4, 6.1). Its Maneuver may still change its facing (FAQ E4).`;
+}
+
+// A Chassis that is gone for movement: destroyed and not Repaired. A Repaired
+// Chassis "may be used as normal" (p.96), so it gives its Maneuver Value and
+// carries a Shock Attack's move like an intact one (ruled R5; audit Phase 7,
+// P7B 12). The engine turned its Maneuver to 0 and refused the move.
+export function chassisGone(t: Token): boolean {
+  return t.kind === 'mech' && (t.partStates?.chasis ?? 'intact') === 'destroyed' && !(t.repairedSlots ?? []).includes('chasis');
 }
 
 // NON-HUMANOID X 异形X: "When performing this Action, -X Link Value." Printed in
@@ -633,9 +648,14 @@ export function shockAttackOf(a: CardAction): number {
 // The chassis the keyword demands. Only the MOVE is gated on it: the glossary
 // line reads on the movement half, and refusing the whole attack over a
 // destroyed chassis would be an enforcement the printed card does not clearly
-// ask for — warn-don't-block keeps that half a table call.
+// ask for — warn-don't-block keeps that half a table call. The Chinese says
+// so outright: 机甲下肢被摧毁时不生效, "no effect when the lower limbs are
+// destroyed". A Repaired Chassis carries the move (ruled R5; audit Phase 7,
+// P7B 12).
 export function shockMoveAllowed(t: Token): boolean {
-  return t.kind === 'mech' && (t.partStates['chasis'] ?? 'intact') !== 'destroyed';
+  // chassisGone's test, written out: shockattack.test.mjs cuts this reader out
+  // of the file with the [condition] block and nothing else.
+  return t.kind === 'mech' && ((t.partStates['chasis'] ?? 'intact') !== 'destroyed' || (t.repairedSlots ?? []).includes('chasis'));
 }
 
 // Pulse Weapon: "May exchange {Lightning} for {Heavy Hit}." Ion Weapon is the
@@ -1475,9 +1495,16 @@ export function consumesCharge(a: CardAction): boolean {
   return (a.keywords ?? []).some((k) => CHARGE_KEYWORD.test(k.inline ?? k.key ?? ''));
 }
 
+// A unit's own printed Charge Action, "Charge for this unit" (543_B). Its own
+// question because the command's apply turns the token face-up for it as it
+// does for the Common Charge (ruled R2; audit Phase 7, P7A 7), and it sits in
+// the pure range the command-layer harnesses take whole.
+export function setsOwnCharge(a: CardAction): boolean {
+  return (a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => (e as { type?: string }).type === 'set_unit_charge'));
+}
+
 export function isChargeAction(a: CardAction): boolean {
-  return a.id === 'COMMON_CHARGE'
-    || (a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => (e as { type?: string }).type === 'set_unit_charge'));
+  return a.id === 'COMMON_CHARGE' || setsOwnCharge(a);
 }
 
 export function isCharged(t: Token, slot: string): boolean {
@@ -2296,7 +2323,13 @@ export function twoHandedUse(
 ): TwoHandedUse | null {
   const rider = twoHandedRider(a);
   if (!rider) return null;
-  const hands = freehandSlots(data, t, taken, loans);
+  // "A seperate Part with Freehand" (4.17 ①, p.78; the glossary's "another
+  // Part"): the Part printing the Action never supports it. The 145 Katana's
+  // own hand bought its Slash the Mutilation with no other hand free (ruled
+  // R6; audit Phase 7, P7A 4). No lent Load prints a [Two-Handed] Action, so
+  // only the Mech's own Parts are looked through.
+  const self = tokenCards(data, t).find(({ card }) => (card.actions ?? []).some((x) => x.id === a.id))?.slot;
+  const hands = freehandSlots(data, t, self ? [...taken, self] : taken, loans);
   if (!hands.length) return null;
   const best = hands.find((h) => freehandSupport(data, t, h.slot, a, loans)) ?? hands[0];
   const support = freehandSupport(data, t, best.slot, a, loans);
@@ -3853,8 +3886,13 @@ export function autoTargetsFor(
   // An Electronic Attack may be sent through an allied Repeater, and then the
   // Range - and the nearest-target rule with it - is measured from there
   // (FAQ O19/O20): the enemy one Grid from the Raven is nearer than the one two
-  // Grids from the attacker, and it is the one that must be taken.
-  const origins = isElectronicAttack(a) ? electronicOrigins(data, tokens, t) : [t];
+  // Grids from the attacker, and it is the one that must be taken. Not for an
+  // Action on every enemy in Range (Scream): electronicAllTargets and the
+  // command measure that from the unit itself, and this reading relaying it
+  // owed a Scream no command could make, which locked the strict Automatic
+  // Phase for a (warned) mixed squad with a Raven EC (ruled R4 (b); audit
+  // Phase 7, P7C 5).
+  const origins = isElectronicAttack(a) && !electronicAll(a) ? electronicOrigins(data, tokens, t) : [t];
   const reachOf = (o: Token): number => Math.min(...origins.map((from) => rangeBetween(from, o).range));
   const electronic = isElectronicAttack(a) || isScanAction(a);
   // "--" (Range 0 on a Melee Action) reaches the Adjacent Grids, diagonals
@@ -5209,8 +5247,9 @@ export function warfareNodeBoost(data: GameData, tokens: Token[], t: Token): { e
 // counter-roll each did this arithmetic themselves and only freeplay had the
 // aura, so ZHDR-202 and PDTR-202 were dead in every match.
 // `action` is the Initiator's: its Strength +X (4.11.2) "will be added to the
-// Electronic Counter-roll of the Initiator". Scream prints +1 and nothing read
-// it (audit Phase 3, D2). It never reaches the Responder.
+// Electronic Counter-roll of the Initiator" (audit Phase 3, D2). No card prints
+// one since the GoF 1.021 list dropped Scream's +1 (ruled 2026-09-28). It never
+// reaches the Responder.
 export function electronicStrength(
   data: GameData,
   tokens: Token[],
@@ -5727,12 +5766,12 @@ export function provokeWhy(data: GameData, responder: Token, initiator: Token): 
 // switch, or null when there is nothing to ask.
 //
 // `initiatorWins` is the caller's to supply and is deliberately not derived
-// here. Reading the dice needs dice.json, and the command layer holds only the
-// cards -- "Dice ride inside their commands as rolled faces" is the rule
+// here: "Dice ride inside their commands as rolled faces" is the rule
 // commands.ts opens with. Each surface therefore asks this with the verdict it
 // already computed for its own panel, which is the same verdict on both because
 // both derive it from tallyCounter and resolveCounterRoll over the faces in
-// this very record.
+// this very record. The engine reads one verdict itself, a Terminal's
+// (counterWon below; audit Phase 7, P7C 2).
 // THE COUNTER-ROLL'S FOCUS ORDER, the same as any roll's (FAQ G4, 4.4.1 step
 // 5): once both hands are in, the Initiator declares whether it will Focus,
 // then the Responder, then the Initiator rerolls, then the Responder. One
@@ -5763,6 +5802,62 @@ export function counterStage(
   if (i && !c.initFocused) return 'rerollI';
   if (r && !c.respFocused) return 'rerollR';
   return 'done';
+}
+
+// What a counter-roll's dice are worth to their roller. Hollow faces count as
+// solid for a unit in Offensive Stance (4.11.3), so validity is per-roller and
+// the two sides can read the same dice differently. Shared, because the whole
+// rule turns on this count agreeing across both clients. Here rather than in
+// combat.ts since the engine reads a Terminal's roll with it (ruled R2; audit
+// Phase 7, P7C 2); combat.ts re-exports both.
+export function tallyCounter(
+  dice: DiceData,
+  faces: number[],
+  offensive: boolean,
+): { lightning: number; light: number } {
+  let lightning = 0;
+  let light = 0;
+  for (const f of faces) {
+    for (const icon of dice.dice.yellow.faces[f] ?? []) {
+      if (icon.hollow && !offensive) continue;
+      if (icon.type === 'lightning') lightning++;
+      else if (icon.type === 'lightHit') light++;
+    }
+  }
+  return { lightning, light };
+}
+
+export function resolveCounterRoll(
+  init: { lightning: number; light: number },
+  resp: { lightning: number; light: number },
+): { initiatorWins: boolean; why: string } {
+  if (init.lightning !== resp.lightning) {
+    return {
+      initiatorWins: init.lightning > resp.lightning,
+      why: `Lightning ${init.lightning} vs ${resp.lightning}`,
+    };
+  }
+  if (init.light !== resp.light) {
+    return {
+      initiatorWins: init.light > resp.light,
+      why: `Lightning level at ${init.lightning}, Light Hit ${init.light} vs ${resp.light}`,
+    };
+  }
+  return { initiatorWins: true, why: 'level on both counts, so the tie goes to the Initiator' };
+}
+
+// Whether the Initiator won a SETTLED Counter-roll, read off the faces in its
+// record the way both windows read them: each side's hollow faces by its own
+// Stance (counterOffensive), then resolveCounterRoll. Null while the record is
+// still open (the Focus order included, FAQ G4) or with no dice data to read.
+// A Terminal is accessed only on a won roll (p.87; ruled R2, audit Phase 7,
+// P7C 2), so the engine reads this one verdict itself.
+export function counterWon(data: GameData, tokens: Token[], c: CounterRoll, init: Token, resp: Token): boolean | null {
+  const dice = data.dice as unknown as DiceData | null;
+  if (!dice?.dice?.yellow || !c.initRoll || !c.respRoll || counterStage(data, tokens, c) !== 'done') return null;
+  const a = tallyCounter(dice, c.initRoll, counterOffensive(data, tokens, init, resp, 'initiator'));
+  const b = tallyCounter(dice, c.respRoll, counterOffensive(data, tokens, resp, init, 'responder'));
+  return resolveCounterRoll(a, b).initiatorWins;
 }
 
 export function provokeOffer(
@@ -5843,7 +5938,10 @@ export function maneuverRange(data: GameData, t: Token): number {
   // A destroyed Chassis cannot carry the Mech anywhere: the rulebook lists it
   // with Immobilized as "currently unable to move" (3.4.4), and FAQ E4 keeps
   // only the free change of Facing, which costs no range and is not gated here.
-  if (t.kind === 'mech' && (t.partStates?.chasis ?? 'intact') === 'destroyed') return 0;
+  // A Repaired one "may be used as normal" (p.96) and gives its Maneuver Value
+  // (ruled R5; audit Phase 7, P7B 12). chassisGone's test, written out, since
+  // maneuver.test.mjs cuts this block out of the file on its own.
+  if (t.kind === 'mech' && (t.partStates?.chasis ?? 'intact') === 'destroyed' && !(t.repairedSlots ?? []).includes('chasis')) return 0;
   // A TRANSFORMED core carries its own Movement and the legs stop mattering:
   // White Dwarf's Cruise Mode core (288) prints Move 3 while its Chassis Part
   // prints 1, and reading the chassis regardless made a Cruise White Dwarf walk
@@ -6194,9 +6292,15 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
         // Phase 4, E3).
         available = false;
         reason = 'Immobilized blocks Movement';
-      } else if (a.type === 'Moving' && chassisStop(t)) {
+      } else if (a.type === 'Moving' && chassisStop(t, a)) {
         available = false;
         reason = 'A destroyed Chassis blocks Movement Actions';
+      } else if (throwWhy(data, t, a, [], loans)) {
+        // Throw needs a free hand to designate (4.17 ②); the command refuses
+        // it too, and also counts a hand bearing a Black Box as taken (audit
+        // Phase 7, P7A 6).
+        available = false;
+        reason = 'Throw: no free Freehand Part';
       }
       // A Load's magazine and Interception Tokens stay on the Drone carrying it.
       const holder = loan ? loan.from : t;
@@ -6310,12 +6414,11 @@ export function actionIdleWhy(data: GameData, t: Token, a: CardAction, w: IdleWo
   // Reveal has nothing to reveal out of the Optical Camouflage State: the
   // engine's own words (commands.ts 'reveal'). The pad already hid the row.
   if (a.id === 'COMMON_REVEAL') return statusCount(t.statuses, 'camouflage') > 0 ? null : 'This unit is not in the Optical Camouflage State.';
-  // Discard flips a Part Card, so it needs one still standing that has a
-  // Discard Card (the engine's 'disarm' reading).
+  // Discard flips a Part Card, so it needs a Handheld Part that can still act
+  // and has a Discard Card: a Repaired one still acts (FAQ J23; ruled R4,
+  // audit Phase 7, P7A 10). The same reading the command checks.
   if (a.id === 'COMMON_DISCARD') {
-    return tokenCards(data, t).some(({ slot, card }) => slot !== 'pilot'
-      && (t.partStates[slot as PartSlot] ?? 'intact') !== 'destroyed' && !!discardFaceOf(data, card))
-      ? null : `${t.label} holds nothing it can Discard.`;
+    return discardSlots(data, t).length ? null : `${t.label} holds nothing it can Discard.`;
   }
   // The Overwatch Strike names an enemy and an Ally Mech that fires. On a
   // board its door measures the Range; with none the table does, so all that
@@ -6390,7 +6493,7 @@ export function actionIdleWhy(data: GameData, t: Token, a: CardAction, w: IdleWo
   }
   if (isElectronicAttack(a) || isScanAction(a) || a.type === 'Firing' || a.type === 'Melee') return null;
   if (isPositionSwap(a)) {
-    return immobilizedStop(t, a) ?? chassisStop(t) ?? (blinkTargets(data, w.tokens, t, a, !!w.noBoard).length ? null
+    return immobilizedStop(t, a) ?? chassisStop(t, a) ?? (blinkTargets(data, w.tokens, t, a, !!w.noBoard).length ? null
       : `${what}: no Ground Mech the size of ${t.label} is ${w.noBoard ? 'on the table' : `within Range ${a.range ?? 0}`}, enemy or allied (FAQ E20).`);
   }
   if (a.type === 'Moving') return null;
@@ -7053,17 +7156,23 @@ export function commonInitiators(data: GameData, t: Token, c: CommonAction): str
 //   - Cruise Mode: a Part other than the Torso acts only through an Action
 //     marked "may be used in Cruise Mode".
 // A borrowed Load (`id@uid`) is on the Carrier, intact by definition.
-export function actionPartWhy(data: GameData, t: Token, a: CardAction, partKey?: string): string | null {
+// `performing`: check()'s own call, which also refuses a bare Charge or
+// Discard with nothing to act on; a page's row asks without it.
+export function actionPartWhy(data: GameData, t: Token, a: CardAction, partKey?: string, performing = false): string | null {
   if (t.kind !== 'mech') return null;
   const common = (data.commonActions ?? []).find((c) => c.id === a.id);
   if (common) {
     const named = partKey && partKey.startsWith(`${a.id}@`) ? partKey.slice(a.id.length + 1) : null;
-    // The Charge Action is "performed by one or more Parts with an Action that
-    // has the Charge Icon", so only a Part it could Charge initiates it. With
-    // none it could change nothing, and FAQ H2 says it cannot be performed;
-    // the engine left that to the pages (audit Phase 2, C12).
+    // The Charge Action is "performed by one Part with an Action that has the
+    // Charge Icon" (the publisher's Quick Cards; 4.14), so only a Part it could
+    // Charge initiates it. With none it could change nothing, and FAQ H2 says it
+    // cannot be performed; the engine left that to the pages (audit Phase 2,
+    // C12). The Discard is performed by the one Handheld Part it drops (FAQ
+    // K5), so only a Part with a Discard Card initiates it (audit Phase 7, P7A 8).
     const chargesHere = (s: string): boolean => tokenCards(data, t)
       .some(({ slot, card }) => slot === s && (card.actions ?? []).some((x) => consumesCharge(x)));
+    const discardsHere = (s: string): boolean => discardSlots(data, t).some((x) => x.slot === s);
+    const charged = (s: string): boolean => (t.charge ?? []).includes(s);
     const can = commonInitiators(data, t, common).filter((s) => a.id !== 'COMMON_CHARGE' || chargesHere(s));
     if (a.id === 'COMMON_CHARGE' && !can.length) return `${t.label} has no Part it could Charge, so the Charge Action would change nothing (FAQ H2).`;
     if (named) {
@@ -7071,11 +7180,34 @@ export function actionPartWhy(data: GameData, t: Token, a: CardAction, partKey?:
       if (!can.includes(named)) {
         return cruising(data, t) && named !== 'torso'
           ? `In Cruise Mode only the Torso acts (Ace Strategy additional rules).`
-          : `The ${SLOT_LABEL[named as PartSlot] ?? named} is destroyed, so it cannot initiate ${a.name?.en || a.id} (3.4.3).`;
+          : partUsable(t, named)
+            // Standing, but nothing on it to Charge: it used to be called
+            // destroyed (audit Phase 7, P7A 12).
+            ? `The ${SLOT_LABEL[named as PartSlot] ?? named} has no Action with a Charge Icon, so there is nothing on it to Charge (4.14).`
+            : `The ${SLOT_LABEL[named as PartSlot] ?? named} is destroyed, so it cannot initiate ${a.name?.en || a.id} (3.4.3).`;
+      }
+      // FAQ H1: a Charged Part cannot be Charged again until its token is spent.
+      if (a.id === 'COMMON_CHARGE' && charged(named)) {
+        return `The ${SLOT_LABEL[named as PartSlot] ?? named} already holds a face-up Charge Token, which has to be spent before it can be Charged again (4.14, FAQ H1).`;
+      }
+      if (a.id === 'COMMON_DISCARD' && !discardsHere(named)) {
+        return `The ${SLOT_LABEL[named as PartSlot] ?? named} has no Discard Card, so it has nothing to Discard (4.17).`;
       }
       return null;
     }
-    return can.length ? null : `No surviving Part can initiate ${a.name?.en || a.id} (3.4.3).`;
+    // With no Part named, one has to have something to act on (FAQ H2). The
+    // pages grey these rows by actionIdleWhy, so only the engine's own call
+    // (`performing`) asks here; the engine used to take the Tick (audit Phase
+    // 7, P7A 8, 9).
+    if (performing && a.id === 'COMMON_CHARGE' && can.every(charged)) {
+      return `Every Chargeable Part on ${t.label} already holds a face-up Charge Token, which has to be spent before it can be Charged again (4.14).`;
+    }
+    if (performing && a.id === 'COMMON_DISCARD' && !can.some(discardsHere)) return `${t.label} holds nothing it can Discard.`;
+    if (can.length) return null;
+    // A cruising White Dwarf keeps every Part, but only its Torso acts: said
+    // so, where every page read "No surviving Part" (audit Phase 7, P7B 8).
+    if (cruising(data, t) && common.slots.some((s) => partUsable(t, s))) return 'In Cruise Mode only the Torso acts (Ace Strategy additional rules).';
+    return `No surviving Part can initiate ${a.name?.en || a.id} (3.4.3).`;
   }
   const held = tokenCards(data, t).find(({ card }) => (card.actions ?? []).some((x) => x.id === a.id));
   // A lent Load's Action is no Part of the Torso's, so a cruising Mech
@@ -7251,9 +7383,9 @@ export function electronicAll(a: CardAction): boolean {
 }
 
 // Strength +X (4.11.2): "X will be added to the Electronic Counter-roll of the
-// Initiator". Scream prints +1 on its card and in its Chinese, and OTTO kept it
-// although the GoF 1.021 row omits it (ruled 2026-09-25, audit Phase 3, F17).
-// Nothing read it.
+// Initiator". Nothing read it (audit Phase 3, D2). Scream's +1 was the one
+// printing, and the GoF 1.021 list drops it: the lists outrank the cards
+// (ruled 2026-09-28, retiring F17), so today no card carries one.
 export function strengthOf(a: CardAction): number {
   const hay = `${a.description?.en ?? ''} ${a.description?.zh ?? ''} ${(a.keywords ?? []).map((k) => k.inline ?? k.key ?? '').join(' ')}`;
   const m = /(?:Strength|强度)\s*\+\s*(\d+)/i.exec(hay);
@@ -7421,7 +7553,10 @@ export function ewWinCommands(
     for (let i = 0; i < strip; i++) cmds.push({ kind: 'removeStatus', seat, uid, targetUid: resp.uid, statusId: 'lowProfile' });
     if (strip > 0) lines.push(`${resp.label} loses ${strip} Low Profile Token${strip === 1 ? '' : 's'} (4.12.4)`);
     if (statusCount(resp.statuses, 'camouflage') > 0) {
-      const then = opts.thenAttack;
+      // A Multi-Target's extra designation owes only the Reveal: the unit joins
+      // the split once it has appeared, if the attack still reaches it (ruled
+      // R3; audit Phase 7, P7C 4). A single target's attack resumes behind it.
+      const then = opts.thenAttack?.extra ? null : opts.thenAttack;
       cmds.push({
         kind: 'queueReactions', seat,
         items: [
@@ -7434,7 +7569,7 @@ export function ewWinCommands(
           }] : []),
         ],
       });
-      lines.push(`${resp.label} is Revealed, and its own player now makes its Manifestation Movement (4.12.2)${then ? '. The attack resumes once it has appeared (FAQ I12)' : ''}`);
+      lines.push(`${resp.label} is Revealed, and its own player now makes its Manifestation Movement (4.12.2)${then ? '. The attack resumes once it has appeared (FAQ I12)' : opts.thenAttack?.extra ? '. Once it has appeared it may join the attack, if still in reach' : ''}`);
     }
     return { cmds, lines };
   }
@@ -7564,4 +7699,149 @@ export function targetStatusTargets(
     && !(grant.statusId === 'highlight' && statusCount(u.statuses, 'camouflage') > 0)
     && (!board || (rangeBetween(t, u).range <= actionRange(data, tokens, t, a)
       && losBetween(t, u, board.terrain, tokens) !== 'blocked')));
+}
+
+// ---------- Mechanics audit Phase 7 readers: Charge and Discard (P7A) ----------
+//
+// The two Common Actions that act on a PART (6.1): the Charge turns the
+// performing Part's own Charge Token face-up (4.14), and the Discard turns the
+// performing Handheld Part over to its Discard Card (4.17). At the end of the
+// file with the Phase 2 block, which the command-layer harnesses take whole.
+
+// The Handheld Parts that may Discard now: one the Discard lists (an arm) that
+// can still act, a Repaired one included (FAQ J23; ruled R4), with a Discard
+// Card to turn over to (4.17). In Cruise Mode only the Torso acts.
+export function discardSlots(data: GameData, t: Token): { slot: PartSlot; card: Card; into: Card }[] {
+  if (t.kind !== 'mech') return [];
+  const common = (data.commonActions ?? []).find((c) => c.id === 'COMMON_DISCARD');
+  const can = common ? commonInitiators(data, t, common) : [];
+  const out: { slot: PartSlot; card: Card; into: Card }[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (!can.includes(slot)) continue;
+    const into = discardFaceOf(data, card);
+    if (into) out.push({ slot: slot as PartSlot, card, into });
+  }
+  return out;
+}
+
+// The Parts a Charge or a Discard may be named through now (`id@slot`; FAQ
+// H6/H7, K5): for the Charge, each Part with a Charge Icon that can act and
+// whose token is still face-down (4.14, FAQ H1); for the Discard, each Part
+// above. A guided game refuses these two with no Part named (ruled R2), so the
+// pages offer and check these one by one. A Punch/Kick and a Crawl are made
+// with the Chassis, Left Arm or Right Arm, each Part once an Opportunity
+// (ruled R3; audit Phase 7, P7B 9): the ones that can act, in the printed
+// order. Empty for every other Action.
+export function commonPartSlots(data: GameData, t: Token, a: CardAction): string[] {
+  if (a.id === 'COMMON_DISCARD') return discardSlots(data, t).map((x) => x.slot);
+  if ((a.id === 'COMMON_PUNCH_MELEE' || a.id === 'COMMON_CRAWL') && t.kind === 'mech') {
+    const common = (data.commonActions ?? []).find((c) => c.id === a.id);
+    return common ? commonInitiators(data, t, common) : [];
+  }
+  if (a.id !== 'COMMON_CHARGE' || t.kind !== 'mech') return [];
+  const common = (data.commonActions ?? []).find((c) => c.id === 'COMMON_CHARGE');
+  const can = common ? commonInitiators(data, t, common) : [];
+  return chargeableSlots(data, t).filter((x) => !x.charged && can.includes(String(x.slot))).map((x) => String(x.slot));
+}
+
+// The Part a Charge Action turns face-up (4.14): the one the Common Charge
+// names (`COMMON_CHARGE@slot`), or the Part printing a unit's own Charge Action
+// (543_B). Null for any other Action, and for a Common Charge that names no
+// Part, which a table with no guided game leaves to its own tool.
+export function chargeSlotOf(data: GameData, t: Token, a: CardAction, partKey?: string): string | null {
+  if (a.id === 'COMMON_CHARGE') return partKey?.startsWith('COMMON_CHARGE@') ? partKey.slice('COMMON_CHARGE@'.length) : null;
+  if (!setsOwnCharge(a)) return null;
+  return tokenCards(data, t).find(({ card }) => (card.actions ?? []).some((x) => x.id === a.id))?.slot ?? null;
+}
+
+// 4.17 ②: "Actions with the Throw Keyword may only be performed when a Part
+// with Freehand is designated." Printed in the Action's own text (008_A,
+// 082_A, 502_A), and read by nothing, so a Mech with both hands full threw a
+// Beacon (ruled R7; audit Phase 7, P7A 6).
+export function throwOf(a: CardAction): boolean {
+  const hay = [a.description?.zh ?? '', a.description?.en ?? '', ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? '')].join(' ');
+  return /投掷|投擲|\bThrow\b/i.test(hay);
+}
+
+// Why a Throw Action cannot be performed now, or null: it needs a free Part
+// with Freehand to designate. `taken` is the hands bearing a Black Box, whose
+// Freehand is invalid (5.3.1); a Load lent by a Carrier in Contact can be the
+// hand (FAQ O16). Which hand is not asked: no Freehand gives a Throw anything
+// back, so the designation changes nothing but whether there is one.
+export function throwWhy(data: GameData, t: Token, a: CardAction, taken: string[] = [], loans: LoanedPart[] = []): string | null {
+  if (t.kind !== 'mech' || !throwOf(a)) return null;
+  if (freehandSlots(data, t, taken, loans).length) return null;
+  return `${a.name?.en || a.id} has Throw, so it needs a Part with Freehand to designate, and ${t.label} has no free hand (4.17).`;
+}
+
+// A Discard turns the Part over for good. 4.17: Triangle Tokens (Damaged,
+// Repaired) go with it, which the slot already carries; Round Tokens go only
+// to an Action on the Discard Card that uses them, "otherwise they will be
+// removed". carryRoundTokens moves the counts that stay, and the old card's
+// pools go here: left on the token, the pad listed a Discarded G/AC-6's two
+// Rockets, and a second Interception pool the engine would spend (audit Phase
+// 7, P7A 5). A Mode face keeps its pools, since the White Dwarf turns back.
+// One door for the Discard Action and a Disarm hit alike.
+export function discardPartOn(data: GameData, t: Token, slot: PartSlot): boolean {
+  const heldId = t.mech?.[slot];
+  const from = heldId ? data.byId.get(heldId) : undefined;
+  const into = from ? discardFaceOf(data, from) : null;
+  if (!from || !into) return false;
+  transformPartOn(data, t, slot, into.id);
+  const gone = new Set((from.actions ?? []).map((x) => x.id));
+  t.ammo = Object.fromEntries(Object.entries(t.ammo ?? {}).filter(([id]) => !gone.has(id)));
+  if (t.intercept) t.intercept = Object.fromEntries(Object.entries(t.intercept).filter(([id]) => !gone.has(id)));
+  return true;
+}
+
+// ---------- Mechanics audit Phase 7 readers: Punch/Kick, Crawl and the Maneuver (P7B) ----------
+//
+// The two Common Actions a Mech makes with its body (6.1, p.91): Punch/Kick, a
+// Medium Melee Action of 2 Red dice at Range "--", and Crawl, a Medium Movement
+// Action of Range 1 that "Cannot be used to Break Away". Both are "Performed
+// with Chassis, Left Arm or Right Arm". At the end of the file with the other
+// Phase 7 readers.
+
+// The key a Punch/Kick or a Crawl is performed under (`id@slot`; ruled R3): each
+// Part may make it once an Action Opportunity (FAQ H6/H7, O7), and it is the
+// same Action whichever Part makes it, so the pages name the first Part that
+// can act and has not made it yet, in the printed order: the Chassis, then the
+// Left Arm, then the Right Arm. The Chassis first keeps a Crawl Silent on a
+// Stealth Chassis (ruled 2026-09-25, audit Phase 3, F14). With every Part used
+// it names the first again, which the Ticks refuse as a repeat; with none that
+// can act, the bare id, which actionPartWhy refuses. A bare key was all any
+// page sent, so a second Punch by another Part was refused (audit Phase 7,
+// P7B 9).
+export function commonPartKey(data: GameData, t: Token, a: CardAction, performed: string[] = []): string {
+  if (a.id !== 'COMMON_PUNCH_MELEE' && a.id !== 'COMMON_CRAWL') return a.id;
+  const slots = commonPartSlots(data, t, a);
+  if (!slots.length) return a.id;
+  return `${a.id}@${slots.find((s) => !performed.includes(`${a.id}@${s}`)) ?? slots[0]}`;
+}
+
+// Why the unit's own state refuses a Common Action before it is pressed, or
+// null: Shutdown (4.1.1), and for the Crawl, Immobilized (6.3.2) or a Chassis
+// gone (4.3.4, which spares the Crawl itself). guidedActions says it for a
+// Part's own Actions and never lists these, so the pages drew the rows live and
+// refused them after the press (audit Phase 7, P7B 7).
+export function commonActionStop(t: Token, a: CardAction): string | null {
+  if (t.kind === 'mech' && t.stance === 'shutdown') return 'A Mech in Shutdown Stance cannot Maneuver or perform any Action other than Reboot (4.1.1).';
+  if (a.type === 'Moving') return immobilizedStop(t, a) ?? chassisStop(t, a);
+  return null;
+}
+
+// A Riposte's "Melee Action" (050_B, ZHLA-202_B: "the Defender may immediately
+// perform a Melee Action"): each Melee Action a Part that can still act prints,
+// a Repaired one included (FAQ J23), and Punch/Kick, which every Mech has
+// (ruled R4; audit Phase 7, P7B 6). Read per Part, so an arm destroyed beside
+// its twin does not take the twin's Action with it. In Cruise Mode only the
+// Torso acts. The pages built this list from the Parts alone.
+export function riposteMelees(data: GameData, t: Token): CardAction[] {
+  const cruise = cruising(data, t);
+  const own = tokenCards(data, t)
+    .filter(({ slot }) => slot !== 'pilot' && partUsable(t, slot))
+    .flatMap(({ slot, card }) => (card.actions ?? []).filter((a) => a.type === 'Melee' && (!cruise || slot === 'torso' || usableInCruise(a))))
+    .filter((a, i, all) => all.findIndex((b) => b.id === a.id) === i);
+  const punch = (data.commonActions ?? []).find((a) => a.id === 'COMMON_PUNCH_MELEE');
+  return punch && t.kind === 'mech' && !actionPartWhy(data, t, punch) ? [...own, punch] : own;
 }

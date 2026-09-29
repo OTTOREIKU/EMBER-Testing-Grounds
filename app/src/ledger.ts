@@ -203,6 +203,7 @@ type AnyCmd = {
   n?: number;
   itemId?: string;
   ticks?: unknown;
+  partKey?: string;
 };
 
 export function labelFor(cmd: { kind: string }, state: GameState, names?: LedgerNames): LedgerMeta {
@@ -215,7 +216,12 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
   let label: string;
   switch (c.kind) {
     // ---------- the units a timeline is made of ----------
-    case 'performAction': label = `${act()} - ${who()}`; break;
+    // A Common Action keyed to its Part (`COMMON_CHARGE@rightHand`) names it:
+    // the Charge and the Discard act on that Part (audit Phase 7, P7A 12).
+    case 'performAction': {
+      const part = c.partKey?.startsWith(`${c.actionId}@`) ? SLOT_WORD[c.partKey.slice(`${c.actionId}@`.length)] : undefined;
+      label = `${act()}${part ? ` (${part})` : ''} - ${who()}`; break;
+    }
     case 'maneuver': label = c.free
       ? `${who()}: free move to ${grid(c.to)}`
       : `${who()}: Maneuver to ${grid(c.to)}`; break;
@@ -233,7 +239,8 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'riposte': label = `${who()}: Riposte`; break;
     case 'overwatch': label = `${who()}: Overwatch Strike on ${target()}`; break;
     case 'tether': label = `${who()} Tethers ${target()}`; break;
-    case 'disarm': label = `${who()} Disarms ${target()}`; break;
+    // The pad's Freeform Discard is this command aimed at the Mech's own Part.
+    case 'disarm': label = c.targetUid === c.uid ? `${who()} Discards its ${slotName(c.slot)}` : `${who()} Disarms ${target()}`; break;
     case 'suppress': label = `${who()}: Suppression`; break;
     case 'stabilise': label = `${who()}: Stabilize System`; break;
     case 'reboot': label = `${who()} Reboots`; break;
@@ -245,7 +252,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'endSwarm': label = 'Swarm Tactics stops'; break;
 
     // ---------- spends and tokens ----------
-    case 'setCharge': label = `${who()}: Charge Token ${(c as { on?: boolean }).on ? 'set' : 'spent'}`; break;
+    case 'setCharge': label = `${who()}: Charge Token ${(c as { on?: boolean }).on ? 'set' : 'spent'}${c.slot ? `, ${slotName(c.slot)}` : ''}`; break;
     case 'spendCommand': label = `${who()} spends a Command Token`; break;
     case 'coordinateCommand': label = `Command Coordination: ${who()}`; break;
     case 'adjustCommandTokens': label = 'Command Tokens adjusted'; break;

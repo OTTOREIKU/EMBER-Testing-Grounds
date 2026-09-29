@@ -1181,12 +1181,18 @@ export function losNote(
         : sight === 'obstructed' ? '⚠ obstructed, so the defender may claim +2 White protection'
           : '✕ LOS blocked (3" terrain)');
   }
-  // EXTENDED MELEE (a Melee Action with a Range) needs line of sight to the
-  // target, 4.6.2 (p.59). Smoke is Firing's alone (4.16), so this is terrain
-  // only. The Range 4 Harpoon landed through a building (audit Phase 4, H5).
-  if (action.type === 'Melee' && (action.range ?? 0) > 0 && !action.anyDistance
+  // EVERY Melee Action needs line of sight to its target: "Melee Actions
+  // requires Line of Sight to the target to perform" (4.6, p.59; 4.6.1 ②), a
+  // "--" one as much as an Extended one, for which 4.6.2 only repeats the rule.
+  // Smoke is Firing's alone (4.16), so this is terrain only. The Range 4
+  // Harpoon landed through a building (audit Phase 4, H5), and only Extended
+  // Melee was asked after it, so a Punch/Kick still landed through a 3" wall on
+  // an Adjacent unit it did not even Melee Lock (audit Phase 7, P7B 1).
+  if (action.type === 'Melee' && !action.anyDistance
     && losBetween(attacker, defender, terrain, tokens) === 'blocked') {
-    bits.push('✕ Extended Melee needs line of sight, and 3" terrain blocks it (4.6.2)');
+    bits.push((action.range ?? 0) > 0
+      ? '✕ Extended Melee needs line of sight, and 3" terrain blocks it (4.6.2)'
+      : '✕ Melee needs line of sight, and 3" terrain blocks it (4.6)');
   }
   return bits.join(' · ');
 }

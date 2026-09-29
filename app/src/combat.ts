@@ -6,7 +6,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, tallyCounter, resolveCounterRoll, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { isTerminalStandIn, TERMINAL_EV } from './tasks';
 import { inArc, largeGridOf, losBetween, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
@@ -295,6 +295,10 @@ interface MultiState {
   total: { red: number; yellow: number };
   index: number;
   pending: { defender: Token; reaction: AttackReaction }[];
+  // The camouflaged units this declaration has already Scanned for free, one
+  // Scan each (FAQ I12). A failed one drops only that designation, and it is
+  // not offered a second Scan (ruled R3; audit Phase 7, P7C 4).
+  scanned?: number[];
 }
 
 interface Rolled {
@@ -1174,9 +1178,12 @@ export class AttackHelper {
   // A camouflaged unit is designated only after a Scan (p.71), and each
   // designation earns its own free one (FAQ I12; ruled 2026-09-25, audit Phase
   // 3, F3). A page that can run a Counter-roll beside the attack hands this in;
-  // `resume` redraws the split once it is over. Without one, a camouflaged unit
-  // is not offered as an extra target at all.
-  freeScan: ((attacker: Token, target: Token, action: CardAction, resume: () => void) => void) | null = null;
+  // `resume` redraws the split once it is over, and a false return says the
+  // Scan never opened. Without one, a camouflaged unit is not offered as an
+  // extra target at all.
+  freeScan: ((attacker: Token, target: Token, action: CardAction, resume: () => void) => boolean | void) | null = null;
+  // The split as last drawn: the element, and who it offered (refreshSplit).
+  private splitDrawn: { el: HTMLElement | null; offer: string } = { el: null, offer: '' };
 
   // ---------- the mirror: this attack, as somebody else's client is running it ----------
   //
@@ -1737,15 +1744,39 @@ export class AttackHelper {
       if (m.action.type === 'Melee' && u.aerial && !u.mine) return false;
       if ((statusCount(u.statuses, 'camouflage') > 0) !== hidden) return false;
       if (this.noBoard) return true;
-      // A camouflaged one is Scanned first and may Manifest anywhere, so Range
-      // is all that is asked of it here; it faces the rest once it joins.
-      if (hidden) return rangeBetween(m.attacker, u).range <= (m.action.range ?? 1);
       // Every added target is a target of the same Action and needs what the
       // first one did: Range, the Forward Arc and a line of sight, terrain and
       // smoke on the same lines (4.4.1, 4.16). The ✕ beside each was only a
-      // note, even on the strict page (audit Phase 4, G5).
+      // note, even on the strict page (audit Phase 4, G5). A camouflaged one
+      // is designated at its marker, which is judged the same way before its
+      // free Scan, as the engine judges it (FAQ I18; ruled 2026-09-25, F8). It
+      // was asked only the printed Range, so a marker behind the attacker was
+      // Scanned, and Revealed, for an attack that could never designate it
+      // (audit Phase 7, P7C 3); it is judged again where it Manifests.
       return !losNote(m.attacker, u, reach, terrain, board, smoke, true).includes('✕');
     });
+  }
+
+  // Who the split offers, as a key: the ones it can add and the camouflaged
+  // ones it can Scan, each with whether it has had its Scan.
+  private splitOffer(): string {
+    const m = this.multi;
+    if (!m) return '';
+    const done = new Set(m.scanned ?? []);
+    return `${this.multiCandidates().map((u) => u.uid).join(',')}|${this.multiCandidates(true).map((u) => `${u.uid}${done.has(u.uid) ? '*' : ''}`).join(',')}`;
+  }
+
+  // Draws the split again when what it offers has changed, or when the panel
+  // it shares is empty again, and never over another window. A free Scan runs
+  // in the Counter-roll window: the Match Centre's shares this element and
+  // empties it on closing, the pad's sits beside it, and the Scanned unit's
+  // player Reveals it later still, so the split waited on nothing to redraw
+  // it (audit Phase 7, P7C 4). A host calls this as it refreshes.
+  refreshSplit(): void {
+    if (!this.multi || this.ctx?.step !== 'split' || this.mirroring) return;
+    const now = this.root.children[0] ?? null;
+    if (now && (now !== this.splitDrawn.el || this.splitOffer() === this.splitDrawn.offer)) return;
+    this.render();
   }
 
   cancel(): void {
@@ -3543,6 +3574,8 @@ export class AttackHelper {
     el.appendChild(main);
     el.appendChild(side);
     this.root.replaceChildren(el);
+    // The split as drawn, for refreshSplit.
+    this.splitDrawn = c.step === 'split' && this.multi ? { el, offer: this.splitOffer() } : { el: null, offer: '' };
     // AFTER the step is built, so a stage beginFocus() settled during the build
     // is in the view the defender receives.
     this.publishMirror();
@@ -3639,12 +3672,16 @@ export class AttackHelper {
       }
       // A camouflaged enemy in reach: Scanned first, one free Scan each (p.71,
       // FAQ I12; F3). Once Revealed it joins the list above, from wherever it
-      // Manifested.
+      // Manifested. One that has had its Scan and is still hidden is not
+      // offered another: a failed one drops only that designation (ruled R3;
+      // audit Phase 7, P7C 4), and a won one waits on its player's Reveal.
       for (const u of this.multiCandidates(true)) {
-        if (!this.freeScan) {
+        if (!this.freeScan || (m.scanned ?? []).includes(u.uid)) {
           const p = document.createElement('p');
           p.className = 'ah-note';
-          p.textContent = `${u.label} is in the Optical Camouflage State: it can only be designated once a Scan has Revealed it (p.71).`;
+          p.textContent = this.freeScan
+            ? `${u.label} has had its free Scan: it may be added once Revealed, if still in reach, and a failed Scan leaves it out of this attack (FAQ I11).`
+            : `${u.label} is in the Optical Camouflage State: it can only be designated once a Scan has Revealed it (p.71).`;
           wrap.appendChild(p);
           continue;
         }
@@ -3653,7 +3690,10 @@ export class AttackHelper {
         b.className = 'ah-ghost';
         b.textContent = `Scan ${u.label} first (free, FAQ I12)`;
         b.disabled = !this.mayDrive('attacker');
-        b.addEventListener('click', () => scan(m.attacker, u, m.action, () => this.redraw()));
+        b.addEventListener('click', () => {
+          m.scanned = [...(m.scanned ?? []), u.uid];
+          if (scan(m.attacker, u, m.action, () => this.redraw()) === false) m.scanned = m.scanned.filter((x) => x !== u.uid);
+        });
         wrap.appendChild(b);
       }
     }
@@ -5862,7 +5902,11 @@ export class AttackHelper {
             // mirror's paid asks settled on: the test shim's click() ignores
             // disabled, which is exactly how this line was proven load-bearing.
             if (choiceTaken) return;
-            this.onCommand({ kind: 'disarm', seat, uid: atkUid, targetUid: defUid, slot });
+            // A strict guided table refuses a Disarm that no paid Action owes,
+            // as from an attack the guide never charged, and a refused one
+            // turns nothing over, so the choice stays open (ruled R3; audit
+            // Phase 7, P7A 8).
+            if (!accepted(this.onCommand({ kind: 'disarm', seat, uid: atkUid, targetUid: defUid, slot }))) return;
             this.onChanged();
             retire(go, `Disarmed: ${defLabel}'s ${SLOT_LABEL[slot as PartSlot] ?? slot} is on its Discard Card`);
           });
@@ -6033,45 +6077,11 @@ export class AttackHelper {
 
 // ---------- electronic warfare ----------
 
-// What a counter-roll's dice are worth to their roller. Hollow faces count as
-// solid for a unit in Offensive Stance (4.11.3), so validity is per-roller and
-// the two sides can read the same dice differently. Shared, because the whole
-// rule turns on this count agreeing across both clients.
-export function tallyCounter(
-  dice: DiceData,
-  faces: number[],
-  offensive: boolean,
-): { lightning: number; light: number } {
-  let lightning = 0;
-  let light = 0;
-  for (const f of faces) {
-    for (const icon of dice.dice.yellow.faces[f] ?? []) {
-      if (icon.hollow && !offensive) continue;
-      if (icon.type === 'lightning') lightning++;
-      else if (icon.type === 'lightHit') light++;
-    }
-  }
-  return { lightning, light };
-}
-
-export function resolveCounterRoll(
-  init: { lightning: number; light: number },
-  resp: { lightning: number; light: number },
-): { initiatorWins: boolean; why: string } {
-  if (init.lightning !== resp.lightning) {
-    return {
-      initiatorWins: init.lightning > resp.lightning,
-      why: `Lightning ${init.lightning} vs ${resp.lightning}`,
-    };
-  }
-  if (init.light !== resp.light) {
-    return {
-      initiatorWins: init.light > resp.light,
-      why: `Lightning level at ${init.lightning}, Light Hit ${init.light} vs ${resp.light}`,
-    };
-  }
-  return { initiatorWins: true, why: 'level on both counts, so the tie goes to the Initiator' };
-}
+// tallyCounter and resolveCounterRoll, the one reading of a Counter-roll's dice,
+// live in units.ts: the engine reads a Terminal's roll with them (ruled R2;
+// audit Phase 7, P7C 2). Re-exported for the pages and tests that import
+// them from here.
+export { tallyCounter, resolveCounterRoll };
 
 // Every press a SHARED Counter-roll window can make. Each is a question one of
 // the two seats owns, so the answer travels as a command and this window never
@@ -6290,6 +6300,17 @@ export class ElectronicHelper {
     return this.role === (who === 'init' ? 'initiator' : 'responder');
   }
 
+  // Who ends a shared exchange (ruled R3; audit Phase 7, P7D 1): the
+  // Initiator's seat at any stage, the Responder's only once the verdict is in
+  // and the Initiator lost. The Responder's Done used to close a won
+  // Counter-roll before its Apply, and the engine now refuses that close too.
+  // The reason when this viewer may not close it, or null.
+  private closeWhy(): string | null {
+    const c = this.ctx;
+    if (!this.shared || this.role !== 'responder' || !c || c.initiatorWins === false) return null;
+    return `${c.initiator.label}'s player closes this Electronic Counter-roll: a win is theirs to Apply, and either side may close it only once the Initiator has lost (4.11.2).`;
+  }
+
   // A press that TRAVELS. True means it was sent and the caller must not also
   // apply it here, which is the same contract the attack window's sendAct has.
   private sendAct(act: EwAct, arg?: EwArg): boolean {
@@ -6450,10 +6471,12 @@ export class ElectronicHelper {
     // it because its sidebar sits under the query's threshold.
     el.className = 'attack-helper ew-contest';
     const what = c.action.name.en || c.action.name.zh || c.action.id;
+    // Greyed with its reason, no title, for a Responder who may not close yet.
+    const shut = this.closeWhy();
     el.innerHTML = `<div class="ah-head">
       <b>${esc(c.initiator.label)}</b> <span class="vs-bolt">${ICON_BOLT}</span> <b>${esc(c.responder.label)}</b>
       <span class="dim">${what}</span>
-      <button class="ah-cancel" title="Cancel">✕</button>
+      <button class="ah-cancel"${shut ? ` aria-disabled="true" data-why="${esc(shut)}"` : ' title="Cancel"'}>✕</button>
     </div>
     <p class="ah-los" data-mech="electronic_counter_roll">Electronic Warfare ignores terrain and line of sight. Range only.${esc(this.relayNote(c))}</p>`;
 
@@ -6467,7 +6490,7 @@ export class ElectronicHelper {
     // The X ends the exchange for BOTH players on a shared table: the record is
     // what either screen draws, so closing only this one would leave the other
     // looking at a contest nobody is answering.
-    el.querySelector('.ah-cancel')!.addEventListener('click', () => { if (!this.sendAct('close')) this.cancel(); });
+    el.querySelector('.ah-cancel')!.addEventListener('click', () => { if (shut) return; if (!this.sendAct('close')) this.cancel(); });
     linkMechanics(el, this.data.mechanics);
     this.root.replaceChildren(el);
   }
@@ -6871,7 +6894,10 @@ export class ElectronicHelper {
     const done = document.createElement('button');
     done.className = this.shared && c.initiatorWins ? 'ah-cancel' : 'ah-primary';
     done.textContent = 'Done';
-    done.addEventListener('click', () => { if (!this.sendAct('close')) this.cancel(); });
+    // Greyed for a Responder while the Initiator's win still waits on Apply (R3).
+    const shut = this.closeWhy();
+    if (shut) { done.setAttribute('aria-disabled', 'true'); done.dataset.why = shut; }
+    done.addEventListener('click', () => { if (shut) return; if (!this.sendAct('close')) this.cancel(); });
     wrap.appendChild(done);
     return wrap;
   }
