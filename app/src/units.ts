@@ -1,13 +1,13 @@
 import { clampBoardArt, clampGridColour, DEFAULT_BOARD } from './boards';
 import type { CommonAction, GameData } from './data';
-import { cardName, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
+import { cardName, discardFaceOf, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
 import type { ExtraTick, Card, CardAction, CounterRoll, GameRuleEffect, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
 import type { Command } from './commands';
 import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseFreeTicks, normaliseScript, removableTokens, statusCount, STATUSES, TIMINGS } from './types';
 import { incompleteMechWhy, normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf, tetherCap } from './melee';
 import { boardGrids, firingSight, inArc, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
-import { isTerminalStandIn, normaliseTasks, TERMINAL_EV, type VpRider } from './tasks';
+import { isTerminalStandIn, normaliseTasks, remoteAccessWhy, TERMINAL_EV, terminalsInReach, type TaskItem, type VpRider } from './tasks';
 // ticks.ts imports only from types.ts, so this direction carries no cycle.
 import { timingOf, type StartOpts } from './ticks';
 import { cleanName, cleanStrings } from './safetext';
@@ -699,6 +699,27 @@ export interface Resupply {
   adjacent: boolean;
 }
 
+// The units a Resupply can top up: this Mech, or an Ally Unit in its reach,
+// holding the Action and short of that Action's starting Ammo (4.13). A table
+// with no board judges the reach itself. One reader for the greyed row and the
+// click (notices, 2026-09-29).
+export function resupplyHolders(data: GameData, tokens: Token[], t: Token, rule: Resupply, noBoard = false): Token[] {
+  const from = largeGridOf(t);
+  return tokens.filter((o) => {
+    if (o.deployed === false) return false;
+    if (o.uid !== t.uid && (!rule.allies || o.side !== t.side)) return false;
+    if (!noBoard) {
+      const g = largeGridOf(o);
+      if (o.uid !== t.uid && rule.adjacent) {
+        if (!rangeBetween(t, o).adjacent) return false;
+      } else if (Math.abs(g.c - from.c) + Math.abs(g.r - from.r) > rule.range) return false;
+    }
+    const max = tokenCards(data, o).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === rule.actionId)?.storage;
+    if (!max) return false;
+    return (o.ammo[rule.actionId] ?? max) < max;
+  });
+}
+
 export function resupplyOf(a: CardAction): Resupply | undefined {
   for (const g of a.gameRules ?? []) {
     for (const e of g.effects ?? []) {
@@ -777,25 +798,27 @@ export function tokenCleanupOf(a: CardAction): TokenCleanup | undefined {
 // Every unit of `src`'s own side a support effect reaches on the board,
 // measured from `src` or, for Electronic Support, from any Repeater covering
 // it. `src` is included: a unit benefits from its own Electronic Support.
-// Needs a board, so a table without one (the pad) asks its player instead.
-export function supportReach(data: GameData, tokens: Token[], src: Token, a: CardAction): Token[] {
+// Needs a board, so a table without one (the pad) asks its player instead;
+// `noBoard` drops the Range test for it, since a Freeform pad's units stand on
+// placeholder cells along their edge and measured nothing real.
+export function supportReach(data: GameData, tokens: Token[], src: Token, a: CardAction, noBoard = false): Token[] {
   const reach = actionRange(data, tokens, src, a);
   const from = isElectronicSupport(a) ? electronicOrigins(data, tokens, src) : [src];
   return tokens.filter((x) => x.side === src.side && x.deployed !== false
     && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
-    && from.some((o) => rangeBetween(o, x).range <= reach));
+    && (noBoard || from.some((o) => rangeBetween(o, x).range <= reach)));
 }
 
 // The Ally Mechs a Link effect would actually change: in reach and short of
 // their pilot's Link Value, Shutdown or not.
-export function linkSupportTargets(data: GameData, tokens: Token[], src: Token, a: CardAction): Token[] {
-  return supportReach(data, tokens, src, a).filter((x) => x.kind === 'mech' && (x.link ?? 0) < maxLink(data, x));
+export function linkSupportTargets(data: GameData, tokens: Token[], src: Token, a: CardAction, noBoard = false): Token[] {
+  return supportReach(data, tokens, src, a, noBoard).filter((x) => x.kind === 'mech' && (x.link ?? 0) < maxLink(data, x));
 }
 
 // The Ally Units a Token cleanup could clean: in reach and wearing a Token of
 // the printed shape.
-export function tokenCleanupTargets(data: GameData, tokens: Token[], src: Token, a: CardAction, rule: TokenCleanup): Token[] {
-  return supportReach(data, tokens, src, a).filter((x) => removableTokens(x, [rule.shape]).length > 0);
+export function tokenCleanupTargets(data: GameData, tokens: Token[], src: Token, a: CardAction, rule: TokenCleanup, noBoard = false): Token[] {
+  return supportReach(data, tokens, src, a, noBoard).filter((x) => removableTokens(x, [rule.shape]).length > 0);
 }
 
 // ---------- Stabilize System's one question (6.1, FAQ J4-J8) ----------
@@ -1654,8 +1677,8 @@ const SILENCE_KEYWORD = (k: { key?: string; en?: string; inline?: string }): boo
 // Token on the floor. The `label` rides along so the messages can name the
 // ABILITY as well as the unit, the way the Misty Eagle note in combat.ts does,
 // rather than hard-coding "Dynamic Perception" at every call site.
-export function silenceDenied(data: GameData, tokens: Token[], t: Token): AuraSource | undefined {
-  return aurasOn(data, tokens, t).find((s) => s.kinds.includes('silence_denied'));
+export function silenceDenied(data: GameData, tokens: Token[], t: Token, opts: { anywhere?: boolean } = {}): AuraSource | undefined {
+  return aurasOn(data, tokens, t, opts).find((s) => s.kinds.includes('silence_denied'));
 }
 
 // ---------- What Silence denies, and where both halves land ----------
@@ -1774,9 +1797,10 @@ export function actionSilenceDenier(
   a: CardAction,
   partKey?: string,
   from?: Token,
+  opts: { anywhere?: boolean } = {},
 ): AuraSource | undefined {
   if (!actionPrintsSilence(a) && !movementPrintsSilence(data, t, a, partKey)) return undefined;
-  return silenceDenied(data, tokens, t) ?? (from && a.type === 'Moving' ? silenceDenied(data, tokens, from) : undefined);
+  return silenceDenied(data, tokens, t, opts) ?? (from && a.type === 'Moving' ? silenceDenied(data, tokens, from, opts) : undefined);
 }
 
 // A Maneuver is Silent only through Stealth Movement, on a Part that can still
@@ -3197,7 +3221,9 @@ export function isElectronicSupport(a: CardAction): boolean {
 // carries: which side it helps, how far it reaches, and WHAT it may land on —
 // `targetUnitType` is 'mech', 'drone' or 'unit', so a Drone standing beside a
 // Mech-only aura is untouched by it.
-export function aurasOn(data: GameData, tokens: Token[], t: Token): AuraSource[] {
+// `anywhere`: every aura that WOULD reach it with its source in Range, for a
+// table with no board, which judges the Range itself (the pad).
+export function aurasOn(data: GameData, tokens: Token[], t: Token, opts: { anywhere?: boolean } = {}): AuraSource[] {
   const out: AuraSource[] = [];
   for (const src of tokens) {
     if (src.deployed === false) continue;
@@ -3220,7 +3246,7 @@ export function aurasOn(data: GameData, tokens: Token[], t: Token): AuraSource[]
             if (allies !== (src.side === t.side)) continue;
             const want = eff.targetUnitType;
             if (want && want !== 'unit' && want !== t.kind) continue;
-            if (rangeBetween(src, t).range > auraReach(data, src, a)) continue;
+            if (!opts.anywhere && rangeBetween(src, t).range > auraReach(data, src, a)) continue;
             out.push({
               kinds: [...eff.effectTypes],
               value: eff.value ?? 0,
@@ -3670,6 +3696,24 @@ export function repairSpec(a: CardAction): { repair: boolean; mend: boolean; all
   return repair || mend ? { repair, mend, ally, removeSelf } : undefined;
 }
 
+// The Parts of its own a repair Action can take: a destroyed one still
+// without a Repaired Token, or a Damaged one to mend (FAQ J21/J23). One
+// reader for the greyed row and the click (notices, 2026-09-29).
+export function selfRepairOptions(
+  data: GameData,
+  t: Token,
+  rep: { repair: boolean; mend: boolean },
+): { slot: PartSlot | 'main'; card: Card; mode: 'repaired' | 'mend' }[] {
+  const out: { slot: PartSlot | 'main'; card: Card; mode: 'repaired' | 'mend' }[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    const st = t.partStates[slot as PartSlot | 'main'] ?? 'intact';
+    if (rep.repair && st === 'destroyed' && !(t.repairedSlots ?? []).includes(slot)) out.push({ slot, card, mode: 'repaired' });
+    if (rep.mend && st === 'damaged') out.push({ slot, card, mode: 'mend' });
+  }
+  return out;
+}
+
 // The allies such an Action can mend: a Damaged Part, within its Range on a
 // board; a table with no board judges the Range itself.
 export function allyRepairTargets(data: GameData, tokens: Token[], t: Token, a: CardAction, noBoard: boolean): { unit: Token; slot: string }[] {
@@ -3907,11 +3951,14 @@ export function isPositionSwap(a: CardAction): boolean {
     || /交换位置/.test(a.description?.zh ?? '');
 }
 
+// `noBoard`: the table judges the Range (a Freeform pad's placeholder cells
+// are not positions).
 export function blinkTargets(
   data: GameData,
   tokens: Token[],
   t: Token,
   a: CardAction,
+  noBoard = false,
 ): Token[] {
   if (t.kind !== 'mech' || !alive(t) || t.deployed === false) return [];
   const reach = a.range ?? 0;
@@ -3920,7 +3967,7 @@ export function blinkTargets(
     if (o.kind !== 'mech') return false;              // E20.4: Mechs only
     if (o.size !== t.size) return false;              // printed card: same size
     if (!isGroundUnit(data, o)) return false;         // E20.4: ground only
-    return rangeBetween(t, o).range <= reach;
+    return noBoard || rangeBetween(t, o).range <= reach;
   });
 }
 
@@ -6119,6 +6166,151 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
     }
   }
   return out;
+}
+
+// ---------- an Action with nothing to do (notices pick 2, 2026-09-29) ----------
+//
+// The Actions that act ON something - another unit, a Token, a Part, a
+// Terminal - and FAQ H2's rule that an Action which can change nothing cannot
+// be performed. Read before the tap, so every page can grey the Action with
+// the reason instead of refusing it after; and read AT the tap by the
+// tabletop, so the greyed row and the refusal say the same words. The same
+// helpers, in the same order, as the tabletop's own routing (main.ts
+// performGuided). Null: something to do, or not one of these Actions.
+//
+// Not here: Interception (the owed queue, the table's strictness and the
+// guide's preferred target decide it) and Movement (the planner and its
+// stops; guidedActions already greys a Moving Action under Immobilized or a
+// destroyed Chassis). Nor is it folded into guidedActions, whose `available`
+// also hides the Details tab's buttons and decides which Automatic Actions
+// are owed.
+export interface IdleWorld {
+  tokens: Token[];
+  // Sight for a target grant. Absent: no board to judge Range or sight on.
+  terrain?: TerrainPiece[];
+  // A table with no board: nothing is out of Range, the players judge it.
+  noBoard?: boolean;
+  // Remote Access: the Task items, and each Tactical Zone's cells (null on a
+  // table with no board). Without them Remote Access is not judged here.
+  tasks?: TaskItem[];
+  zoneCells?: ((zone: string) => string[]) | null;
+  // The Ammo an Action has left (commands.ts ammoAvailable, which this file
+  // cannot import): the Bit Port Recovers only when empty.
+  ammoLeft?: (t: Token, actionId: string) => number | undefined;
+}
+
+export function actionIdleWhy(data: GameData, t: Token, a: CardAction, w: IdleWorld): string | null {
+  const what = a.name?.en || a.name?.zh || a.id;
+  if (a.id === 'COMMON_REMOTE_ACCESS') {
+    if (!w.tasks || w.zoneCells === undefined) return null;
+    const reach = a.range ?? 4;
+    return terminalsInReach(w.tasks, t, reach, w.zoneCells).length ? null
+      : `${remoteAccessWhy(w.tasks, t, reach, w.zoneCells) ?? 'No Terminal is in reach.'} Remote Access reaches any Grid of a Terminal's Tactical Zone within Range ${reach} (FAQ P6).`;
+  }
+  // Reveal has nothing to reveal out of the Optical Camouflage State: the
+  // engine's own words (commands.ts 'reveal'). The pad already hid the row.
+  if (a.id === 'COMMON_REVEAL') return statusCount(t.statuses, 'camouflage') > 0 ? null : 'This unit is not in the Optical Camouflage State.';
+  // Discard flips a Part Card, so it needs one still standing that has a
+  // Discard Card (the engine's 'disarm' reading).
+  if (a.id === 'COMMON_DISCARD') {
+    return tokenCards(data, t).some(({ slot, card }) => slot !== 'pilot'
+      && (t.partStates[slot as PartSlot] ?? 'intact') !== 'destroyed' && !!discardFaceOf(data, card))
+      ? null : `${t.label} holds nothing it can Discard.`;
+  }
+  // The Overwatch Strike names an enemy and an Ally Mech that fires. On a
+  // board its door measures the Range; with none the table does, so all that
+  // is read here is whether the two exist at all.
+  if (overwatchOf(a)) {
+    if (!w.noBoard) return null;
+    const standing = (x: Token): boolean => x.deployed !== false && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed';
+    if (!w.tokens.some((x) => x.side !== t.side && standing(x))) return 'No enemy is on the table.';
+    return w.tokens.some((x) => x.side === t.side && x.kind === 'mech' && standing(x) && x.stance !== 'shutdown') ? null : 'No Ally Mech can fire.';
+  }
+  // Stabilize asks its own question.
+  if (a.id === 'COMMON_STABILIZE') return null;
+  if (isChargeAction(a)) {
+    const slots = chargeableSlots(data, t);
+    if (!slots.length) return `${t.label} has no Part with a Chargeable Action, so ${what} has nothing to put a Charge Token on (4.14).`;
+    if (slots.every((x) => x.charged)) return `Every Chargeable Part on ${t.label} already holds a face-up Charge Token, which has to be spent before it can be Charged again (4.14).`;
+    return null;
+  }
+  // With no board the table judges every Range, so a reason never names one.
+  const within = (n: number): string => (w.noBoard ? '' : ` within Range ${n}`);
+  const rep = repairSpec(a);
+  if (rep) {
+    if (rep.ally) {
+      return allyRepairTargets(data, w.tokens, t, a, !!w.noBoard).length ? null
+        : `${what}: no Ally Unit${within(a.range ?? 0)} has a Damaged Part, and an Action that changes nothing cannot be performed.`;
+    }
+    return selfRepairOptions(data, t, rep).length ? null
+      : `${what}: no destroyed Part is missing a Repaired Token and nothing is Damaged, and an Action that changes nothing cannot be performed.`;
+  }
+  const supply = resupplyOf(a);
+  if (supply) {
+    return resupplyHolders(data, w.tokens, t, supply, !!w.noBoard).length ? null
+      : `${what}: nothing${w.noBoard ? '' : ' in reach'} has spent any Ammo, and Ammo never goes back past what a Part started with (4.13).`;
+  }
+  if (linkSupportOf(a)) {
+    // A Link Beacon resolves with nobody short of Link: it is spent all the same.
+    if (t.kind === 'projectile') return null;
+    return linkSupportTargets(data, w.tokens, t, a, !!w.noBoard).length ? null
+      : `${what}: every Ally Mech${within(actionRange(data, w.tokens, t, a))} is already at its pilot's Link Value, and an Action that changes nothing cannot be performed (FAQ H2).`;
+  }
+  if (stanceFeedbackOf(a)) {
+    return stanceFeedbackTargets(data, w.tokens, t, a, !!w.noBoard).length ? null
+      : `${what}: no Ally Mech out of Shutdown Stance is ${w.noBoard ? 'on the table' : `within Range ${actionRange(data, w.tokens, t, a)}`}, and an Action that changes nothing cannot be performed (FAQ H2).`;
+  }
+  const clean = tokenCleanupOf(a);
+  if (clean) {
+    return tokenCleanupTargets(data, w.tokens, t, a, clean, !!w.noBoard).length ? null
+      : `${what}: no Ally Unit${within(actionRange(data, w.tokens, t, a))} wears a ${clean.shape === 'square' ? 'Square' : 'Hexagon'} Token, and an Action that changes nothing cannot be performed (FAQ H2).`;
+  }
+  const forms = formSwitch(a);
+  if (forms) {
+    return forms.some((id) => id !== t.cardId && data.byId.get(id)) ? null
+      : `${t.label} has no other form on the table: ${what} needs a second card in its set.`;
+  }
+  if (activatesCamo(a)) return statusCount(t.statuses, 'camouflage') > 0 ? `${t.label} is already in the Optical Camouflage State.` : null;
+  // An every-enemy Electronic Action (Scream, the Scan Battlefield) with no
+  // board: the table judges Range, so only whether any enemy it can name is on
+  // the table at all. On a board its target is picked there.
+  if ((isElectronicAttack(a) || isScanAction(a)) && electronicAll(a) && w.noBoard) {
+    return electronicAllTargets(data, w.tokens, t, a, true).length ? null
+      : isScanAction(a)
+        ? 'No enemy is in the Optical Camouflage State or bearing a Low Profile Token, so the Scan finds nothing (4.12.4).'
+        : `No enemy unit ${a.name?.en ?? a.id} can target is on the table.`;
+  }
+  // Any Scan, board or none: what it could change is read off the enemies'
+  // Tokens, never their places, so with nothing to find anywhere on the table
+  // it spends the Action for nothing (6.1). The pad opened an empty list.
+  if (isScanAction(a) && !electronicAllTargets(data, w.tokens, t, a, true).length) {
+    return w.tokens.some((o) => o.side !== t.side && o.deployed !== false && scannable(o))
+      ? `No enemy unit ${a.name?.en ?? a.id} can target is on the table.`
+      : 'No enemy is in the Optical Camouflage State or bearing a Low Profile Token, so the Scan finds nothing (4.12.4).';
+  }
+  if (isElectronicAttack(a) || isScanAction(a) || a.type === 'Firing' || a.type === 'Melee') return null;
+  if (isPositionSwap(a)) {
+    return immobilizedStop(t, a) ?? chassisStop(t) ?? (blinkTargets(data, w.tokens, t, a, !!w.noBoard).length ? null
+      : `${what}: no Ground Mech the size of ${t.label} is ${w.noBoard ? 'on the table' : `within Range ${a.range ?? 0}`}, enemy or allied (FAQ E20).`);
+  }
+  if (a.type === 'Moving') return null;
+  if (a.type === 'Projectile') {
+    const port = bitPortOf(a);
+    if (!port || !w.ammoLeft || (w.ammoLeft(t, a.id) ?? 1) > 0) return null;
+    return bitsToRecover(data, w.tokens, t, a, !!w.noBoard).length ? null
+      : `${what}: the Bit Port is empty, and none of your "White Dwarf" Bits is within Range ${port.range}.`;
+  }
+  // A Delay-Phase payload, an Unfold and a Mode change resolve in place.
+  if (t.kind === 'projectile' || transformOffer(data, t, a)) return null;
+  const tag = targetStatusGrant(a);
+  if (tag) {
+    const board = w.terrain && !w.noBoard ? { terrain: w.terrain, smoke: [] } : undefined;
+    return targetStatusTargets(data, w.tokens, t, a, tag, board).length ? null
+      : `${what}: no unit in Range ${actionRange(data, w.tokens, t, a)} and line of sight can gain it.`;
+  }
+  const grant = selfStatusGrant(a);
+  if (grant) return selfGrantWhy(t, grant);
+  return null;
 }
 
 // ---------- runtime Part faces and Tether X (PDLH-202, 287/288) ----------

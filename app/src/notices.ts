@@ -36,13 +36,18 @@ export interface Notice {
   // pressed, so an Undo can never reach past a later move and take back
   // something the notice was not about.
   undo?: () => boolean;
+  // What Undo does for this notice, when it is more than the page's own Undo
+  // (the tabletop's house-rule attack also closes the window it opened).
+  onUndo?: () => void;
 }
 
 export interface NoticeConfig {
   // Where the line is drawn, looked up on every show so a page that rebuilds
   // its skeleton never draws into a detached node.
   host: () => HTMLElement | null;
-  voice?: NoticeVoice;
+  // A page whose voice changes with its mode (the tabletop's Teaching guide
+  // keeps the rule numbers) passes a function, asked at each notice.
+  voice?: NoticeVoice | (() => NoticeVoice);
   kinds?: Partial<Record<NoticeKind, NoticeMode>>;
   onUndo?: () => void;
   onLog?: (n: Notice) => void;
@@ -72,7 +77,8 @@ export function notify(n: Notice): void {
     config.onLog?.(n);
     return;
   }
-  const text = speak(n.text, config.voice ?? 'plain');
+  const voice = typeof config.voice === 'function' ? config.voice() : config.voice;
+  const text = speak(n.text, voice ?? 'plain');
   if (!text) return;
   shown = { ...n, text, id: ++seq };
   draw();
@@ -156,7 +162,8 @@ function draw(): void {
   words.className = 'notice-text';
   words.textContent = n.text;
   const parts: HTMLElement[] = [dot, words];
-  if (n.undo?.() && config?.onUndo) {
+  const onUndo = n.onUndo ?? config?.onUndo;
+  if (n.undo?.() && onUndo) {
     const undo = document.createElement('button');
     undo.type = 'button';
     undo.className = 'notice-undo';
@@ -164,7 +171,7 @@ function draw(): void {
     undo.addEventListener('click', () => {
       const still = n.undo?.();
       dismissNotice(n.id);
-      if (still) config?.onUndo?.();
+      if (still) onUndo();
     });
     parts.push(undo);
   }
@@ -178,11 +185,11 @@ function draw(): void {
   host.replaceChildren(...parts);
 }
 
-// A greyed control explains itself when held (a phone) or hovered (a mouse):
-// its reason, in `data-why`, goes to this line. The control is only LOOKED
+// A greyed control explains itself when held (a phone) or rested on (a mouse):
+// its reason, in `data-why`, goes to this line (OTTO's pick 2). The control is only LOOKED
 // disabled (aria-disabled plus the page's greyed class), because a truly
 // disabled button hears no pointer at all and could never be held.
-export function explainOnHold(root: HTMLElement, holdMs = 450): void {
+export function explainOnHold(root: HTMLElement, holdMs = 450, hoverMs = 350): void {
   let timerId = 0;
   let armed: HTMLElement | null = null;
   const cancel = () => {
@@ -199,13 +206,44 @@ export function explainOnHold(root: HTMLElement, holdMs = 450): void {
     }, holdMs);
   });
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave'] as const) root.addEventListener(ev, cancel);
+  // A mouse has no long press, so resting on the control does the same. The
+  // short wait keeps a sweep down a list from flashing every reason in turn,
+  // and the reason then stays its usual while after the pointer moves on: the
+  // line is not beside the pointer, so it has to be looked for. The control
+  // carries no title of its own, or the reason would be said twice.
+  let hovered: HTMLElement | null = null;
+  let dwellId = 0;
+  root.addEventListener('pointerover', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    const at = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-why]') ?? null;
+    const el = at && root.contains(at) ? at : null;
+    if (el === hovered) return;
+    window.clearTimeout(dwellId);
+    hovered = el;
+    if (!el) return;
+    dwellId = window.setTimeout(() => {
+      // A hover never talks over a notice whose Undo is still live: a pointer
+      // resting on a greyed control in passing would take the Undo away. A
+      // long press or a key is deliberate, and does.
+      if (hovered === el && el.isConnected && el.dataset.why && !shown?.undo?.()) notify({ kind: 'refused', text: el.dataset.why });
+    }, hoverMs);
+  });
+  root.addEventListener('pointerout', (e) => {
+    if (!hovered || (e.relatedTarget instanceof Node && hovered.contains(e.relatedTarget))) return;
+    window.clearTimeout(dwellId);
+    hovered = null;
+  });
   // A plain tap on a greyed control does nothing at all, like the Link "+"
   // at full Link: the reason is there for a player who holds it, and silent
   // for everyone else. Swallowed before the page's own click handler sees it.
+  // Enter or Space on a focused one is no stray tap and has no hover or hold
+  // to fall back on, so it is answered with the reason (a key's click has no
+  // pointer count: detail 0).
   root.addEventListener('click', (e) => {
     const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('[aria-disabled="true"]');
     if (!el || !root.contains(el)) return;
     e.preventDefault();
     e.stopPropagation();
+    if (e.detail === 0 && el.dataset.why) notify({ kind: 'refused', text: el.dataset.why });
   }, true);
 }

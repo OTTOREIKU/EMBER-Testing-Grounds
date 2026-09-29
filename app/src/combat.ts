@@ -998,6 +998,10 @@ export class AttackHelper {
   // it has no memory of its own: it recomputes from the published view every
   // render and would happily redraw what was just dismissed.
   private dismissed: string | null = null;
+  // Whether the attack this window last closed was cancelled before any die
+  // was rolled. The tabletop reads it as "stop here" for an Interception chain
+  // (notices review, 2026-09-28). Cleared as each attack starts.
+  closedUnrolled = false;
   // Which finished step cards the reader has opened. A VIEW preference, held on
   // the helper and never published: which cards you have unfolded is nobody
   // else's business and must not travel in a checkpoint.
@@ -1124,6 +1128,18 @@ export class AttackHelper {
   // the window: idle and mirroring look identical from outside otherwise.
   get watching(): boolean {
     return !!this.mirroring;
+  }
+
+  // The declaration this window is resolving, for as long as no die has been
+  // rolled for it: the one stretch in which an attack can be taken back as if
+  // it had never been declared (the tabletop's house-rule Undo, notices pick
+  // 5). Only ever compared by identity. A Multi-Target sequence is one
+  // declaration, so it answers for its first target only.
+  get unrolled(): object | null {
+    const c = this.ctx;
+    if (!c || this.mirroring || c.attackRoll || c.defenseRoll || c.blackResult) return null;
+    if (this.multi && this.multi.index > 0) return null;
+    return this.multi ?? c;
   }
 
   // Re-points the window at a new element, keeping the attack.
@@ -1483,6 +1499,7 @@ export class AttackHelper {
     redirect = true,
   ): void {
     this.stopBlack();
+    this.closedUnrolled = false;
     // An Interception is a Firing Action for its modifiers, whatever the card
     // prints (FAQ M26; ruling I9; audit Phase 5, B4).
     if (intercept) action = asInterception(action);
@@ -1590,6 +1607,7 @@ export class AttackHelper {
   // the two cannot drift.
   startMulti(attacker: Token, action: CardAction, primary: Token, cap: MultiTarget): void {
     this.stopBlack();
+    this.closedUnrolled = false;
     // The Coolers add to the pool the Multi-Target then SPLITS, not to each
     // sequence: one Firing Action is cooled once, however many targets it takes.
     const printed = { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 };
@@ -1732,6 +1750,7 @@ export class AttackHelper {
 
   cancel(): void {
     this.stopBlack();
+    this.closedUnrolled = this.unrolled !== null;
     this.ctx = null;
     this.multi = null;
     this.onClose();
@@ -6169,6 +6188,13 @@ export class ElectronicHelper {
     return this.shared;
   }
 
+  // The contest this window is resolving while neither side has rolled, for
+  // the tabletop's house-rule Undo (AttackHelper.unrolled says why).
+  get unrolled(): object | null {
+    const c = this.ctx;
+    return c && !this.shared && !c.initRoll && !c.respRoll ? c : null;
+  }
+
   // The shared Counter-roll, drawn from the record both clients hold. Rebuilt
   // from scratch on every call for the same reason the attack mirror is: the
   // record is the truth and this window keeps nothing of its own.
@@ -6311,6 +6337,14 @@ export class ElectronicHelper {
     this.ctx = null;
     this.onClose();
     next?.();
+  }
+
+  // Closes the window as if the contest had never been opened: unlike cancel()
+  // the next exchange of an every-enemy Action is NOT opened, because an Undo
+  // is taking the whole declaration back.
+  abandon(): void {
+    this.ctx = null;
+    this.onClose();
   }
 
   private note(text: string, who: Token[] = []): void {

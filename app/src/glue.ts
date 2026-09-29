@@ -10,11 +10,13 @@
 // and adds only what a board page needs on top (the smoke-dissipation queue).
 import type { GameData } from './data';
 import type { Command } from './commands';
-import { clearDroneCommands, seedCommandTokens } from './commands';
+import { ammoAvailable, clearDroneCommands, seedCommandTokens } from './commands';
 import { alive, type InitLookup, nextActivation } from './loop';
 import { normaliseSetup } from './setup';
-import { extrasFor } from './units';
-import { newOpportunity, newScriptState, type GameState, type Opportunity, type Timing } from './types';
+import { extrasFor, type IdleWorld } from './units';
+import { zoneCellsOf } from './scoring';
+import { normaliseTasks } from './tasks';
+import { newOpportunity, newScriptState, type GameState, type Opportunity, type TerrainPiece, type Timing } from './types';
 
 const PKEY: Record<Timing, 'swift' | 'melee' | 'projectile' | 'firing' | 'moving' | 'tactic'> = {
   swift: 'swift', melee: 'melee', projectile: 'projectile', firing: 'firing', movement: 'moving', tactical: 'tactic',
@@ -129,4 +131,20 @@ export function opportunity(data: GameData, s: GameState): Opportunity | null {
   fresh.extras = t ? extrasFor(data, t) : [];
   sc.opp = fresh;
   return fresh;
+}
+
+// The board as units.ts actionIdleWhy reads it, for every page alike: the
+// Task items, each Tactical Zone's cells (none on a table with no board, where
+// the players judge Range) and the Ammo reader units.ts cannot import. The
+// terrain is the page's own view of it; a table with no board passes none
+// (notices pick 2, 2026-09-29).
+export function idleWorldFor(data: GameData, state: GameState, terrain?: TerrainPiece[]): IdleWorld {
+  return {
+    tokens: state.tokens,
+    terrain,
+    noBoard: !!state.noBoard,
+    tasks: normaliseTasks(state.tasks).items,
+    zoneCells: state.noBoard ? null : zoneCellsOf(data, state),
+    ammoLeft: (u, actionId) => ammoAvailable(data, state, u, actionId),
+  };
 }
