@@ -13,7 +13,8 @@ import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, parseGridR
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells, resetHudTools, startActionFromCard, startSupportPick } from './matchhud';
 import { printedDeployment } from './overlays';
-import { ignoresProtectionOnHighlight, kcArmorReady, knockbackOf, migrateState, multiTargetLimit, providesUnitProtectionToAllies, squadAllegiance, squadPoints, tokenCards, unfoldsOwed, type AttackReaction } from './units';
+import { actionIdleWhy, ignoresProtectionOnHighlight, kcArmorReady, knockbackOf, migrateState, multiTargetLimit, providesUnitProtectionToAllies, squadAllegiance, squadPoints, tokenCards, unfoldsOwed, type AttackReaction } from './units';
+import { idleWorldFor } from './glue';
 import { countHits, normaliseSetup } from './setup';
 import { lowValueOf } from './scoring';
 import { boxHands, gameResult, normaliseTasks, taskItemsFor } from './tasks';
@@ -24,6 +25,7 @@ import { warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { syncUpdateNotice, watchForUpdates } from './updates';
 import { choiceDialog } from './dialog';
+import { clearNotice, configureNotices, explainOnHold, notify, type NoticeKind } from './notices';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { animateRemoteMove, clearRangeOverlayFor, detonationHit, ensureHud, offerCoordinationAfterManeuver, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
@@ -198,13 +200,47 @@ let lobbyNote: string | null = null;
 // note never travels. This is the seam where a remote command has just been
 // applied, past the replay guard, so it is the one place a line can be said
 // once and only on the watching screen.
+//
+// OTTO's pick 3 (2026-09-28): each player is told what the other did to THEIR
+// units or to the table as a whole, the way the pad announces the other
+// phone's edits. What already shows itself (a move walks, an attack opens the
+// combat window, a roll lands in the feed, the phase turns in the panel) is
+// left to show itself.
+const TABLE_WIDE = new Set(['award', 'pickSecondary', 'configureTable', 'resetRounds', 'importSquad', 'concede']);
 function announceRemote(cmd: Command): void {
   const unit = (uid: number): string => state.tokens.find((t) => t.uid === uid)?.label ?? 'a unit';
   if (cmd.kind === 'setCharge') {
-    lobbyNote = cmd.on
+    say('event', cmd.on
       ? `${squadLabel(cmd.seat)}: ${unit(cmd.uid)} Charges its ${SLOT_LABEL[cmd.slot as keyof typeof SLOT_LABEL] ?? cmd.slot}.`
-      : `${squadLabel(cmd.seat)}: ${unit(cmd.uid)} spends the Charge on its ${SLOT_LABEL[cmd.slot as keyof typeof SLOT_LABEL] ?? cmd.slot}.`;
+      : `${squadLabel(cmd.seat)}: ${unit(cmd.uid)} spends the Charge on its ${SLOT_LABEL[cmd.slot as keyof typeof SLOT_LABEL] ?? cmd.slot}.`);
+    return;
   }
+  if (!data) return;
+  const c = cmd as Command & { uid?: number; targetUid?: number };
+  const target = state.tokens.find((t) => t.uid === (c.targetUid ?? c.uid));
+  if (!TABLE_WIDE.has(cmd.kind) && !(target && target.side === mySeat())) return;
+  const meta = labelFor(cmd, state, ledgerNames ?? (ledgerNames = namesFrom(data)));
+  if (meta.role === 'quiet') return;
+  say('event', meta.label);
+}
+
+// While the match is on screen every message goes to the one notice line at
+// the bottom of the board (notices.ts; OTTO's picks, 2026-09-28): the red box
+// at the top of the turn panel said everything, success included, in the
+// colour of an error, and pushed the panel about. Anywhere else, the room's
+// lobby included, the line does not exist, so the lobby keeps its own note
+// under the form (a room's lobby lost every refusal to the missing line;
+// notices review, 2026-09-28).
+function say(kind: NoticeKind, text: string | null | undefined): void {
+  if (!text) return;
+  if (hudUp()) notify({ kind, text });
+  else { lobbyNote = text; render(); }
+}
+
+// Whether the in-match HUD, and with it the notice line, is what the page
+// shows: the one test render() draws by.
+function hudUp(): boolean {
+  return !!data && ((running() && !!relay.state.room) || (!!devSeat && running()));
 }
 
 let acctNote: { ok: boolean; text: string } | null = null;
@@ -259,7 +295,7 @@ let lastResync = 0;
 function resyncSoon(): void {
   const now = Date.now();
   if (now - lastResync < 6000) {
-    lobbyNote = 'The two boards disagree and would not settle. Leave and rejoin the table if this does not clear.';
+    say('system', 'The two boards disagree and would not settle. Leave and rejoin the table if this does not clear.');
     return;
   }
   lastResync = now;
@@ -322,8 +358,7 @@ const relay = new Relay(api.base, {
       if (promised) {
         void hashDials(cmd.salt, cmd.dials).then((actual) => {
           if (actual !== promised) {
-            lobbyNote = `${squadLabel(cmd.seat)}'s revealed dials do not match their commitment.`;
-            render();
+            say('warn', `${squadLabel(cmd.seat)}'s revealed dials do not match their commitment.`);
           }
         });
       }
@@ -335,7 +370,7 @@ const relay = new Relay(api.base, {
     const s = migrateState(raw, data);
     if (!s) {
       boardBroken = true;
-      lobbyNote = 'The table sent a board this version cannot read. Reload the page to rejoin.';
+      say('system', 'The table sent a board this version cannot read. Reload the page to rejoin.');
       render();
       return;
     }
@@ -360,6 +395,7 @@ const relay = new Relay(api.base, {
     // note has served its purpose. Left up, it would sit there for the rest of
     // the game claiming a rewind is still in flight.
     if (lobbyNote === 'Rolling back…') lobbyNote = null;
+    clearNotice('system');
     // The checkpoint knows nothing of this seat's unrevealed dials — they are
     // local by design — so put them back before the panel decides they were
     // never picked, and answer a reveal the replaced board may be waiting on.
@@ -484,8 +520,7 @@ onBeforeApply((s, cmd) => {
 });
 onRefused((why) => {
   noteRefusal(why);
-  lobbyNote = why;
-  render();
+  say('refused', why);
 });
 
 // ---------- the command path ----------
@@ -518,6 +553,8 @@ function clearFeedAfter(cmd: Command): void {
   if (!CLEARS_THE_FEED.has(cmd.kind)) return;
   diceFeed.length = 0;
   lobbyNote = null;
+  // A step to do belonged to the moment that has just ended.
+  clearNotice('table');
 }
 
 // One door for everything this page performs: the command, then the same
@@ -666,7 +703,7 @@ function rewindIfAgreed(cmd: Command): void {
     // undone into the gap while the rewind is in the air.
     clearHistory();
     resetHudTools();
-    lobbyNote = 'Rolling back…';
+    say('system', 'Rolling back…');
     render();
     return;
   }
@@ -676,7 +713,7 @@ function rewindIfAgreed(cmd: Command): void {
   if (!snap) {
     // Only reachable if the asker offered a point the host has already dropped.
     // Nothing has moved on either board, so this is safe — but it is not silent.
-    lobbyNote = 'That point is too far back to return to. Nothing was undone.';
+    say('refused', 'That point is too far back to return to. Nothing was undone.');
     render();
     return;
   }
@@ -998,7 +1035,7 @@ function mountSide(): void {
     onSpendAmmo: (t, actionId) => {
       if (startActionFromCard(t.uid, actionId)) { render(); return; }
       if (relay.state.room) {
-        lobbyNote = `${t.label} does not hold the Action Opportunity, so it cannot perform that now (3.4).`;
+        say('refused', `${t.label} does not hold the Action Opportunity, so it cannot perform that now (3.4).`);
         render();
         return;
       }
@@ -1009,7 +1046,7 @@ function mountSide(): void {
     // Ammo comes back through a Resupply or Undo in a room (E8), never a pip.
     onRestoreAmmo: (t, actionId) => {
       if (relay.state.room) {
-        lobbyNote = 'In a match, Ammo comes back through a Resupply Action, or Undo if a spend was a mistake.';
+        say('refused', 'In a match, Ammo comes back through a Resupply Action, or Undo if a spend was a mistake.');
         render();
         return;
       }
@@ -1023,10 +1060,26 @@ function mountSide(): void {
       startInterceptPick(t.uid, actionId);
       render();
     },
+    // The three pips a match never corrects by hand are greyed with the same
+    // words the presses below refuse with (notices pick 2).
+    blockedWhy: (t, what, actionId) => {
+      // A support Action with nothing in reach to do it to, on any table.
+      if (what === 'support') {
+        // Its own Parts, or a Load a Tarantula in Contact lends it (FAQ O3/O16).
+        const a = data && [...tokenCards(data, t), ...loanedParts(data, state.tokens, t)]
+          .flatMap(({ card }) => card.actions ?? []).find((x) => x.id === actionId);
+        return a && data ? actionIdleWhy(data, t, a, idleWorldFor(data, state, terrainNow())) : null;
+      }
+      if (!relay.state.room) return null;
+      return what === 'restoreAmmo' ? 'In a match, Ammo comes back through a Resupply Action, or Undo if a spend was a mistake.'
+        : what === 'restoreIntercept' ? 'Interception Tokens are never restored. Undo takes back a mistaken spend.'
+          : what === 'charge' ? 'In a match a Charge Token is flipped by the Charge Action, and spent when a [Charged] Action consumes it. Use Undo if one was flipped by mistake.'
+            : null;
+    },
     // Interception Tokens are never restored (4.9, M27; audit Phase 5, B8).
     onRestoreIntercept: (t, actionId) => {
       if (relay.state.room) {
-        lobbyNote = 'Interception Tokens are never restored. Undo takes back a mistaken spend.';
+        say('refused', 'Interception Tokens are never restored. Undo takes back a mistaken spend.');
         render();
         return;
       }
@@ -1040,7 +1093,7 @@ function mountSide(): void {
     onLaunch: (t, action, projectile) => {
       if (startActionFromCard(t.uid, action.id, projectile.id)) { render(); return; }
       if (relay.state.room) {
-        lobbyNote = `${t.label} does not hold the Action Opportunity, so it cannot launch now (4.7.3).`;
+        say('refused', `${t.label} does not hold the Action Opportunity, so it cannot launch now (4.7.3).`);
         render();
         return;
       }
@@ -1054,7 +1107,7 @@ function mountSide(): void {
       // for the sandbox, where nothing is being paid for.
       if (startActionFromCard(t.uid, actionId)) { render(); return; }
       if (relay.state.room) {
-        lobbyNote = `${t.label} does not hold the Action Opportunity, so it cannot attack now (3.4).`;
+        say('refused', `${t.label} does not hold the Action Opportunity, so it cannot attack now (3.4).`);
         render();
         return;
       }
@@ -1093,7 +1146,7 @@ function mountSide(): void {
     onSupport: (t, actionId) => {
       if (startActionFromCard(t.uid, actionId)) { render(); return; }
       if (relay.state.room) {
-        lobbyNote = `${t.label} does not hold the Action Opportunity, so it cannot act now (3.4).`;
+        say('refused', `${t.label} does not hold the Action Opportunity, so it cannot act now (3.4).`);
         render();
         return;
       }
@@ -1114,7 +1167,7 @@ function mountSide(): void {
     // flipped by hand was a Charge nobody paid a Tick for (audit Phase 2, E8).
     onCharge: (t, slot, on) => {
       if (relay.state.room) {
-        lobbyNote = 'In a match a Charge Token is flipped by the Charge Action, and spent when a [Charged] Action consumes it. Use Undo if one was flipped by mistake.';
+        say('refused', 'In a match a Charge Token is flipped by the Charge Action, and spent when a [Charged] Action consumes it. Use Undo if one was flipped by mistake.');
         render();
         return;
       }
@@ -1164,7 +1217,9 @@ function mountSide(): void {
       },
       // Unit logs are a freeplay habit; here the turn panel's note carries what
       // the roll worked out, so the other player is not left guessing.
-      (t, text) => { void t; lobbyNote = text; },
+      // The combat window keeps its own log; echoing every line was the loudest
+      // thing in the old note box.
+      (t, text) => { void t; say('done', text); },
       (attacker, defender, action, hits) => {
         // This fires after EVERY completed attack, so the Knockback keyword has
         // to be tested here — opening the Forced Movement panel unconditionally
@@ -2445,8 +2500,7 @@ function hudCtx(): HudCtx {
     rollPool,
     rollDefense: rollDefensePool,
     diceFeed,
-    note: lobbyNote,
-    noteNow: (text) => { lobbyNote = text; },
+    noteNow: (text, kind) => say(kind ?? 'refused', text),
     zonesOn: zonesVisible,
     toggleZones: () => {
       zonesVisible = !zonesVisible;
@@ -2545,7 +2599,7 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
       send({ kind: 'answerDefense', seat, faces });
       render();
     }).catch(() => {
-      lobbyNote = 'The dice did not come back. Nothing was recorded, so roll again.';
+      say('system', 'The dice did not come back. Nothing was recorded, so roll again.');
       render();
     });
     return true;
@@ -2559,14 +2613,14 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
     // used to travel unconditionally paired, so a refused spend still sent
     // the declare and the attacker's window granted the effect unpaid.
     const paid = send({ kind: 'setCharge', seat, uid: df.uid, slot: kc.slot, on: false });
-    if (!paid.ok) { lobbyNote = paid.why; render(); return false; }
+    if (!paid.ok) { say('refused', paid.why); return false; }
     send({ kind: 'kcArmor', seat });
     render();
     return true;
   }
   if (act === 'meleeevade') {
     const paid = send({ kind: 'spendCommand', seat, uid: df.uid });
-    if (!paid.ok) { lobbyNote = paid.why; render(); return false; }
+    if (!paid.ok) { say('refused', paid.why); return false; }
     send({ kind: 'meleeEvade', seat });
     render();
     return true;
@@ -2574,7 +2628,7 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
   if (act === 'dodgeenhance') {
     // The mass-production HALO (GoF 1.021) spends nothing.
     const paid = dodgeEnhanceOf(data!, df)?.free ? { ok: true, why: '' } : send({ kind: 'spendCommand', seat, uid: df.uid });
-    if (!paid.ok) { lobbyNote = paid.why; render(); return false; }
+    if (!paid.ok) { say('refused', paid.why); return false; }
     send({ kind: 'dodgeEnhance', seat });
     render();
     return true;
@@ -2594,7 +2648,7 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
     // player can hit, and a button that eats the press in silence is what
     // teaches them to keep clicking.
     const paid = send({ kind: 'focus', seat, uid: df.uid });
-    if (!paid.ok) { lobbyNote = paid.why; render(); return false; }
+    if (!paid.ok) { say('refused', paid.why); return false; }
     send({ kind: 'focusAnswer', seat, use: true });
     render();
     return true;
@@ -2631,7 +2685,7 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
       // back has to SAY so: the buttons are still on screen and pressing again
       // is the retry. rolldefense beside this has carried the same catch all
       // along; this path just never got one.
-      lobbyNote = 'The reroll dice did not come back. Nothing was recorded, so reroll again.';
+      say('system', 'The reroll dice did not come back. Nothing was recorded, so reroll again.');
       render();
     });
     return true;
@@ -2802,7 +2856,7 @@ function render(): void {
   // way it closed — the sweep sees the helper idle and sends the null.
   sweepCombatView();
   nameTheSquads();
-  const hud = !!data && ((running() && !!relay.state.room) || (!!devSeat && running()));
+  const hud = hudUp();
   // Stats and Admin are reading views: long lists that must not push the page
   // taller than the window. Same clamp the HUD uses, and the lists scroll
   // inside their panels instead.
@@ -2913,7 +2967,7 @@ async function attempt(fn: () => Promise<void>, showErr: (m: string) => void): P
 function copyDiagnostics(): void {
   const report = JSON.stringify(relay.diagnostics(), null, 2);
   void navigator.clipboard?.writeText(report).then(() => {
-    lobbyNote = 'Connection report copied. Paste it wherever you are reporting this.';
+    say('event', 'Connection report copied. Paste it wherever you are reporting this.');
     render();
   });
 }
@@ -3254,7 +3308,7 @@ function wire(): void {
         bringSquad(squad.name, squad.mechs, squad.drones, squad.tactics);
       })
       .catch((e: Error) => {
-        lobbyNote = `Squad import failed: ${e.message}`;
+        say('refused', `Squad import failed: ${e.message}`);
         render();
       })
       .finally(() => {
@@ -3326,6 +3380,11 @@ watchForUpdates({
   compact: true,
   place: (notice) => document.querySelector('.mc-sysline span:last-child')?.replaceWith(notice),
 });
+
+// The one notice line: terse, as a table companion should be. There is no
+// Undo on it here: a shared board is rewound only by agreement (the ↩ menu).
+configureNotices({ host: () => document.getElementById('mc-notice'), voice: 'terse' });
+explainOnHold(document.body);
 
 render();
 void (async () => {

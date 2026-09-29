@@ -6,14 +6,14 @@ import { actionIconUrl, cardName, isAerial, parseGridRef, secondaryImageUrl, squ
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { interceptHeld, allyRepairTargets, overwatchOf, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, blastScanState, mineStopIndex, chassisStop, bitPortOf, bitsToRecover, coordinationAfterManeuver, ownCards, electronicTargetWhy, scannable, controlledMoveActions, ewWinCommands, electronicAll, electronicAllTargets, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, interceptOwedAt, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { interceptHeld, allyRepairTargets, overwatchOf, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, blastScanState, mineStopIndex, chassisStop, bitPortOf, bitsToRecover, coordinationAfterManeuver, ownCards, electronicTargetWhy, scannable, controlledMoveActions, ewWinCommands, electronicAll, electronicAllTargets, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, interceptOwedAt, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply, actionIdleWhy } from './units';
 import { ElectronicHelper, type EwAct, type EwArg } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
 import { boxDropCellIn, boxDropCells, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSight, losNote, smokeBlocks, pathCost, breakAwayLinkDue, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
-import { ensureScript, enterPhase, glueAfter as glueCore, makeInit, opportunity } from './glue';
+import { ensureScript, enterPhase, glueAfter as glueCore, idleWorldFor, makeInit, opportunity } from './glue';
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, ScriptState, Side, Stance, TerrainPiece, Timing, Token, ExtraTick, Opportunity } from './types';
 import { isLineUnit, statusCount, gridsOf, newOpportunity, newScriptState, PHASES, removableTokens, STATUSES, TIMINGS, zonesOf } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
@@ -21,6 +21,7 @@ import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, dr
 import { actionIdOf, actionPipCount, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { boxHands, boxPlaceTurn, deployGrids, deployOpenGrids, gameResult, normaliseTasks, remoteAccessWhy, TERMINAL_EV, TERMINAL_UID, terminalsInReach, terminalStandIn, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, zoneCellsOf } from './scoring';
+import type { NoticeKind } from './notices';
 import { firewatchOn, highlightTargets, targetStatusGrant, targetStatusTargets, linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, isRwsAction, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
@@ -64,9 +65,9 @@ export interface HudCtx {
   // watches the same faces land.
   rollDefense(white: number, blue: number): Promise<{ color: string; face: number }[]>;
   diceFeed: DiceLine[];
-  note: string | null;
-  // Shows a one-off message in the turn panel.
-  noteNow(text: string): void;
+  // Says something in the notice line (notices.ts). The kind decides whether it
+  // is shown: a confirmation ('done') is not, the board already shows the move.
+  noteNow(text: string, kind?: NoticeKind): void;
   // The local zone-overlay preference: this player's clean board is their
   // own business, so it never crosses the wire.
   zonesOn: boolean;
@@ -627,7 +628,7 @@ function towDraggedAlly(ctx: HudCtx, t: Token, path: LargeGrid[], drag: { allyUi
   // have overwritten it (notices audit, 2026-09-28).
   const paidTow = ctx.send({ kind: 'spendCommand', seat: t.side, uid: drag.funderUid }).ok;
   const towed = ctx.send({ kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: ally.uid, to: spot }).ok;
-  if (paidTow && towed) ctx.noteNow(`${t.label} drags ${ally.label} along (-1 Movement, 1 Command Token consumed).`);
+  if (paidTow && towed) ctx.noteNow(`${t.label} drags ${ally.label} along (-1 Movement, 1 Command Token consumed).`, 'done');
   // Forced Movement: the Harpy's player sets the facing (FAQ B4; audit Phase 4, B3).
   void askTowFacing(ally, t.label).then((f) => {
     if (f === null) return;
@@ -654,13 +655,13 @@ function commitMove(ctx: HudCtx): void {
     // The Red Shoes may spend its move on a pivot like any Maneuver.
     if (m.controller) {
       const v = ctx.send({ kind: 'controlledMove', seat: m.controller.side, uid: m.controller.uid, targetUid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, actionId: m.actionId });
-      ctx.noteNow(v.ok ? `${t.label} is turned on the spot (The Red Shoes).` : v.why ?? 'The move was refused.');
+      ctx.noteNow(v.ok ? `${t.label} is turned on the spot (The Red Shoes).` : v.why ?? 'The move was refused.', v.ok ? 'done' : 'refused');
       ctx.refresh();
       return;
     }
     commitAction(ctx);
     const turned = ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, free: m.free, granted: m.granted, actionId: m.actionId }).ok;
-    if (turned) ctx.noteNow(`${t.label} turns on the spot. A pivot spends no Movement Range, but it is Movement.`);
+    if (turned) ctx.noteNow(`${t.label} turns on the spot. A pivot spends no Movement Range, but it is Movement.`, 'done');
     if (m.attackAfter) resumeShockAttack(ctx, t.uid, m.attackAfter);
     ctx.refresh();
     return;
@@ -726,7 +727,7 @@ function commitMove(ctx: HudCtx): void {
       const v = ctx.send({ kind: 'controlledMove', seat: ctl.side, uid: ctl.uid, targetUid: t.uid, to: last, via: stops, facing, actionId: m.actionId });
       if (!v.ok) ctx.noteNow(v.why ?? 'The move was refused.');
       else {
-        ctx.noteNow(`${t.label} moves under The Red Shoes' control.`);
+        ctx.noteNow(`${t.label} moves under The Red Shoes' control.`, 'done');
         // Its own Movement still triggers Interception by the side it is
         // moving against (4.9).
         const moved = aerialStart ? ctx.state.tokens.find((x) => x.uid === t.uid) : undefined;
@@ -779,14 +780,14 @@ function commitMove(ctx: HudCtx): void {
     const moveOk = ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, granted, via: stops, facing, actionId: m.actionId, flying: m.flying || undefined, breakAwayLink: linkDue,
       ...(halt !== undefined ? { halt } : {}), ...(m.resume ? { resume: true } : {}) }).ok;
     if (moveOk && halt !== undefined) {
-      ctx.noteNow(`A Mine stops ${t.label} in its Grid. Resolve its blast, then Go on with the ${halt} Grid${halt === 1 ? '' : 's'} left (M19).`);
+      ctx.noteNow(`A Mine stops ${t.label} in its Grid. Resolve its blast, then Go on with the ${halt} Grid${halt === 1 ? '' : 's'} left (M19).`, 'table');
     }
     if (drag) towDraggedAlly(ctx, t, walked, drag);
     if (aerialStart) {
       const moved = ctx.state.tokens.find((x) => x.uid === t.uid);
       const owed = moved ? interceptsOwed(ctx.data, ctx.state.tokens, ctx.state.smoke ?? [], aerialStart, [moved]) : [];
       if (owed.length) {
-        if (ctx.send({ kind: 'queueIntercepts', seat: t.side, items: owed }).ok) ctx.noteNow(`${t.label} is an Aerial Unit, so its Movement triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed (4.9).`);
+        if (ctx.send({ kind: 'queueIntercepts', seat: t.side, items: owed }).ok) ctx.noteNow(`${t.label} is an Aerial Unit, so its Movement triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed (4.9).`, 'done');
       }
     }
     // A Black Box in a Grid the route passed through may be picked up, which is
@@ -1531,6 +1532,11 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // Backpack lend two distinct Parts, and each may be used once (FAQ O7).
   const blockedBy = new Map<string, string | undefined>();
   for (const g of guided) if (!g.available) blockedBy.set(g.partKey, g.reason);
+  // The board as units.ts actionIdleWhy reads it: an Action with nothing to do
+  // (every Part Charged, nothing spent in reach, nobody to switch...) is
+  // greyed with the reason, the same reading the other pages grey by, where
+  // the panel it opened used to say so after the press (notices, 2026-09-29).
+  const idleWorld = idleWorldFor(ctx.data, ctx.state, terrainOf(ctx));
   const ammoOf = new Map<string, number | undefined>();
   for (const g of guided) ammoOf.set(g.partKey, g.ammoLeft);
   const lentBy = new Map<string, string>();
@@ -1597,8 +1603,9 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // lists destroyed, or any Part but the Torso in Cruise Mode, was offered
       // here with no gate at all (audit Phase 2, B5).
       const partWhy = t.kind === 'mech' ? actionPartWhy(ctx.data, t, a) : null;
+      const idle = actionIdleWhy(ctx.data, t, a, idleWorld);
       const v: TickVerdict = chained ? { ok: false, why: chained } : stopped ? { ok: false, why: stopped }
-        : partWhy ? { ok: false, why: partWhy } : phased ? { ok: false, why: phased } : ticks;
+        : partWhy ? { ok: false, why: partWhy } : idle ? { ok: false, why: idle } : phased ? { ok: false, why: phased } : ticks;
       const cost = costOf(priced);
       const kind = (a.type ?? '').toLowerCase();
       const pool = `${a.yellowDice ?? 0},${a.redDice ?? 0}`;
@@ -1609,12 +1616,12 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // not have, the way the guide leaves them off its Tick list entirely.
       const price = rwsOnly ? 'RWS' : v.extra ? 'XTR' : cost ? `${cost.maneuver ? 'M' : ''}${'●'.repeat(cost.action)}` : (a.type ?? '—');
       const lender = lentBy.get(key);
-      const tip = v.ok
-        ? `${lender ? `Load on ${lender} - ` : ''}${len ? LENGTH_NAME[len] : a.type ?? ''}${cost ? `: ${costLabel(cost)}` : ''}`
-        : v.why ?? '';
-      // Blocked Actions stay on the list and say why when pressed. A disabled
-      // row tells a player nothing, and "the Starting Action must match the
-      // dial" is exactly the thing they need told.
+      const tip = `${lender ? `Load on ${lender} - ` : ''}${len ? LENGTH_NAME[len] : a.type ?? ''}${cost ? `: ${costLabel(cost)}` : ''}`;
+      // Blocked Actions stay on the list, greyed, and say why in the notice
+      // line: on a mouse hover or a long press. A press does nothing (OTTO's
+      // picks 2 and 6, 2026-09-28); "the Starting Action must match the dial"
+      // is exactly the thing a player needs told, so it is never hidden. The
+      // row then carries no title, or the reason would be said twice.
       // data-tip-card puts the Part's own card up beside the panel, which is
       // the fastest way to see WHICH arm a duplicated Action belongs to; the
       // slot chip answers the same question without hovering at all.
@@ -1623,7 +1630,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       const where = slot && slot !== 'main' ? SLOT_LABEL[slot] : '';
       return `<button class="actrow k-${kind}${v.ok ? '' : ' warn'}" data-doact="${esc(key)}" data-pool="${pool}" data-an="${esc(a.name?.en || a.id)}"${
         cardId ? ` data-tip-card="${esc(cardId)}"` : ''
-      }${v.ok ? '' : ` data-why="${esc(v.why ?? '')}"`} title="${esc(tip)}">
+      }${v.ok ? ` title="${esc(tip)}"` : ` aria-disabled="true" data-why="${esc(v.why ?? '')}"`}>
         <span class="dotk"></span><span class="an">${esc((a.name?.en || a.id).slice(0, 26))}${lender ? ' (Load)' : ''}${ammoOf.get(key) !== undefined ? ` ×${ammoOf.get(key)}` : ''}</span>${
         where ? `<span class="aw">${esc(where)}</span>` : ''
       }<span class="ac">${price}</span>
@@ -1657,7 +1664,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // Action — which no pair of Extra Ticks can do.
   const ovl = overloadPackOn(ctx.data, t) ? canOverload(o, t.link ?? 0) : null;
   const ovlRow = ovl
-    ? `<button class="actrow k-tactic${ovl.ok ? '' : ' warn'}"${ovl.ok ? '' : ` data-why="${esc(ovl.why ?? '')}"`} data-act="overload" title="${esc(ovl.ok ? `Consume 1 Link for 1 Action Tick, up to ${OVERLOAD_MAX} an Action Opportunity.` : ovl.why ?? '')}">
+    ? `<button class="actrow k-tactic${ovl.ok ? '' : ' warn'}"${ovl.ok ? ` title="${esc(`Consume 1 Link for 1 Action Tick, up to ${OVERLOAD_MAX} an Action Opportunity.`)}"` : ` aria-disabled="true" data-why="${esc(ovl.why ?? '')}"`} data-act="overload">
         <span class="dotk"></span><span class="an">Overload</span><span class="ac">${o.overload}/${OVERLOAD_MAX} · Link ${t.link ?? 0}</span></button>`
     : '';
   // Card 547's Attack Mode: the same shape one card over. Also an ORDINARY
@@ -1672,20 +1679,20 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const trait = t.kind === 'mech' && !rwsOnly ? linkTickTraitOn(ctx.data, t) : null;
   const lt = trait ? ctx.check({ kind: 'linkTick', seat: t.side, uid: t.uid }) : null;
   const linkRow = trait && lt
-    ? `<button class="actrow k-tactic${lt.ok ? '' : ' warn'}"${lt.ok ? '' : ` data-why="${esc(lt.why ?? '')}"`} data-act="linktick" title="${esc(lt.ok ? `Consume 1 Link for 1 Action Tick (${trait.label}). Up to ${trait.maxLink} per Action Opportunity, in Offensive Stance, which is then locked (FAQ L2).` : lt.why ?? '')}">
+    ? `<button class="actrow k-tactic${lt.ok ? '' : ' warn'}"${lt.ok ? ` title="${esc(`Consume 1 Link for 1 Action Tick (${trait.label}). Up to ${trait.maxLink} per Action Opportunity, in Offensive Stance, which is then locked (FAQ L2).`)}"` : ` aria-disabled="true" data-why="${esc(lt.why ?? '')}"`} data-act="linktick">
         <span class="dotk"></span><span class="an">${esc(trait.label.replace(/^Hammerhead /, ''))}</span><span class="ac">${o.linkTicks ?? 0}/${trait.maxLink} · Link ${t.link ?? 0}</span></button>`
     : '';
   // ZPA-38 Firewatch (GoF 1.021): 1 Link for a Command Token as the Mech gains
   // the Opportunity. Same shelf; the command holds the rule, the row reports it.
   const fwv = t.kind === 'mech' && !rwsOnly && firewatchOn(ctx.data, t) ? ctx.check({ kind: 'firewatch', seat: t.side, uid: t.uid }) : null;
   const fireRow = fwv
-    ? `<button class="actrow k-tactic${fwv.ok ? '' : ' warn'}"${fwv.ok ? '' : ` data-why="${esc(fwv.why ?? '')}"`} data-act="firewatch" title="${esc(fwv.ok ? 'Firewatch: consume 1 Link to generate a Command Token, as this Mech gains its Action Opportunity. Once per Action Opportunity.' : fwv.why ?? '')}">
+    ? `<button class="actrow k-tactic${fwv.ok ? '' : ' warn'}"${fwv.ok ? ` title="${esc('Firewatch: consume 1 Link to generate a Command Token, as this Mech gains its Action Opportunity. Once per Action Opportunity.')}"` : ` aria-disabled="true" data-why="${esc(fwv.why ?? '')}"`} data-act="firewatch">
         <span class="dotk"></span><span class="an">Firewatch</span><span class="ac">${o.firewatch ? 'taken' : `1 Link → Command Token · Link ${t.link ?? 0}`}</span></button>`
     : '';
   const bonRow = bon && bonus
-    ? `<button class="actrow k-tactic${bon.ok ? '' : ' warn'}"${bon.ok ? '' : ` data-why="${esc(bon.why ?? '')}"`} data-act="attackmode" title="${esc(bon.ok
-        ? `Take ${bonus.actionPoints} more Action Tick${bonus.actionPoints === 1 ? '' : 's'} for this Action Opportunity. Ordinary Ticks, so they combine with the base pool for a Medium Action, and taking them SETS the Stance (4.1).`
-        : bon.why ?? '')}">
+    ? `<button class="actrow k-tactic${bon.ok ? '' : ' warn'}"${bon.ok
+      ? ` title="${esc(`Take ${bonus.actionPoints} more Action Tick${bonus.actionPoints === 1 ? '' : 's'} for this Action Opportunity. Ordinary Ticks, so they combine with the base pool for a Medium Action, and taking them SETS the Stance (4.1).`)}"`
+      : ` aria-disabled="true" data-why="${esc(bon.why ?? '')}"`} data-act="attackmode">
         <span class="dotk"></span><span class="an">${esc(bonus.label)}</span><span class="ac">${o.attackMode ? 'taken' : `+${bonus.actionPoints} Tick · locks Stance`}</span></button>`
     : '';
   // Stance is chosen before the Mech has done anything, and a Mech in Shutdown
@@ -1728,15 +1735,13 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // just moves, so calling its one option a Maneuver invented a distinction the
   // card never makes.
   const moveWord = t.kind === 'mech' ? 'Maneuver' : 'Movement';
-  const moveTip = man.ok
-    ? t.kind === 'mech'
-      ? `Draw a route, then confirm. The Maneuver Value comes off the Chassis Card${t.stance === 'mobility' ? ', doubled by Mobility Stance' : ''}. A Movement Action carries its own Range.`
-      : 'Draw a route, then confirm. This activation buys a Movement or an Action, not both (2.4.1).'
-    : man.why ?? '';
+  const moveTip = t.kind === 'mech'
+    ? `Draw a route, then confirm. The Maneuver Value comes off the Chassis Card${t.stance === 'mobility' ? ', doubled by Mobility Stance' : ''}. A Movement Action carries its own Range.`
+    : 'Draw a route, then confirm. This activation buys a Movement or an Action, not both (2.4.1).';
   return `${ticks}${stanceRow}${rebootRow}
     <div class="tp-group">
       <div class="tp-label">Actions</div>
-      <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(moveTip)}">
+      <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? ` title="${esc(moveTip)}"` : ` aria-disabled="true" data-why="${esc(man.why ?? '')}"`} data-act="maneuver">
         <span class="dotk"></span><span class="an">${moveWord}</span><span class="ac">${
           t.kind === 'mech' && (t.partStates.chasis ?? 'intact') === 'destroyed'
             ? 'turn only'
@@ -1757,7 +1762,7 @@ function goOn(ctx: HudCtx, t: Token, o: Opportunity): string {
   const left = o.uid === t.uid ? o.mineHalt ?? 0 : 0;
   if (left <= 0) return '';
   const stop = chassisStop(t);
-  return `<button class="actrow k-moving${stop ? ' warn' : ''}"${stop ? ` data-why="${esc(stop)}"` : ''} data-act="goon" title="${esc(stop ?? 'The rest of the Movement a Mine stopped (M19).')}">
+  return `<button class="actrow k-moving${stop ? ' warn' : ''}"${stop ? ` aria-disabled="true" data-why="${esc(stop)}"` : ` title="${esc('The rest of the Movement a Mine stopped (M19).')}"`} data-act="goon">
     <span class="dotk"></span><span class="an">Go on</span><span class="ac">${left} ${left === 1 ? 'grid' : 'grids'}</span></button>`;
 }
 
@@ -2504,9 +2509,9 @@ function finishLaunchPlan(ctx: HudCtx): void {
   if (now && born.length) {
     const owed = ensureScript(ctx.state).intercepts.some((x) => born.some((p) => p.uid === x.targetUid));
     if (owed) {
-      ctx.noteNow(`${m.label} detonates as it lands (4.7.4), once the Interception it triggered is resolved: open its Detonation from its card if it survives.`);
+      ctx.noteNow(`${m.label} detonates as it lands (4.7.4), once the Interception it triggered is resolved: open its Detonation from its card if it survives.`, 'table');
     } else {
-      if (born.length > 1) ctx.noteNow(`${born.length} of them landed, and each detonates at once (4.7.4). The first opens now; open the others from their cards in turn.`);
+      if (born.length > 1) ctx.noteNow(`${born.length} of them landed, and each detonates at once (4.7.4). The first opens now; open the others from their cards in turn.`, 'table');
       startDetonation(born[0].uid, now.id);
     }
   }
@@ -2602,7 +2607,7 @@ function queueInterceptsFor(ctx: HudCtx, launcher: Token, born: Token[]): void {
   const owed = interceptsOwed(ctx.data, s.tokens, s.smoke ?? [], launcher, fresh);
   if (!owed.length) return;
   const defender: Side = launcher.side === 's1' ? 's2' : 's1';
-  if (ctx.send({ kind: 'queueIntercepts', seat: launcher.side, items: owed }).ok) ctx.noteNow(`The launch triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed to ${squadLabel(defender)} (4.9).`);
+  if (ctx.send({ kind: 'queueIntercepts', seat: launcher.side, items: owed }).ok) ctx.noteNow(`The launch triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed to ${squadLabel(defender)} (4.9).`, 'done');
 }
 
 // The owed attempts that can still be drawn. An attempt whose Part or target
@@ -2971,7 +2976,7 @@ function answerReaction(ctx: HudCtx, key: string, place: boolean): void {
   // door; the Tick was paid when the target was designated.
   if (r.kind === 'scanAttack') {
     if (!place) {
-      ctx.noteNow(`${t.label} calls off the attack. The Action Tick was spent at the designation (FAQ I11).`);
+      ctx.noteNow(`${t.label} calls off the attack. The Action Tick was spent at the designation (FAQ I11).`, 'done');
     } else if (r.fromUid !== undefined) {
       ctx.startAttack(uid, actionId, r.fromUid, 'attack', { charged: !!r.charged, chargeChoice: r.chargeChoice, twoHandedDeclined: !!r.twoHandedDeclined });
     }
@@ -2979,13 +2984,13 @@ function answerReaction(ctx: HudCtx, key: string, place: boolean): void {
     return;
   }
   if (!place) {
-    ctx.noteNow(`${t.label} declines its ${what}.`);
+    ctx.noteNow(`${t.label} declines its ${what}.`, 'done');
     ctx.refresh();
     return;
   }
   if (stance) {
     if (ctx.send({ kind: 'defenseReaction', seat: t.side, uid }).ok) {
-      ctx.noteNow(`${t.label} reacts to the Penetration and changes to Defensive Stance.`);
+      ctx.noteNow(`${t.label} reacts to the Penetration and changes to Defensive Stance.`, 'done');
     }
     ctx.refresh();
     return;
@@ -3236,7 +3241,7 @@ function ewPanel(ctx: HudCtx): string {
       const why = far
         ? `${t.label} is at Range ${d}, beyond this Action's Range ${reach}.`
         : skipped ? 'An Automatic Action targets the NEAREST enemy in range (3.5.2).' : '';
-      return `<button class="rowwide targrow${far || skipped ? ' warn' : ''}"${skipped ? ' disabled' : ''} data-ewtarget="${t.uid}"${why ? ` data-why="${esc(why)}"` : ''}>
+      return `<button class="rowwide targrow${far || skipped ? ' warn' : ''}" data-ewtarget="${t.uid}"${why ? ` aria-disabled="true" data-why="${esc(why)}"` : ''}>
         <span class="tgname">${esc(t.label)}</span>
         <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;
     })
@@ -3293,7 +3298,7 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
       if (!v.ok && v.why) ctx.noteNow(v.why);
       ctx.refresh();
     }).catch(() => {
-      ctx.noteNow('The server did not answer the roll. Press it again.');
+      ctx.noteNow('The server did not answer the roll. Press it again.', 'system');
       ctx.refresh();
     });
     return;
@@ -3311,7 +3316,7 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
       ctx.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces: res.dice.map((d) => d.face) });
       ctx.refresh();
     }).catch(() => {
-      ctx.noteNow('The server did not answer the roll. Press it again.');
+      ctx.noteNow('The server did not answer the roll. Press it again.', 'system');
       ctx.refresh();
     });
     return;
@@ -3350,7 +3355,7 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
       ctx.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces, focused: true });
       ctx.refresh();
     }).catch(() => {
-      ctx.noteNow('The server did not answer the Focus reroll. Press it again: the Link is already paid, and a retry costs nothing more.');
+      ctx.noteNow('The server did not answer the Focus reroll. Press it again: the Link is already paid, and a retry costs nothing more.', 'system');
       ctx.refresh();
     });
     return;
@@ -3367,7 +3372,7 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
       ? take
         ? `${yoyu.label} provokes ${other.label} into Offensive Stance (LPA-22 Yoyu).`
         : `${yoyu.label} leaves ${other.label}'s Stance alone.`
-      : `${yoyu.label} cannot provoke ${other.label}: ${verdict.why}`);
+      : `${yoyu.label} cannot provoke ${other.label}: ${verdict.why}`, verdict.ok ? 'done' : 'refused');
     ctx.refresh();
     return;
   }
@@ -3389,7 +3394,7 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
     for (const cmd of win.cmds) won = ctx.send(cmd).ok && won;
     if (won) ctx.noteNow(win.lines.length
       ? `${init.label} succeeds: ${win.lines.join('; ')}.`
-      : `${init.label} succeeds, and ${a.name?.en || a.id} has nothing this table can apply: follow the card.`);
+      : `${init.label} succeeds, and ${a.name?.en || a.id} has nothing this table can apply: follow the card.`, 'done');
     ctx.send({ kind: 'clearCounterRoll', seat: init.side });
     ctx.refresh();
     return;
@@ -3399,7 +3404,7 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
     // I11): the Tick is spent, the remaining Ticks are not. Said by whoever
     // closes the window, once, and only when no attack was queued behind it.
     if (c.thenAttack && !(ensureScript(s).reactions ?? []).some((r) => r.kind === 'scanAttack' && r.uid === init.uid)) {
-      ctx.noteNow(`${init.label}'s Scan was not applied, so its attack on ${resp.label} ends. The Action Tick is spent; any remaining Ticks may still be used (FAQ I11).`);
+      ctx.noteNow(`${init.label}'s Scan was not applied, so its attack on ${resp.label} ends. The Action Tick is spent; any remaining Ticks may still be used (FAQ I11).`, 'done');
     }
     ctx.send({ kind: 'clearCounterRoll', seat: seatOf(ctx) });
     ctx.refresh();
@@ -3524,7 +3529,7 @@ function layMineAt(ctx: HudCtx, c: number, r: number): void {
   });
   if (!v.ok && v.why) ctx.noteNow(v.why);
   if (v.ok) {
-    ctx.noteNow(`${t.label} Lays ${cardName(ctx.data.byId.get(m.cardId))} in ${gridName(c, r)}, paid for with 1 Move Range.`);
+    ctx.noteNow(`${t.label} Lays ${cardName(ctx.data.byId.get(m.cardId))} in ${gridName(c, r)}, paid for with 1 Move Range.`, 'done');
     m.left -= 1;
     if (m.left <= 0) minePick = null;
   }
@@ -3565,7 +3570,7 @@ function takeBox(ctx: HudCtx, slot: string): void {
   if (!m || !t) { boxPick = null; ctx.refresh(); return; }
   const itemId = m.queue[0];
   if (ctx.send({ kind: 'takeBlackBox', seat: t.side, uid: t.uid, itemId, slot }).ok) {
-    ctx.noteNow(`${t.label} picks up the Black Box, carried on the ${freehandSlots(ctx.data, t).find((h) => h.slot === slot)?.label ?? slot}.`);
+    ctx.noteNow(`${t.label} picks up the Black Box, carried on the ${freehandSlots(ctx.data, t).find((h) => h.slot === slot)?.label ?? slot}.`, 'done');
   }
   nextBox(ctx);
 }
@@ -3607,7 +3612,7 @@ function endOpportunityNow(ctx: HudCtx, boxesAsked = false): void {
       const uid = sc.opp.uid;
       void offerCoordination(ctx.data, s, t, owed, (mechUid, targetUid) => {
         ctx.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid });
-      }, (_d, text) => ctx.noteNow(text), () => { ctx.send({ kind: 'endSwarm', seat: t.side }); }).then(() => {
+      }, (_d, text) => ctx.noteNow(text, 'done'), () => { ctx.send({ kind: 'endSwarm', seat: t.side }); }).then(() => {
         ctx.send({ kind: 'endOpportunity', seat: t.side, uid });
         ctx.refresh();
       });
@@ -3709,7 +3714,7 @@ function placeDroppedBox(ctx: HudCtx, c: number, r: number): void {
   boxDrop = null;
   board?.clearHighlights();
   if (ctx.send({ kind: 'dropBlackBox', seat: m.bySide, uid: m.byUid, itemId: m.itemId, to }).ok) {
-    ctx.noteNow(`${bearer?.label ?? 'The bearer'} was Penetrated carrying a Black Box, which lands in ${gridName(c, r)} (5.3.1).`);
+    ctx.noteNow(`${bearer?.label ?? 'The bearer'} was Penetrated carrying a Black Box, which lands in ${gridName(c, r)} (5.3.1).`, 'done');
   }
   // A unit can carry more than one, so the next is asked for straight away.
   const still = taskItems(ctx).find((i) => i.kind === 'blackbox' && i.bearerUid === m.bearerUid);
@@ -3800,7 +3805,7 @@ function advanceCrush(ctx: HudCtx): void {
   const crusher = s.tokens.find((x) => x.uid === m.uid);
   if (!crusher) { crushPlan = null; ctx.refresh(); return; }
   if (m.terrain.length) {
-    if (ctx.send({ kind: 'destroyTerrain', seat: crusher.side, uid: crusher.uid, pieces: m.terrain }).ok) ctx.noteNow(`${crusher.label} crushes ${m.terrain.length === 1 ? 'a piece of' : `${m.terrain.length} pieces of`} Destructible Terrain in ${gridName(m.goal.c, m.goal.r)}.`);
+    if (ctx.send({ kind: 'destroyTerrain', seat: crusher.side, uid: crusher.uid, pieces: m.terrain }).ok) ctx.noteNow(`${crusher.label} crushes ${m.terrain.length === 1 ? 'a piece of' : `${m.terrain.length} pieces of`} Destructible Terrain in ${gridName(m.goal.c, m.goal.r)}.`, 'done');
     m.terrain = [];
   }
   while (m.queue.length) {
@@ -3808,7 +3813,7 @@ function advanceCrush(ctx: HudCtx): void {
     if (!v) { m.queue.shift(); continue; }
     if (!canBeForceMoved(ctx.data, v)) {
       // A kill credited to the crusher; `despawn` recorded none (audit Phase 4, C6).
-      if (ctx.send({ kind: 'recordKill', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, what: 'unit' }).ok) ctx.noteNow(`${v.label} cannot be Force-Moved, so being crushed destroys it (4.3.6).`);
+      if (ctx.send({ kind: 'recordKill', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, what: 'unit' }).ok) ctx.noteNow(`${v.label} cannot be Force-Moved, so being crushed destroys it (4.3.6).`, 'done');
       m.queue.shift();
       continue;
     }
@@ -3852,7 +3857,7 @@ function advanceCrush(ctx: HudCtx): void {
       if (!from || !room) {
         ctx.noteNow(from
           ? `${v.label} has nowhere to go, and ${gridName(from.c, from.r)}, the Grid ${crusher.label} is stepping out of, has no room for it either, so there are no positions to exchange (4.3.6).`
-          : `${v.label} has nowhere to go, and ${crusher.label} has no Grid next door to trade for: an exchange trades places across a single Grid boundary (4.3.6).`);
+          : `${v.label} has nowhere to go, and ${crusher.label} has no Grid next door to trade for: an exchange trades places across a single Grid boundary (4.3.6).`, 'done');
         m.queue.shift();
         continue;
       }
@@ -3926,7 +3931,7 @@ function finishCrush(ctx: HudCtx): void {
   const stopShort = (why: string): void => {
     board?.animateMove(t.uid, walk, () => {
       const stopped = ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: held, free: m.free, granted: m.granted, via: walk, facing: m.facing, actionId: m.actionId, breakAwayLink: m.breakAwayLink, ...(m.resume ? { resume: true } : {}) }).ok;
-      if (stopped) ctx.noteNow(why);
+      if (stopped) ctx.noteNow(why, 'warn');
       if (m.drag) towDraggedAlly(ctx, t, m.path, m.drag);
       offerMinesOn(ctx, t, m.path, m.steps, m.flying);
       offerBoxesOn(ctx, t.uid, m.path, m.flying || !!t.aerial);
@@ -3964,14 +3969,14 @@ function finishCrush(ctx: HudCtx): void {
         stopShort(`${t.label} could not exchange places with ${swapped.map((v) => v.label).join(' and ')}: ${verdict.why} The Crush stops short of ${gridName(m.goal.c, m.goal.r)} and the Movement ends here (4.3.6).`);
         return;
       }
-      ctx.noteNow(`${swapped.map((v) => v.label).join(' and ')} had nowhere to go, so ${swapped.length === 1 ? 'it exchanges' : 'they exchange'} positions with ${t.label} (4.3.6). Its Movement ends there.`);
+      ctx.noteNow(`${swapped.map((v) => v.label).join(' and ')} had nowhere to go, so ${swapped.length === 1 ? 'it exchanges' : 'they exchange'} positions with ${t.label} (4.3.6). Its Movement ends there.`, 'done');
     }
     // The Movement itself is recorded either way, and this is where the Maneuver
     // Tick is spent — crushSwap deliberately charges nothing, because a Crush
     // can end a Movement Action just as easily as a Maneuver. `from` is only
     // sent when the exchange has already placed the unit.
     const crushedIn = ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: spot, free: m.free, granted: m.granted, via: stops, facing: m.facing, from: pair ? began : undefined, actionId: m.actionId, breakAwayLink: m.breakAwayLink, ...(m.resume ? { resume: true } : {}) }).ok;
-    if (crushedIn && !pair) ctx.noteNow(`${t.label} crushes into ${gridName(m.goal.c, m.goal.r)}, and its Movement ends there (4.3.6).`);
+    if (crushedIn && !pair) ctx.noteNow(`${t.label} crushes into ${gridName(m.goal.c, m.goal.r)}, and its Movement ends there (4.3.6).`, 'done');
     // After the crusher has landed, exactly as on the plain settle: the Grid it
     // vacated is only free once it has actually left it.
     if (m.drag) towDraggedAlly(ctx, t, m.path, m.drag);
@@ -4010,7 +4015,7 @@ function confirmCrushed(ctx: HudCtx): void {
     // left yet.
     m.exchanges = [...m.exchanges, { uid: v.uid, facing: p.facing }];
   } else {
-    if (ctx.send({ kind: 'forceMove', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, to: { col: p.col, row: p.row }, facing: p.facing }).ok) ctx.noteNow(`${crusher.label} crushes ${v.label}, Force-Moved to ${gridName(p.c, p.r)}.`);
+    if (ctx.send({ kind: 'forceMove', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, to: { col: p.col, row: p.row }, facing: p.facing }).ok) ctx.noteNow(`${crusher.label} crushes ${v.label}, Force-Moved to ${gridName(p.c, p.r)}.`, 'done');
   }
   m.pendingSpot = undefined;
   m.queue.shift();
@@ -4082,7 +4087,7 @@ function openManifest(ctx: HudCtx, t: Token, why: string): void {
     if (ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid }).ok) {
       const where = immobilizedStop(t) ? ', where it stands: it is Immobilized (FAQ I20)'
         : range > 0 ? ', with nowhere in Range to Manifest into' : '';
-      ctx.noteNow(`${why} ${t.label} leaves the Optical Camouflage State${where} (4.12.2).`);
+      ctx.noteNow(`${why} ${t.label} leaves the Optical Camouflage State${where} (4.12.2).`, 'done');
     }
     return;
   }
@@ -4444,7 +4449,7 @@ function offerCoordinationFor(ctx: HudCtx, uid: number, actionId: string): void 
   void offerCoordination(ctx.data, ctx.state, t, upTo, (mechUid, targetUid) => {
     ctx.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid });
     ctx.refresh();
-  }, (_drone, text) => ctx.noteNow(text), () => { ctx.send({ kind: 'endSwarm', seat: t.side }); ctx.refresh(); });
+  }, (_drone, text) => ctx.noteNow(text, 'done'), () => { ctx.send({ kind: 'endSwarm', seat: t.side }); ctx.refresh(); });
 }
 
 // A2K Data Link (GoF 1.021, 175_A): "This Mech may perform one Command
@@ -4462,7 +4467,7 @@ export function offerCoordinationAfterManeuver(cmd: Command): void {
   void offerCoordination(ctx.data, ctx.state, t, upTo, (mechUid, targetUid) => {
     ctx.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid });
     ctx.refresh();
-  }, (_drone, text) => ctx.noteNow(text), () => { ctx.send({ kind: 'endSwarm', seat: t.side }); ctx.refresh(); });
+  }, (_drone, text) => ctx.noteNow(text, 'done'), () => { ctx.send({ kind: 'endSwarm', seat: t.side }); ctx.refresh(); });
 }
 
 // Backing out. The Extra Action Opportunity an Action would have handed out goes
@@ -4556,7 +4561,7 @@ function refundCharge(ctx: HudCtx, refund?: { uid: number; slot: string; choice?
   const t = ctx.state.tokens.find((x) => x.uid === refund.uid);
   if (!t) return;
   if (ctx.send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot: refund.slot, on: true }).ok) {
-    ctx.noteNow(`${t.label}: the attack was cancelled, so the Charge Token on ${refund.slot} goes back face-up.`);
+    ctx.noteNow(`${t.label}: the attack was cancelled, so the Charge Token on ${refund.slot} goes back face-up.`, 'done');
   }
 }
 
@@ -4588,7 +4593,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
       return true;
     }
     const paid = commitAction(ctx);
-    if (paid.ok && ctx.send(cmd).ok) ctx.noteNow(`Stabilize System: Link restored to ${t.link}.`);
+    if (paid.ok && ctx.send(cmd).ok) ctx.noteNow(`Stabilize System: Link restored to ${t.link}.`, 'done');
     else if (!paid.ok && paid.why) ctx.noteNow(paid.why);
     return true;
   }
@@ -4638,7 +4643,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
       const paid = commitAction(ctx);
       if (!paid.ok) return stop(paid.why);
       if (ctx.send({ kind: 'stanceFeedback', seat: t.side, uid: t.uid, actionId: a.id, targetUid: to.uid, stance }).ok) {
-        ctx.noteNow(`${what}: ${to.label} switches to ${stance} Stance.`);
+        ctx.noteNow(`${what}: ${to.label} switches to ${stance} Stance.`, 'done');
       }
       ctx.refresh();
     })();
@@ -4676,7 +4681,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     }
     const paid = commitAction(ctx);
     if (paid.ok) {
-      if (ctx.send({ kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'camouflage' }).ok) ctx.noteNow(`${t.label}: Optical Camouflage activated${stealth ? `, Stealth ${stealth}` : ''} (4.12.2). Every Hexagon Token comes off, and the Grid it stands on is now only a SUSPECTED position - on Reveal it may Manifest up to ${stealth} Grid${stealth === 1 ? '' : 's'} away.`);
+      if (ctx.send({ kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'camouflage' }).ok) ctx.noteNow(`${t.label}: Optical Camouflage activated${stealth ? `, Stealth ${stealth}` : ''} (4.12.2). Every Hexagon Token comes off, and the Grid it stands on is now only a SUSPECTED position - on Reveal it may Manifest up to ${stealth} Grid${stealth === 1 ? '' : 's'} away.`, 'done');
     } else if (paid.why) {
       ctx.noteNow(paid.why);
     }
@@ -4740,7 +4745,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
         return true;
       }
       commitAction(ctx);
-      if (ctx.send({ kind: 'recoverBit', seat: t.side, uid: t.uid, actionId: a.id, targetUid: back.uid }).ok) ctx.noteNow(`${t.label} recovers ${back.label}: the Bit Port holds its Ammo Token again.`);
+      if (ctx.send({ kind: 'recoverBit', seat: t.side, uid: t.uid, actionId: a.id, targetUid: back.uid }).ok) ctx.noteNow(`${t.label} recovers ${back.label}: the Bit Port holds its Ammo Token again.`, 'done');
       return true;
     }
     const shot = ga?.projectiles ?? [];
@@ -4762,7 +4767,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   const mode = transformOffer(ctx.data, t, a);
   if (mode) {
     commitAction(ctx);
-    if (ctx.send({ kind: 'transformPart', seat: t.side, uid: t.uid, slot: mode.slot, cardId: mode.into.id }).ok) ctx.noteNow(`${t.label} transforms: ${cardName(mode.from)} becomes ${cardName(mode.into)}.`);
+    if (ctx.send({ kind: 'transformPart', seat: t.side, uid: t.uid, slot: mode.slot, cardId: mode.into.id }).ok) ctx.noteNow(`${t.label} transforms: ${cardName(mode.from)} becomes ${cardName(mode.into)}.`, 'done');
     return true;
   }
   // Pholcus does not resolve a payload: it becomes a Drone in place (FAQ M18).
@@ -4774,7 +4779,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     // some later Action dropped it, which is how the folded Pholcus could
     // Unfold and then still act - freeplay's done(true) always charged it.
     commitAction(ctx);
-    if (ctx.send({ kind: 'unfold', seat: t.side, uid: t.uid }).ok) ctx.noteNow(`${t.label} Unfolds into its Drone form. It cannot act until next round - the Automatic Phase has already passed (FAQ M8).`);
+    if (ctx.send({ kind: 'unfold', seat: t.side, uid: t.uid }).ok) ctx.noteNow(`${t.label} Unfolds into its Drone form. It cannot act until next round - the Automatic Phase has already passed (FAQ M8).`, 'done');
     return true;
   }
   // A Projectile resolving its payload in the Delay Phase opens the same
@@ -4802,7 +4807,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
       const label = STATUSES.find((x) => x.id === grant.statusId)?.label ?? grant.statusId;
       ctx.noteNow(sent.ok
         ? `${t.label}: ${a.name?.en || a.id} - gains ${grant.stacks > 1 ? `${grant.stacks} ` : 'a '}${label} Token${grant.stacks > 1 ? 's' : ''}.`
-        : `${t.label}: the ${label} Token was refused. ${sent.why ?? ''}`);
+        : `${t.label}: the ${label} Token was refused. ${sent.why ?? ''}`, sent.ok ? 'done' : 'refused');
     } else if (paid.why) {
       ctx.noteNow(paid.why);
     }
@@ -4836,7 +4841,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
       const who = ctx.state.tokens.find((x) => x.uid === Number(pick));
       const sent = ctx.send({ kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: Number(pick), statusId: tag.statusId, stacks: tag.stacks });
       const label = STATUSES.find((x) => x.id === tag.statusId)?.label ?? tag.statusId;
-      ctx.noteNow(sent.ok ? `${t.label}: ${a.name?.en || a.id} - ${who?.label ?? 'the target'} gains a ${label} Token.` : `${label} was refused. ${sent.why ?? ''}`);
+      ctx.noteNow(sent.ok ? `${t.label}: ${a.name?.en || a.id} - ${who?.label ?? 'the target'} gains a ${label} Token.` : `${label} was refused. ${sent.why ?? ''}`, sent.ok ? 'done' : 'refused');
       ctx.refresh();
     });
     return true;
@@ -4844,7 +4849,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // Swift and Tactical Actions are card text rather than a board procedure, so
   // the card is put in front of the player to carry out. Nothing to back out of.
   ctx.showTab('details');
-  ctx.noteNow(`${a.name?.en || a.id}: follow the Action text on the card.`);
+  ctx.noteNow(`${a.name?.en || a.id}: follow the Action text on the card.`, 'table');
   return false;
 }
 
@@ -5149,7 +5154,7 @@ function blinkFace(ctx: HudCtx, f: Facing): void {
     commitAction(ctx);
     // One command carries the swap and both facings, so the two boards agree
     // in a single step rather than converging over three.
-    if (ctx.send(cmd).ok) ctx.noteNow(`${t.label} exchanges positions with ${other.label} (Prototype Blink).`);
+    if (ctx.send(cmd).ok) ctx.noteNow(`${t.label} exchanges positions with ${other.label} (Prototype Blink).`, 'done');
   }
   blinkPlan = null;
   ctx.refresh();
@@ -5336,14 +5341,14 @@ function resolveShove(ctx: HudCtx): void {
     // The recordKill leaves a Box no Penetration owes in the Abyss Grid
     // (ruling I20); one a Penetration owes is still the attacker's drop.
     const fell = ctx.send({ kind: 'recordKill', seat: by.side, uid: by.uid, targetUid: victim.uid, what: 'unit' }).ok;
-    if (forced && fell) ctx.noteNow(`${victim.label} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} into the Abyss Grid ${gridName(out.end.c, out.end.r)} and is immediately Destroyed.`);
+    if (forced && fell) ctx.noteNow(`${victim.label} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} into the Abyss Grid ${gridName(out.end.c, out.end.r)} and is immediately Destroyed.`, 'done');
     flushBoxDrops();
     ctx.refresh();
     return;
   }
   if (forced) ctx.noteNow(`${victim.label} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} to ${gridName(out.end.c, out.end.r)}.${
     out.kb.push && !out.resumed && victim.kind === 'mech' ? ` Push costs 1 Link (now ${victim.link}).` : ''}${shut ? ' Link has reached 0, so it shuts down.' : ''}${
-    out.rest > 0 ? ` A Mine stops it there: its blast first, then ${out.rest} Grid${out.rest === 1 ? '' : 's'} of the line ${out.rest === 1 ? 'is' : 'are'} left (M19).` : ''}`);
+    out.rest > 0 ? ` A Mine stops it there: its blast first, then ${out.rest} Grid${out.rest === 1 ? '' : 's'} of the line ${out.rest === 1 ? 'is' : 'are'} left (M19).` : ''}`, 'done');
   // The Forced Movement has settled, so a Penetrated bearer's Box question can
   // finally be asked at the position it ended up in (FAQ E19).
   flushBoxDrops();
@@ -5629,7 +5634,7 @@ function finishSmokePlan(ctx: HudCtx): void {
     const proj = ctx.state.tokens.find((x) => x.uid === m.thenDespawn);
     if (proj) despawned = ctx.send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid }).ok;
   }
-  if (m && despawned) ctx.noteNow(`${m.label}: ${m.placed.length} Smoke Screen${m.placed.length === 1 ? '' : 's'} placed.`);
+  if (m && despawned) ctx.noteNow(`${m.label}: ${m.placed.length} Smoke Screen${m.placed.length === 1 ? '' : 's'} placed.`, 'done');
   ctx.refresh();
   m?.onDone?.();
 }
@@ -5711,7 +5716,7 @@ function grantPanel(ctx: HudCtx): string {
   const rows = targets
     .map((t) => {
       const short = (t.link ?? 0) < g.minimumLink;
-      return `<button class="rowwide${short ? ' warn' : ''}" data-grant="${t.uid}"${short ? ` data-why="${esc(`${t.label} needs at least ${g.minimumLink} Link to be chosen.`)}"` : ''}>${esc(t.label)}<span class="ct">Link ${t.link ?? 0}</span></button>`;
+      return `<button class="rowwide${short ? ' warn' : ''}" data-grant="${t.uid}"${short ? ` aria-disabled="true" data-why="${esc(`${t.label} needs at least ${g.minimumLink} Link to be chosen.`)}"` : ''}>${esc(t.label)}<span class="ct">Link ${t.link ?? 0}</span></button>`;
     })
     .join('');
   const none = !targets.some((t) => (t.link ?? 0) >= g.minimumLink);
@@ -5824,7 +5829,7 @@ function playTactic(ctx: HudCtx, pick: string | null): void {
   if (!v.ok) { ctx.refresh(); return; }
   // apply writes the card's own line into the unit's log, which is the only
   // place that knows what the effect worked out to.
-  ctx.noteNow(t.log?.at(-1)?.text ?? `${squadLabel(m.side)} plays ${spec.name}.`);
+  ctx.noteNow(t.log?.at(-1)?.text ?? `${squadLabel(m.side)} plays ${spec.name}.`, 'done');
   // Hit and Run hands out a Movement that no Opportunity paid for. It is still
   // a MANEUVER, so an Ojs200's optional flight is on offer here too - freeplay
   // asks on this path and the two drivers must not disagree.
@@ -5987,7 +5992,7 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
              replaces the host's children, so the overlay survives every redraw.
              It used to be a strip below the board, which took a slice of the
              map's height the moment the dials were set. -->
-        <div id="mc-board" class="hudboardhost"><div id="hud-order" class="orderfloat"></div></div>
+        <div id="mc-board" class="hudboardhost"><div id="hud-order" class="orderfloat"></div><div id="mc-notice" class="mc-notice" hidden></div></div>
       </div>
       <div class="hudside">
         <div class="hudtabs">
@@ -6038,7 +6043,7 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
   (host.querySelector('#hud-tl') as HTMLElement).innerHTML = timelineHtml(ctx.state) + undoChrome(ctx);
   (host.querySelector('#hud-order') as HTMLElement).innerHTML = orderFloatHtml(ctx);
   (host.querySelector('#hud-panel') as HTMLElement).innerHTML =
-    `${ctx.note ? `<div class="mc-err" style="margin:10px 12px 0">${esc(ctx.note)}</div>` : ''}${panelHtml(ctx)}${tacticsHtml(ctx)}${feedHtml(ctx)}`;
+    `${panelHtml(ctx)}${tacticsHtml(ctx)}${feedHtml(ctx)}`;
   (host.querySelector('#hud-veils') as HTMLElement).innerHTML = secOverlay(ctx);
   const zb = host.querySelector<HTMLButtonElement>('#btn-zones');
   if (zb) {
@@ -6145,7 +6150,7 @@ export function settleEndStep(ctx: HudCtx, seat: Side, step: string): void {
       ? (v.why ?? 'The smoke has already dissipated this End Phase.')
       : iso || groups
         ? `${iso} isolated Smoke Screen${iso === 1 ? '' : 's'} removed${groups ? `, and ${groups === 1 ? 'one Connected group loses one' : `each of ${groups} Connected groups loses one`}` : ''} (4.16).`
-        : 'Nothing to dissipate.');
+        : 'Nothing to dissipate.', v.ok ? 'done' : 'refused');
   }
   // "Settle Task control" is the step that pays: the guide judges the board
   // and sends the numbers with the Award, so a mirrored seat applies the same
@@ -6178,7 +6183,7 @@ export function settleEndStep(ctx: HudCtx, seat: Side, step: string): void {
       // An allowed Award can still have something to say: a rider penalty that
       // would take a squad below zero is paid but floored (5.2.4), and the
       // score sheet would otherwise disagree with the lines above it.
-      if (paid.note) ctx.noteNow(paid.note);
+      if (paid.note) ctx.noteNow(paid.note, 'warn');
     }
   }
   // The command does the work; this reads the board first so it can say what
@@ -6202,13 +6207,13 @@ export function settleEndStep(ctx: HudCtx, seat: Side, step: string): void {
       })
       .filter((b) => b.expiring.length || b.flipping.length)
       .map((b) => `${b.label}: ${[b.expiring.length ? `${names(b.expiring)} expired` : '', b.flipping.length ? `${names(b.flipping)} flips to red` : ''].filter(Boolean).join(', ')}`);
-    ctx.noteNow(said.length ? said.join(' · ') : 'Tokens aged and both Command pools cleared.');
+    ctx.noteNow(said.length ? said.join(' · ') : 'Tokens aged and both Command pools cleared.', 'done');
   }
   if (stepped && step === 'remove') {
     const gone = before.filter((b) => !ctx.state.tokens.some((t) => t.uid === b.uid));
     ctx.noteNow(gone.length
       ? `Integrity Loss: ${gone.map((g) => g.label).join(', ')} left the board (4.4.4).`
-      : 'No Mech was down to two Parts, so nothing left the board.');
+      : 'No Mech was down to two Parts, so nothing left the board.', 'done');
   }
   ctx.refresh();
 }
@@ -6255,7 +6260,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       ctx.send({ kind: 'rollSetup', seat: side, hits: res.hits });
       ctx.refresh();
     }).catch(() => {
-      ctx.noteNow('The server did not answer the roll. Press it again.');
+      ctx.noteNow('The server did not answer the roll. Press it again.', 'system');
       ctx.refresh();
     });
   });
@@ -6404,7 +6409,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       ctx.refresh();
     }).catch(() => {
       (el as HTMLButtonElement).disabled = false;
-      ctx.noteNow('The dice did not come back. Nothing was recorded, so roll again.');
+      ctx.noteNow('The dice did not come back. Nothing was recorded, so roll again.', 'system');
       ctx.refresh();
     });
   });
@@ -6420,7 +6425,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const what = el.dataset.rb;
     if (what === 'accept' || what === 'decline') {
       ctx.send({ kind: 'rollbackAnswer', seat: me(), accept: what === 'accept' });
-      if (what === 'decline') ctx.noteNow('Rollback declined. The board stands.');
+      if (what === 'decline') ctx.noteNow('Rollback declined. The board stands.', 'done');
       ctx.refresh();
       return;
     }
@@ -6468,7 +6473,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const v = ctx.send(cmd);
     ctx.noteNow(!v.ok ? (v.why ?? 'Stabilize System was refused.')
       : p ? `Stabilize System: ${p.label} removed${ask.keep ? `, and Link restored to ${t.link}` : ''}.`
-        : `Stabilize System: Link restored to ${t.link}.`);
+        : `Stabilize System: Link restored to ${t.link}.`, v.ok ? 'done' : 'refused');
     ctx.refresh();
   });
   on('[data-act="stabcancel"]', () => { stabilisePick = null; dropAction(); ctx.refresh(); });
@@ -6488,7 +6493,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       for (let i = 0; i < m.rule.amount; i++) if (ctx.send({ kind: 'recoverLink', seat: from.side, uid: from.uid, targetUid: x.uid, actionId: a.id }).ok) n++;
       if (n) done.push(`${x.label} to ${x.link}${x.stance === 'shutdown' ? ' (still Shutdown)' : ''}`);
     }
-    ctx.noteNow(done.length ? `${what}: Link restored - ${done.join(', ')}.` : `${what}: no Ally Mech in range was short of Link.`);
+    ctx.noteNow(done.length ? `${what}: Link restored - ${done.join(', ')}.` : `${what}: no Ally Mech in range was short of Link.`, 'done');
     ctx.refresh();
   };
   on('[data-act="linkgo"]', () => {
@@ -6528,7 +6533,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (!v0.ok) { ctx.noteNow(v0.why ?? 'That Token could not be removed.'); dropAction(); ctx.refresh(); return; }
     const paid = commitAction(ctx);
     if (!paid.ok) { if (paid.why) ctx.noteNow(paid.why); ctx.refresh(); return; }
-    if (ctx.send(cmd).ok) ctx.noteNow(`${a.name?.en || a.id}: ${p.label} removed from ${unit.label}.`);
+    if (ctx.send(cmd).ok) ctx.noteNow(`${a.name?.en || a.id}: ${p.label} removed from ${unit.label}.`, 'done');
     ctx.refresh();
   };
   on('[data-act="cleancancel"]', () => { cleanPick = null; dropAction(); ctx.refresh(); });
@@ -6538,7 +6543,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     void runAster(ctx.data, s, t.uid, (targetUid) => {
       ctx.send({ kind: 'asterRestore', seat: t.side, uid: t.uid, targetUid });
       ctx.refresh();
-    }, (_to, text) => ctx.noteNow(text));
+    }, (_to, text) => ctx.noteNow(text, 'done'));
   });
   on('[data-doact]', (el) => {
     if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
@@ -6655,7 +6660,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
         attackPick = null;
         const paid = commitAction(ctx);
         if (!paid.ok) { if (paid.why) ctx.noteNow(paid.why); ctx.refresh(); return; }
-        if (ctx.send(scan).ok) ctx.noteNow(`${by.label} designates ${t.label}, which is in Optical Camouflage: one free Scan first (4.12.2, FAQ I12).`);
+        if (ctx.send(scan).ok) ctx.noteNow(`${by.label} designates ${t.label}, which is in Optical Camouflage: one free Scan first (4.12.2, FAQ I12).`, 'done');
         ctx.refresh();
         return;
       }
@@ -6776,7 +6781,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       if (ctx.send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot, on: m.on }).ok) {
         ctx.noteNow(m.on
           ? `${t.label}: the Charge Token on ${slot} is now face-up.`
-          : `${t.label}: the Charge Token on ${slot} is spent.`);
+          : `${t.label}: the Charge Token on ${slot} is spent.`, 'done');
       }
       const next = m.actionId ? actionOn(ctx, t, m.actionId) : undefined;
       // A SPEND (`!m.on`) is refundable if the attack it paid for is abandoned;
@@ -6808,7 +6813,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       // The command caps at the printed Storage, so the count is read back
       // rather than assumed.
       if (ctx.send({ kind: 'restoreAmmo', seat: to.side, uid: to.uid, actionId: m.rule.actionId, amount: m.rule.amount }).ok) {
-        ctx.noteNow(`Resupply: ${to.label} is back to Ammo ${to.ammo?.[m.rule.actionId] ?? 0}/${max}.`);
+        ctx.noteNow(`Resupply: ${to.label} is back to Ammo ${to.ammo?.[m.rule.actionId] ?? 0}/${max}.`, 'done');
       }
     }
     ctx.refresh();
@@ -6844,7 +6849,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (ally) {
       const to = s.tokens.find((x) => x.uid === Number(ally));
       if (ctx.send({ kind: 'repairPart', seat: t.side, uid: t.uid, slot, mode: 'mend', targetUid: Number(ally), actionId: m.actionId }).ok) {
-        ctx.noteNow(`${to?.label ?? 'The ally'}: ${SLOT_LABEL[slot as PartSlot | 'main'] ?? slot} is mended back to intact${m.removeSelf ? `, and ${t.label} is removed` : ''}.`);
+        ctx.noteNow(`${to?.label ?? 'The ally'}: ${SLOT_LABEL[slot as PartSlot | 'main'] ?? slot} is mended back to intact${m.removeSelf ? `, and ${t.label} is removed` : ''}.`, 'done');
       }
       ctx.refresh();
       return;
@@ -6852,7 +6857,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (ctx.send({ kind: 'repairPart', seat: t.side, uid: t.uid, slot, mode: mode as 'repaired' | 'mend' }).ok) {
       ctx.noteNow(mode === 'mend'
         ? `${t.label}: ${SLOT_LABEL[slot as PartSlot | 'main']} is mended back to intact.`
-        : `${t.label}: ${SLOT_LABEL[slot as PartSlot | 'main']} takes a Repaired Token - its Actions return, but it stays destroyed for Integrity (J21).`);
+        : `${t.label}: ${SLOT_LABEL[slot as PartSlot | 'main']} takes a Repaired Token - its Actions return, but it stays destroyed for Integrity (J21).`, 'done');
     }
     ctx.refresh();
   });
@@ -6873,7 +6878,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       return;
     }
     if (ctx.send({ kind: 'switchForm', seat: t.side, uid: t.uid, actionId: m.actionId, cardId }).ok) {
-      ctx.noteNow(`${t.label} switches to ${cardName(ctx.data.byId.get(cardId))}. One Movement follows.`);
+      ctx.noteNow(`${t.label} switches to ${cardName(ctx.data.byId.get(cardId))}. One Movement follows.`, 'done');
       startMovePlan(ctx, t, { label: 'Stance Change: Movement', actionId: m.actionId, free: true });
     }
     ctx.refresh();
@@ -6931,7 +6936,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const [col, row] = (el.dataset.manifest ?? '').split(',').map(Number);
     const g = { c: Math.floor(col / 3), r: Math.floor(row / 3) };
     if (ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid, to: { col, row }, facing: m.facing }).ok) {
-      ctx.noteNow(`${m.why} ${t.label} leaves the Optical Camouflage State and Manifests to ${gridName(g.c, g.r)} (4.12.2).`);
+      ctx.noteNow(`${m.why} ${t.label} leaves the Optical Camouflage State and Manifests to ${gridName(g.c, g.r)} (4.12.2).`, 'done');
     }
     ctx.refresh();
   });
@@ -6946,7 +6951,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
     if (!m || !t) { ctx.refresh(); return; }
     if (ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid }).ok) {
-      ctx.noteNow(`${m.why} ${t.label} leaves the Optical Camouflage State where its marker stood (4.12.2).`);
+      ctx.noteNow(`${m.why} ${t.label} leaves the Optical Camouflage State where its marker stood (4.12.2).`, 'done');
     }
     ctx.refresh();
   });
@@ -7021,7 +7026,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (!paid.ok) { if (paid.why) ctx.noteNow(paid.why); ctx.refresh(); return; }
     const called = ctx.send(call).ok;
     overwatchPick = null;
-    if (called) ctx.noteNow(`${kk9.label} calls an Overwatch Strike: the Mech fires from its own row, and ${kk9.label} is removed.`);
+    if (called) ctx.noteNow(`${kk9.label} calls an Overwatch Strike: the Mech fires from its own row, and ${kk9.label} is removed.`, 'done');
     ctx.refresh();
   });
   on('[data-act="owcancel"]', () => { overwatchPick = null; dropAction(); ctx.refresh(); });
@@ -7036,7 +7041,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     // since the first press already ended it.
     if (ensureScript(s).opp?.uid === r.fromUid) {
       if (!ctx.send({ kind: 'riposte', seat: t.side, uid, fromUid: r.fromUid! }).ok) { ctx.refresh(); return; }
-      ctx.noteNow(`${t.label} parried: the Action Opportunity ends at once (050 / ZHLA-202).`);
+      ctx.noteNow(`${t.label} parried: the Action Opportunity ends at once (050 / ZHLA-202).`, 'done');
     }
     if (!actionId) {
       ctx.send({ kind: 'resolveReaction', seat: t.side, uid, actionId: r.actionId });
@@ -7086,7 +7091,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const victim = m?.targetUid !== null && m ? ctx.state.tokens.find((x) => x.uid === m.targetUid) : undefined;
     shovePlan = null;
     if (by && victim && m?.facing !== undefined) {
-      if (ctx.send({ kind: 'forceMove', seat: by.side, uid: by.uid, targetUid: victim.uid, to: { col: victim.col, row: victim.row }, facing: m.facing }).ok) ctx.noteNow(`${victim.label} could not be moved, but is turned to face ${['North', 'East', 'South', 'West'][m.facing]}.`);
+      if (ctx.send({ kind: 'forceMove', seat: by.side, uid: by.uid, targetUid: victim.uid, to: { col: victim.col, row: victim.row }, facing: m.facing }).ok) ctx.noteNow(`${victim.label} could not be moved, but is turned to face ${['North', 'East', 'South', 'West'][m.facing]}.`, 'done');
     }
     flushBoxDrops();
     ctx.refresh();
@@ -7115,7 +7120,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       ctx.send({ kind: 'flyToTarget', seat: proj.side, uid: proj.uid, actionId: a.id, targetUid: target.uid });
       detonateNow.flew = target.uid;
       if (flight.owed.length) {
-        if (ctx.send({ kind: 'queueIntercepts', seat: proj.side, items: flight.owed }).ok) ctx.noteNow(`${proj.label} flies into ${target.label}'s Grid, and its flight owes ${flight.owed.length} Interception attempt${flight.owed.length === 1 ? '' : 's'} (4.9). If it survives, pick the target again.`);
+        if (ctx.send({ kind: 'queueIntercepts', seat: proj.side, items: flight.owed }).ok) ctx.noteNow(`${proj.label} flies into ${target.label}'s Grid, and its flight owes ${flight.owed.length} Interception attempt${flight.owed.length === 1 ? '' : 's'} (4.9). If it survives, pick the target again.`, 'table');
         ctx.refresh();
         return;
       }
@@ -7137,7 +7142,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-detterrain]', (el) => {
     const proj = s.tokens.find((x) => x.uid === detonateNow?.uid);
-    if (proj && ctx.send({ kind: 'destroyTerrain', seat: proj.side, uid: proj.uid, pieces: [el.dataset.detterrain!] }).ok) ctx.noteNow('Destructible Terrain takes no roll: it is removed outright (p.21).');
+    if (proj && ctx.send({ kind: 'destroyTerrain', seat: proj.side, uid: proj.uid, pieces: [el.dataset.detterrain!] }).ok) ctx.noteNow('Destructible Terrain takes no roll: it is removed outright (p.21).', 'done');
     ctx.refresh();
   });
   on('[data-detstatus]', (el) => { detonateStatus = el.dataset.detstatus!; ctx.refresh(); });
@@ -7163,7 +7168,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const proj = s.tokens.find((x) => x.uid === detonateNow?.uid);
     detonateNow = null;
     if (proj) {
-      if (ctx.send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid }).ok) ctx.noteNow(`${proj.label} detonated and is destroyed (4.7.5).`);
+      if (ctx.send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid }).ok) ctx.noteNow(`${proj.label} detonated and is destroyed (4.7.5).`, 'done');
     }
     ctx.refresh();
   });
@@ -7175,7 +7180,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="detkeep"]', () => {
     const proj = s.tokens.find((x) => x.uid === detonateNow?.uid);
     detonateNow = null;
-    if (proj) ctx.noteNow(`${proj.label} finds no target within Range and stays on the board (GoF 1.021).`);
+    if (proj) ctx.noteNow(`${proj.label} finds no target within Range and stays on the board (GoF 1.021).`, 'done');
     ctx.refresh();
   });
   on('[data-act="smokeauto"]', () => {
@@ -7243,13 +7248,13 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const at = s.tokens.find((x) => x.uid === f.targetUid);
       const left = by ? interceptHeld(ctx.data, s.tokens, by, f.actionId) : 0;
       if (!at) {
-        ctx.noteNow(`The target is destroyed, so the chain ends. ${left} Interception Token${left === 1 ? '' : 's'} left on that Part for the rest of the game.`);
+        ctx.noteNow(`The target is destroyed, so the chain ends. ${left} Interception Token${left === 1 ? '' : 's'} left on that Part for the rest of the game.`, 'done');
       } else if (!by || !alive(by)) {
         // The obligation died with the unit; nothing more is owed.
       } else if (left <= 0) {
-        ctx.noteNow(`${at.label} survived, but ${by.label} has spent every Interception Token on that Part and cannot try again (4.9).`);
+        ctx.noteNow(`${at.label} survived, but ${by.label} has spent every Interception Token on that Part and cannot try again (4.9).`, 'done');
       } else {
-        if (ctx.send({ kind: 'queueIntercepts', seat: by.side, items: [f] }).ok) ctx.noteNow(`${at.label} survived, so ${by.label} must Intercept again until its Tokens run out or the target is destroyed (4.9). ${left} left.`);
+        if (ctx.send({ kind: 'queueIntercepts', seat: by.side, items: [f] }).ok) ctx.noteNow(`${at.label} survived, so ${by.label} must Intercept again until its Tokens run out or the target is destroyed (4.9). ${left} left.`, 'table');
       }
     }
     ctx.refresh();
@@ -7271,7 +7276,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-tiepick]', (el) => {
     const t = s.tokens.find((x) => x.uid === Number(el.dataset.tiepick));
     if (t && ctx.send({ kind: 'chooseTied', seat: t.side, uid: t.uid }).ok) {
-      ctx.noteNow(`${t.label} takes the turn: Mechs tied on Timing and Initiative go in the order their squad picks.`);
+      ctx.noteNow(`${t.label} takes the turn: Mechs tied on Timing and Initiative go in the order their squad picks.`, 'done');
     }
     ctx.refresh();
   });
@@ -7280,7 +7285,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
     if (t && ctx.send({ kind: 'firewatch', seat: t.side, uid: t.uid }).ok) {
-      ctx.noteNow(`${t.label}: Firewatch, 1 Link for a Command Token (Link now ${t.link}).`);
+      ctx.noteNow(`${t.label}: Firewatch, 1 Link for a Command Token (Link now ${t.link}).`, 'done');
     }
     ctx.refresh();
   });
@@ -7289,7 +7294,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
     if (t && ctx.send({ kind: 'linkTick', seat: t.side, uid: t.uid }).ok) {
-      ctx.noteNow(`${t.label} trades 1 Link for 1 Action Tick (Link now ${t.link}; Offensive Stance locked, FAQ L2).`);
+      ctx.noteNow(`${t.label} trades 1 Link for 1 Action Tick (Link now ${t.link}; Offensive Stance locked, FAQ L2).`, 'done');
     }
     ctx.refresh();
   });
@@ -7303,7 +7308,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       // and the Shutdown is reported rather than the last point being refused.
       const wasShut = t.stance === 'shutdown';
       if (ctx.send({ kind: 'overload', seat: t.side, uid: t.uid }).ok && !wasShut && t.stance === 'shutdown') {
-        ctx.noteNow(`Link has reached 0, so ${t.label} shuts down.`);
+        ctx.noteNow(`Link has reached 0, so ${t.label} shuts down.`, 'done');
       }
     }
     ctx.refresh();
@@ -7315,7 +7320,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (t && ctx.send({ kind: 'attackMode', seat: t.side, uid: t.uid }).ok) {
       // The Stance lock is the price, and it is not obvious from the button, so
       // it is said out loud the moment it is paid.
-      ctx.noteNow(`${t.label} takes its extra Action Tick, and its Stance is now set for this Action Opportunity (4.1).`);
+      ctx.noteNow(`${t.label} takes its extra Action Tick, and its Stance is now set for this Action Opportunity (4.1).`, 'done');
     }
     ctx.refresh();
   });

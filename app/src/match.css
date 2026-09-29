@@ -533,6 +533,14 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
   max-height: calc(100% - 24px); max-width: 46%;
   overflow-y: auto; pointer-events: none;
 }
+/* The one notice line (notices.ts draws it, notices.css is its look): the
+   bottom centre of the board, over it, never pushing the turn panel about the
+   way the red note box at its top did. Above the pause veil, so a connection
+   notice still shows while the table waits. */
+.mc-notice {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  width: min(520px, calc(100% - 28px)); z-index: 9;
+}
 /* Right-aligned so the pills hang off the edge and ragged names grow INWARDS,
    which keeps the straight side against the board's corner. */
 .ordercol { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
@@ -905,6 +913,11 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
 /* An Action that cannot be taken stays readable and says why when pressed. */
 .actrow.warn { opacity: 0.55; }
 .actrow.warn:hover { opacity: 0.8; }
+/* A refused row (aria-disabled, notices.ts) and a disabled one look the same:
+   dimmed, no pointer, no hover lift. They used to look live. */
+.actrow[aria-disabled="true"], .rowwide[aria-disabled="true"], .rowwide:disabled, .rowbtn:disabled { opacity: 0.45; cursor: default; }
+.actrow[aria-disabled="true"]:hover, .rowwide[aria-disabled="true"]:hover, .rowwide:disabled:hover { opacity: 0.45; background: var(--surface2); }
+.rowbtn:disabled:hover { background: var(--surface3); }
 
 /* Stance and Reboot: chosen before the Mech acts, or the only way back. */
 .stancerow { display: flex; gap: 6px; margin: 0 0 8px; flex-wrap: wrap; }
