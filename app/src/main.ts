@@ -56,14 +56,16 @@ import { runFirstVisitPreload } from './preload';
 import { syncUpdateNotice, watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
-import { clearHistory, historyList, recordSnapshot, undoLast } from './history';
+import { clearHistory, historyList, recordSnapshot, snapshotBack, undoLast } from './history';
+import { idleWorldFor } from './glue';
+import { clearNotice, configureNotices, currentNotice, explainOnHold, notify, type NoticeKind } from './notices';
 import { labelFor, namesFrom } from './ledger';
 import { askTowFacing, offerHarpyDrag as sharedHarpyDrag } from './commandpick';
 import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, Opportunity, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, cellsOf, DEFAULT_GRIDS, isLineUnit, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { interceptHeld, interceptPayer, allyRepairTargets, boxNoteText, electronicStrength, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { interceptHeld, interceptPayer, allyRepairTargets, boxNoteText, electronicStrength, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction, actionIdleWhy, type IdleWorld, resupplyHolders, selfRepairOptions } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -90,6 +92,8 @@ async function init() {
   };
   let selectedUid: number | null = null;
   let replayActive = false;
+  // Blasts waiting for the combat panel (startBlastWhenFree).
+  const heldBlasts: { uid: number; actionId: string }[] = [];
   let pendingAttack: {
     attackerUid: number;
     actionId: string;
@@ -415,17 +419,121 @@ async function init() {
     return last.human ?? 'the last step';
   }
 
+  // The toolbar's Undo is greyed with nothing to take back, and otherwise
+  // names what it takes, as the guide's does (pick 2): with nothing left a
+  // press only ever said so.
+  function syncUndoButton(): void {
+    const b = document.getElementById('btn-undo');
+    if (!b) return;
+    const name = undoName();
+    if (name) {
+      b.removeAttribute('aria-disabled');
+      delete b.dataset.why;
+      b.title = `Undo ${name} (Ctrl+Z)`;
+    } else {
+      b.setAttribute('aria-disabled', 'true');
+      b.dataset.why = 'Nothing left to undo.';
+      b.removeAttribute('title');
+    }
+  }
+
   function undoMove(): void {
     // A half-drawn route belongs to a board that is about to be replaced.
     if (movePlan) cancelMove();
     const snap = undoLast(state);
     if (!snap) {
-      setHint('Nothing left to undo.');
+      say('refused', 'Nothing left to undo.');
       return;
+    }
+    // A unit an Undo puts back in an Abyss Grid is having its fall taken back:
+    // the sweep must not drop it again, or it could never come back (notices
+    // review, 2026-09-28). The same goes for one the Undo of a move leaves there.
+    for (const t of state.tokens) {
+      const g = largeGridOf(t);
+      if (envCardAt(state, g.c, g.r) === 'abyss') abyssSeen.add(t.uid);
     }
     selectToken(null);
     onChanged();
-    setHint(`Undid: ${snap.human ?? snap.label} · back to round ${snap.round}, ${PHASES[snap.phase]} Phase.`);
+    // The board shows what came back; the words stay in the History (pick 7).
+    say('done', `Undid: ${snap.human ?? snap.label} · back to round ${snap.round}, ${PHASES[snap.phase]} Phase.`);
+  }
+
+  // ---------- the notice line ----------
+  // OTTO's picks (2026-09-28; notices.ts): one line at the bottom centre of
+  // the board for what the table has to say that is not an instruction - a
+  // refusal, a house rule it let through, what the other player did, the
+  // connection. The instruction for the tool in hand stays in the hint at the
+  // top, beside the click it asks for. A Teaching game keeps its rule
+  // numbers; the sandbox and a strict or online game leave them to the
+  // Reference (pick 4). Undo is this page's own.
+  configureNotices({
+    host: () => document.getElementById('tt-notice'),
+    voice: () => (normaliseSetup(state.setup) && !strictNow(state) ? 'teaching' : 'terse'),
+    onUndo: () => undoMove(),
+  });
+  // A greyed control says why on a long press or a hover (pick 2).
+  explainOnHold(document.body);
+
+  function say(kind: NoticeKind, text: string | null | undefined, undo?: () => boolean): void {
+    if (text) notify({ kind, text, undo });
+  }
+
+  // Undo for a notice about the step just taken: offered while that step is
+  // still the newest thing on the board, gone the moment anything follows it,
+  // so it can never take back something the notice was not about.
+  function whileNewest(): () => boolean {
+    const seq = snapshotBack(0)?.seq;
+    return () => !getLocalSeat() && seq !== undefined && snapshotBack(0)?.seq === seq;
+  }
+
+  // A command the rules turned down that a freeplay or Teaching table applied
+  // all the same (perform() does it and returns the reason): said as a warning,
+  // with Undo. A strict table never applied it, and onRefused has already put
+  // its reason in the line.
+  function warnIfBent(v: { ok: boolean; why?: string }): void {
+    if (!v.ok && !strictNow(state)) say('warn', v.why, whileNewest());
+  }
+
+  // Where the board stood before a step that may run to several commands (an
+  // attack's Tick, its Reveal), as the newest snapshot's seq: a count would
+  // slip whenever the ring evicts at its limit.
+  function boardMark(): number {
+    return snapshotBack(0)?.seq ?? -1;
+  }
+
+  function rewindTo(mark: number): void {
+    while ((snapshotBack(0)?.seq ?? -1) > mark && undoLast(state)) { /* back to the mark */ }
+  }
+
+  // OTTO's pick 5 (2026-09-28): a freeplay or Teaching table makes the attack
+  // it was asked for even where the rules would not, and says which rule it
+  // bent - it used to stop on an "anyway?" dialog first. Undo takes the
+  // declaration back whole (the window, the Tick, the Charge) for as long as
+  // that same window is open with nothing rolled.
+  //
+  // The window being the same one is not enough on its own: a pip, a Stance or
+  // a guide button pressed while it sits unrolled is a step of its own, and a
+  // rewind to the mark would take that back too. So nothing may have followed
+  // the declaration either (notices review, 2026-09-28). `after` runs once the
+  // board is back.
+  function bentRule(why: string, mark: number, window: 'attack' | 'electronic', after?: () => void): void {
+    const open = (): object | null => (window === 'attack' ? attackHelper.unrolled : electronicHelper.unrolled);
+    const session = open();
+    const last = snapshotBack(0)?.seq;
+    notify({
+      kind: 'warn',
+      text: `${why} Made anyway, as a house rule.`,
+      undo: session ? () => !getLocalSeat() && open() === session && snapshotBack(0)?.seq === last : undefined,
+      onUndo: () => {
+        // An Interception's close would ask for the next attempt at once.
+        interceptFollowUp = null;
+        if (window === 'attack') attackHelper.cancel();
+        else electronicHelper.abandon();
+        rewindTo(mark);
+        after?.();
+        onChanged();
+      },
+    });
   }
 
   const panel = new Panel(data, {
@@ -443,7 +551,7 @@ async function init() {
     // tracking (audit Phase 2, E8); the sandbox and Teaching keep the pip.
     onRestoreAmmo(t, actionId) {
       if (state.script?.strict) {
-        setHint('Strict tracking: Ammo comes back through a Resupply Action. Undo reverses a mistaken spend.');
+        say('refused', 'Ammo comes back through a Resupply Action. Undo takes back a mistaken spend.');
         return;
       }
       perform(data, state, { kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId });
@@ -457,7 +565,7 @@ async function init() {
     // tracking Undo takes back a mistaken spend (audit Phase 5, B8).
     onRestoreIntercept(t, actionId) {
       if (strictNow(state)) {
-        setHint('Strict tracking: Interception Tokens are never restored (4.9). Undo reverses a mistaken spend.');
+        say('refused', 'Interception Tokens are never restored (4.9). Undo takes back a mistaken spend.');
         return;
       }
       const act = tokenCards(data, t)
@@ -580,6 +688,23 @@ async function init() {
       const clean = tokenCleanupOf(act);
       if (clean) void performTokenCleanup(t, act, clean, () => {});
     },
+    // A strict table corrects a pip through Undo, not by hand (the refusals
+    // in onRestoreAmmo, onRestoreIntercept and onCharge say the same), and a
+    // Shove needs an enemy Ground Unit in the Grid in front.
+    blockedWhy(t, what, actionId) {
+      if (what === 'shove') {
+        const action = findAction(t, actionId);
+        return action ? shoveWhy(t, action) : null;
+      }
+      if (what === 'support') {
+        const action = findAction(t, actionId);
+        return action ? actionIdleWhy(data, t, action, idleWorld()) : null;
+      }
+      if (!state.script?.strict) return null;
+      return what === 'restoreAmmo' ? 'Ammo comes back through a Resupply Action. Undo takes back a mistaken spend.'
+        : what === 'restoreIntercept' ? 'Interception Tokens are never restored (4.9). Undo takes back a mistaken spend.'
+          : 'A Charge Token is flipped by the Charge Action and spent by a [Charged] Action. Undo takes back a mistake.';
+    },
     onShove(t, actionId) {
       const action = findAction(t, actionId);
       if (action) void offerShove(t, action);
@@ -602,7 +727,7 @@ async function init() {
     // it. The sandbox and the Teaching guide keep the pip as a free record.
     onCharge(t, slot, on) {
       if (state.script?.strict) {
-        setHint('Strict tracking: a Charge Token is flipped by the Charge Action and spent by a [Charged] Action. Undo reverses a mistake.');
+        say('refused', 'A Charge Token is flipped by the Charge Action and spent by a [Charged] Action. Undo takes back a mistake.');
         return;
       }
       setCharge(t, slot, on);
@@ -710,18 +835,14 @@ async function init() {
         const owedTarget = !!intercepting && !!defender && interceptOwedAt(state, intercepting.uid, intercepting.actionId, defender.uid);
         // A strict table makes only an owed attempt (ruling I11; audit Phase
         // 5, B9): the Launch or the Movement that owed it named the target.
+        // Each refusal here keeps the targeting open, so "pick another" is
+        // exactly what the player can do next.
         if (intercepting && defender && strictNow(state) && !owedTarget) {
-          void alertDialog({
-            title: 'No Interception owed',
-            body: `No Interception by this Part is owed at ${defender.label}. Only the Launch or the Aerial Movement that triggered one names its target (4.9). Pick the owed target, or press Esc.`,
-          });
+          say('refused', `No Interception by this Part is owed at ${defender.label}. Only the Launch or the Aerial Movement that triggered one names its target (4.9). Pick the owed target, or press Esc.`);
           return;
         }
         if (intercepting && defender && !defender.aerial && !owedTarget) {
-          void alertDialog({
-            title: 'Not an Interception target',
-            body: `Interception only ever attacks the Aerial Unit that triggered it, and ${defender.label} is not Aerial (rulebook 4.9). Pick the Missile or Projectile, or press Esc.`,
-          });
+          say('refused', `Interception only ever attacks the Aerial Unit that triggered it, and ${defender.label} is not Aerial (4.9). Pick the Missile or Projectile, or press Esc.`);
           return;
         }
         // An Interception is a Firing Action (FAQ M26), so a Smoke Screen over
@@ -729,56 +850,39 @@ async function init() {
         // door said line of sight always exists; only the owed queue read the
         // smoke (audit Phase 4, G4).
         if (intercepting && defender && attacker && !owedTarget && smokeBlocks(attacker, defender, state.smoke ?? [])) {
-          void alertDialog({
-            title: 'No line of sight',
-            body: `Every line from ${attacker.label} to ${defender.label} crosses a Smoke Screen, and an Interception is a Firing Action, so it cannot be made at that target (4.16, FAQ F3). Pick another, or press Esc.`,
-          });
+          say('refused', `Every line from ${attacker.label} to ${defender.label} crosses a Smoke Screen, and an Interception is a Firing Action, so it cannot be made at that target (4.16, FAQ F3). Pick another, or press Esc.`);
           return;
         }
+        // A camouflaged target needs a Scan first, and a unit with no
+        // Electronic Value cannot Initiate one (4.12.2, 4.11.2): no attack at
+        // all, on any table, so the click is refused and the targeting stays.
+        if (attacker && defender && action && !intercepting && mode === 'attack' && statusCount(defender.statuses, 'camouflage') > 0
+          && electronicValue(data, attacker, loanedParts(data, state.tokens, attacker)) <= 0) {
+          say('refused', `${defender.label} is in Optical Camouflage, so the attack needs a Scan first (4.12.2), and ${attacker.label} has an Electronic Value of 0, which cannot Initiate a Counter-roll (4.11.2). Pick another target, or press Esc.`);
+          return;
+        }
+        // A target the rules would refuse (targetProblem). A strict table says
+        // why and keeps the targeting open, Esc still giving the Charge back;
+        // a freeplay or Teaching table makes the attack as asked, says which
+        // rule it bent, and offers Undo (OTTO's pick 5, 2026-09-28). Each of
+        // these used to stop on an "anyway?" dialog, and a strict refusal ended
+        // the targeting while telling the player to pick another.
+        const problem = attacker && defender && action && !intercepting ? targetProblem(attacker, defender, action, mode) : null;
+        if (problem && strictNow(state)) {
+          say('refused', `${problem} Pick another target, or press Esc.`);
+          return;
+        }
+        const mark = boardMark();
         endTargeting();
         pendingIntercept = null;
         if (attacker && defender && action) {
           if (mode === 'electronic') {
             // Freeplay opens the window directly rather than through
-            // startCounterRoll, so that command's check is asked here, as the
-            // one reading of who a Counter-roll may be opened against: an
-            // enemy, not a "-", a unit type the card names, one a Scan could
-            // change, in Range (a Repeater's too), from an Electronic Value
-            // above 0. None of it ran, and Manipulation Interference
-            // Immobilized an ally 40 Grids away (audit Phase 3, D6). And an
-            // Automatic one takes the nearest (3.5.2). Strict refuses; the
-            // teaching tracker warns and lets a house rule through.
-            const verdict = check(data, state, { kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId: action.id, targetUid: defender.uid });
-            const legal = action.speed === 'auto' && !electronicAll(action) ? autoTargetsFor(data, state.tokens, attacker, action, { terrain: currentTerrain(), smoke: state.smoke ?? [] }) : [];
-            const why = !verdict.ok ? verdict.why
-              : legal.length && !legal.some((x) => x.uid === defender.uid)
-                ? `An Automatic Action takes the nearest legal target (3.5.2): here ${legal.map((x) => x.label).join(', ')}.`
-                : null;
-            const open = (): void => {
-              openElectronic(attacker, action, defender);
-              revealForAction(attacker, action);
-              showSideTab('combat');
-            };
-            if (why) {
-              if (state.script?.strict) {
-                void alertDialog({ title: `${defender.label} is not a legal target`, body: `${why} Pick another target, or press Esc.` });
-                done?.(false);
-                return;
-              }
-              void confirmDialog({
-                title: `${defender.label} is not a legal target`,
-                body: `${why} Open the Counter-roll anyway?`,
-                confirmLabel: 'Open it anyway',
-                cancelLabel: 'Pick another target',
-                danger: true,
-              }).then((go) => {
-                if (!go) { done?.(false); return; }
-                open();
-                done?.(true);
-              });
-              return;
-            }
-            open();
+            // startCounterRoll, so that command's check is asked in
+            // targetProblem, the one reading of who a Counter-roll may be
+            // opened against (audit Phase 3, D6).
+            openElectronic(attacker, action, defender);
+            revealForAction(attacker, action);
           } else if (intercepting) {
             if (!spendIntercept(attacker, intercepting.actionId, action.name.en || action.name.zh || action.id, defender.uid)) return;
             attackHelper.start(
@@ -792,167 +896,15 @@ async function init() {
               true,
             );
             interceptFollowUp = { uid: attacker.uid, actionId: intercepting.actionId, targetUid: defender.uid };
-          } else if (action.speed === 'auto' && (() => {
-            const legal = autoTargetsFor(data, state.tokens, attacker, action, { terrain: currentTerrain(), smoke: state.smoke ?? [] });
-            return !legal.some((x) => x.uid === defender.uid);
-          })()) {
-            // Automatic Actions take the nearest legal target in sight,
-            // Highlighted first (3.5.2, FAQ O21). The strict tracker refuses
-            // anything else; teaching warns and lets a house rule through.
-            // With no legal target at all there is nothing to take, and any
-            // unit clicked was accepted (audit Phase 5, F9).
-            const legal = autoTargetsFor(data, state.tokens, attacker, action, { terrain: currentTerrain(), smoke: state.smoke ?? [] });
-            const names = legal.map((x) => x.label).join(', ');
-            if (state.script?.strict) {
-              void alertDialog({
-                title: legal.length ? 'Not the nearest target' : 'No legal target',
-                body: legal.length
-                  ? `An Automatic Action must take the nearest legal target${legal.some((x) => statusCount(x.statuses, 'highlight') > 0) ? ', and a Highlighted one first' : ''} (3.5.2, FAQ O21). Here that is ${names}.`
-                  : `An Automatic Action takes only an enemy in its Range${action.type === 'Firing' || action.type === 'Melee' ? ', in sight and in front' : ''} (3.5.2), and none is. ${defender.label} is not a legal target.`,
-              });
-              done?.(false);
-              return;
-            }
-            void confirmDialog({
-              title: legal.length ? 'Not the nearest target' : 'No legal target',
-              body: legal.length
-                ? `An Automatic Action normally takes the nearest legal target (3.5.2, FAQ O21) - here ${names}. Attack ${defender.label} anyway?`
-                : `An Automatic Action normally takes only an enemy in its Range (3.5.2), and none is. Attack ${defender.label} anyway?`,
-              confirmLabel: 'Attack it anyway',
-              cancelLabel: legal.length ? 'Pick the nearest' : 'Cancel',
-              danger: true,
-            }).then((go) => {
-              if (!go) { done?.(false); return; }
-              const prot = protectionFor(attacker, defender, action);
-              attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
-              revealForAction(attacker, action);
-              showSideTab('combat');
-              done?.(true);
-            });
-            return;
-          } else if (mode === 'attack' && (() => {
-            // HIGHLIGHT (6.2.1): "If a Unit performs an Attack Action that is
-            // able to target an Enemy Unit that has Highlight, it must target
-            // that Unit", Firing only (FAQ J18; F15). Only the Drones'
-            // Automatic Actions were ever bound, so Amplify Profile and Target
-            // Tag did nothing against a Mech's fire (audit Phase 3, E1).
-            const forced = highlightForced(attacker, action);
-            return forced.length > 0 && !forced.some((x) => x.uid === defender.uid);
-          })()) {
-            const names = highlightForced(attacker, action).map((x) => x.label).join(', ');
-            if (state.script?.strict) {
-              void alertDialog({
-                title: 'A Highlighted target',
-                body: `${action.name.en || action.id} can target ${names}, which has Highlight, so it must target it (6.2.1). Pick it, or press Esc.`,
-              });
-              done?.(false);
-              return;
-            }
-            void confirmDialog({
-              title: 'A Highlighted target',
-              body: `${action.name.en || action.id} can target ${names}, which has Highlight, so it normally must target it (6.2.1). Attack ${defender.label} anyway?`,
-              confirmLabel: 'Attack it anyway',
-              cancelLabel: 'Pick the Highlighted one',
-              danger: true,
-            }).then((go) => {
-              if (!go) { done?.(false); return; }
-              const prot = protectionFor(attacker, defender, action);
-              attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
-              revealForAction(attacker, action);
-              showSideTab('combat');
-              done?.(true);
-            });
-            return;
-          } else if (mode === 'attack' && linkShockOf(action) && !tetheredBy(attacker, defender)) {
-            // PDRH-202_B Link Shock: "Can only be used against a target
-            // Tethered by this unit." Distance and line of sight do not matter
-            // to it, which the board's own reading will not say.
-            if (state.script?.strict) {
-              void alertDialog({
-                title: `${defender.label} is not Tethered`,
-                body: `Link Shock can only be used against a target Tethered by ${attacker.label} (PDRH-202). Pick the Tethered unit, or press Esc.`,
-              });
-              done?.(false);
-              return;
-            }
-            void confirmDialog({
-              title: `${defender.label} is not Tethered`,
-              body: `Link Shock can only be used against a target Tethered by ${attacker.label} (PDRH-202). Attack it anyway?`,
-              confirmLabel: 'Attack it anyway',
-              cancelLabel: 'Pick another target',
-              danger: true,
-            }).then((go) => {
-              if (!go) { done?.(false); return; }
-              const prot = protectionFor(attacker, defender, action);
-              attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
-              revealForAction(attacker, action);
-              showSideTab('combat');
-              done?.(true);
-            });
-            return;
-          } else if (action.type === 'Melee' && defender.aerial && !defender.mine && mode === 'attack') {
-            // 4.4.1 step 1, Melee requirement 4: the target must not be an
-            // Aerial Unit. The strict tracker refuses; teaching warns and lets a
-            // house rule through, the split every other target rule makes here.
-            if (state.script?.strict) {
-              void alertDialog({
-                title: `${defender.label} is Aerial`,
-                body: 'A Melee Action cannot target an Aerial Unit (4.4.1). Pick another target, or press Esc.',
-              });
-              done?.(false);
-              return;
-            }
-            void confirmDialog({
-              title: `${defender.label} is Aerial`,
-              body: 'A Melee Action cannot normally target an Aerial Unit (4.4.1 step 1). Attack it anyway?',
-              confirmLabel: 'Attack it anyway',
-              cancelLabel: 'Pick another target',
-              danger: true,
-            }).then((go) => {
-              if (!go) { done?.(false); return; }
-              const prot = protectionFor(attacker, defender, action);
-              attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
-              revealForAction(attacker, action);
-              showSideTab('combat');
-              done?.(true);
-            });
-            return;
-          } else if (defender.side === attacker.side && !state.script?.strict) {
-            // Allies cannot be designated as Firing or Melee targets under
-            // normal circumstances (Supplement 1.4.1 via FAQ A10/A11); area
-            // damage is the intended way to hit your own. Warn, don't block —
-            // and the Tick is only spent if the attack actually declares.
-            void confirmDialog({
-              title: `${defender.label} is an ally`,
-              body: 'A squad cannot normally designate its own unit as the target of a Firing or Melee Action (Rules Supplement 1.4.1). Grenades and other area damage do hit allies; a direct attack needs a card that allows it or a house ruling.',
-              confirmLabel: 'Attack it anyway',
-              cancelLabel: 'Pick another target',
-              danger: true,
-            }).then((go) => {
-              if (!go) {
-                done?.(false);
-                return;
-              }
-              const prot = protectionFor(attacker, defender, action);
-              attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
-              revealForAction(attacker, action);
-              showSideTab('combat');
-              done?.(true);
-            });
-            return;
-          } else if (defender.side === attacker.side) {
-            void alertDialog({
-              title: `${defender.label} is an ally`,
-              body: 'A squad cannot designate its own unit as the target of a Firing or Melee Action (Rules Supplement 1.4.1). The strict tracker refuses it; use area damage instead.',
-            });
-            done?.(false);
-            return;
           } else if (statusCount(defender.statuses, 'camouflage') > 0) {
             // 4.12.2 (FAQ I11/I12): designating a unit in the Optical
             // Camouflage State earns one FREE Scan first. A success Reveals it
             // - its player chooses where it appears - and the attack resumes;
-            // a failure ends the attack with the Tick spent (I11).
+            // a failure ends the attack with the Tick spent (I11). A bent rule
+            // is only said here: the Scan window is the one open, and it has
+            // its own way out.
             freeScanThenAttack(attacker, defender, action, done);
+            if (problem) say('warn', `${problem} Made anyway, as a house rule.`);
             return;
           } else {
             // Multi-Target opens on its split step instead: one declaration,
@@ -974,6 +926,16 @@ async function init() {
           // An Action is performed the moment it is declared against a legal
           // target (3.4.5), so the Tick is spent here rather than after the dice.
           done?.(true);
+          if (problem) {
+            bentRule(problem, mark, mode === 'electronic' ? 'electronic' : 'attack', () => {
+              // The rewind restored fresh token objects: the one held from the
+              // click is no longer on the board.
+              const back = state.tokens.find((x) => x.uid === attacker.uid);
+              if (!refund || !back) return;
+              setCharge(back, refund.slot, true);
+              logTo(back, `The attack was taken back, so the Charge on ${SLOT_LABEL[refund.slot as PartSlot | 'main']} goes back face-up.`);
+            });
+          }
         } else {
           done?.(false);
         }
@@ -987,15 +949,9 @@ async function init() {
       if (statusCount(t.statuses, 'immobilized') > 0 && !forced) {
         board.renderTokens(state);
         board.setSelected(uid);
-        showInspect({
-          title: 'Immobilized',
-          sub: `IMB · on ${t.label}`,
-          lines: [
-            'This unit cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot (rulebook 6.3.2).',
-            'Being displaced by someone else’s effect is still legal, so hold Shift while dragging to move it anyway.',
-            'Take the IMB token off in the Squads tab to move it normally again.',
-          ],
-        });
+        // A refusal, so it is said where every refusal is, not in the card
+        // inspector at the far side of the page.
+        say('refused', `${t.label} is Immobilized: no Movement or Maneuver, not even a turn on the spot (6.3.2). Hold Shift to move it by an effect instead.`);
         return;
       }
       // The Tether leash binds a voluntary move, and a drag is one: only Shift,
@@ -1006,7 +962,7 @@ async function init() {
       if (leash && !leash(Math.floor(col / 3), Math.floor(row / 3))) {
         board.renderTokens(state);
         board.setSelected(uid);
-        setHint(`${tetherNote(t, state.tokens)} Hold Shift to move it by an effect instead.`);
+        say('refused', `${tetherNote(t, state.tokens)} Hold Shift to move it by an effect instead.`);
         return;
       }
       const snapped = snapPlacement(col, row, t.size, gridsOf(state));
@@ -1023,7 +979,7 @@ async function init() {
           if (crushed.length && !canCrush) {
             board.renderTokens(state);
             board.setSelected(uid);
-            setHint(`${t.label} cannot end there: only a Crush destroys the Container in that Grid, and ${forced
+            say('refused', `${t.label} cannot end there: only a Crush destroys the Container in that Grid, and ${forced
               ? 'a Forced move is not one'
               : camo ? 'a camouflaged unit cannot Crush (FAQ I3)' : 'a Flying unit cannot Crush (FAQ E14)'}.`);
             return;
@@ -1139,7 +1095,7 @@ async function init() {
         // it, exactly as it does everywhere else. Saving and redrawing has to
         // happen either way, or the board and the state drift apart. The Match
         // Centre is strict and the allowance really does hold there.
-        setHint(v.ok ? '' : v.why);
+        warnIfBent(v);
         save();
         renderAll();
         refreshEnvDialog();
@@ -1282,7 +1238,7 @@ async function init() {
     const foes = state.tokens.filter((x) => x.side !== t.side && x.deployed !== false && alive(x) && rangeBetween(t, x).range <= reach);
     const mechs = state.tokens.filter((x) => x.side === t.side && x.kind === 'mech' && alive(x) && x.stance !== 'shutdown');
     if (!foes.length || !mechs.length) {
-      await alertDialog({ title: what, body: !foes.length ? `No enemy is within Range ${reach} of ${t.label}.` : 'No Ally Mech can fire.' });
+      say('refused', `${what}: ${!foes.length ? `no enemy is within Range ${reach} of ${t.label}.` : 'no Ally Mech can fire.'}`);
       return done(false);
     }
     const aim = await choiceDialog({
@@ -1343,6 +1299,14 @@ async function init() {
     if (!t || !action) return done(false);
     selectToken(uid);
     const what = action.name.en || action.name.zh || action.id;
+    // An Action with nothing to do is refused here, in the words its greyed
+    // row gives (units.ts actionIdleWhy). The branches below keep their own
+    // checks for every other door into them.
+    const idle = actionIdleWhy(data, t, action, idleWorld());
+    if (idle) {
+      say('refused', idle);
+      return done(false);
+    }
 
     if (action.id === 'COMMON_REMOTE_ACCESS') {
       void performRemoteAccess(t, action, done);
@@ -1553,10 +1517,7 @@ async function init() {
       if (port && (ammoAvailable(data, state, t, action.id) ?? 1) <= 0) {
         const back = bitsToRecover(data, state.tokens, t, action);
         if (!back.length) {
-          void alertDialog({
-            title: 'Nothing to Recover',
-            body: `${what}: the Bit Port is empty, and none of your "White Dwarf" Bits is within Range ${port.range}.`,
-          });
+          say('refused', `${what}: the Bit Port is empty, and none of your "White Dwarf" Bits is within Range ${port.range}.`);
           return done(false);
         }
         const bring = (bit: Token): void => {
@@ -1578,10 +1539,7 @@ async function init() {
       const ga = guidedActions(data, t, { tokens: state.tokens, terrain: currentTerrain() }).find((g) => g.action.id === actionId);
       const shot = ga?.projectiles ?? [];
       if (!shot.length) {
-        void alertDialog({
-          title: 'Nothing to place',
-          body: `${what} is a Projectile Action, but the card data does not say which Projectile or Deployable it puts on the board. Place it by hand from the Add tab, then mark the action done.`,
-        });
+        say('refused', `${what} is a Projectile Action, but the card data does not say which Projectile or Deployable it puts on the board. Place it by hand from the Add tab, then mark the action done.`);
         return done(false);
       }
       if (shot.length === 1) {
@@ -1638,7 +1596,7 @@ async function init() {
     if (tag) {
       const units = targetStatusTargets(data, state.tokens, t, action, tag, { terrain: currentTerrain(), smoke: state.smoke ?? [] });
       if (!units.length) {
-        void alertDialog({ title: what, body: `No unit in Range ${actionRange(data, state.tokens, t, action)} and line of sight can gain it.` });
+        say('refused', `${what}: no unit in Range ${actionRange(data, state.tokens, t, action)} and line of sight can gain it.`);
         return done(false);
       }
       void choiceDialog({
@@ -1654,7 +1612,6 @@ async function init() {
         const who = state.tokens.find((x) => x.uid === Number(pick));
         const v = perform(data, state, { kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: Number(pick), statusId: tag.statusId, stacks: tag.stacks });
         if (!v.ok && state.script?.strict) {
-          void alertDialog({ title: 'Refused', body: v.why ?? 'The Token was refused.' });
           done(false);
           return;
         }
@@ -1673,12 +1630,12 @@ async function init() {
     if (grant) {
       const why = selfGrantWhy(t, grant);
       if (why) {
-        void alertDialog({ title: 'Nothing to gain', body: why });
+        say('refused', why);
         return done(false);
       }
       const v = performChecked({ kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: grant.statusId, stacks: grant.stacks });
       if (!v.ok) {
-        void alertDialog({ title: 'Refused', body: v.why ?? 'The Token was refused.' });
+        say('refused', v.why ?? 'The Token was refused.');
         return done(false);
       }
       const label = STATUSES.find((x) => x.id === grant.statusId)?.label ?? grant.statusId;
@@ -1697,7 +1654,7 @@ async function init() {
       sub: `${action.type ?? 'Action'} · ${t.label}`,
       lines: rulesLines(action.description?.en || data.actionTranslation(actionId)?.english || action.description?.zh || 'Follow the text on the card.'),
     });
-    setHint(`${what}: follow the action text, shown in the Details tab.`);
+    say('table', `${what}: follow the action text, shown in the Details tab.`);
     return done(true);
   }
 
@@ -1727,10 +1684,7 @@ async function init() {
     const shape = overlayDeployment()?.[su.edge[t.side]];
     const cells = deployCells(shape);
     if (!cells.length) {
-      void alertDialog({
-        title: 'No Deployment Zone on this map',
-        body: `Nothing is painted for the ${su.edge[t.side]} side. Pick a zone set that includes deployment from the Zones list in the toolbar, or paint one in the map editor, then try again.`,
-      });
+      say('refused', `No Deployment Zone is painted for the ${su.edge[t.side]} side. Pick a zone set with deployment from the Zones list, or paint one in the map editor.`);
       return;
     }
     const terrain = currentTerrain();
@@ -1860,12 +1814,9 @@ async function init() {
           squad: squadEntriesFor(side),
         })),
       });
-      setHint('Game recorded to your account.');
+      say('done', 'Game recorded to your account.');
     } catch (err) {
-      await alertDialog({
-        title: 'Could not record the game',
-        body: `${(err as ApiError).message} The game itself is unaffected.`,
-      });
+      say('system', `Could not record the game: ${(err as ApiError).message} The game itself is unaffected.`);
     }
   }
 
@@ -1893,7 +1844,7 @@ async function init() {
     if (pick !== 's1' && pick !== 's2') return;
     const v = performChecked({ kind: 'concede', seat: pick });
     if (!v.ok) {
-      await alertDialog({ title: 'Not conceded', body: v.why ?? 'The concession was refused.' });
+      say('refused', v.why ?? 'The concession was refused.');
       return;
     }
     const tasks = normaliseTasks(state.tasks);
@@ -1948,10 +1899,7 @@ async function init() {
     if (!action) return;
     const name = action.name.en || action.name.zh || actionId;
     if (left <= 0) {
-      void alertDialog({
-        title: 'No Interception Tokens left',
-        body: `${name} has spent all of its Interception Tokens. They are never restored, so this Part cannot Intercept again for the rest of the game (rulebook 4.9).`,
-      });
+      say('refused', `${name} has spent all of its Interception Tokens, and they are never restored (4.9).`);
       return;
     }
     // The engine's own refusal, said before a target is asked: Fire Control
@@ -1960,20 +1908,29 @@ async function init() {
     const verdict = check(data, state, { kind: 'spendIntercept', seat: t.side, uid: t.uid, actionId });
     if (!verdict.ok && strictNow(state)) {
       interceptPrefer = null;
-      void alertDialog({ title: 'Cannot Intercept', body: verdict.why });
+      say('refused', verdict.why);
       return;
     }
-    // Teaching keeps the door, with a warning (ruling I11).
+    // Teaching keeps the door (ruling I11): it Intercepts all the same, says
+    // that nothing owed it, and Undo puts the Interception away (pick 5; it
+    // was an "anyway?" dialog).
     if (!warned && state.script && !strictNow(state) && !(state.script.intercepts ?? []).some((o) => o.uid === t.uid && o.actionId === actionId)) {
-      void confirmDialog({
-        title: 'No Interception owed',
-        body: `Nothing owes ${t.label} an Interception with ${name}. A Launch, or an enemy Aerial unit's Movement within Range, owes one (4.9). Intercept anyway?`,
-        confirmLabel: 'Intercept anyway',
-        cancelLabel: 'Cancel',
-        danger: true,
-      }).then((go) => {
-        if (go) startIntercept(t, actionId, true);
-      });
+      const mark = boardMark();
+      // Only a window this call opens is the Interception's: one already open
+      // (the call refused, with its reason in the line) is somebody else's.
+      const before = attackHelper.unrolled;
+      startIntercept(t, actionId, true);
+      const why = `Nothing owes ${t.label} an Interception with ${name}: a Launch, or an enemy Aerial unit's Movement within Range, owes one (4.9).`;
+      if (pendingIntercept?.uid === t.uid) {
+        notify({
+          kind: 'warn',
+          text: `${why} Intercepting anyway, as a house rule.`,
+          undo: () => !getLocalSeat() && pendingIntercept?.uid === t.uid,
+          onUndo: () => endTargeting(true),
+        });
+      } else if (attackHelper.unrolled && attackHelper.unrolled !== before) {
+        bentRule(why, mark, 'attack');
+      }
       return;
     }
     const reach = action.range ?? 0;
@@ -1987,12 +1944,9 @@ async function init() {
     // Smoke over every line takes the shot away (FAQ F3; audit Phase 4, G4).
     const targets = inReach.filter((x) => owed(x) || !smokeBlocks(t, x, state.smoke ?? []));
     if (!targets.length) {
-      void alertDialog({
-        title: 'Nothing to Intercept',
-        body: inReach.length
-          ? `Every enemy Aerial Unit within Range ${reach} of ${t.label} is behind a Smoke Screen on every line, and an Interception is a Firing Action (4.16, FAQ F3).`
-          : `Interception only triggers on an enemy Aerial Unit that Moved or was Launched, and there is none within Range ${reach} of ${t.label}. Projectiles and Missiles are the usual targets.`,
-      });
+      say('refused', inReach.length
+        ? `Every enemy Aerial Unit within Range ${reach} of ${t.label} is behind a Smoke Screen on every line, and an Interception is a Firing Action (4.16, FAQ F3).`
+        : `Interception only triggers on an enemy Aerial Unit that Moved or was Launched, and there is none within Range ${reach} of ${t.label}.`);
       return;
     }
     const chosen = interceptPrefer !== null ? targets.find((x) => x.uid === interceptPrefer) : undefined;
@@ -2045,6 +1999,14 @@ async function init() {
     const f = interceptFollowUp;
     interceptFollowUp = null;
     if (!f) return;
+    // Its window closed before anything was rolled: off a strict table that is
+    // "stop here", the house rule the Intercept-again dialog used to offer. It
+    // opened the next attempt, spending a Token, every time (notices review,
+    // 2026-09-28). A strict table keeps to 4.9.
+    if (attackHelper.closedUnrolled && !strictNow(state)) {
+      openImmediateSurvivor();
+      return;
+    }
     const t = state.tokens.find((x) => x.uid === f.uid);
     const target = state.tokens.find((x) => x.uid === f.targetUid);
     if (!t) return;
@@ -2058,52 +2020,50 @@ async function init() {
     const dead = !target || (target.partStates.main ?? 'intact') === 'destroyed';
     const left = interceptHeld(data, state.tokens, t, f.actionId);
     if (dead) {
-      showInspect({
-        title: 'Interception complete',
-        sub: `${t.label}`,
-        lines: ['The target was destroyed, so the chain ends here.', `${left} Interception Token${left === 1 ? '' : 's'} left on that Part for the rest of the game.`],
-      });
+      // The board shows the target gone (pick 7).
+      say('done', `Interception complete: the target was destroyed. ${left} Interception Token${left === 1 ? '' : 's'} left on that Part.`);
       openImmediateSurvivor();
       return;
     }
     if (left <= 0) {
-      showInspect({
-        title: 'Out of Interception Tokens',
-        sub: `${t.label}`,
-        lines: [
-          `${target.label} survived, but ${t.label} has spent every Interception Token on that Part and cannot try again (4.9).`,
-          'Any other unit in range now intercepts in sequence.',
-        ],
-      });
+      say('event', `${target.label} survived, but ${t.label} has spent every Interception Token on that Part (4.9). Any other unit in range now intercepts in sequence.`);
       openImmediateSurvivor();
       return;
     }
     // Interception is mandatory and repeats until the Tokens or targets run
-    // out (4.9, FAQ M5). The strict tracker enforces that outright; teaching
-    // mode keeps the door with a warning, in the house style.
+    // out (4.9, FAQ M5), so the next attempt opens at once, at the same
+    // target, on every table. The line says why. A Teaching table's "stop
+    // here" (a house rule) is the line's Undo while nothing is rolled (pick 5;
+    // both were dialogs).
+    const again = `${target.label} survived, so ${t.label} Intercepts again (4.9, FAQ M5). ${left} Token${left === 1 ? '' : 's'} left.`;
     if (strictNow(state)) {
       // Owed again, and on the list the Match Centre's way: a strict table
       // spends only an owed attempt (audit Phase 5, B9).
       perform(data, state, { kind: 'queueIntercepts', seat: t.side, items: [f] });
       onChanged();
-      void alertDialog({
-        title: 'Interception continues',
-        body: `${target.label} survived, so ${t.label} MUST Intercept again (rulebook 4.9, FAQ M5). ${left} Token${left === 1 ? '' : 's'} left.`,
-        closeLabel: 'Intercept again',
-      }).then(() => {
-        interceptPrefer = f.targetUid;
-        startIntercept(t, f.actionId);
-      });
+      say('event', again);
+      interceptPrefer = f.targetUid;
+      startIntercept(t, f.actionId);
       return;
     }
-    void confirmDialog({
-      title: 'Intercept again',
-      body: `${target.label} survived, so ${t.label} MUST Intercept again until its Tokens run out or the target is destroyed (rulebook 4.9). ${left} Token${left === 1 ? '' : 's'} left.`,
-      confirmLabel: 'Intercept again',
-      cancelLabel: 'Stop here',
-    }).then((again) => {
-      if (again) startIntercept(t, f.actionId, true);
-      else openImmediateSurvivor();
+    const mark = boardMark();
+    const before = attackHelper.unrolled;
+    interceptPrefer = f.targetUid;
+    startIntercept(t, f.actionId, true);
+    const session = attackHelper.unrolled;
+    if (!session || session === before) return;
+    const last = snapshotBack(0)?.seq;
+    notify({
+      kind: 'event',
+      text: again,
+      undo: () => !getLocalSeat() && attackHelper.unrolled === session && snapshotBack(0)?.seq === last,
+      onUndo: () => {
+        interceptFollowUp = null;
+        attackHelper.cancel();
+        rewindTo(mark);
+        onChanged();
+        openImmediateSurvivor();
+      },
     });
   }
 
@@ -2279,12 +2239,9 @@ async function init() {
       ? lineSpot(c, r, face, currentTerrain(), state.tokens)
       : standingSpot(c, r, unitSize(m.card), isAerial(m.card), currentTerrain(), state.tokens, undefined, { col: t.col, row: t.row });
     if (!spot) {
-      void alertDialog({
-        title: 'Nothing fits there',
-        body: line
-          ? `${cardName(m.card)} is a 1x3 line: facing ${['North', 'East', 'South', 'West'][face]} it needs a clear ${face % 2 ? 'column' : 'row'} of that Grid, and none is. Pick another Grid or another facing.`
-          : `There is no room in that Grid for ${cardName(m.card)}. Rulebook 4.7.2 needs the projectile's base to sit entirely inside the Landing Point Grid, so pick another one.`,
-      });
+      say('refused', line
+        ? `${cardName(m.card)} is a 1x3 line: facing ${['North', 'East', 'South', 'West'][face]} it needs a clear ${face % 2 ? 'column' : 'row'} of that Grid, and none is. Pick another Grid or another facing.`
+        : `There is no room in that Grid for ${cardName(m.card)}: its base must sit entirely inside the Landing Point Grid (4.7.2). Pick another one.`);
       return;
     }
     const id = m.action.id;
@@ -2418,10 +2375,7 @@ async function init() {
     const ammo = ammoAvailable(data, state, t, action.id);
     const shots = Math.min(volleyOf(action), ammo === undefined ? volleyOf(action) : ammo);
     if (shots <= 0) {
-      void alertDialog({
-        title: 'Out of Ammo',
-        body: `${action.name.en || action.id} has no Ammo Tokens left, so it cannot be performed (rulebook 4.13).`,
-      });
+      say('refused', `${action.name.en || action.id} has no Ammo Tokens left (4.13).`);
       return done(false);
     }
     launching = { uid: t.uid, action, card, left: shots, placed: 0, placedUids: [], placedSizes: [], paidPools: [], done };
@@ -2592,10 +2546,7 @@ async function init() {
     }
     const spot = findFreeSpot(tok.size, side, tok.aerial);
     if (!spot) {
-      void alertDialog({
-        title: 'No room on the board',
-        body: 'There is no free space in this side’s deployment area large enough for the unit. Remove something, or drag units apart, and try again.',
-      });
+      say('refused', 'No free space in this side’s deployment area is large enough for the unit. Remove something, or drag units apart, and try again.');
       return;
     }
     state.tokens.push({ ...tok, col: spot.col, row: spot.row, facing: side === 's1' ? 2 : 0 });
@@ -2811,7 +2762,7 @@ async function init() {
     // Action when there is one, because Unstoppable is the printed exception.
     const stopped = immobilizedStop(t, opts.action ?? null);
     if (stopped) {
-      void alertDialog({ title: 'Immobilized', body: stopped });
+      say('refused', stopped);
       return done(false);
     }
     // NON-HUMANOID X (card 181's Run is Non-humanoid 1), asked here for the same
@@ -2820,15 +2771,12 @@ async function init() {
     // planner opens or the player draws a route they cannot pay for.
     const shortLink = nonHumanoidStop(t, opts.action ?? null);
     if (shortLink) {
-      void alertDialog({ title: 'Not enough Link', body: shortLink });
+      say('refused', shortLink);
       return done(false);
     }
     const steps = opts.range ?? moveRangeFor(t);
     if (steps <= 0) {
-      void alertDialog({
-        title: 'This unit cannot move',
-        body: `${t.label} has no Movement Range on its card, so there is nothing to move with.`,
-      });
+      say('refused', `${t.label} has no Movement Range on its card, so there is nothing to move with.`);
       return done(false);
     }
     const chosen = await flyingChoice(t, !!opts.maneuver, !!opts.airborne);
@@ -3141,23 +3089,9 @@ async function init() {
   // and never above the number it started with.
   async function performResupply(t: Token, action: CardAction, rule: Resupply, done: (ok: boolean) => void): Promise<void> {
     const what = action.name.en || action.name.zh || action.id;
-    const from = largeGridOf(t);
-    const holders = state.tokens.filter((o) => {
-      if (o.deployed === false) return false;
-      if (o.uid !== t.uid && (!rule.allies || o.side !== t.side)) return false;
-      const g = largeGridOf(o);
-      if (o.uid !== t.uid && rule.adjacent) {
-        if (!rangeBetween(t, o).adjacent) return false;
-      } else if (Math.abs(g.c - from.c) + Math.abs(g.r - from.r) > rule.range) return false;
-      const max = tokenCards(data, o).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === rule.actionId)?.storage;
-      if (!max) return false;
-      return (o.ammo[rule.actionId] ?? max) < max;
-    });
+    const holders = resupplyHolders(data, state.tokens, t, rule, !!state.noBoard);
     if (!holders.length) {
-      await alertDialog({
-        title: 'Nothing to resupply',
-        body: `${what} restores Ammo to a Part carrying that Action, and nothing in reach has spent any. Ammo can only be replenished for a Part that has consumed some, and never past what it started with (4.13).`,
-      });
+      say('refused', `${what}: nothing in reach has spent any Ammo, and Ammo never goes back past what a Part started with (4.13).`);
       return done(false);
     }
     let unit: Token | undefined = holders[0];
@@ -3186,15 +3120,12 @@ async function init() {
     // before any target is asked for (6.3.2, 4.3.4; audit Phase 4, E7 and I10).
     const stop = immobilizedStop(t, action) ?? chassisStop(t);
     if (stop) {
-      await alertDialog({ title: `${what} cannot be performed`, body: stop });
+      say('refused', stop);
       return done(false);
     }
     const targets = blinkTargets(data, state.tokens, t, action);
     if (!targets.length) {
-      await alertDialog({
-        title: 'Nothing to exchange with',
-        body: `${what} takes one GROUND MECH of the same size as ${t.label}, within Range ${action.range ?? 0}, enemy or allied. Drones, Terrain and anything a different size cannot be chosen (FAQ E20).`,
-      });
+      say('refused', `${what}: no Ground Mech the size of ${t.label} is within Range ${action.range ?? 0}, enemy or allied (FAQ E20).`);
       return done(false);
     }
     // The Cancel is marked, so Escape and a backdrop click land on it rather
@@ -3314,10 +3245,7 @@ async function init() {
       const where = box.where;
       if (!hands.length) {
         if (atEnd) continue;
-        await alertDialog({
-          title: 'No free Freehand',
-          body: `${t.label} passed the Black Box in ${where}, but a Unit needs a Part with the Freehand tag that is not already carrying one. A Part bearing a Black Box has its Freehand treated as invalid (5.3.1).`,
-        });
+        say('refused', `${t.label} passed the Black Box in ${where}, but has no free Freehand Part to carry it (5.3.1).`);
         continue;
       }
       const take = await confirmDialog({
@@ -3424,7 +3352,7 @@ async function init() {
     }
     const v = check(data, state, cmd);
     if (!v.ok) {
-      await alertDialog({ title: 'Cannot Stabilize', body: v.why ?? 'The action was refused.' });
+      say('refused', v.why ?? 'Stabilize was refused.');
       return done(false);
     }
     perform(data, state, cmd);
@@ -3447,10 +3375,7 @@ async function init() {
     const what = action.name.en || action.name.zh || action.id;
     const targets = stanceFeedbackTargets(data, state.tokens, t, action);
     if (!targets.length) {
-      await alertDialog({
-        title: 'Nobody to switch',
-        body: `${what} switches the Stance of an Ally Mech within Range ${actionRange(data, state.tokens, t, action)} that is not in Shutdown Stance, and none is in reach (FAQ H2: an Action that changes nothing cannot be performed).`,
-      });
+      say('refused', `${what}: no Ally Mech out of Shutdown Stance is within Range ${actionRange(data, state.tokens, t, action)}, and an Action that changes nothing cannot be performed (FAQ H2).`);
       return done(false);
     }
     const id = targets.length === 1 ? String(targets[0].uid) : await choiceDialog({
@@ -3487,10 +3412,7 @@ async function init() {
         onChanged();
         return done(true);
       }
-      await alertDialog({
-        title: 'Nothing to restore',
-        body: `${what} restores Link to Ally Mechs within Range ${reach}, and every one in reach is already at its pilot's Link Value. An action that cannot produce any change cannot be performed (FAQ H2).`,
-      });
+      say('refused', `${what}: every Ally Mech within Range ${reach} is already at its pilot's Link Value, and an Action that changes nothing cannot be performed (FAQ H2).`);
       return done(false);
     }
     let picked = targets;
@@ -3525,10 +3447,7 @@ async function init() {
     const shape = rule.shape === 'square' ? 'Square' : 'Hexagon';
     const units = tokenCleanupTargets(data, state.tokens, t, action, rule);
     if (!units.length) {
-      await alertDialog({
-        title: 'Nothing to remove',
-        body: `${what} removes a ${shape} Token from an Ally Unit within Range ${reach}, and none in reach wears one. An action that cannot produce any change cannot be performed (FAQ H2).`,
-      });
+      say('refused', `${what}: no Ally Unit within Range ${reach} wears a ${shape} Token, and an Action that changes nothing cannot be performed (FAQ H2).`);
       return done(false);
     }
     const uid = units.length === 1 ? String(units[0].uid) : await choiceDialog({
@@ -3572,10 +3491,7 @@ async function init() {
     const cells = (zone: string) => zonesOf(data.zoneData.zones, state).find((z) => z.id === zone)?.cells ?? [];
     const open = terminalsInReach(tasks.items, t, reach, cells);
     if (!open.length) {
-      await alertDialog({
-        title: 'No Terminal in reach',
-        body: `${remoteAccessWhy(tasks.items, t, reach, cells) ?? ''} Remote Access reaches any Grid of a Terminal's Tactical Zone within Range ${reach} (FAQ P6).`,
-      });
+      say('refused', `${remoteAccessWhy(tasks.items, t, reach, cells) ?? 'No Terminal is in reach.'} Remote Access reaches any Grid of a Terminal's Tactical Zone within Range ${reach} (FAQ P6).`);
       return done(false);
     }
     const zoneName = (id: string) => zonesOf(data.zoneData.zones, state).find((z) => z.id === id)?.name ?? id;
@@ -3617,17 +3533,11 @@ async function init() {
     const open = slots.filter((s) => !s.charged);
     const what = action.name.en || action.name.zh || action.id;
     if (!slots.length) {
-      await alertDialog({
-        title: 'Nothing to Charge',
-        body: `${t.label} has no Part with a Chargeable Action, so ${what} has nothing to put a Charge Token on (4.14).`,
-      });
+      say('refused', `${t.label} has no Part with a Chargeable Action, so ${what} has nothing to put a Charge Token on (4.14).`);
       return done(false);
     }
     if (!open.length) {
-      await alertDialog({
-        title: 'Already Charged',
-        body: `Every Chargeable Part on ${t.label} already holds a face-up Charge Token. An Action that is Charged cannot be Charged again until the token is spent (4.14).`,
-      });
+      say('refused', `Every Chargeable Part on ${t.label} already holds a face-up Charge Token, which has to be spent before it can be Charged again (4.14).`);
       return done(false);
     }
     let slot = open[0].slot as string;
@@ -3694,11 +3604,10 @@ async function init() {
   // A shove is a Knockback with no Attack behind it, so it needs a victim first.
   // The card wants an enemy Ground Unit in the Grid the Mech is facing, which is
   // the only place the shove can go.
-  async function offerShove(t: Token, action: CardAction): Promise<void> {
+  function shoveVictims(t: Token): { ahead: { c: number; r: number }; victims: Token[] } {
     const g = largeGridOf(t);
     const fv = [[0, -1], [1, 0], [0, 1], [-1, 0]][t.facing] as [number, number];
     const ahead = { c: g.c + fv[0], r: g.r + fv[1] };
-    const what = action.name.en || action.name.zh || action.id;
     // "an Enemy GROUND Unit": a Flying Raven is not one, though it is not
     // Aerial either (audit Phase 4, B4).
     const victims = state.tokens.filter((o) => {
@@ -3706,8 +3615,22 @@ async function init() {
       const og = largeGridOf(o);
       return og.c === ahead.c && og.r === ahead.r;
     });
-    if (!victims.length) {
-      setHint(`${what}: no enemy Ground Unit in ${gridRef(ahead.c, ahead.r)}, the Grid in front, so there is nothing to shove.`);
+    return { ahead, victims };
+  }
+
+  // Why a Shove has nothing to do, for the greyed button and the click alike.
+  function shoveWhy(t: Token, action: CardAction): string | null {
+    const { ahead, victims } = shoveVictims(t);
+    return victims.length ? null
+      : `${action.name.en || action.name.zh || action.id}: no enemy Ground Unit in ${gridRef(ahead.c, ahead.r)}, the Grid in front, so there is nothing to shove.`;
+  }
+
+  async function offerShove(t: Token, action: CardAction): Promise<void> {
+    const what = action.name.en || action.name.zh || action.id;
+    const { ahead, victims } = shoveVictims(t);
+    const none = shoveWhy(t, action);
+    if (none) {
+      say('refused', none);
       return;
     }
     let pick: Token | undefined = victims[0];
@@ -3737,10 +3660,7 @@ async function init() {
     if (rep.ally) {
       const targets = allyRepairTargets(data, state.tokens, t, action, !!state.noBoard);
       if (!targets.length) {
-        await alertDialog({
-          title: 'Nothing to mend',
-          body: `${action.name.en || action.id}: no Ally Unit within Range ${action.range ?? 0} has a Damaged Part, and an action that cannot produce any change cannot be performed.`,
-        });
+        say('refused', `${action.name.en || action.id}: no Ally Unit within Range ${action.range ?? 0} has a Damaged Part, and an Action that changes nothing cannot be performed.`);
         return done(false);
       }
       const id = await choiceDialog({
@@ -3758,22 +3678,11 @@ async function init() {
       onChanged();
       return;
     }
-    const parts = tokenCards(data, t).filter(({ slot }) => slot !== 'pilot');
-    const choices: { id: string; label: string }[] = [];
-    for (const { slot, card } of parts) {
-      const st = t.partStates[slot as PartSlot | 'main'] ?? 'intact';
-      if (rep.repair && st === 'destroyed' && !(t.repairedSlots ?? []).includes(slot)) {
-        choices.push({ id: `repaired:${slot}`, label: `Repair ${SLOT_LABEL[slot]} (${cardName(card)}) - its Actions return` });
-      }
-      if (rep.mend && st === 'damaged') {
-        choices.push({ id: `mend:${slot}`, label: `Mend ${SLOT_LABEL[slot]} (${cardName(card)}) - Damaged becomes intact` });
-      }
-    }
+    const choices = selfRepairOptions(data, t, rep).map(({ slot, card, mode }) => mode === 'repaired'
+      ? { id: `repaired:${slot}`, label: `Repair ${SLOT_LABEL[slot]} (${cardName(card)}) - its Actions return` }
+      : { id: `mend:${slot}`, label: `Mend ${SLOT_LABEL[slot]} (${cardName(card)}) - Damaged becomes intact` });
     if (!choices.length) {
-      await alertDialog({
-        title: 'Nothing to repair',
-        body: `${action.name.en || action.id}: no destroyed Part is missing a Repaired Token and nothing is Damaged, and an action that cannot produce any change cannot be performed.`,
-      });
+      say('refused', `${action.name.en || action.id}: no destroyed Part is missing a Repaired Token and nothing is Damaged, and an Action that changes nothing cannot be performed.`);
       return done(false);
     }
     const id = await choiceDialog({
@@ -3803,10 +3712,7 @@ async function init() {
     const what = action.name.en || action.name.zh || action.id;
     const name = printed.push ? `Push ${printed.grids}` : `Knockback ${printed.grids}`;
     if (!resume && kb.onHit && hits === 0) {
-      await alertDialog({
-        title: `${name} does not trigger`,
-        body: `${what} only knocks back On Hit, and this attack scored no Hits (a Parry that held stops every On Hit effect, FAQ C5), so ${victim.label} stays where it is.`,
-      });
+      say('event', `${name} does not trigger: ${what} only knocks back On Hit, and this attack scored no Hits (FAQ C5).`);
       return;
     }
     let dir = resume?.dir ?? attackDirection(attacker, victim);
@@ -3873,17 +3779,10 @@ async function init() {
     }
     const end = path[path.length - 1];
     const short = path.length < kb.grids;
-    const go = await confirmDialog({
-      title: `${name} on ${victim.label}`,
-      body: `${what} forces ${victim.label} ${path.length} Grid${path.length === 1 ? '' : 's'} ${heading} to ${gridRef(end.c, end.r)}${
-        rest > 0
-          ? `, where a Mine stops it: the Mine goes off, then the other ${rest} Grid${rest === 1 ? '' : 's'} of the line follow if it is still standing (M19)`
-          : short ? `, short of the full ${kb.grids} because something blocks the rest of the line` : ''
-      }.${kb.push && victim.kind === 'mech' && !resume ? ' Push also costs it 1 Link.' : ''}`,
-      confirmLabel: 'Force the move',
-      cancelLabel: 'Skip',
-    });
-    if (!go) return;
+    // The rules' move, made at once: the dialog here only ever showed the
+    // working, and its "Skip" was a house rule. The line says what happened,
+    // and Undo is the skip while nothing has followed (pick 5).
+    const mark = boardMark();
     const spot = standingSpot(end.c, end.r, victim.size, victim.aerial, currentTerrain(), state.tokens, victim.uid, { col: victim.col, row: victim.row })
       ?? { col: victim.col, row: victim.row };
     const wasShut = victim.stance === 'shutdown';
@@ -3912,13 +3811,24 @@ async function init() {
       const left = normaliseTasks(state.tasks).items.filter((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid && !i.dropFrom).length;
       if (left) logTo(victim, `${left === 1 ? 'The Black Box it carried is' : `The ${left} Black Boxes it carried are`} left in ${gridRef(end.c, end.r)}.`);
       logTo(victim, `${victim.label} is forced into the Abyss Grid ${gridRef(end.c, end.r)} and is immediately Destroyed.`);
-      await alertDialog({
-        title: `${victim.label} falls into the Abyss`,
-        body: `A Ground Unit that enters an Abyss Grid due to Forced Movement is immediately Destroyed. ${victim.label} is removed from the board, and the kill is ${attacker.label}'s.`,
-      });
       perform(data, state, { kind: 'recordKill', seat: attacker.side, uid: attacker.uid, targetUid: victim.uid, what: 'unit' });
       if (selectedUid === victim.uid) selectToken(null);
     }
+    const last = snapshotBack(0)?.seq;
+    notify({
+      kind: 'event',
+      text: fatal
+        ? `${name}: ${victim.label} is forced into the Abyss and Destroyed; the kill is ${attacker.label}'s.`
+        : `${name}: ${victim.label} is forced ${path.length} Grid${path.length === 1 ? '' : 's'} ${heading} to ${gridRef(end.c, end.r)}${
+          rest > 0 ? ', where a Mine stops it (M19)' : short ? `, short of the full ${kb.grids}` : ''
+        }.${kb.push && victim.kind === 'mech' && !resume ? ' Push costs it 1 Link.' : ''}`,
+      undo: () => !getLocalSeat() && !strictNow(state) && snapshotBack(0)?.seq === last,
+      onUndo: () => {
+        if (pushOn?.victimUid === victim.uid) pushOn = null;
+        rewindTo(mark);
+        onChanged();
+      },
+    });
     onChanged();
   }
 
@@ -4115,14 +4025,16 @@ async function init() {
   }
 
   // The strict tracker refuses illegal commands inside perform; the reason
-  // lands in the hint bar rather than a modal, because a refusal should never
-  // interrupt more than the click that caused it.
+  // lands in the notice line rather than a modal, because a refusal should
+  // never interrupt more than the click that caused it. It used to take the
+  // hint, which then lost the instruction for the tool still in hand and kept
+  // the refusal up until an unrelated tool cleared it.
   onRefused((why) => {
     // Both, and in this order: the player is told, and the black box remembers.
     // A refusal the player thinks is wrong IS the bug report, so the reason
-    // text the engine chose has to survive past the hint that shows it.
+    // text the engine chose has to survive past the line that shows it.
     noteRefusal(why);
-    setHint(why);
+    say('refused', why);
   });
 
   // The keyboard help is static markup in #hint-keys now, so an empty hint means
@@ -4466,8 +4378,11 @@ async function init() {
         connected: false,
         range: { c: Math.floor(defender.col / 3), r: Math.floor(defender.row / 3), max: r.range },
         label: `${defender.label}: ${name}`,
-        // Whatever is still queued goes next, one at a time.
+        // Whatever is still queued goes next, one at a time. The placement
+        // panel has nothing left to say, as after a launch; left up, it also
+        // held back any blast waiting for the panel (startBlastWhenFree).
         done: () => {
+          renderCombatIdle();
           onChanged();
           renderReactionPrompt();
         },
@@ -4551,10 +4466,7 @@ async function init() {
     smokeChoices = queue;
     onChanged();
     if (!queue.length) {
-      void alertDialog({
-        title: 'Smoke dissipated',
-        body: `${isolated} isolated Smoke Screen${isolated === 1 ? '' : 's'} removed. Nothing was Connected, so there was nothing to choose.`,
-      });
+      say('event', `Smoke dissipated: ${isolated} isolated Smoke Screen${isolated === 1 ? '' : 's'} removed, and nothing was Connected.`);
       return;
     }
     renderSmokeChoice(isolated);
@@ -4567,10 +4479,7 @@ async function init() {
       smokeChoices = null;
       board.clearHighlights();
       onChanged();
-      void alertDialog({
-        title: 'Smoke dissipated',
-        body: `Dissipation is done. ${(state.smoke ?? []).length} Smoke Screen${(state.smoke ?? []).length === 1 ? '' : 's'} still on the board.`,
-      });
+      say('event', `Smoke dissipated: ${(state.smoke ?? []).length} Smoke Screen${(state.smoke ?? []).length === 1 ? '' : 's'} still on the board.`);
       return;
     }
     host.hidden = false;
@@ -5016,6 +4925,13 @@ async function init() {
     const v = check(data, state, cmd);
     if (v.ok) perform(data, state, cmd);
     return v;
+  }
+
+  // The board as actionIdleWhy reads it: the Actions with nothing to do are
+  // greyed before the tap, in the guide and the Details tab, and refused with
+  // the same words at it (notices pick 2, 2026-09-29).
+  function idleWorld(): IdleWorld {
+    return idleWorldFor(data, state, currentTerrain());
   }
 
   function logTo(t: Token, text: string): void {
@@ -6047,12 +5963,12 @@ async function init() {
     try {
       raw = JSON.parse(await file.text());
     } catch {
-      await alertDialog({ title: 'That file is not a map', body: 'It could not be read as JSON.' });
+      say('refused', 'That file is not a map: it could not be read as JSON.');
       return;
     }
     const doc = raw as { id?: string; name?: { en?: string }; pieces?: unknown };
     if (!doc || typeof doc !== 'object' || !Array.isArray(doc.pieces)) {
-      await alertDialog({ title: 'That file is not a map', body: 'A map file has a `pieces` list. Export one from this editor to see the shape.' });
+      say('refused', 'That file is not a map: a map file has a pieces list. Export one from this editor to see the shape.');
       return;
     }
     const suggested = doc.name?.en || doc.id || file.name.replace(/\.json$/i, '');
@@ -6082,7 +5998,7 @@ async function init() {
         : {}),
     });
     if (!v.ok) {
-      await alertDialog({ title: 'Imported, but not loaded', body: v.why ?? 'The battlefield is locked for this game.' });
+      say('warn', `The map was imported but not loaded: ${v.why ?? 'the battlefield is locked for this game.'}`);
       return;
     }
     mapSelect.value = state.map;
@@ -6216,7 +6132,7 @@ async function init() {
       // which would swap the terrain under standing units mid-game. (A save
       // over the SAME name still reaches the board live, because the terrain is
       // read from the map document on every render.)
-      setHint(`Map saved. ${saved.why ?? 'The battlefield is locked,'} so the table keeps its current map until a new game.`);
+      say('warn', `Map saved. ${saved.why ?? 'The battlefield is locked,'} so the table keeps its current map until a new game.`);
       exitEditor();
       return true;
     }
@@ -6328,17 +6244,14 @@ async function init() {
     };
     const targets = tacticTargets(spec, state, side, ctx);
     if (!targets.length) {
-      await alertDialog({ title: `${spec.name} has no legal target`, body: spec.none });
+      say('refused', `${spec.name}: ${spec.none}`);
       return;
     }
     const phase = PHASES[state.round.phase];
-    if (state.script && phase !== spec.phase) {
-      const ok = await confirmDialog({
-        title: `It is the ${phase} Phase`,
-        body: `${spec.name} is a ${spec.timing} card. Play it anyway?`,
-        confirmLabel: 'Play it',
-      });
-      if (!ok) return;
+    const offPhase = state.script && phase !== spec.phase ? `${spec.name} is a ${spec.timing} card, and this is the ${phase} Phase.` : null;
+    if (offPhase && strictNow(state)) {
+      say('refused', offPhase);
+      return;
     }
     const uid = targets.length === 1
       ? String(targets[0].uid)
@@ -6362,7 +6275,7 @@ async function init() {
     if (spec.choices) {
       const opts = spec.choices(target, state, ctx);
       if (!opts.length) {
-        await alertDialog({ title: `${spec.name} has nothing to do`, body: spec.none });
+        say('refused', `${spec.name}: ${spec.none}`);
         return;
       }
       pick = opts.length === 1
@@ -6384,22 +6297,24 @@ async function init() {
     // Its log line is written into the token by apply, and read back here.
     const verdict = perform(data, state, { kind: 'playTactic', seat: side, uid: target.uid, cardId: id, pick: pick ?? undefined });
     // A strict table refuses a card whole: it was never played, so it moves
-    // nothing, and the alert says why rather than repeating the unit's last log
-    // line (audit Phase 6, H4). A Teaching table applies it and says why below.
-    if (!verdict.ok && (state.script?.strict || getLocalSeat())) {
-      await alertDialog({ title: spec.name, body: verdict.why ?? 'The card was refused.' });
-      return;
-    }
-    const log = target.log?.at(-1)?.text ?? spec.name;
+    // nothing, and onRefused has put the reason in the line rather than the
+    // unit's last log line (audit Phase 6, H4). A Teaching table applies it
+    // and says why, with Undo (notices pick 5).
+    if (!verdict.ok && strictNow(state)) return;
+    // Caught before onChanged: its camouflage sweep can Reveal someone, and the
+    // Undo would then take back the Reveal instead of the card.
+    const undoCard = whileNewest();
     renderUnitLog();
     selectToken(target.uid);
     onChanged();
+    // What the card did is on the board and in the unit's log (pick 7); a
+    // rule it bent is said, with Undo while it is still the newest step.
+    const bent = [offPhase, verdict.ok ? null : verdict.why].filter(Boolean).join(' ');
+    if (bent) say('warn', `${bent} Played anyway, as a house rule.`, undoCard);
+    else say('done', target.log?.at(-1)?.text ?? spec.name);
     if (spec.maneuver) {
-      if (!verdict.ok) await alertDialog({ title: spec.name, body: verdict.why ?? spec.name });
       void startMove(target.uid, { range: maneuverRange(data, target), label: 'Maneuver', maneuver: true }, () => onChanged());
-      return;
     }
-    await alertDialog({ title: spec.name, body: verdict.ok ? log : `${log}\n\n${verdict.why}` });
   }
 
   // A Projectile is spent scenery and goes without asking. Anything else is a
@@ -6458,10 +6373,7 @@ async function init() {
     const what = action.name.en || action.name.zh || action.id;
     const others = forms.filter((id) => id !== t.cardId && data.byId.get(id));
     if (!others.length) {
-      await alertDialog({
-        title: 'Nothing to switch to',
-        body: `${t.label} has no other form on the table. ${what} needs a second card in its set.`,
-      });
+      say('refused', `${t.label} has no other form on the table: ${what} needs a second card in its set.`);
       return done(false);
     }
     const pick = await choiceDialog({
@@ -6482,7 +6394,7 @@ async function init() {
     const swap = { kind: 'switchForm' as const, seat: t.side, uid: t.uid, actionId: action.id, cardId: pick };
     const v = check(data, state, swap);
     if (!v.ok) {
-      await alertDialog({ title: 'Cannot switch', body: v.why ?? 'The Stance change was refused.' });
+      say('refused', v.why ?? 'The Stance change was refused.');
       return done(false);
     }
     perform(data, state, swap);
@@ -6500,10 +6412,7 @@ async function init() {
   async function performCamo(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
     const what = action.name.en || action.name.zh || action.id;
     if (statusCount(t.statuses, 'camouflage') > 0) {
-      await alertDialog({
-        title: 'Already hidden',
-        body: `${t.label} is already in the Optical Camouflage State.`,
-      });
+      say('refused', `${t.label} is already in the Optical Camouflage State.`);
       return done(false);
     }
     const stealth = stealthValue(action) ?? 0;
@@ -6511,7 +6420,7 @@ async function init() {
       kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'camouflage',
     });
     if (!v.ok) {
-      await alertDialog({ title: 'Cannot activate', body: v.why ?? 'The camouflage was refused.' });
+      say('refused', v.why ?? 'The camouflage was refused.');
       return done(false);
     }
     logTo(t, `${what}: Optical Camouflage activated${stealth ? `, Stealth ${stealth}` : ''} (4.12.2). Every Hexagon Token comes off, and the marked Grid is only a suspected position.`);
@@ -6629,6 +6538,49 @@ async function init() {
   // what with, and the done() that pays the Tick when it ends either way.
   let scanAttack: { attackerUid: number; targetUid: number; action: CardAction; done?: (performed: boolean) => void } | null = null;
 
+  // Which rule, if any, a clicked target breaks for this attack, asked in the
+  // order the target click always asked them: an Electronic Action's own
+  // Counter-roll check, then an Automatic Action's nearest target (3.5.2, FAQ
+  // O21), Highlight (6.2.1), Link Shock's Tether (PDRH-202), Melee at an Aerial
+  // Unit (4.4.1) and an ally as the target (Rules Supplement 1.4.1). One
+  // reading for both tables: strict refuses the click, freeplay and Teaching
+  // make the attack and say what they bent (notices pick 5).
+  function targetProblem(attacker: Token, defender: Token, action: CardAction, mode: 'attack' | 'electronic'): string | null {
+    const lay = { terrain: currentTerrain(), smoke: state.smoke ?? [] };
+    if (mode === 'electronic') {
+      const verdict = check(data, state, { kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId: action.id, targetUid: defender.uid });
+      if (!verdict.ok) return verdict.why ?? `${defender.label} cannot be the target of ${action.name.en || action.id}.`;
+      const legal = action.speed === 'auto' && !electronicAll(action) ? autoTargetsFor(data, state.tokens, attacker, action, lay) : [];
+      return legal.length && !legal.some((x) => x.uid === defender.uid)
+        ? `An Automatic Action takes the nearest legal target (3.5.2): here ${legal.map((x) => x.label).join(', ')}.`
+        : null;
+    }
+    if (action.speed === 'auto') {
+      const legal = autoTargetsFor(data, state.tokens, attacker, action, lay);
+      if (!legal.some((x) => x.uid === defender.uid)) {
+        return legal.length
+          ? `An Automatic Action must take the nearest legal target${legal.some((x) => statusCount(x.statuses, 'highlight') > 0) ? ', and a Highlighted one first' : ''} (3.5.2, FAQ O21): here ${legal.map((x) => x.label).join(', ')}.`
+          : `An Automatic Action takes only an enemy in its Range${action.type === 'Firing' || action.type === 'Melee' ? ', in sight and in front' : ''} (3.5.2), and ${defender.label} is not one.`;
+      }
+    }
+    if (mode === 'attack') {
+      const forced = highlightForced(attacker, action);
+      if (forced.length && !forced.some((x) => x.uid === defender.uid)) {
+        return `${action.name.en || action.id} can target ${forced.map((x) => x.label).join(', ')}, which has Highlight, so it must target it (6.2.1).`;
+      }
+      if (linkShockOf(action) && !tetheredBy(attacker, defender)) {
+        return `Link Shock can only be used against a target Tethered by ${attacker.label} (PDRH-202).`;
+      }
+      if (action.type === 'Melee' && defender.aerial && !defender.mine) {
+        return `A Melee Action cannot target an Aerial Unit, and ${defender.label} is one (4.4.1).`;
+      }
+    }
+    if (defender.side === attacker.side) {
+      return `A squad cannot make its own unit the target of a Firing or Melee Action; area damage still hits allies (Rules Supplement 1.4.1).`;
+    }
+    return null;
+  }
+
   // Designating a unit in the Optical Camouflage State earns one FREE Scan
   // (FAQ I12). It is the ordinary Counter-roll in the ordinary window; only the
   // ending differs. Success: the Reveal is queued to the target's player as a
@@ -6639,11 +6591,10 @@ async function init() {
   function freeScanThenAttack(attacker: Token, defender: Token, action: CardAction, done?: (performed: boolean) => void): void {
     const scan = data.commonActions.find((a) => a.id === 'COMMON_SCAN');
     if (!scan) { done?.(false); return; }
+    // The target click refuses this before the targeting ends; kept here for
+    // any other door into the free Scan.
     if (electronicValue(data, attacker, loanedParts(data, state.tokens, attacker)) <= 0) {
-      void alertDialog({
-        title: `${attacker.label} cannot Scan`,
-        body: `${defender.label} is in the Optical Camouflage State, so the attack needs a Scan first (4.12.2) - and ${attacker.label} has an Electronic Value of 0, which cannot Initiate a Counter-roll (4.11.2). Pick another target, or Esc to cancel.`,
-      });
+      say('refused', `${defender.label} is in Optical Camouflage, so the attack needs a Scan first (4.12.2), and ${attacker.label} has an Electronic Value of 0, which cannot Initiate a Counter-roll (4.11.2).`);
       done?.(false);
       return;
     }
@@ -6678,7 +6629,7 @@ async function init() {
     // 3, C2). The teaching tracker may still let a house rule through.
     const reach = { ...s.action, range: actionRange(data, state.tokens, attacker, s.action) };
     const note = losNoteFor(attacker, defender, reach, currentTerrain(), state.tokens, state.smoke ?? [], true);
-    const go = (): void => {
+    const go = (paid = false): void => {
       const multi = multiTargetLimit(s.action);
       if (multi) attackHelper.startMulti(attacker, s.action, defender, multi);
       else {
@@ -6687,25 +6638,27 @@ async function init() {
       }
       revealForAction(attacker, s.action);
       showSideTab('combat');
-      s.done?.(true);
+      if (!paid) s.done?.(true);
     };
     if (note.includes('✕')) {
       const fail = note.split(' · ').filter((x) => x.includes('✕')).map((x) => x.replace('✕ ', '')).join('; ');
       if (state.script?.strict) {
         logTo(attacker, `${defender.label} appeared where ${s.action.name.en || s.action.id} cannot reach it (${fail}), so the attack fails. The Action Tick is spent (FAQ I11).`);
+        say('event', `${defender.label} appeared where ${s.action.name.en || s.action.id} cannot reach it (${fail}), so the attack fails. The Action Tick is spent (FAQ I11).`);
         s.done?.(true);
         return;
       }
-      void confirmDialog({
-        title: 'The attack fails',
-        body: `${defender.label} appeared where ${s.action.name.en || s.action.id} cannot reach it (${fail}), so the attack fails (p.71). The Action Tick is spent (FAQ I11). Make it anyway?`,
-        confirmLabel: 'Attack anyway (house rule)',
-        cancelLabel: 'The attack fails',
-        danger: true,
-      }).then((ok) => {
-        if (ok) { go(); return; }
-        logTo(attacker, `The attack on ${defender.label} fails: it appeared out of reach. The Action Tick is spent (FAQ I11).`);
-        s.done?.(true);
+      // Teaching makes the attack all the same and says what it bent, with
+      // Undo while nothing is rolled (pick 5; it was an "anyway?" dialog).
+      // The Tick is spent FIRST, as the rules spend it either way (p.71, FAQ
+      // I11): Undo takes back the house-rule attack and leaves the failure the
+      // rules call for, where it used to hand back a free re-attack.
+      s.done?.(true);
+      const mark = boardMark();
+      go(true);
+      bentRule(`${defender.label} appeared where ${s.action.name.en || s.action.id} cannot reach it (${fail}), so by the rules the attack fails (p.71).`, mark, 'attack', () => {
+        const back = state.tokens.find((x) => x.uid === attacker.uid);
+        if (back) logTo(back, `The attack on ${defender.label} fails: it appeared out of reach. The Action Tick is spent (FAQ I11).`);
       });
       return;
     }
@@ -6767,22 +6720,22 @@ async function init() {
     if (statusCount(t.statuses, 'camouflage') === 0 || revealOpen.has(t.uid)) return;
     revealOpen.add(t.uid);
     const settled = (): void => { revealOpen.delete(t.uid); onChanged(); };
-    if (state.script?.strict) {
-      void offerManifestation(t, why).then(settled, settled);
-      return;
-    }
-    void confirmDialog({
-      title: `${t.label} breaks camouflage`,
-      body: `${why} Under 4.12.2 the Optical Camouflage ends and the unit Reveals${(() => {
-        const r = manifestationRange(data, t);
-        return r > 0 ? `, with Manifestation Movement within Range ${r} (Stealth ${r})` : '';
-      })()}.`,
-      confirmLabel: 'Reveal it (4.12.2)',
-      cancelLabel: 'Keep it hidden (house rule)',
-    }).then((go) => {
-      if (!go) { revealOpen.delete(t.uid); return; }
-      void offerManifestation(t, why).then(settled, settled);
-    }, () => revealOpen.delete(t.uid));
+    // The Reveal is the rule on every table, so it happens at once and the
+    // line says why. Teaching's "keep it hidden" (a house rule) is the line's
+    // Undo while the Reveal is still the newest step (pick 5; it was a
+    // dialog). An attack that caused it pays its Tick straight after a Reveal
+    // with nowhere to Manifest, and an Undo then took back the Tick, not the
+    // Reveal (notices review, 2026-09-28); so the Undo is judged here, before
+    // settled() redraws, and not at all if anything came after it. A house
+    // rule's own warning with a live Undo is not talked over.
+    const before = boardMark();
+    void offerManifestation(t, why).then((ok) => {
+      const newest = snapshotBack(0);
+      const alone = !!newest && newest.label === 'reveal' && (snapshotBack(1)?.seq ?? -1) <= before;
+      const undo = ok && alone && !strictNow(state) ? whileNewest() : undefined;
+      settled();
+      if (ok && !currentNotice()?.undo) say('event', `${why} Its Optical Camouflage ends (4.12.2).`, undo);
+    }, settled);
   }
 
   function sweepCamoContacts(): void {
@@ -6875,24 +6828,13 @@ async function init() {
     // and the Flying or Aerial units above it included (M6/M22). It never
     // Reveals a camouflaged victim, and a Mech whose Chassis survives carries
     // on moving (M19).
-    const body = `${m.label} is a Mine and ${next.why}, so it always Detonates - a Ground Unit never Crushes a Mine, it sets it off. `
-      + `The Explosion catches every unit in that Grid, ally or not: ${caught.join(', ') || 'nothing else'}. `
-      + 'It causes no Reveal, and a Mech whose Chassis survives finishes its Movement (FAQ M6/M19/M22).';
-    if (state.script?.strict) {
-      logTo(m, `${m.label} Detonates: ${next.why}.`);
-      void alertDialog({ title: `${m.label} Detonates`, body }).then(() => startDetonation(m, next.actionId));
-      return;
-    }
-    void confirmDialog({
-      title: `${m.label} Detonates`,
-      body,
-      confirmLabel: 'Resolve the Detonation',
-      cancelLabel: 'Skip it (house rule)',
-    }).then((go) => {
-      if (!go) { offerGoOn(); return; }
-      logTo(m, `${m.label} Detonates: ${next.why}.`);
-      startDetonation(m, next.actionId);
-    });
+    //
+    // The blast is the rule on every table, so it goes off at once and the
+    // line says so (pick 5; Teaching asked, with a house-rule skip). Started
+    // after this sweep's render, where the dialog used to put it.
+    logTo(m, `${m.label} Detonates: ${next.why}.`);
+    say('event', `${m.label} Detonates: ${next.why}. The Explosion catches ${caught.join(', ') || 'nothing else'}, ally or not (FAQ M6/M22).`);
+    startBlastWhenFree(m.uid, next.actionId);
   }
 
   // The settle sweep with freeplay's narration on it. renderAll runs it, and
@@ -6932,27 +6874,25 @@ async function init() {
     if (!fallen) return;
     abyssSeen.add(fallen.uid);
     const g = largeGridOf(fallen);
-    const body = `${fallen.label} is a Ground Unit in the Abyss Grid ${gridRef(g.c, g.r)}. `
-      + 'Ground Units cannot voluntarily enter an Abyss Grid, and one forced in is immediately Destroyed (Environment Card, 5.4.1).';
-    const fall = (): void => {
+    // The fall, and the Undo for its line, caught straight after the despawn:
+    // the redraw's sweeps may add a step, and the Undo must not take that back.
+    const fall = (): { undo?: () => boolean } | null => {
       const still = state.tokens.find((t) => t.uid === fallen.uid);
-      if (!still) return;
+      if (!still) return null;
       logTo(still, `${still.label} is in the Abyss Grid ${gridRef(g.c, g.r)} and is Destroyed.`);
-      perform(data, state, { kind: 'despawn', seat: still.side, uid: still.uid, targetUid: still.uid });
+      const v = perform(data, state, { kind: 'despawn', seat: still.side, uid: still.uid, targetUid: still.uid });
+      const undo = v.ok && !strictNow(state) ? whileNewest() : undefined;
       if (selectedUid === fallen.uid) selectToken(null);
       onChanged();
+      return { undo };
     };
-    if (state.script?.strict) {
-      void alertDialog({ title: `${fallen.label} falls into the Abyss`, body }).then(fall);
-      return;
-    }
-    void confirmDialog({
-      title: `${fallen.label} is in an Abyss Grid`,
-      body,
-      confirmLabel: 'It is Destroyed',
-      cancelLabel: 'Leave it (house rule)',
-    }).then((go) => {
-      if (go) fall();
+    // The rule on every table: it falls, and the line says so. Teaching's
+    // "leave it" (a house rule) is the line's Undo while nothing has followed
+    // (pick 5; both were dialogs). undoMove keeps the unit it puts back from
+    // falling a second time.
+    queueMicrotask(() => {
+      const fell = fall();
+      if (fell) say('event', `${fallen.label} is in the Abyss Grid ${gridRef(g.c, g.r)} and is Destroyed (5.4.1).`, fell.undo);
     });
   }
 
@@ -6982,19 +6922,10 @@ async function init() {
       .map((u) => state.tokens.find((x) => x.uid === u))
       .filter((x): x is typeof t => !!x)
       .map((x) => `${x.label}${x.side === t.side ? ' (ally)' : ''}`);
-    const body = `${t.label} was destroyed, so it blows up where it stands. The blast takes every Unit in range `
-      + `- allies included - and each one takes a separate Explosion attack. In range: ${names.join(', ') || 'nothing'}. `
-      + 'Resolving removes the wreck from the board (4.7.5).';
-    void confirmDialog({
-      title: `${t.label} detonates`,
-      body,
-      confirmLabel: 'Resolve the Detonation',
-      cancelLabel: 'Skip it (house rule)',
-    }).then((go) => {
-      if (!go) return;
-      logTo(t, `${t.label} is destroyed and detonates (ZHDR-302).`);
-      startDetonation(t, next.actionId);
-    });
+    // The rule, at once, and said (pick 5): the dialog's skip was a house rule.
+    logTo(t, `${t.label} is destroyed and detonates (ZHDR-302).`);
+    say('event', `${t.label} is destroyed and detonates (ZHDR-302): every Unit in range takes an Explosion attack, allies included. In range: ${names.join(', ') || 'nothing'}.`);
+    startBlastWhenFree(t.uid, next.actionId);
   }
 
   // FAQ M18.6: an Unfolded Pholcus with an enemy in its attack range MUST
@@ -7025,25 +6956,11 @@ async function init() {
     // It jumps to the target's Grid and blows up there, so the victim is the
     // one it reaches - and where several are tied for nearest the choice is
     // still the player's, which is why the target is not named here.
-    const body = `${t.label} has an enemy in its attack range, and the FAQ is explicit that it MUST Detonate `
-      + `in the Automatic Phase - this is not a choice (M18.6). It jumps to the target's Grid, Detonates there and is removed. `
-      + `In range: ${names.join(', ') || 'nothing'}${names.length > 1 ? ' - tied for nearest, so you pick which' : ''}. `
-      + 'Destroying it or its self-Detonation grants no score, since it is a Low Value Unit (M8).';
-    if (state.script?.strict) {
-      logTo(t, `${t.label} must Detonate: an enemy is in range (M18.6).`);
-      void alertDialog({ title: `${t.label} must Detonate`, body }).then(() => startDetonation(t, next.actionId));
-      return;
-    }
-    void confirmDialog({
-      title: `${t.label} must Detonate`,
-      body,
-      confirmLabel: 'Resolve the Detonation',
-      cancelLabel: 'Skip it (house rule)',
-    }).then((go) => {
-      if (!go) return;
-      logTo(t, `${t.label} must Detonate: an enemy is in range (M18.6).`);
-      startDetonation(t, next.actionId);
-    });
+    // Not a choice (M18.6), so it goes at once on every table and the line
+    // says why (pick 5; Teaching asked, with a house-rule skip).
+    logTo(t, `${t.label} must Detonate: an enemy is in range (M18.6).`);
+    say('event', `${t.label} must Detonate: an enemy is in its attack range (FAQ M18.6). It jumps to the target and blows up there${names.length > 1 ? `; ${names.join(' and ')} are tied for nearest, so you pick which` : ''}.`);
+    startBlastWhenFree(t.uid, next.actionId);
   }
 
   function onChanged(): void {
@@ -7057,6 +6974,7 @@ async function init() {
     setBoardGrids(gridsOf(state));
     setSquadNames(state.sideNames);
     syncSquadTints();
+    syncUndoButton();
     // The derived Environment rules, run before save() because unlike the
     // dialog-driven sweeps below this one mutates SYNCHRONOUSLY - the entry
     // token and the platform collapse have to be in the state this save
@@ -7171,6 +7089,30 @@ async function init() {
     const body = document.getElementById('combat-body')!;
     body.innerHTML = `<p class="dim combat-idle">No attack in progress. Pick a unit, then use
       <b>Attack…</b> or <b>Detonate…</b> on one of its actions in the Details tab.</p>`;
+    // Every combat flow ends here, so a blast held for the panel goes now,
+    // after whatever the closing flow still has to do.
+    queueMicrotask(releaseHeldBlast);
+  }
+
+  // A blast a sweep sets off (a Mine, Martyrdom, a Pholcus that must
+  // Detonate) takes over the combat panel, so it waits until the panel is
+  // free: started while an attack was still on screen (a Martyrdom its own
+  // damage set off), it wiped the attack's Done and everything that runs as
+  // the attack closes (notices review, 2026-09-28). One at a time, and the
+  // unit is found again when its turn comes.
+  function startBlastWhenFree(uid: number, actionId: string): void {
+    heldBlasts.push({ uid, actionId });
+    queueMicrotask(releaseHeldBlast);
+  }
+
+  function releaseHeldBlast(): void {
+    if (!heldBlasts.length || combatBusy() || launching || smokePlacing) return;
+    const body = document.getElementById('combat-body');
+    if (body?.firstElementChild && !body.querySelector('.combat-idle')) return;
+    const next = heldBlasts.shift()!;
+    const p = state.tokens.find((x) => x.uid === next.uid);
+    if (p) startDetonation(p, next.actionId);
+    else releaseHeldBlast();
   }
 
   function renderUnitLog(): void {
@@ -7551,10 +7493,10 @@ async function init() {
       if (armedDef) {
         // Collapsed to a bar along the bottom, so the board above it is
         // clickable again. JUST THE CARD AND A WAY OUT: the floating hint above
-        // the board says what to do with it AND carries the refusals, so
-        // spelling the same instruction out down here was the second of two
-        // answers to one question - and the wider bar covered more of the board
-        // it was asking the player to click.
+        // the board says what to do with it, and the notice line says what a
+        // placement bent, so spelling the same instruction out down here was
+        // the second of two answers to one question - and the wider bar covered
+        // more of the board it was asking the player to click.
         dlg.innerHTML = `<div class="scn-panel env-arming">
           <b>${escapeHtml(armedDef.name)}</b>
           <button id="env-cancel">Done</button>
@@ -8092,7 +8034,7 @@ async function init() {
     if (!card) return;
     const v = performChecked({ kind: 'pickSecondary', seat: side, cardId: card.id });
     if (!v.ok) {
-      await alertDialog({ title: card.name, body: v.why ?? 'That pick was refused.' });
+      say('refused', v.why ?? `${card.name}: that pick was refused.`);
       return;
     }
     if (card.designate && card.designate !== 'none') {
@@ -8127,7 +8069,7 @@ async function init() {
       const owner = d.owner ?? d.side;
       const mechs = state.tokens.filter((t) => t.kind === 'mech' && t.side === owner);
       if (!mechs.length) {
-        await alertDialog({ title: 'Nothing to designate', body: `${d.label} names a Mech, and ${squadLabel(owner)} has none yet. Add the squads first.` });
+        say('refused', `${d.label} names a Mech, and ${squadLabel(owner)} has none yet. Add the squads first.`);
         return;
       }
       const uid = await choiceDialog({
@@ -8142,7 +8084,7 @@ async function init() {
     }
     if (!cmd) return;
     const v = performChecked(cmd);
-    if (!v.ok) await alertDialog({ title: d.label, body: v.why ?? 'That designation was refused.' });
+    if (!v.ok) say('refused', v.why ?? `${d.label}: that designation was refused.`);
   }
 
   // A Black Box placed at setup (5.2.1; ruling I23): a Grid of its own zone
@@ -8161,7 +8103,8 @@ async function init() {
       if (!spot) return;
       const v = perform(data, state, { kind: 'placeTaskItem', seat: side, itemId, to: spot });
       board.clearHighlights();
-      setHint(v.ok ? '' : v.why ?? '');
+      setHint('');
+      warnIfBent(v);
       onChanged();
     });
   }
@@ -8583,6 +8526,8 @@ async function init() {
   // Drawing every step of it is what made rejoining a slideshow, so the screen
   // waits and is drawn once at the end.
   let catchingUp = false;
+  // The room and seat last announced in the notice line.
+  let roomSaid: string | null = null;
 
   const relay = new Relay(emberApi.base, {
     onCommand(cmd) {
@@ -8592,7 +8537,7 @@ async function init() {
       // quietly applied or quietly dropped.
       const verdict = applyRemote(data, state, cmd);
       if (!verdict.ok) {
-        setHint(`Refused a move from the other player: ${verdict.why}`);
+        say('system', `Refused a move from the other player: ${verdict.why}`);
         relay.requestResync();
         return;
       }
@@ -8608,14 +8553,16 @@ async function init() {
     onCatchUp(active) {
       catchingUp = active;
       if (active) {
-        setHint('Catching up on the game so far…');
+        say('system', 'Catching up on the game so far…');
         return;
       }
       // Whole again: answer anything the replay walked past, then draw.
       maybeReveal();
       selectToken(null);
       renderAll();
-      setHint('Caught up with the table.');
+      // The board is whole again; the catching-up line goes with nothing in
+      // its place.
+      clearNotice('system');
     },
     onCheckpoint(raw) {
       // A checkpoint carries the whole board, which would overwrite our own
@@ -8643,7 +8590,7 @@ async function init() {
         for (const k of Object.keys(live)) if (!(k in next)) delete live[k];
         Object.assign(state, next);
       } catch {
-        setHint('The board that arrived could not be read.');
+        say('system', 'The board that arrived could not be read.');
         return;
       }
       for (const d of keep) {
@@ -8653,13 +8600,13 @@ async function init() {
       if (catchingUp) return;
       selectToken(null);
       renderAll();
-      setHint('Board received from the other player.');
+      say('event', 'Board received from the other player.');
     },
     onNeedCheckpoint() {
       relay.publishCheckpoint();
     },
     onClosed() {
-      setHint('The table was closed by its host.');
+      say('system', 'The table was closed by its host.');
     },
     // Dice that landed in the room. The roller already has them from its own
     // request; this is what puts the other player's roll on screen, so a roll
@@ -8667,7 +8614,7 @@ async function init() {
     onRolled(dice, seat, label, mine) {
       if (mine) return;
       tray.showFixed(dice.map((d) => ({ color: d.color as DieColor, face: d.face })));
-      setHint(`${squadLabel(seat)} rolled${label ? ` · ${label}` : ''}`);
+      say('event', `${squadLabel(seat)} rolled${label ? ` · ${label}` : ''}`);
     },
     onChange(view) {
       // Joining a room takes the update notice away (and leaving brings it back).
@@ -8701,7 +8648,11 @@ async function init() {
       electronicHelper.roller = roller;
       multiplayer.refresh();
       mpButton.classList.toggle('online', !!view.room);
-      if (view.room) setHint(`Online room ${view.room.id}${view.seat ? ` · you are ${squadLabel(view.seat)}` : ' · spectating'}`);
+      // Said once per room and seat: this runs on every change the relay
+      // reports, and the line is not a status bar.
+      const where = view.room ? `Online room ${view.room.id}${view.seat ? ` · you are ${squadLabel(view.seat)}` : ' · spectating'}` : null;
+      if (where && where !== roomSaid) say('event', where);
+      roomSaid = where;
     },
     // Nothing unrevealed goes over the wire. A checkpoint is the whole board,
     // so any dial belonging to a squad that has not revealed is stripped out
@@ -8748,7 +8699,7 @@ async function init() {
     void hashDials(salt, dials).then((hash) => {
       perform(data, state, { kind: 'commitTimings', seat, hash });
       onChanged();
-      setHint('Dials committed. They stay hidden until the other player commits too.');
+      say('event', 'Dials committed. They stay hidden until the other player commits too.');
     });
     return true;
   }
@@ -8813,7 +8764,7 @@ async function init() {
     const zones = state.zoneSet || state.mission || state.tasks ? 1 : 0;
     const envs = (state.environments ?? []).length;
     if (!units && !markers && !terrain && !zones && !envs) {
-      void alertDialog({ title: 'Nothing to clear', body: 'The board is already empty.' });
+      say('refused', 'The board is already empty.');
       return;
     }
     const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -8916,10 +8867,7 @@ async function init() {
       mapSelect.value = state.map;
       renderAll();
     } catch (e) {
-      await alertDialog({
-        title: 'Could not load that board',
-        body: `${(e as Error).message}. Board files are the JSON produced by "Save board" in this app.`,
-      });
+      say('refused', `Could not load that board: ${(e as Error).message}. Board files are the JSON "Save board" writes.`);
     }
     importFile.value = '';
   });
@@ -8938,7 +8886,7 @@ async function init() {
     const firstUid = state.nextUid;
     const verdict = performChecked({ kind: 'importSquad', seat: side, name, mechs, drones });
     if (!verdict.ok) {
-      void alertDialog({ title: 'The squad could not join', body: verdict.why });
+      say('refused', verdict.why);
       return false;
     }
     // A squad by file or from the library arrives whole, past the pickers'
@@ -8965,7 +8913,7 @@ async function init() {
       perform(data, state, { kind: 'setTactics', seat: side, cards: merged });
     }
     onChanged();
-    setHint(`Squad "${name}" joins ${squadLabel(side)}${deployingNow() ? ', and it deploys with everything else (3.1.4)' : ''}.`);
+    say('done', `Squad "${name}" joins ${squadLabel(side)}${deployingNow() ? ', and it deploys with everything else (3.1.4)' : ''}.`);
     return true;
   }
 
@@ -9026,10 +8974,7 @@ async function init() {
       state.tokens.filter((t) => t.side === side && t.kind !== 'projectile' && t.parentUid === undefined);
     const sides = (['s1', 's2'] as Side[]).filter((sd) => owned(sd).length);
     if (!sides.length) {
-      await alertDialog({
-        title: 'Nothing to save',
-        body: 'Neither side has units on the board. Build or import a squad first.',
-      });
+      say('refused', 'Neither side has units on the board. Build or import a squad first.');
       return;
     }
     let side = sides.length === 1 ? sides[0] : null;
@@ -9068,7 +9013,7 @@ async function init() {
     });
     if (!name) return;
     saveSquad(name, mechs, drones, Date.now(), tactics);
-    setHint(`Squad "${name}" saved.`);
+    say('done', `Squad "${name}" saved.`);
   }
 
   document.getElementById('btn-import-squad')?.addEventListener('click', () => squadFile.click());
@@ -9121,34 +9066,18 @@ async function init() {
       }
       const problems = state.scenario ? [] : factionProblems(data, state.tokens.filter((t) => t.side === side));
       if (problems.length) {
-        void alertDialog({
-          title: 'That squad breaks a squad-building rule',
-          body: `${squadLabel(side)} was imported, but rulebook 5.1 says a squad may only contain units from a single faction, a mech may only use parts from one faction, and the same Pilot may not be seated twice.`,
-          list: problems.map((p) => p.detail),
-          closeLabel: 'Got it',
-        });
+        say('warn', `${squadLabel(side)} was imported, but it breaks a squad-building rule (5.1). The Squads tab says which.`);
       }
       const sc = SCALES.find((x) => x.id === (state.scale ?? 'standard'))!;
       // The shared reader, hand included: the Tactics Cards the import has just
       // set count against the same limit (audit Phase 6, G1, G6).
       const sidePts = squadPoints(data, state.tokens, side, state.tactics?.[side] ?? []);
       if (!sc.openEnded && sidePts > sc.points) {
-        void alertDialog({
-          title: 'That squad is over the points limit',
-          body: `${squadLabel(side)} now totals ${sidePts} points, which is ${sidePts - sc.points} over the ${sc.name} limit of ${sc.points}.`,
-          list: [
-            'The squad was still imported, so you can play it if you both agree.',
-            'To play it legally, remove units or switch the battle scale in the round bar above the board.',
-          ],
-          closeLabel: 'Got it',
-        });
+        say('warn', `${squadLabel(side)} was imported at ${sidePts} points, ${sidePts - sc.points} over the ${sc.name} limit of ${sc.points}.`);
       }
       showSideTab('squad');
     } catch (e) {
-      await alertDialog({
-        title: 'Squad import failed',
-        body: `${(e as Error).message}. Expected a .json export from the community builder, or the squad .png it produces.`,
-      });
+      say('refused', `Squad import failed: ${(e as Error).message}. Expected a .json export from the community builder, or the squad .png it produces.`);
     }
     squadFile.value = '';
   });
@@ -9156,6 +9085,7 @@ async function init() {
   document.getElementById('move-confirm')!.addEventListener('click', () => commitMove());
   document.getElementById('move-back')!.addEventListener('click', () => undoWaypoint());
   document.getElementById('btn-undo')!.addEventListener('click', () => undoMove());
+  syncUndoButton();
   document.getElementById('move-cancel')!.addEventListener('click', () => cancelMove());
 
   // ---------- keyboard ----------

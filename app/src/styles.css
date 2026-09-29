@@ -160,7 +160,11 @@ button { font-family: inherit; }
 #hintbar {
   position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
   max-width: calc(100% - 300px); z-index: 5;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  /* Wide enough that a one-row key strip still leaves the notice line clear
+     of the move controls, which sit in front of the keys while a route is
+     drawn (about 40px from the same bottom edge). */
+  gap: 18px;
   pointer-events: none;
 }
 #hint, #hint-keys {
@@ -207,6 +211,12 @@ button { font-family: inherit; }
    an Action asking a question outranks the player's tidying. */
 #hintbar.keys-off #hint-keys { display: none; }
 #hintbar.keys-off #hint-show { display: block; }
+/* The notice line (notices.ts; OTTO's picks, 2026-09-28): the bottom centre of
+   the board, stacked in the bar's own column so it always sits above the keys
+   however many rows they wrap to. The move controls cover only the keys' row
+   (bottom: 12px, about 40px tall), so a refusal during a move stays clear of
+   its own Confirm. Its look is notices.css; only the placement is this page's. */
+#tt-notice { pointer-events: auto; max-width: 100%; }
 /* Targeting already recolours the text; on a floating pill it needs the frame
    to follow, or the emphasis reads as a mistake. */
 body.targeting #hint { background: var(--accent-lt); box-shadow: 0 0 0 1px var(--accent) inset, 0 2px 8px rgba(0, 0, 0, 0.35); }
@@ -818,6 +828,19 @@ main { display: flex; flex: 1; min-height: 0; }
 .pg-act.warn { color: var(--text3); }
 .pg-act.warn .pg-act-cost { color: var(--text3); }
 .pg-unit.warn { background: var(--surface3); color: var(--text3); }
+/* A control the rules refuse (aria-disabled, its reason in the notice line on
+   a hover or a long press) and a plainly disabled one look the same, and
+   neither lifts on hover: the guide's disabled buttons used to look live. */
+.pg-act[aria-disabled="true"], .pg-act[aria-disabled="true"]:hover,
+.pg-act:disabled, .pg-act:disabled:hover { background: var(--surface2); color: var(--text3); cursor: default; }
+.pg-act[aria-disabled="true"] .pg-act-cost, .pg-act:disabled .pg-act-cost { color: var(--text3); }
+.pg-unit[aria-disabled="true"], .pg-unit[aria-disabled="true"]:hover,
+.pg-unit:disabled, .pg-unit:disabled:hover,
+.pg-pass[aria-disabled="true"], .pg-pass[aria-disabled="true"]:hover,
+.pg-pass:disabled, .pg-pass:disabled:hover,
+.pg-tac-play[aria-disabled="true"], .pg-tac-play[aria-disabled="true"]:hover { background: var(--surface3); color: var(--text3); cursor: default; }
+.pg-next[aria-disabled="true"], .pg-next[aria-disabled="true"]:hover { background: var(--surface2); color: var(--text3); cursor: default; }
+.pg-undo[aria-disabled="true"], .pg-undo[aria-disabled="true"]:hover { background: none; color: var(--text3); cursor: default; opacity: 0.5; }
 .pg-next-up { margin: 0 0 8px; color: var(--text3); font-size: 11px; }
 
 /* ---------- end phase steps ---------- */
@@ -1502,6 +1525,11 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 }
 .setup-btnrow button:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
 .setup-btnrow button:disabled { color: var(--text3); cursor: not-allowed; box-shadow: none; }
+/* Greyed with a reason for the notice line (the toolbar's Undo with nothing
+   left): the disabled look, and no hover lift. */
+.setup-btnrow button[aria-disabled="true"], .setup-btnrow button[aria-disabled="true"]:hover {
+  background: var(--surface2); color: var(--text3); cursor: default; box-shadow: none;
+}
 
 #inspect-box {
   border-top: 1px solid var(--border); background: var(--bg);
@@ -2183,6 +2211,10 @@ p.points { white-space: pre-line; }
 .pips .pip.off { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pip) 45%, transparent); }
 .pips .pip.off.lapsed { box-shadow: inset 0 0 0 1px var(--text3); }
 .pips.spent { --pip: var(--text2); opacity: 0.75; }
+/* A pip this table does not correct by hand still shows its count; it just
+   stops looking pressable (its reason is in the notice line). */
+.pips[aria-disabled="true"] { cursor: default; }
+.pips[aria-disabled="true"]:hover { background: color-mix(in srgb, var(--pip) 15%, transparent); }
 .intercept-btn {
   background: rgba(101, 162, 216, 0.16) !important; color: #65a2d8 !important;
 }
@@ -2209,6 +2241,10 @@ p.points { white-space: pre-line; }
 }
 .action-btns .attack-btn:hover, .action-btns .shove-btn:hover, .action-btns .launch-btn:hover {
   background: var(--t); color: #101319;
+}
+/* Greyed with its reason in the notice line (a Shove with nothing in front). */
+.action-btns button[aria-disabled="true"], .action-btns button[aria-disabled="true"]:hover {
+  background: var(--surface3); color: var(--text3); cursor: default;
 }
 
 .part-tabs { display: flex; flex-wrap: wrap; gap: 3px; margin: 8px 0 6px; }

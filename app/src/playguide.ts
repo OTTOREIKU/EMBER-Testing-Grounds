@@ -5,10 +5,10 @@ import { BASE, cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { actionPartWhy, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, firewatchOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { actionPartWhy, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, firewatchOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, actionIdleWhy, type IdleWorld } from './units';
 import { actionPipCount, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens, strictNow, taskDesignations, swarmFor } from './commands';
-import { openActivation, popDeadExtras } from './glue';
+import { idleWorldFor, openActivation, popDeadExtras } from './glue';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
 import { tacticFitsPhase, tacticSpec, tacticUsedRound, tacticWindowWhy } from './tactics';
 import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, tiedChoices, type InitLookup, type Activation } from './loop';
@@ -22,6 +22,14 @@ function phaseDone(text: string): string {
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// A control the rules refuse (OTTO's picks 2 and 6, 2026-09-28): greyed, and
+// its reason goes to the table's notice line on a hover or a long press
+// (notices.ts explainOnHold), so it carries no title to say it twice. A press
+// does nothing. Never `disabled`, which hears no pointer at all.
+function greyed(why: string): string {
+  return ` aria-disabled="true" data-why="${esc(why)}"`;
 }
 
 const UI_KEY = 'ember-playguide-ui-v3';
@@ -354,7 +362,7 @@ export class PlayGuide {
       <div class="pg-foot">
         <span class="pg-left">${esc(this.blockedReason(s) ?? info.sub.split('·').pop()?.trim() ?? '')}</span>
         <button class="pg-next"${
-          this.blockedReason(s) ? ` disabled title="${esc(this.blockedReason(s)!)}"` : ''
+          this.blockedReason(s) ? greyed(this.blockedReason(s)!) : ''
         }>${
           last
             ? s.round.n >= (s.roundLimit ?? 5)
@@ -681,7 +689,7 @@ export class PlayGuide {
           <span class="side-${side}">${esc(squadLabel(side))}</span>
           <b>${esc(cardName(card))}</b>
           <small>${esc(when)}</small>
-          <button class="pg-tac-play" data-tactic="${side}:${id}"${off ? ` disabled title="${esc(why)}"` : ''}>${
+          <button class="pg-tac-play" data-tactic="${side}:${id}"${off ? greyed(why) : ''}>${
             usedIn !== null ? `Used, round ${usedIn}` : spent.length ? 'Spent' : 'Play'
           }</button>
         </div>`);
@@ -706,7 +714,7 @@ export class PlayGuide {
         // An attempt the engine would refuse (Fire Control Interference, a
         // destroyed Part) is shown and greyed (audit Phase 5, B9).
         const verdict = check(this.data, s, { kind: 'spendIntercept', seat: by.side, uid: by.uid, actionId: x.actionId });
-        return `<button class="pg-act" data-intercept="${i}" data-mech="interception"${verdict.ok ? '' : ` disabled title="${esc(verdict.why)}"`}>
+        return `<button class="pg-act" data-intercept="${i}" data-mech="interception"${verdict.ok ? '' : greyed(verdict.why)}>
           <span class="pg-act-name">${esc(by.label)} → ${esc(at.label)}</span>
           <span class="pg-act-cost">INT</span>
         </button>`;
@@ -722,7 +730,7 @@ export class PlayGuide {
         // table greys the skip until only attempts nobody can make are left
         // (audit Phase 5, B10).
         const skip = check(this.data, s, { kind: 'clearIntercepts', seat: this.script(s).turn });
-        return `<button class="pg-pass" data-intercept-skip="1"${skip.ok ? '' : ` disabled title="${esc(skip.why)}"`}>Skip the rest</button>`;
+        return `<button class="pg-pass" data-intercept-skip="1"${skip.ok ? '' : greyed(skip.why)}>Skip the rest</button>`;
       })()}
     </div>`;
   }
@@ -892,7 +900,7 @@ export class PlayGuide {
               : `This was the last scheduled round, so the game ends and Victory Points are totalled (3.7.4). ${verdict}`
             : `The First Player Token flips, so ${esc(squadLabel(s.round.firstPlayer === 's1' ? 's2' : 's1'))} goes first next round.`,
           final
-            ? `<div class="pg-units"><button class="pg-unit" data-game-over="1"${stepsDone ? '' : ' disabled title="Finish steps 1 to 4 first (3.7)"'}>End the game and settle the result</button></div>
+            ? `<div class="pg-units"><button class="pg-unit" data-game-over="1"${stepsDone ? '' : greyed('Finish steps 1 to 4 first (3.7).')}>End the game and settle the result</button></div>
                ${vip ? '' : `<p class="pg-intercept-note">Or press ${esc(`Extra round ${s.round.n + 1}`)} below to keep playing past the printed limit.</p>`}`
             : '',
         );
@@ -1272,8 +1280,20 @@ export class PlayGuide {
   // an ally's aura), so every Tick verdict here reads units.ts startOpts with
   // the live tokens - the same reading check() makes.
 
-  private tickActions(t: Token): { action: CardAction; label: string; partKey: string; note?: string; blocked?: string }[] {
-    const out: { action: CardAction; label: string; partKey: string; note?: string; blocked?: string }[] = [];
+  // The board as actionIdleWhy reads it (units.ts): the same view the page's
+  // click-time refusal takes, so a row greyed here is refused there in the
+  // same words.
+  private idleWorld(): IdleWorld {
+    const w = this.cb.world();
+    return this.state ? idleWorldFor(this.data, this.state, w.terrain) : { tokens: w.tokens, terrain: w.terrain };
+  }
+
+  // `idle`: the Action has nothing to do (actionIdleWhy). No house rule can
+  // make an Action act on nothing, so the row is greyed on every table, where
+  // `blocked` is greyed only at a strict one and warned about in Teaching.
+  private tickActions(t: Token): { action: CardAction; label: string; partKey: string; note?: string; blocked?: string; idle?: string }[] {
+    const out: { action: CardAction; label: string; partKey: string; note?: string; blocked?: string; idle?: string }[] = [];
+    const idleWorld = this.idleWorld();
     // An Extra Opportunity cannot hand out another one, or two Coordinating
     // Mechs would keep granting each other Opportunities for the rest of the
     // Round. The card carries the suppression itself.
@@ -1291,6 +1311,7 @@ export class PlayGuide {
         blocked: chained
           ? 'This is already an Extra Action Opportunity, and it cannot grant another one.'
           : ga.available ? undefined : ga.reason,
+        idle: actionIdleWhy(this.data, t, ga.action, idleWorld) ?? undefined,
       });
     }
     const items = normaliseTasks(this.state?.tasks).items;
@@ -1312,6 +1333,7 @@ export class PlayGuide {
         partKey: c.id,
         note: 'Common',
         blocked: actionPartWhy(this.data, t, c) ?? nothing ?? undefined,
+        idle: actionIdleWhy(this.data, t, c, idleWorld) ?? undefined,
       });
     }
     return out;
@@ -1405,15 +1427,20 @@ export class PlayGuide {
 
     const man = canManeuver(o);
     const range = maneuverRange(this.data, t);
+    // A strict table greys what it would refuse; Teaching warns and lets it
+    // through on a second press.
+    const strict = strictNow(s);
+    const tipOr = (ok: boolean, title: string, tip: string): string =>
+      !ok && strict ? greyed(tip) : ` data-tip-title="${esc(title)}" data-tip="${esc(tip)}"`;
     const rows = this.tickActions(t)
       .map((r) => {
         // Priced in this Stance: ZHRA-102_A is Short in Offensive (Phase 2, D2).
         const priced = stanceShaped(r.action, t.stance);
         const v = canPerform(o, priced, r.partKey, startOpts(this.data, s.tokens, t, r.action));
-        const why = r.blocked ?? (v.ok ? undefined : v.why);
+        const why = r.idle ?? r.blocked ?? (v.ok ? undefined : v.why);
         const cost = costOf(priced)!;
         const len = LENGTH_NAME[lengthOf(priced)!];
-        return `<button class="pg-act${why ? ' warn' : ''}" data-act="${r.partKey}" title="${esc(why ?? `${r.note ? `${r.note} - ` : ''}${len}: ${costLabel(cost)}`)}">
+        return `<button class="pg-act${why ? ' warn' : ''}" data-act="${r.partKey}"${why && (r.idle || strict) ? greyed(why) : ` title="${esc(why ?? `${r.note ? `${r.note} - ` : ''}${len}: ${costLabel(cost)}`)}"`}>
           <span class="pg-act-name">${esc(r.label)}</span>
           <span class="pg-act-cost">${v.extra ? 'XTR' : `${cost.maneuver ? 'M' : ''}${'●'.repeat(cost.action)}`}</span>
         </button>`;
@@ -1451,11 +1478,11 @@ export class PlayGuide {
     const maneuverRow = shutdown
       ? ''
       : `<div class="pg-units">
-        <button class="pg-unit${man.ok ? '' : ' warn'}" data-maneuver="1" data-tip-title="Maneuver" data-tip="${esc(man.ok ? `Move up to ${range} Grid${range === 1 ? '' : 's'}. Maneuver is free once per Action Opportunity.` : man.why ?? '')}">Maneuver ${range}</button>
-        ${ovl ? `<button class="pg-unit${ovl.ok ? '' : ' warn'}" data-overload="1" data-tip-title="Overload" data-tip="${esc(ovlTip)}">Overload ${o.overload}/${OVERLOAD_MAX}</button>` : ''}
-        ${bon && bonus ? `<button class="pg-unit${bon.ok ? '' : ' warn'}" data-attackmode="1" data-tip-title="${esc(bonus.label)}" data-tip="${esc(bonTip)}">${esc(bonus.label)} ${o.attackMode ? 'taken' : `+${bonus.actionPoints}`}</button>` : ''}
-        ${trait && lt ? `<button class="pg-unit${lt.ok ? '' : ' warn'}" data-linktick="1" data-tip-title="${esc(trait.label)}" data-tip="${esc(ltTip)}">${esc(trait.label.replace(/^Hammerhead /, ''))} ${o.linkTicks ?? 0}/${trait.maxLink}</button>` : ''}
-        ${fwv ? `<button class="pg-unit${fwv.ok ? '' : ' warn'}" data-firewatch="1" data-tip-title="Firewatch" data-tip="${esc(fwTip)}">Firewatch ${o.firewatch ? 'taken' : '1 Link → Command'}</button>` : ''}
+        <button class="pg-unit${man.ok ? '' : ' warn'}" data-maneuver="1"${tipOr(man.ok, 'Maneuver', man.ok ? `Move up to ${range} Grid${range === 1 ? '' : 's'}. Maneuver is free once per Action Opportunity.` : man.why ?? '')}>Maneuver ${range}</button>
+        ${ovl ? `<button class="pg-unit${ovl.ok ? '' : ' warn'}" data-overload="1"${tipOr(ovl.ok, 'Overload', ovlTip)}>Overload ${o.overload}/${OVERLOAD_MAX}</button>` : ''}
+        ${bon && bonus ? `<button class="pg-unit${bon.ok ? '' : ' warn'}" data-attackmode="1"${tipOr(bon.ok, bonus.label, bonTip)}>${esc(bonus.label)} ${o.attackMode ? 'taken' : `+${bonus.actionPoints}`}</button>` : ''}
+        ${trait && lt ? `<button class="pg-unit${lt.ok ? '' : ' warn'}" data-linktick="1"${tipOr(lt.ok, trait.label, ltTip)}>${esc(trait.label.replace(/^Hammerhead /, ''))} ${o.linkTicks ?? 0}/${trait.maxLink}</button>` : ''}
+        ${fwv ? `<button class="pg-unit${fwv.ok ? '' : ' warn'}" data-firewatch="1"${tipOr(fwv.ok, 'Firewatch', fwTip)}>Firewatch ${o.firewatch ? 'taken' : '1 Link → Command'}</button>` : ''}
       </div>`;
     const actionRows = shutdown
       ? ''
@@ -1905,9 +1932,10 @@ export class PlayGuide {
   private phaseActions(
     t: Token,
     phase: LoopPhase,
-  ): { action: CardAction; label: string; tag: string; note: string; blocked?: string }[] {
+  ): { action: CardAction; label: string; tag: string; note: string; blocked?: string; idle?: string }[] {
     const want = phase === 'Command' ? 'command' : phase === 'Automatic' ? 'auto' : null;
-    const out: { action: CardAction; label: string; tag: string; note: string; blocked?: string }[] = [];
+    const out: { action: CardAction; label: string; tag: string; note: string; blocked?: string; idle?: string }[] = [];
+    const idleWorld = this.idleWorld();
     for (const ga of guidedActions(this.data, t, this.cb.world())) {
       const a = ga.action;
       // RWS (遥控武器): a Mech designated in the Command Phase fires the
@@ -1920,6 +1948,7 @@ export class PlayGuide {
           tag: ga.ammoLeft === undefined ? 'RWS' : `${ga.ammoLeft}/${a.storage ?? 0}`,
           note: 'RWS: the Command lets this Mech fire this Part now. It is still the Mech firing, so its Firing bonuses apply and its own pilot pays any Focus (FAQ A20/A22).',
           blocked: ga.available ? undefined : ga.reason,
+          idle: actionIdleWhy(this.data, t, a, idleWorld) ?? undefined,
         });
         continue;
       }
@@ -1942,6 +1971,7 @@ export class PlayGuide {
           ? 'Automatic Actions are obligatory and take the nearest legal enemy unless the text says otherwise (3.5.2).'
           : `${a.type ?? 'Action'} action${a.range ? `, range ${a.range}` : ''}.`,
         blocked: ga.available ? undefined : ga.reason,
+        idle: actionIdleWhy(this.data, t, a, idleWorld) ?? undefined,
       });
     }
     return out;
@@ -1984,7 +2014,7 @@ export class PlayGuide {
       .filter((t) => !mine || t.side === mine)
       .map((t) => {
         const why = asterBlockers(s, t) ?? '';
-        return `<button class="pg-act${why ? ' warn' : ''}" data-aster="${t.uid}" title="${esc(why || 'Consume 1 Command Token to restore 1 Link to an Ally Mech.')}">
+        return `<button class="pg-act${why ? ' warn' : ''}" data-aster="${t.uid}"${why && strictNow(s) ? greyed(why) : ` title="${esc(why || 'Consume 1 Command Token to restore 1 Link to an Ally Mech.')}"`}>
           <span class="pg-act-name">${esc(t.label)}: restore 1 Link</span>
           <span class="pg-act-note">${esc(why || 'Aster · consumes 1 Command Token')}</span>
         </button>`;
@@ -2045,7 +2075,10 @@ export class PlayGuide {
       const list = own.length
         ? `<div class="pg-acts">${own
             .map(
-              (r) => `<button class="pg-act${r.blocked ? ' warn' : ''}" data-unit-act="${r.action.id}" title="${esc(r.blocked ?? r.note)}">
+              // Greyed with the reason when it has nothing to do, or at a
+              // strict table when the rules refuse it (performUnitAction
+              // refuses it there); Teaching warns, as for a Mech's rows.
+              (r) => `<button class="pg-act${r.idle || r.blocked ? ' warn' : ''}" data-unit-act="${r.action.id}"${r.idle || (r.blocked && strictNow(s)) ? greyed((r.idle ?? r.blocked)!) : ` title="${esc(r.blocked ?? r.note)}"`}>
                 <span class="pg-act-name">${esc(r.label)}</span>
                 <span class="pg-act-cost">${esc(r.tag)}</span>
               </button>`,
@@ -2072,11 +2105,11 @@ export class PlayGuide {
           }
           ${
             phase === 'Command' && chosen.kind !== 'mech'
-              ? `<button class="pg-unit" data-move="${chosen.uid}"${commandOnly ? ' disabled title="Additional Instructions buys a Command Action, not a Move (ruling I7)."' : ''}>Move</button>`
+              ? `<button class="pg-unit" data-move="${chosen.uid}"${commandOnly ? greyed('Additional Instructions buys a Command Action, not a Move (ruling I7).') : ''}>Move</button>`
               : ''
           }
           <button class="pg-pass" data-acted="${chosen.uid}" title="Mark this unit done without the guide driving the action">Did it myself</button>
-          <button class="pg-pass" data-unpick="1" disabled title="Designated: the Command is spent. Undo takes the designation back.">Back</button>
+          <button class="pg-pass" data-unpick="1"${greyed('Designated: the Command is spent. Undo takes the designation back.')}>Back</button>
         </div>`;
     }
 
@@ -2124,7 +2157,7 @@ export class PlayGuide {
     const label = this.cb.undoLabel?.() ?? null;
     return label
       ? `<button class="pg-undo" data-undo="1" title="Undo ${esc(label)} (Ctrl+Z)">↩</button>`
-      : '<button class="pg-undo" disabled title="Nothing to undo yet.">↩</button>';
+      : `<button class="pg-undo"${greyed('Nothing to undo yet.')}>↩</button>`;
   }
 
   // The loop unit whose activation is open, if any: an Extra Opportunity is

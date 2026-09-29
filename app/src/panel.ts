@@ -115,6 +115,17 @@ export interface PanelCallbacks {
   tacticNote(t: Token): string | null;
   // The Black Boxes this unit carries (5.3.1; audit Phase 6, F12).
   boxNote?(t: Token): string | null;
+  // Why a press would be refused here, or null. The control is then greyed
+  // with the reason, which the page's notice line gives on a hover or a long
+  // press (notices pick 2): a strict table's hand-corrected pips, a Shove with
+  // nothing in front. Asked only where a page supplies it.
+  // 'support': a Restore Link or Remove a Token with nothing in reach to do it to.
+  blockedWhy?(t: Token, what: 'restoreAmmo' | 'restoreIntercept' | 'charge' | 'shove' | 'support', actionId: string): string | null;
+}
+
+// The attributes of a greyed control whose reason goes to the notice line.
+function greyAttrs(why: string | null): string {
+  return why ? ` aria-disabled="true" data-why="${escapeHtml(why)}"` : '';
 }
 
 export class Panel {
@@ -433,14 +444,19 @@ export class Panel {
     // the Roll button keep the plain "3R+1Y": one is a text field and the other
     // a button label, and neither can render markup.
     const pips = diceRow(a.yellowDice, a.redDice, dfac);
+    // A press on a pip the table would refuse is greyed, with the reason
+    // in the notice line (blockedWhy).
+    const ammoWhy = ammoLeft !== undefined ? this.cb.blockedWhy?.(t, 'restoreAmmo', a.id) ?? null : null;
+    const intWhy = intercept ? this.cb.blockedWhy?.(t, 'restoreIntercept', a.id) ?? null : null;
+    const chgWhy = charge ? this.cb.blockedWhy?.(t, 'charge', a.id) ?? null : null;
     info.innerHTML = `<span class="dim"><span class="act-slot">${SLOT_LABEL[ga.slot]}</span>${[range, pips]
       .filter(Boolean)
       .map((s) => ` · ${s}`)
       .join('')}</span>
       <div class="act-chips">
-        ${ammoLeft !== undefined ? pipRow('ammo', 'AMO', ammoLeft, a.storage ?? 0, `data-reload="${a.id}"`) : ''}
-        ${intercept ? pipRow('intercept', 'INT', intercept.left, intercept.max, `data-restore-int="${a.id}"`) : ''}
-        ${charge ? pipRow('charge', 'CHG', charge.charged ? 1 : 0, 1, `data-charge="${ga.slot}"`) : ''}
+        ${ammoLeft !== undefined ? pipRow('ammo', 'AMO', ammoLeft, a.storage ?? 0, `data-reload="${a.id}"${greyAttrs(ammoWhy)}`) : ''}
+        ${intercept ? pipRow('intercept', 'INT', intercept.left, intercept.max, `data-restore-int="${a.id}"${greyAttrs(intWhy)}`) : ''}
+        ${charge ? pipRow('charge', 'CHG', charge.charged ? 1 : 0, 1, `data-charge="${ga.slot}"${greyAttrs(chgWhy)}`) : ''}
       </div>
       ${!available && reason ? `<span class="reason">${escapeHtml(reason)}</span>` : ''}
       ${available && intercept && !intercept.can && intercept.reason ? `<span class="reason">${escapeHtml(intercept.reason)}</span>` : ''}`;
@@ -487,7 +503,7 @@ export class Panel {
         sub: `${ammoLeft}/${a.storage} · ${actName}`,
         lines: [
           'Round Token on the Part Card. One comes off every time the Action is used, and the Action stops working at zero.',
-          'The app spends these for you when you use the Action. Click here to put one back if you spent it by mistake.',
+          ammoWhy ? 'The app spends these for you when you use the Action.' : 'The app spends these for you when you use the Action. Click here to put one back if you spent it by mistake.',
         ],
       }, { floating: false });
       ammoPips.addEventListener('click', (ev) => {
@@ -503,8 +519,8 @@ export class Panel {
         lines: [
           'Round Tokens placed on this Part Card during the Deployment Phase, one per point of Intercept X.',
           'Each Interception spends one and they are never restored, so once the Part is empty it cannot Intercept again for the rest of the game (rulebook 4.9).',
-          'Click here to put one back if you spent it by mistake.',
-        ],
+          intWhy ? '' : 'Click here to put one back if you spent it by mistake.',
+        ].filter(Boolean),
       }, { floating: false });
       intPips.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -520,8 +536,8 @@ export class Panel {
           'One Charge Token sits on this Part Card from the start of the game, face-down, meaning the Action has not been Charged (rulebook 4.14).',
           'The Charge Action flips it face-up, and only one Part may be Charged per Charge Action. A Part that is already Charged cannot be Charged again until the token is spent.',
           'While it is face-up, performing this Action may consume it to apply the effect its text marks as [Charged].',
-          'Click here to flip it by hand.',
-        ],
+          chgWhy ? '' : 'Click here to flip it by hand.',
+        ].filter(Boolean),
       }, { floating: false });
       chgPips.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -613,6 +629,11 @@ export class Panel {
           'The target stops early if something blocks the path. Melee Lock does not hold it: Forced Movement ignores the Lock (4.3.4, FAQ E2). A unit that cannot move, such as a Deployable, stays put.',
         ],
       });
+      const shoveWhy = this.cb.blockedWhy?.(t, 'shove', a.id) ?? null;
+      if (shoveWhy) {
+        sh.setAttribute('aria-disabled', 'true');
+        sh.dataset.why = shoveWhy;
+      }
       sh.addEventListener('click', () => this.cb.onShove(t, a.id));
       btns.appendChild(sh);
     }
@@ -666,6 +687,12 @@ export class Panel {
       sup.title = linkSupportOf(a)
         ? 'Electronic Support: Ally Mechs within Range recover Link, even in Shutdown'
         : 'Electronic Support: take a Square Token off an Ally Unit within Range';
+      const supWhy = this.cb.blockedWhy?.(t, 'support', a.id) ?? null;
+      if (supWhy) {
+        sup.setAttribute('aria-disabled', 'true');
+        sup.dataset.why = supWhy;
+        sup.removeAttribute('title');
+      }
       sup.addEventListener('click', () => this.cb.onSupport(t, a.id));
       btns.appendChild(sup);
     }
