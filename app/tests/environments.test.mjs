@@ -282,8 +282,10 @@ ok('the armed card does not outlive the dialog that armed it',
 // reports why. Saving on the ok path alone left the board and the state
 // disagreeing about what was on the table.
 const cellClick = mainSrc.slice(mainSrc.indexOf('if (envArmed !== null) {'), mainSrc.indexOf('if (!editor.active) return;'));
-ok('a refused placement still redraws and saves', /setHint\(v\.ok \? '' :/.test(cellClick)
-  && cellClick.indexOf('save();') > cellClick.indexOf('setHint(v.ok'));
+// The reason is said in the notice line now, as a warning with Undo
+// (notices pick 5); the save still follows it on every road.
+ok('a refused placement still redraws and saves', /warnIfBent\(v\);/.test(cellClick)
+  && cellClick.indexOf('save();') > cellClick.indexOf('warnIfBent(v)'));
 
 console.log('\ntaking them off again');
 
@@ -604,7 +606,9 @@ const ICONS = ['\u26D4', '\u2316', '\u26A1', '\uD83D\uDCA5'];
 // The whole argument, to the closing paren, not just a call that OPENS with a
 // quote: the ternary at the Automatic-Action prompt begins `setHint(neutral`,
 // and the first draft of this line let a glyph through in its other branch.
-const hints = [...mainSrc2.matchAll(/setHint\(([^;]|\n){0,400}?\);/g)].map((m) => m[0]);
+// The hint and the notice line (say, 2026-09-28) alike: most of what the hint
+// used to say is said in the line now.
+const hints = [...mainSrc2.matchAll(/(?:setHint|say)\(([^;]|\n){0,400}?\);/g)].map((m) => m[0]);
 check('no hint is prefixed with an icon',
   hints.filter((h) => ICONS.some((i) => h.includes(i))), []);
 // And the separators that ARE ours survived the sweep, so this is not just an

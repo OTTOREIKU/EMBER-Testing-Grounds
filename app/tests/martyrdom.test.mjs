@@ -44,7 +44,10 @@ check('freeplay guards it with its own seen-set, not the auto-boom one',
 // ---------- It reuses the Detonation flow ----------
 check('both screens hand off to startDetonation',
   /data-minego="\$\{x\.t\.uid\}" data-mineact="\$\{esc\(x\.actionId\)\}">Resolve the Detonation</.test(hud)
-  && /startDetonation\(t, next\.actionId\)/.test(main), true);
+  // Freeplay's goes through the held-blast queue, which waits for the combat
+  // panel to be free and then starts the same Detonation (notices review).
+  && /startBlastWhenFree\(t\.uid, next\.actionId\)/.test(main)
+  && /if \(p\) startDetonation\(p, next\.actionId\);/.test(main), true);
 // Which is what supplies `destroyAfter: true` for free.
 check('and that flow despawns the wreck when it closes',
   /data-act="detdone"[\s\S]{0,300}kind: 'despawn'/.test(hud), true);

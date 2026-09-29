@@ -29,6 +29,7 @@ globalThis.window = {
   clearTimeout: () => {},
 };
 globalThis.document = { createElement: el };
+globalThis.Node ??= function Node() {};
 
 const out = new URL('./_notices.bundle.mjs', import.meta.url);
 await build({
@@ -107,6 +108,83 @@ check('clearing its own kind takes it', host.hidden, true);
 N.notify({ kind: 'table', text: 'Roll 3 White dice at the table.' });
 host.children.find((c) => c.className.includes('notice-x')).click();
 check('the dismiss control takes it away', host.hidden, true);
+
+// ---------- a greyed control explains itself (picks 2 and 6) ----------
+// A page root and controls that know their parent, enough for closest() and
+// contains(); every event is handed straight to the root's listeners, as if
+// it had bubbled (or been captured) there.
+function ctl(parent, { why, grey = !!why } = {}) {
+  const n = Object.assign(Object.create(globalThis.Node.prototype), {
+    parent, isConnected: true, dataset: why ? { why } : {}, attrs: grey ? { 'aria-disabled': 'true' } : {},
+    closest(sel) {
+      for (let x = n; x; x = x.parent) {
+        if (sel === '[data-why]' ? x.dataset?.why !== undefined : x.attrs?.['aria-disabled'] === 'true') return x;
+      }
+      return null;
+    },
+    contains(o) { for (let x = o; x; x = x.parent) if (x === n) return true; return false; },
+  });
+  return n;
+}
+const page = { _h: {}, addEventListener(t, fn) { (this._h[t] ||= []).push(fn); }, contains(o) { for (let x = o; x; x = x.parent) if (x === page) return true; return false; } };
+const fire = (type, target, extra = {}) => {
+  const e = { target, pointerType: 'mouse', detail: 1, relatedTarget: null, stopped: false, prevented: false,
+    preventDefault() { e.prevented = true; }, stopPropagation() { e.stopped = true; }, ...extra };
+  for (const fn of page._h[type] ?? []) fn(e);
+  return e;
+};
+const runTimers = () => { const t = timers; timers = []; for (const fn of t) fn(); };
+const line = () => (host.hidden ? null : words());
+N.explainOnHold(page);
+const row = ctl(page, { why: 'This is an Automatic Action, performed in the Automatic Phase without a Command (3.5).' });
+const rowName = ctl(row); // the name inside the row, where a finger or pointer actually lands
+const live = ctl(page);
+timers = [];
+N.dismissNotice();
+
+fire('pointerdown', rowName, { pointerType: 'touch' });
+runTimers();
+check('held, a greyed control says why in the line, in the line\'s voice',
+  line(), 'This is an Automatic Action, performed in the Automatic Phase without a Command.');
+N.dismissNotice();
+fire('pointerdown', rowName, { pointerType: 'touch' });
+fire('pointerup', rowName, { pointerType: 'touch' });
+runTimers();
+check('a quick tap says nothing', line(), null);
+const tap = fire('click', rowName, { pointerType: 'touch', detail: 1 });
+check('...and never reaches the page\'s own handler', [tap.prevented, tap.stopped, line()], [true, true, null]);
+const key = fire('click', rowName, { detail: 0 });
+check('Enter or Space on it is deliberate, so it is answered with the reason',
+  [key.stopped, line()], [true, 'This is an Automatic Action, performed in the Automatic Phase without a Command.']);
+N.dismissNotice();
+const ok = fire('click', live);
+check('a live control is left alone', [ok.prevented, ok.stopped, line()], [false, false, null]);
+
+timers = [];
+fire('pointerover', rowName);
+fire('pointerover', row);
+check('a mouse resting on it waits once, however it moves inside', timers.length, 1);
+runTimers();
+check('...then says why in the line', line(), 'This is an Automatic Action, performed in the Automatic Phase without a Command.');
+N.dismissNotice();
+fire('pointerover', live);
+fire('pointerover', rowName);
+fire('pointerout', rowName, { relatedTarget: live });
+runTimers();
+check('a pointer sweeping past says nothing', line(), null);
+fire('pointerover', live);
+fire('pointerover', rowName, { pointerType: 'touch' });
+runTimers();
+check('a finger is not a hover: only the hold explains on a phone', line(), null);
+N.notify({ kind: 'warn', text: 'Made anyway, as a house rule.', undo: () => true });
+timers = []; // its own 6s dismissal is not what is under test
+fire('pointerover', live);
+fire('pointerover', rowName);
+runTimers();
+check('a hover never talks over a notice whose Undo is still live', line(), 'Made anyway, as a house rule.');
+fire('pointerdown', rowName, { pointerType: 'touch' });
+runTimers();
+check('...but a long press is deliberate, and does', line(), 'This is an Automatic Action, performed in the Automatic Phase without a Command.');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

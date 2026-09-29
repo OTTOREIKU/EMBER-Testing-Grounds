@@ -155,9 +155,15 @@ for (const [name, src] of [['the Match Centre', hud], ['the play guide', guide]]
   check(`${name} asks the same reader`, /opportunityBonusOn\(/.test(src), true);
   check(`${name} asks the same verdict function`, /canAttackMode\(o, t\.stance, bonus\.stance\)/.test(src), true);
   check(`${name} sends the command`, /kind: 'attackMode', seat: t\.side, uid: t\.uid/.test(src), true);
-  // Warn, don't block: the refusal is shown, never baked into a dead button.
-  check(`${name} shows the refusal rather than disabling the row`,
-    /disabled[^\n]*attackmode|attackmode[^\n]*disabled/.test(src), false);
+  // The refusal is always shown, never baked into a dead button. OTTO's pick 6
+  // (2026-09-28) lets a refused row be greyed (aria-disabled, which still hears
+  // a hover and a long press) so long as it carries its reason; the HTML
+  // `disabled` attribute, which hears nothing, stays out.
+  check(`${name} never kills the row with the disabled attribute`,
+    /[^-]disabled[^\n]*attackmode|attackmode[^\n]*[^-]disabled/.test(src), false);
+  check(`${name} keeps the reason on a greyed row`,
+    (src.match(/aria-disabled="true"[^\n]*attackmode|attackmode[^\n]*aria-disabled="true"/g) ?? [])
+      .every((line) => /data-why="\$\{esc\(bon\.why/.test(line)), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -252,7 +252,7 @@ check('a guest never rewinds its own ring', /if \(!isHost\(\)\) \{[\s\S]*?return
 check('a guest drops its ring while it waits', rewind.indexOf('clearHistory()') < rewind.indexOf('undoToPhase'), true);
 // A target the host cannot reach must say so. The first version returned in
 // silence, which read as a rollback that simply did not happen.
-check('an unreachable target is reported', /if \(!snap\) \{[\s\S]*?lobbyNote =/.test(rewind), true);
+check('an unreachable target is reported', /if \(!snap\) \{[\s\S]*?say\('refused', /.test(rewind), true);
 // Both seats must leave the old branch, and BEFORE the host/guest split — that
 // is what lets the two agree on the number without it ever being sent. Put it
 // inside the host arm and the guest keeps stamping the abandoned branch, and

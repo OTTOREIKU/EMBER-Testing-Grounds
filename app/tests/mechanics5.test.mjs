@@ -736,7 +736,9 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   check('G4p the lent door opens the target pick for a lent attack', /lentPart = \{ uid: by\.uid, actionId, key \};\s*const electronic = /.test(pad), true);
   check('G4p and the launch for a lent launcher', /lentPart = \{ uid: by\.uid, actionId, key \};\s*void launchFrom\(by, actionId, cardId\);/.test(pad), true);
   check('G4p every payment on the way takes the loan', [(pad.match(/= lentPay\(/g) ?? []).length, (pad.match(/\.\.\.lent(All)?\b/g) ?? []).length], [4, 4]);
-  check('G4p the attack and launch find a lent Action', [/async function askTableAndAttack[\s\S]{0,200}const a = actionOfUnit\(attacker, actionId\);/.test(pad), /async function launchFrom[\s\S]{0,200}const action = actionOfUnit\(t, actionId\);/.test(pad)], [true, true]);
+  // The attack is declared in the Target panel now (notices, 2026-09-29); the
+// Action is still found through actionOfUnit, a lent one included.
+check('G4p the attack and launch find a lent Action', [/function commitDeclared\(\)[\s\S]{0,1200}const a = actionOfUnit\(attacker, d\.actionId\);/.test(pad), /async function launchFrom[\s\S]{0,200}const action = actionOfUnit\(t, actionId\);/.test(pad)], [true, true]);
   const attackSrc = readFileSync(new URL('../pad/attack.ts', import.meta.url), 'utf8');
   const ewSrc = readFileSync(new URL('../pad/ew.ts', import.meta.url), 'utf8');
   check('G4p and so do the attack window and the counter-roll', [/loanedParts\(a\.data, a\.state\(\)\.tokens, t, \{ anywhere: true \}\)/.test(attackSrc), /loanedParts\(a\.data, a\.state\(\)\.tokens, t, \{ anywhere: true \}\)/.test(ewSrc)], [true, true]);

@@ -207,7 +207,7 @@ ok('mapDoc knows both storages', /startsWith\('custom:'\)[\s\S]{0,200}boardMaps/
 ok('the export carries the whole document', /\.\.\.editorDoc\(\)/.test(main));
 ok('the export is shaped for board_maps.json', /id: slugOf\(name\), name: \{ en: name \}/.test(main));
 ok('import goes through saveCustomMap so it is normalised', /saveCustomMap\(name\.trim\(\), raw as CustomMap\)/.test(main));
-ok('import rejects a file with no pieces list', /A map file has a `pieces` list/.test(main));
+ok('import rejects a file with no pieces list', /a map file has a pieces list/.test(main));
 
 // The Match Centre must offer shipped authored maps and resolve their zones,
 // and must NOT offer browser-local ones (the other seat cannot read them).

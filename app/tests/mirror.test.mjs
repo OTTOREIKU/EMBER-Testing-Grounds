@@ -1113,7 +1113,7 @@ const spinning = (root) => shakingDice(root).length > 0;
     const at = page.indexOf(`if (act === '${what}')`);
     const seg = page.slice(at, page.indexOf('if (act ===', at + 10));
     check(`${what} pays first and only declares on ok`,
-      seg.includes(cost) && /if \(!paid\.ok\) \{ lobbyNote = paid\.why; render\(\); return false; \}/.test(seg), true);
+      seg.includes(cost) && /if \(!paid\.ok\) \{ say\('refused', paid\.why\); return false; \}/.test(seg), true);
   }
   // The reroll's server dice can fail like any other request, and the Link is
   // already spent by then. rolldefense beside it has carried a catch all along.

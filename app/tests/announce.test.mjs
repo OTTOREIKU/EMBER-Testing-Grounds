@@ -37,7 +37,7 @@ check('and after the replay guard, so a rejoin does not re-announce history',
   guard > 0 && call > guard, true);
 
 // The note channel has to be the shared panel line, not the acting client's.
-check('it writes the panel note', /announceRemote[\s\S]{0,900}lobbyNote =/.test(match), true);
+check('it writes the panel note', /announceRemote[\s\S]{0,900}say\('event', /.test(match), true);
 check('and it names which squad acted, since the watcher did not do it',
   /announceRemote[\s\S]{0,900}squadLabel\(cmd\.seat\)/.test(match), true);
 

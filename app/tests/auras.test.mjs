@@ -1007,6 +1007,13 @@ check('while the Stealth Chassis Sprint inside the aura names the Eagle',
   A.actionSilenceDenier(data, [patrol, seen], seen, sprint)?.source?.uid, 90);
 check('including when only the START grid was inside it',
   A.actionSilenceDenier(data, [patrol, unseen], unseen, sprint, undefined, walkedOut)?.source?.uid, 90);
+// A table with no board judges the Range itself (the pad asks it): `anywhere`
+// names every aura that WOULD take the Silence with its source in Range.
+check('with no board, an Eagle out of Range still names itself, for the table to judge',
+  [A.actionSilenceDenier(data, [patrol, unseen], unseen, silentAct), A.actionSilenceDenier(data, [patrol, unseen], unseen, silentAct, undefined, undefined, { anywhere: true })?.source?.uid],
+  [undefined, 90]);
+check('...and still blames nobody for an Action that never printed Silence',
+  A.actionSilenceDenier(data, [patrol, unseen], unseen, plainAct, undefined, undefined, { anywhere: true }), undefined);
 
 // ---------- The call-site seams, read out of the sources ----------
 //

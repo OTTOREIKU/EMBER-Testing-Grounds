@@ -244,7 +244,7 @@ check('the check takes integers and bounds the magnitude',
 check('and a total heading below zero is a note, not a refusal',
   /return \{ ok: true, note: 'A squad cannot finish below zero/.test(commands), true);
 // A warning nobody shows is not a warning, and both pages have their own panel.
-check('the Match Centre shows the note', /if \(paid\.note\) ctx\.noteNow\(paid\.note\);/.test(hud), true);
+check('the Match Centre shows the note', /if \(paid\.note\) ctx\.noteNow\(paid\.note, 'warn'\);/.test(hud), true);
 check('and the play guide shows it too', /paid\.ok\s*\n\s*\? paid\.note \?\? null/.test(guide), true);
 
 // ---------- both destruction sites stamp ----------
