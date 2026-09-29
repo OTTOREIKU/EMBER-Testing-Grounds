@@ -2,7 +2,7 @@ import type { BoardGrids, CardAction, CombatView, Facing, FreeTicks, GameState, 
 import { addStatus, ageTokens, cellsOf, isLineUnit, gridsOf, newOpportunity, normaliseCatalog, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
 import { cardName, isUnfolded, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { interceptPayer, repairSpec, fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
+import { auraActionOf, auraCanReach, interceptPayer, repairSpec, fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
 import { canBeForceMoved, isMeleeFiring, lockersOf, tetherCap } from './melee';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, rebooted, REBOOT_ID, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload, untouched } from './ticks';
 import { tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
@@ -142,6 +142,9 @@ export type Command = (
   | { kind: 'deployUnit'; seat: Side; uid: number; to: { col: number; row: number }; stance?: Stance; camo?: boolean; facing?: Facing }
   | { kind: 'applyPenetration'; seat: Side; uid: number; targetUid: number; slot: PartSlot | 'main' }
   | { kind: 'applyStatus'; seat: Side; uid: number; targetUid: number; statusId: string; stacks?: number }
+  // Who stands inside an aura, on a table with no board (OTTO, 2026-09-29):
+  // `uid` is the sender's own unit, as for a Token, and `sourceUid` the aura's.
+  | { kind: 'setAuraReach'; seat: Side; uid: number; sourceUid: number; actionId: string; targetUid: number; on: boolean }
   // Taking one back off. Tokens are rules-bearing and fingerprinted — an
   // Immobilized or Fragile chip changes the defence pool — so a player peeling
   // one off by hand has to travel like putting it on does. One at a time,
@@ -2928,6 +2931,19 @@ function checkActed(
       }
       return ok;
     }
+    case 'setAuraReach': {
+      // The table's record of who stands inside an aura, kept only where no
+      // board can measure it. Either player may set it, as either may place a
+      // Token, so the aura may be the other squad's.
+      if (!state.noBoard) return no('A board measures an aura\'s Range itself.');
+      const src = state.tokens.find((x) => x.uid === cmd.sourceUid);
+      const a = src ? auraActionOf(data, src, cmd.actionId) : undefined;
+      if (!src || !a) return no('That is not an aura on the table.');
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      if (!auraCanReach(src, a, target)) return no(`${a.name.en ?? a.id} cannot reach ${target.label}.`);
+      return ok;
+    }
     case 'removeStatus':
     case 'ageStatus': {
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
@@ -5364,6 +5380,15 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       }
       return;
     }
+    case 'setAuraReach': {
+      const src = state.tokens.find((x) => x.uid === cmd.sourceUid);
+      if (!src || !/^[A-Za-z0-9][\w-]*$/.test(cmd.actionId)) return;
+      const inside = new Set((src.auraReaches ??= {})[cmd.actionId] ?? []);
+      if (cmd.on) inside.add(cmd.targetUid);
+      else inside.delete(cmd.targetUid);
+      src.auraReaches[cmd.actionId] = [...inside].sort((x, y) => x - y);
+      return;
+    }
     case 'applyStatus': {
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return;
@@ -6388,6 +6413,11 @@ export function perform(data: GameData, state: GameState, cmd: Command): CheckRe
   historian?.(state, cmd);
   apply(data, state, cmd);
   rememberFielded(data, state);
+  // Every unit of a board-less table carries its aura record, one this command
+  // just put down included, and a board's carry none (aurasOn reads the record
+  // by its presence).
+  if (state.noBoard) for (const t of state.tokens) t.auraReaches ??= {};
+  else for (const t of state.tokens) if (t.auraReaches) delete t.auraReaches;
   // Mirrored only after it has actually landed here, so the other player never
   // sees a move this client refused to make — and never if it is secret.
   if (!applyingRemote && !isSecret(cmd)) mirror?.(cmd);

@@ -125,19 +125,81 @@ const REF = new RegExp([
 ].map((r) => `(?:${r})`).join('|'));
 const ONLY_REF = new RegExp(`^(?:${REF.source})$`);
 
+// The parentheses cut, and whether any was.
+function cutRefs(text: string): { text: string; cut: boolean } {
+  let cut = false;
+  const out = text.replace(/\s*\(([^()]*)\)/g, (whole, inner: string) => {
+    const parts = inner.split(/\s*[,;]\s*|\s+(?:and|or)\s+|\s*\/\s*/).filter(Boolean);
+    if (!parts.length) return whole;
+    const kept = parts.filter((p) => !ONLY_REF.test(p.trim()));
+    if (kept.length === parts.length) return whole;
+    cut = true;
+    return kept.length ? ` (${kept.join(', ')})` : '';
+  });
+  return { text: out, cut };
+}
+
 export function speak(text: string, voice: NoticeVoice): string {
   if (voice === 'teaching') return text.trim();
-  return text
-    .replace(/\s*\(([^()]*)\)/g, (whole, inner: string) => {
-      const parts = inner.split(/\s*[,;]\s*|\s+(?:and|or)\s+|\s*\/\s*/).filter(Boolean);
-      if (!parts.length) return whole;
-      const kept = parts.filter((p) => !ONLY_REF.test(p.trim()));
-      if (kept.length === parts.length) return whole;
-      return kept.length ? ` (${kept.join(', ')})` : '';
-    })
+  return cutRefs(text).text
     .replace(/\s+([.,;:!?])/g, '$1')
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+// The same cut for a piece of drawn text: the references go and nothing else
+// moves, so the spaces a text node shares with its neighbours survive.
+export function stripRefs(text: string): string {
+  if (!text.includes('(')) return text;
+  const r = cutRefs(text);
+  return r.cut ? r.text.replace(/(\S)\s+([.,;:!?])/g, '$1$2') : text;
+}
+
+// ---------- the play surface in the same voice (pick 4) ----------
+//
+// "No rule numbers in play" (OTTO, 2026-09-29): the combat window, the panels,
+// the dialogs and the tooltips of a page in play read the words, the way the
+// line does. Every string keeps its numbers in the source, for the Teaching
+// voice and for whoever reads the code; the page hands its play surface to
+// this, which cuts them as the text is drawn. Anything inside `keep` (the
+// Reference's own sheets, a card's rulebook blocks, the card tooltip) is left
+// as written, and `active` lets a page stand it down (the tabletop's Teaching).
+export function speakInPlace(root: HTMLElement, opts: { keep?: string; active?: () => boolean } = {}): () => void {
+  const keep = opts.keep ?? '';
+  const on = opts.active ?? (() => true);
+  const kept = (el: Element | null): boolean => !el || !!el.closest('script, style, textarea, code, pre') || (!!keep && !!el.closest(keep));
+  const text = (t: Text): void => {
+    if (kept(t.parentElement)) return;
+    const next = stripRefs(t.data);
+    if (next !== t.data) t.data = next;
+  };
+  const title = (el: Element): void => {
+    const was = el.getAttribute('title');
+    if (!was || kept(el)) return;
+    const next = stripRefs(was);
+    if (next !== was) el.setAttribute('title', next);
+  };
+  const walk = (node: Node): void => {
+    if (node.nodeType === Node.TEXT_NODE) { text(node as Text); return; }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as Element;
+    if (kept(el)) return;
+    title(el);
+    for (const t of el.querySelectorAll('[title]')) title(t);
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) text(n as Text);
+  };
+  const seen = new MutationObserver((records) => {
+    if (!on()) return;
+    for (const r of records) {
+      if (r.type === 'characterData') text(r.target as Text);
+      else if (r.type === 'attributes') title(r.target as Element);
+      else r.addedNodes.forEach(walk);
+    }
+  });
+  if (on()) walk(root);
+  seen.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['title'] });
+  return () => seen.disconnect();
 }
 
 function draw(): void {

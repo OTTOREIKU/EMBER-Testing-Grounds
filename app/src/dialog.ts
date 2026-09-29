@@ -145,7 +145,7 @@ export interface PickRow {
   on?: boolean;
 }
 
-export function pickManyDialog(o: BaseOpts & { rows: PickRow[]; confirmLabel?: string; allowNone?: boolean }): Promise<string[] | null> {
+export function pickManyDialog(o: BaseOpts & { rows: PickRow[]; confirmLabel?: string; allowNone?: boolean; cancelLabel?: string }): Promise<string[] | null> {
   return new Promise((resolve) => {
     const rows = o.rows
       .map((r) => `<button type="button" class="dlg-pick" data-pick="${esc(r.id)}" aria-pressed="${r.on ? 'true' : 'false'}">
@@ -156,7 +156,7 @@ export function pickManyDialog(o: BaseOpts & { rows: PickRow[]; confirmLabel?: s
       `<h3 class="dlg-title">${esc(o.title)}</h3>${bodyHtml(o)}<div class="dlg-picks">${rows}</div>
        <div class="dlg-actions">
          <button class="dlg-primary" data-ok>${esc(o.confirmLabel ?? 'Confirm')}</button>
-         <button data-cancel>Cancel</button>
+         <button data-cancel>${esc(o.cancelLabel ?? 'Cancel')}</button>
        </div>`,
       (panel, close) => {
         const ok = panel.querySelector<HTMLButtonElement>('[data-ok]')!;

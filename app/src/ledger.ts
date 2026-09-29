@@ -175,6 +175,8 @@ type AnyCmd = {
   seat?: Side;
   uid?: number;
   targetUid?: number;
+  sourceUid?: number;
+  on?: boolean;
   actionId?: string;
   cardId?: string;
   shared?: boolean;
@@ -252,6 +254,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'drainLink': label = `${target()} loses ${c.n ?? 1} Link`; break;
     case 'restoreLink': label = `${who()} recovers Link`; break;
     case 'recoverLink': label = `${target()} recovers 1 Link`; break;
+    case 'setAuraReach': label = `${target()} ${c.on ? 'stands in' : 'is out of'} ${(c.sourceUid !== undefined && c.actionId ? names?.action?.(c.sourceUid, c.actionId) : undefined) ?? 'an aura'}`; break;
     case 'applyStatus': label = `${target()} gains ${c.stacks && c.stacks > 1 ? `${c.stacks} ` : 'a '}${c.statusId ?? 'status'} Token${c.stacks && c.stacks > 1 ? 's' : ''}`; break;
     case 'removeStatus': label = `${target()} loses a ${c.statusId ?? 'status'} Token`; break;
     case 'ageStatus': label = `${target()}'s ${c.statusId ?? 'status'} Token ages`; break;

@@ -3246,7 +3246,12 @@ export function aurasOn(data: GameData, tokens: Token[], t: Token, opts: { anywh
             if (allies !== (src.side === t.side)) continue;
             const want = eff.targetUnitType;
             if (want && want !== 'unit' && want !== t.kind) continue;
-            if (!opts.anywhere && rangeBetween(src, t).range > auraReach(data, src, a)) continue;
+            // With no board the table's record stands in for the Range (the
+            // block below); the source is always inside its own.
+            const rec = src.auraReaches;
+            if (!opts.anywhere && (rec
+              ? src.uid !== t.uid && !(rec[a.id] ?? []).includes(t.uid)
+              : rangeBetween(src, t).range > auraReach(data, src, a))) continue;
             out.push({
               kinds: [...eff.effectTypes],
               value: eff.value ?? 0,
@@ -3255,6 +3260,101 @@ export function aurasOn(data: GameData, tokens: Token[], t: Token, opts: { anywh
               actionId: a.id,
               source: src,
             });
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// ---------- Who stands inside an aura, on a table with no board ----------
+//
+// OTTO, 2026-09-29: the pad cannot measure an aura's Range, and a Guided pad
+// stands every unit on one placeholder cell, so every aura reached everyone.
+// The table says who stands inside instead: a uid list per aura Action on the
+// SOURCE token (`auraReaches`, set by the setAuraReach command), which aurasOn
+// reads in place of the Range whenever the source carries one. Every unit of a
+// board-less table carries it (migrateState and perform keep that true), and
+// no unit of a board's does.
+
+export interface AuraEffect { kinds: string[]; value: number; enemy: boolean; unitType?: string }
+
+// The aura effects an Action projects, with the two filters the data carries.
+export function auraEffectsOf(a: CardAction): AuraEffect[] {
+  const out: AuraEffect[] = [];
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const eff = e as { type?: string; effectTypes?: string[]; targetSide?: string; targetUnitType?: string; value?: number };
+      if (eff.type !== 'aura' || !eff.effectTypes?.length) continue;
+      out.push({ kinds: [...eff.effectTypes], value: eff.value ?? 0, enemy: eff.targetSide === 'enemy', unitType: eff.targetUnitType });
+    }
+  }
+  return out;
+}
+
+// An aura Action this unit carries on its own cards, by id.
+export function auraActionOf(data: GameData, src: Token, actionId: string): CardAction | undefined {
+  for (const { card } of tokenCards(data, src)) {
+    const a = (card.actions ?? []).find((x) => x.id === actionId);
+    if (a && auraEffectsOf(a).length) return a;
+  }
+  return undefined;
+}
+
+// Whether the aura could ever touch `t`, by the side and unit-type filters
+// aurasOn applies. The source is inside its own ally aura by rule (a unit is
+// its own ally, Q4), so it is never one to tick; nor is a unit off the table.
+export function auraCanReach(src: Token, a: CardAction, t: Token): boolean {
+  if (t.uid === src.uid || t.deployed === false) return false;
+  return auraEffectsOf(a).some((e) => e.enemy === (src.side !== t.side) && (!e.unitType || e.unitType === 'unit' || e.unitType === t.kind));
+}
+
+// The units the table is offered to tick: every standing one it could touch.
+export function auraReachable(tokens: Token[], src: Token, a: CardAction): Token[] {
+  return tokens.filter((t) => auraCanReach(src, a, t) && (t.partStates[t.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed');
+}
+
+// Whether the table has `t` inside this aura; the source always is.
+export function inAuraReach(src: Token, actionId: string, t: Token): boolean {
+  return t.uid === src.uid || (src.auraReaches?.[actionId] ?? []).includes(t.uid);
+}
+
+// The auras that change an exchange's numbers, for the table to confirm at the
+// roll: a Range on the attacker, White dice or Low Profile on the target, and
+// Strength in a Counter-roll. Flexible Timing and the rest change no roll, so
+// they are never listed, and neither is an aura on its own source, which
+// always holds. Every aura a unit on the table projects, standing or not in
+// the record, since what the table is asked is whether it holds.
+export interface AuraAtRoll { src: Token; act: CardAction; unit: Token; text: string }
+export function aurasAtRoll(data: GameData, tokens: Token[], attacker: Token, defender: Token, a: CardAction | undefined, electronic: boolean): AuraAtRoll[] {
+  const out: AuraAtRoll[] = [];
+  const firing = a?.type === 'Firing';
+  for (const src of tokens) {
+    if (src.deployed === false || (src.partStates[src.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') continue;
+    if (src.kind === 'mech' && src.stance === 'shutdown') continue;
+    for (const { slot, card } of tokenCards(data, src)) {
+      if ((src.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+      for (const act of card.actions ?? []) {
+        const add = (unit: Token, text: string): void => {
+          if (!auraCanReach(src, act, unit) || out.some((c) => c.src.uid === src.uid && c.act.id === act.id && c.unit.uid === unit.uid)) return;
+          out.push({ src, act, unit, text });
+        };
+        for (const e of auraEffectsOf(act)) {
+          for (const k of e.kinds) {
+            if (electronic) {
+              if (k === 'electronic_contest_strength_penalty') {
+                // The data carries the penalty signed (-1); the line says it once.
+                const by = Math.abs(e.value) || 1;
+                add(attacker, `${attacker.label}: Strength -${by}`);
+                add(defender, `${defender.label}: Strength -${by}`);
+              }
+              continue;
+            }
+            if (firing && k === (attacker.kind === 'drone' ? 'drone_firing_range_bonus' : 'firing_range_bonus')) add(attacker, `+${e.value || 1} Range`);
+            if (firing && k === 'target_counts_low_profile') add(attacker, 'Low Profile');
+            if (k === 'defense_white_dice_bonus') add(defender, `+${e.value || 1}W`);
+            if (firing && k === 'low_profile') add(defender, 'Low Profile');
           }
         }
       }
@@ -6772,6 +6872,20 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       ammo: { ...initAmmo(cards), ...countsOnly(t.ammo) },
       intercept: { ...initIntercept(cards), ...countsOnly(t.intercept) },
       charge: Array.isArray(t.charge) && t.charge.length ? t.charge.filter((x: unknown) => typeof x === 'string') : undefined,
+      // Who stands inside its auras, on a table with no board, where every
+      // unit carries it (its presence is what aurasOn reads). A key that could
+      // not be an Action id and anything but a whole uid do not survive a load.
+      ...((s as { noBoard?: boolean }).noBoard ? {
+        auraReaches: (() => {
+          const was = t.auraReaches && typeof t.auraReaches === 'object' ? t.auraReaches as Record<string, unknown> : {};
+          const out: Record<string, number[]> = {};
+          for (const [k, v] of Object.entries(was)) {
+            if (!/^[A-Za-z0-9][\w-]*$/.test(k) || !Array.isArray(v)) continue;
+            out[k] = [...new Set(v.filter((x): x is number => Number.isInteger(x)))].sort((x, y) => x - y);
+          }
+          return out;
+        })(),
+      } : {}),
       log: listOf(t.log).filter((e) => typeof e.text === 'string').map((e) => ({ round: int(e.round, 0), text: e.text as string })),
       // migrateState rebuilds a token FIELD BY FIELD, so anything not named
       // here is dropped on load. Both of these are rules-bearing and both are

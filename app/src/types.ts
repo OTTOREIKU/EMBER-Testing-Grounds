@@ -301,6 +301,11 @@ export interface Token {
   ammo: Record<string, number>;
   intercept?: Record<string, number>;
   charge?: string[];
+  // Who stands inside this unit's auras, on a table with no board: a uid list
+  // per aura Action id, set by the table (setAuraReach). Present on every unit
+  // of such a table and on none of a board's, which is how aurasOn knows to
+  // read it in place of the Range (units.ts, "Who stands inside an aura").
+  auraReaches?: Record<string, number[]>;
   log?: LogEntry[];
   statuses?: string[];
   // The High Temperature Grid this unit was last seen standing in, as

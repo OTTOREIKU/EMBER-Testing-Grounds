@@ -124,6 +124,13 @@ export function boardFingerprint(state: GameState): string {
       t.mine ? `${(t.mine.spared ?? []).map((x) => `${x.uid}@${x.col},${x.row}`).sort().join(';')}|${t.mine.owed ? 1 : 0}` : null,
       // The Pholcus's M18.4 blast, owed by its Unfold (D2).
       t.unfoldBlast ? 1 : null,
+      // Who stands inside its auras on a table with no board: every aura rule
+      // reads it, so a drift changes dice on one board only. Only a record
+      // with someone in it is hashed, so every other board hashes as before.
+      ...(() => {
+        const r = Object.entries(t.auraReaches ?? {}).filter(([, v]) => v.length).map(([k, v]) => `${k}:${[...v].sort((x, y) => x - y).join(',')}`).sort();
+        return r.length ? [r] : [];
+      })(),
       // NOT hashed, deliberately: `label` and `log` are display, `timing` is
       // secret until the reveal, and `aerial`/`barricade` are re-derived from
       // the card by migrateState so they cannot drift while cardId agrees.
