@@ -16,9 +16,9 @@ import { readyCommands, rebootOwed, taskDesignations, missionZones, type CheckRe
 import { asterBlockers, offerCoordination, runAster } from '../src/commandpick';
 import { alive, canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn, tiedChoices, type LoopPhase } from '../src/loop';
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
-import { ensureScript } from '../src/glue';
+import { ensureScript, idleWorldFor } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
-import { allyRepairTargets, overwatchOf, firewatchOn, electronicStrength, interceptorsAgainst, bitPortOf, coordinationAfterManeuver, canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
+import { allyRepairTargets, overwatchOf, firewatchOn, electronicStrength, interceptorsAgainst, bitPortOf, coordinationAfterManeuver, canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed, actionIdleWhy } from '../src/units';
 import { boxHands, normaliseTasks, remoteAccessWhy, terminalsInReach } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
 import { PHASES, removableTokens, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Stance, type Timing, type Token, type TokenPick } from '../src/types';
@@ -196,6 +196,13 @@ function btn(api: GuideApi, act: string, label: string, attrs = '', cls = 'pad-c
   return `<button class="${cls}" data-act="${act}" ${attrs}>${api.esc(label)}</button>`;
 }
 
+// A chip the rules refuse: greyed, a tap does nothing, and a long press puts
+// the reason in the notice line (OTTO's picks 2 and 6, 2026-09-28). It used to
+// be `disabled` with the reason in a title, which a phone never shows.
+function refused(api: GuideApi, why: string): string {
+  return ` aria-disabled="true" data-why="${api.esc(why)}"`;
+}
+
 export function turnHtml(api: GuideApi): string {
   const s = api.state();
   const su = normaliseSetup(s.setup);
@@ -217,7 +224,7 @@ export function turnHtml(api: GuideApi): string {
 // its place with the reason (audit Phase 6, H1, H2).
 function tacticsStrip(api: GuideApi): string {
   const sides: Side[] = api.solo ? ['s1', 's2'] : [api.me()];
-  const chips = sides.flatMap((side) => api.tactics(side).playable.map((c) => btn(api, 'g-tactic', `${api.solo ? `${api.sideName(side)} · ` : ''}${c.name}`, `data-side="${side}" data-id="${api.esc(c.id)}"${c.why ? ` disabled title="${api.esc(c.why)}"` : ''}`)));
+  const chips = sides.flatMap((side) => api.tactics(side).playable.map((c) => btn(api, 'g-tactic', `${api.solo ? `${api.sideName(side)} · ` : ''}${c.name}`, `data-side="${side}" data-id="${api.esc(c.id)}"${c.why ? refused(api, c.why) : ''}`)));
   return chips.length ? `<div class="pad-turn-react"><p class="pad-turn-name">Tactics Card</p><div class="pad-chips">${chips.join('')}</div></div>` : '';
 }
 
@@ -595,23 +602,23 @@ function extrasHtml(api: GuideApi, t: Token, opp: NonNullable<GameState['script'
   const chips: string[] = [];
   if (overloadPackOn(api.data, t)) {
     const v = canOverload(opp, t.link ?? 0);
-    chips.push(btn(api, 'g-overload', `Overload ${opp.overload}/${OVERLOAD_MAX}`, `${v.ok ? '' : ' disabled'} title="${api.esc(v.ok ? 'Consume 1 Link for 1 Action Tick.' : v.why ?? '')}"`));
+    chips.push(btn(api, 'g-overload', `Overload ${opp.overload}/${OVERLOAD_MAX}`, v.ok ? ` title="${api.esc('Consume 1 Link for 1 Action Tick.')}"` : refused(api, v.why ?? '')));
   }
   const trait = linkTickTraitOn(api.data, t);
   if (trait) {
     const v = api.check({ kind: 'linkTick', seat: t.side, uid: t.uid });
-    chips.push(btn(api, 'g-linktick', `${trait.label.replace(/^Hammerhead /, '')} ${opp.linkTicks ?? 0}/${trait.maxLink}`, `${v.ok ? '' : ' disabled'} title="${api.esc(v.ok ? 'Consume 1 Link for 1 Action Tick (FAQ L2).' : v.why ?? '')}"`));
+    chips.push(btn(api, 'g-linktick', `${trait.label.replace(/^Hammerhead /, '')} ${opp.linkTicks ?? 0}/${trait.maxLink}`, v.ok ? ` title="${api.esc('Consume 1 Link for 1 Action Tick (FAQ L2).')}"` : refused(api, v.why ?? '')));
   }
   // ZPA-38 Firewatch (GoF 1.021): 1 Link for a Command Token as the Mech gains
   // the Opportunity.
   if (firewatchOn(api.data, t)) {
     const v = api.check({ kind: 'firewatch', seat: t.side, uid: t.uid });
-    chips.push(btn(api, 'g-firewatch', opp.firewatch ? 'Firewatch taken' : 'Firewatch: 1 Link → Command', `${v.ok ? '' : ' disabled'} title="${api.esc(v.ok ? 'Consume 1 Link to generate a Command Token, as this Mech gains its Action Opportunity.' : v.why ?? '')}"`));
+    chips.push(btn(api, 'g-firewatch', opp.firewatch ? 'Firewatch taken' : 'Firewatch: 1 Link → Command', v.ok ? ` title="${api.esc('Consume 1 Link to generate a Command Token, as this Mech gains its Action Opportunity.')}"` : refused(api, v.why ?? '')));
   }
   const bonus = opportunityBonusOn(api.data, t);
   if (bonus) {
     const v = canAttackMode(opp, t.stance, bonus.stance);
-    chips.push(btn(api, 'g-attackmode', opp.attackMode ? `${bonus.label} taken` : `${bonus.label} +${bonus.actionPoints}`, `${v.ok ? '' : ' disabled'} title="${api.esc(v.ok ? 'Extra Action Ticks for this Opportunity; the Stance is then set (4.1).' : v.why ?? '')}"`));
+    chips.push(btn(api, 'g-attackmode', opp.attackMode ? `${bonus.label} taken` : `${bonus.label} +${bonus.actionPoints}`, v.ok ? ` title="${api.esc('Extra Action Ticks for this Opportunity; the Stance is then set (4.1).')}"` : refused(api, v.why ?? '')));
   }
   return chips.length ? `<div class="pad-chips">${chips.join('')}</div>` : '';
 }
@@ -624,7 +631,7 @@ function asterHtml(api: GuideApi, side: Side): string {
     .filter((t) => t.side === side && t.kind === 'mech' && (t.partStates.torso ?? 'intact') !== 'destroyed' && pilotCard(api.data, t)?.id === 'ZPA-36')
     .map((t) => {
       const why = asterBlockers(s, t) ?? '';
-      return btn(api, 'g-aster', `${t.label}: Aster, restore 1 Link`, `data-uid="${t.uid}"${why ? ' disabled' : ''} title="${api.esc(why || '1 Command Token restores 1 Link to an Ally Mech.')}"`);
+      return btn(api, 'g-aster', `${t.label}: Aster, restore 1 Link`, `data-uid="${t.uid}"${why ? refused(api, why) : ` title="${api.esc('1 Command Token restores 1 Link to an Ally Mech.')}"`}`);
     });
   return rows.length ? `<div class="pad-chips">${rows.join('')}</div>` : '';
 }
@@ -988,7 +995,7 @@ function endHtml(api: GuideApi): string {
   // ones before it; the engine refuses it out of order (audit Phase 6, B6).
   const before: Record<string, string[]> = { tokens: ['remove'], tasks: ['remove', 'tokens'] };
   const waits = (id: string) => (before[id] ?? []).some((x) => !done(x));
-  const wait = ' disabled title="The steps above come first (3.7)"';
+  const wait = refused(api, 'The steps above come first (3.7).');
   const rows = steps.map((st) => `<div class="pad-turn-row"><span class="pad-turn-name">${api.esc(st.label)}</span>
       ${done(st.id) ? '<span class="pad-turn-val">✓</span>' : (api.solo || api.me() === s.round.firstPlayer
         // Check Tasks opens the score sheet; its Done pays what is owed first.
@@ -1060,14 +1067,18 @@ export function performButton(api: GuideApi, t: Token, a: CardAction, partKey: s
   // sits on top of them - the icon lock, RWS, Shutdown. A length-less Mech
   // Action is not a choice an Opportunity pays for, so it gets no button.
   if (t.kind === 'mech' && !len) return '';
+  // An Action with nothing to do first (units.ts actionIdleWhy, the reading
+  // every page greys by), then the engine's own answer.
+  const idle = actionIdleWhy(api.data, t, a, idleWorldFor(api.data, s));
   const chk = api.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, partKey, ...(hands ? { twoHanded: true } : {}) });
-  const v: TickVerdict = chk.ok ? { ok: true } : { ok: false, why: chk.why ?? 'Not now' };
+  const v: TickVerdict = idle ? { ok: false, why: idle } : chk.ok ? { ok: true } : { ok: false, why: chk.why ?? 'Not now' };
   void opp;
   const cost = costOf(paidAs);
   const price = cost ? `${cost.maneuver ? 'M' : ''}${'●'.repeat(cost.action)}` : '';
-  return v.ok
-    ? `<button class="pad-chip on pad-perform" data-act="g-perform" data-uid="${t.uid}" data-id="${api.esc(a.id)}">Perform${price ? ` ${price}` : ''}</button>`
-    : `<span class="pad-perform-no">${api.esc(v.why ?? 'Not now')}</span>`;
+  // Refused, it stays a button, greyed, and says why on a long press (OTTO's
+  // picks 2 and 6, 2026-09-28): the engine's full sentence printed in its
+  // place was the loudest line on the sheet.
+  return `<button class="pad-chip on pad-perform" data-act="g-perform" data-uid="${t.uid}" data-id="${api.esc(a.id)}"${v.ok ? '' : ` aria-disabled="true" data-why="${api.esc(v.why ?? 'Not now')}"`}>Perform${price ? ` ${price}` : ''}</button>`;
 }
 
 // ---------- the buttons ----------

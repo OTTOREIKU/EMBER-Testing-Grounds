@@ -37,7 +37,7 @@ import '../src/combat.css';
 import { EmberApi, ApiError, type Account, type RegistrationInfo, type SquadEntry } from '../src/api';
 import { Relay, type NetView, type RolledDie } from '../src/net';
 import { ammoAvailable, applyRemote, check, rebootWhy, onBeforeApply, onPerformed, onRefused, perform, taskDesignations, type Command } from '../src/commands';
-import { glueAfter } from '../src/glue';
+import { glueAfter, idleWorldFor } from '../src/glue';
 import { askDesignation, askLinkSupport, askRemoteAccess, askTokenCleanup, designationsFor, activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
 import { countHits, normaliseSetup, tasksLocked } from '../src/setup';
 import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack, isAttackAction, mountAttack, sweepView, syncMirror, type TableVerdict } from './attack';
@@ -71,10 +71,9 @@ import { gameEndsThisRound, lowValueOf, previewScore, vipFallen } from '../src/s
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from '../src/tactics';
 import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop } from '../src/units';
 import { gameResult } from '../src/tasks';
-import { isMeleeFiring } from '../src/melee';
-import { isSilentAction, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
+import { isSilentAction, actionSilenceDenier, auraReach, type AuraSource, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { canManeuver, canPerform, costOf, lengthOf, LENGTH_NAME, markAction, markExtra, markManeuver, spendAction, spendManeuver, tickBarState, timingOf } from '../src/ticks';
-import { cardFitsSquad, extrasFor, factionProblems, squadPoints, startOpts } from '../src/units';
+import { actionIdleWhy, cardFitsSquad, extrasFor, factionProblems, squadPoints, startOpts } from '../src/units';
 import { tickBar, type CapsuleShort } from '../src/glyphs';
 import { newOpportunity, newScriptState, PHASES, SCALES, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS, tokenFaces } from '../src/types';
 import type { Card, CardAction, DieColor, GameState, ImportedSquad, MechLoadout, Opportunity, PartSlot, PartState, Side, Stance, Token } from '../src/types';
@@ -128,6 +127,8 @@ function resetTable(): void {
   resetSheetViews();
   side = null;
   panel = null;
+  targetFor = null;
+  declaring = null;
   looks = [];
   // The ledger belongs to the table that made it. Undoing into a game that is
   // no longer on the screen would restore a board nobody is playing.
@@ -365,6 +366,8 @@ function resetSheetViews(): void {
 // The server reaps an idle room after an hour, so a code older than that is a
 // code for a table that is not there. Same window the Match Centre uses.
 const ROOM_WINDOW_MS = 60 * 60 * 1000;
+// A Black Box nobody on the table could carry (boxTakers).
+const NO_BOX_TAKER = 'No unit has a free Freehand Part to carry it (5.3.1).';
 
 // localStorage can throw outright in a private window, so every touch of it
 // is guarded, and a phone with site data blocked tracks for this session only.
@@ -933,7 +936,7 @@ function pendingGuidedHtml(): string {
       : empty[0] === mySeat() ? 'You have no squad yet.'
       : `${view.room?.seats[empty[0]] ?? 'The other side'} has no squad yet.`)}</p>` : ''}
     <div class="pad-chips">
-      <button class="pad-chip on" data-act="g-start"${waiting ? ' disabled' : ''}>${waiting ? 'Waiting for the other player…' : 'Start the guided game'}</button>
+      <button class="pad-chip on" data-act="g-start"${waiting ? ' disabled' : greyWhy(!table.tokens.length, 'Add the squads first.')}>${waiting ? 'Waiting for the other player…' : 'Start the guided game'}</button>
       <button class="pad-chip" data-act="open-setup">Setup</button>
     </div>`;
 }
@@ -1231,7 +1234,12 @@ async function callOverwatch(t: Token, actionId: string): Promise<void> {
   const what = a.name.en || a.id;
   const foes = table.tokens.filter((x) => x.side !== t.side && x.deployed !== false && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed');
   const mechs = table.tokens.filter((x) => x.side === t.side && x.kind === 'mech' && x.deployed !== false && (x.partStates.torso ?? 'intact') !== 'destroyed' && x.stance !== 'shutdown');
-  if (!foes.length || !mechs.length) { toast(!foes.length ? 'No enemy is on the table.' : 'No Ally Mech can fire.', 'refused'); return; }
+  // The reading its chip is greyed by (units.ts actionIdleWhy), in the same
+  // words; that reading leaves a board's table to its own door, and a room's
+  // table may have one, so the two checks stand here too (review 2026-09-29).
+  const none = actionIdleWhy(data, t, a, idleWorldFor(data, table))
+    ?? (!foes.length ? 'No enemy is on the table.' : !mechs.length ? 'No Ally Mech can fire.' : null);
+  if (none) { toast(none, 'refused'); return; }
   const aim = await choiceDialog({
     title: `${what}: which enemy?`,
     body: `Within Range ${a.range ?? 0} of ${t.label}, on the table.`,
@@ -1283,7 +1291,8 @@ type PickMode = 'attack' | 'intercept' | 'electronic';
 // `only`: the one target the rules allow (a Riposte answers the attacker, FAQ C1).
 // `resumed`: the attack behind a won free Scan (FAQ I12), whose Action was
 // paid at the designation, so it is not paid again.
-let targetFor: { uid: number; actionId: string; mode: PickMode; granted?: boolean; only?: number; resumed?: boolean } | null = null;
+type TargetRequest = { uid: number; actionId: string; mode: PickMode; granted?: boolean; only?: number; resumed?: boolean };
+let targetFor: TargetRequest | null = null;
 
 initAttack({
   get data() { return data!; },
@@ -1378,25 +1387,27 @@ initEw({
 
 // An Interception: the table judges Range to the projectile, the Token is
 // spent, and the window opens with line of sight given (4.9).
+// The pick and the Target panel's Intercept say the table sees it in Range
+// with a line clear of smoke (4.9, 4.16, FAQ F3), which a dialog used to ask.
+// A unit marked In smoke is greyed in the list instead (interceptSmokeWhy),
+// since it can neither be Intercepted nor Intercept.
 async function askTableAndIntercept(by: Token, actionId: string, target: Token): Promise<void> {
-  // An Interception is a Firing Action (FAQ M26): terrain never blocks a line to
-  // an Aerial Unit, but a Smoke Screen over every line does (FAQ F3). The
-  // question never said so (audit Phase 4, G4).
-  // The table's "In smoke" record, which the pad keeps: said here, where it
-  // decides the shot (audit Phase 4, G12).
-  const marked = [by, target].filter((u) => statusCount(u.statuses, 'smoke') > 0);
-  const clear = await choiceDialog({
-    title: `${by.label} intercepts ${target.label}`,
-    body: `Range to the projectile, at its start or its landing, and a line to it that crosses no Smoke Screen, on the table (4.9, 4.16, FAQ F3).${
-      marked.length ? ` ${marked.map((u) => u.label).join(' and ')} ${marked.length === 1 ? 'is' : 'are'} marked In smoke, and a unit in a Smoke Screen can neither be Intercepted nor Intercept.` : ''}`,
-    choices: [{ id: 'yes', label: 'In range, a line clear of smoke', primary: true }, { id: 'no', label: 'Not this target', cancel: true }],
-    stacked: true,
-  });
-  if (clear !== 'yes') return;
+  const smoked = interceptSmokeWhy(by, target);
+  if (smoked) { toast(smoked, 'refused'); return; }
+  // Where "Undo the whole attack" takes it back to, as a declared attack's does.
+  attackDepth = historyDepth();
   if (!send({ kind: 'spendIntercept', seat: by.side, uid: by.uid, actionId })) return;
   panel = 'combat';
   render();
   if (!beginAttack(by, actionId, target, { protection: 0, backAttack: false, intercept: true })) { panel = null; render(); }
+}
+
+// The table's "In smoke" record decides an Interception (audit Phase 4, G12):
+// a unit in a Smoke Screen can neither be Intercepted nor Intercept (4.16).
+function interceptSmokeWhy(by: Token, target: Token): string | null {
+  if (statusCount(by.statuses, 'smoke') > 0) return `${by.label} is marked In smoke, and a unit in a Smoke Screen cannot Intercept (4.16).`;
+  if (statusCount(target.statuses, 'smoke') > 0) return `${target.label} is marked In smoke, and a unit in a Smoke Screen cannot be Intercepted (4.16).`;
+  return null;
 }
 
 // An Electronic Attack: only Range matters (4.11.1), judged on the table; a
@@ -1428,9 +1439,8 @@ function actionOfUnit(t: Token, actionId: string): CardAction | undefined {
 async function askTableAndElectronicAll(attacker: Token, a: CardAction): Promise<void> {
   const pool = electronicAllTargets(data!, table.tokens, attacker, a, true);
   if (!pool.length) {
-    toast(isScanAction(a)
-      ? 'No enemy is in the Optical Camouflage State or bearing a Low Profile Token, so the Scan finds nothing (4.12.4).'
-      : `No enemy unit ${a.name.en ?? a.id} can target is on the table.`, 'refused');
+    // The reading its chip is greyed by (units.ts actionIdleWhy).
+    toast(actionIdleWhy(data!, attacker, a, idleWorldFor(data!, table)) ?? `No enemy unit ${a.name.en ?? a.id} can target is on the table.`, 'refused');
     return;
   }
   const picked = await pickManyDialog({
@@ -1462,14 +1472,10 @@ function openTerminalRoll(t: Token, actionId: string, itemId: string, zoneName: 
   if (!beginTerminal(t, actionId, item, zoneName, joined)) { panel = null; render(); }
 }
 
+// Only Range matters, terrain and line of sight ignored (4.11.1): the pick and
+// the Target panel's Counter-roll say the table sees it in Range, which a
+// dialog ("In range / Not this target") used to ask.
 async function askTableAndElectronic(attacker: Token, actionId: string, defender: Token): Promise<void> {
-  const clear = await choiceDialog({
-    title: `${attacker.label} targets ${defender.label}`,
-    body: 'Range, on the table. Terrain and line of sight are ignored (4.11.1).',
-    choices: [{ id: 'yes', label: 'In range', primary: true }, { id: 'no', label: 'Not this target', cancel: true }],
-    stacked: true,
-  });
-  if (clear !== 'yes') return;
   const lent = lentPay(attacker, actionId);
   if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...bothHands(attacker, actionId), ...lent })) return;
   spendFree(attacker, actionId, lent.partKey);
@@ -1490,19 +1496,49 @@ let undoAttackTo: number | null = null;
 // camouflaged unit Reveals, its Manifestation made on the table. Freeform did
 // neither (audit Phase 3, B3, C3); a Guided game's performAction does both.
 function freeformSilence(t: Token, a: CardAction | undefined): void {
-  if (guidedOn(table) || !a || activatesCamo(a) || isSilentAction(data!, table.tokens, t, a)) return;
+  if (guidedOn(table) || !a || activatesCamo(a)) return;
   const now = unitOf(t.uid) ?? t;
-  if ((now.statuses ?? []).includes('lowProfile')) {
-    if (send({ kind: 'removeStatus', seat: now.side, uid: now.uid, targetUid: now.uid, statusId: 'lowProfile' })) toast(`${now.label}: ${a.name.en ?? a.id} has no Silence, so its Low Profile Token comes off (4.12.3).`, 'warn');
-  }
-  if (!(now.statuses ?? []).includes('camouflage')) return;
-  const range = manifestationRange(data!, now);
-  void choiceDialog({
-    title: `${now.label} breaks camouflage`,
-    body: `${a.name.en ?? a.id} has no Silence, so the Optical Camouflage ends (4.12.2)${range > 0 ? `: make its Manifestation Movement on the table, within Range ${range} counted orthogonally, and face it as you choose` : ''}.`,
-    choices: [{ id: 'reveal', label: 'Revealed', primary: true }, { id: 'keep', label: 'Keep it hidden (house rule)', cancel: true }],
+  if (!(now.statuses ?? []).some((x) => x === 'lowProfile' || x === 'camouflage')) return;
+  // An aura that takes a printed Silence away (ZHDR-206_A) reaches only so
+  // far, and with no board that is the table's to judge: asked, never read off
+  // the placeholder cells, where every unit stands in reach or none does
+  // (review 2026-09-29). A plain non-Silent Action needs no judging.
+  const aura = actionSilenceDenier(data!, table.tokens, now, a, undefined, undefined, { anywhere: true });
+  if (aura) { void askSilenceAura(now, a, aura); return; }
+  if (!isSilentAction(data!, table.tokens, now, a)) loseSilence(now, a);
+}
+
+// The table says whether the unit stood within the aura that takes its Silence.
+async function askSilenceAura(t: Token, a: CardAction, aura: AuraSource): Promise<void> {
+  const src = aura.source;
+  const act = tokenCards(data!, src).flatMap((c) => c.card.actions ?? []).find((x) => x.id === aura.actionId);
+  const reach = act ? `Range ${auraReach(data!, src, act)}` : 'its Range';
+  const pick = await choiceDialog({
+    title: `${t.label}: is Silence lost?`,
+    body: `${a.name.en ?? a.id} prints Silence, but ${src.label}'s ${aura.label} takes it from an enemy within ${reach}. Did ${t.label} stand within it?`,
+    choices: [{ id: 'in', label: 'Within it: Silence is lost' }, { id: 'out', label: 'Out of it: still Silent', cancel: true }],
     stacked: true,
-  }).then((id) => { if (id === 'reveal') send({ kind: 'reveal', seat: now.side, uid: now.uid }); });
+  });
+  if (pick === 'in') loseSilence(unitOf(t.uid) ?? t, a, `${src.label}'s ${aura.label}`);
+}
+
+// Both consequences, done at once and said in ONE line, so the Low Profile
+// line is not written over by the Reveal's: "Keep it hidden" (a house rule) is
+// the line's Undo, where a dialog used to ask (OTTO's pick 5).
+function loseSilence(t: Token, a: CardAction, by?: string): void {
+  const name = a.name.en ?? a.id;
+  const cause = by ? `${by} takes the Silence of ${name}` : `${name} has no Silence`;
+  const shed = (t.statuses ?? []).includes('lowProfile')
+    && send({ kind: 'removeStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'lowProfile' });
+  const now = unitOf(t.uid) ?? t;
+  if (!(now.statuses ?? []).includes('camouflage')) {
+    if (shed) toast(`${now.label}: ${cause}, so its Low Profile Token comes off.`, 'warn');
+    return;
+  }
+  const range = manifestationRange(data!, now);
+  if (send({ kind: 'reveal', seat: now.side, uid: now.uid })) {
+    toast(`${now.label} breaks camouflage: ${cause}${shed ? ', and its Low Profile Token comes off' : ''}.${range > 0 ? ` Make its Manifestation Movement on the table, within Range ${range}.` : ''}`, 'table', true);
+  }
 }
 
 // The free Scan a camouflaged target earns (4.12.2, FAQ I12; audit Phase 3,
@@ -1510,14 +1546,9 @@ function freeformSilence(t: Token, a: CardAction | undefined): void {
 // player its Reveal and the attacker the attack, which resumes from the strip
 // without paying again; a lost one ends the attack with the Tick spent (I11).
 // The Scan reaches as far as the attack does (I18), judged on the table.
+// The target list tags such a unit "Scan first"; the pick opens one step in
+// the Target panel that says what follows, and its Scan button pays.
 async function scanFirst(attacker: Token, actionId: string, defender: Token): Promise<void> {
-  const go = await choiceDialog({
-    title: `${defender.label} is in Optical Camouflage`,
-    body: `The attack needs a Scan first (4.12.2): one free Scan, at the attack's own range (FAQ I12, I18). If it succeeds, ${defender.label}'s player Reveals it and the attack resumes; if it fails, the attack ends and the Tick is spent (FAQ I11).`,
-    choices: [{ id: 'scan', label: 'Scan it', primary: true }, { id: 'no', label: 'Not this target', cancel: true }],
-    stacked: true,
-  });
-  if (go !== 'scan') return;
   if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...bothHands(attacker, actionId) })) return;
   spendFree(attacker, actionId);
   panel = 'combat';
@@ -1525,206 +1556,248 @@ async function scanFirst(attacker: Token, actionId: string, defender: Token): Pr
   if (!beginFreeScan(attacker, actionId, defender, guidedOn(table))) { panel = null; render(); }
 }
 
-// The table is asked what the board used to read, then the window opens.
-async function askTableAndAttack(attacker: Token, actionId: string, defender: Token, granted = false, resumed = false): Promise<void> {
-  // Its own Parts, the Common Actions, or a lent Load's (actionOfUnit).
-  const a = actionOfUnit(attacker, actionId);
-  // A camouflaged target is Scanned first: one free Scan (4.12.2, FAQ I12). The
-  // pad opened the attack straight, on a unit its marker only suspected
-  // (audit Phase 3, A2). A granted Riposte answers the attacker it can see.
-  if (!granted && !resumed && (defender.statuses ?? []).includes('camouflage')) { await scanFirst(attacker, actionId, defender); return; }
+// ---------- declaring an attack (the Target panel's second step) ----------
+//
+// Picking the target used to set off up to nine dialogs in a row before any
+// die was rolled (notices audit, 2026-09-28): the Shock walk, the shot, the
+// arc, Grace Note, Stationary, Low Profile, [Two-Handed] and the Charge. They
+// are one panel now (OTTO, 2026-09-29): every question that applies, each set
+// to the answer its dialog led with, and one Attack, so the common case is
+// the target and one tap. The shot's "outside the Forward Arc" and "Melee
+// Locked" answers are gone: all they did was refuse the attack the player had
+// just said it could not make.
+// A Scan first, an Electronic Attack and an Interception ask nothing, but stop
+// here too, one tap from the roll: their pick used to pay at once, so a
+// mis-tapped row cost the Action (review, 2026-09-29).
+interface DeclareRow {
+  key: string;
+  label: string;
+  options: { id: string; label: string }[];
+  // What the answer changes, said under the question.
+  note?: string;
+  // An answer the others rule out, with why (a Shock walk is Movement).
+  grey?: Record<string, string>;
+}
+type DeclareKind = 'attack' | 'scan' | 'electronic' | 'intercept';
+// `req`: the one request it answers. The dock, Escape or another Action's chip
+// leave it behind, and one left behind is dropped, never committed against
+// the wrong Action or a table since reset (review, 2026-09-29).
+interface Declaring { kind: DeclareKind; req: TargetRequest; uid: number; actionId: string; defenderUid: number; granted: boolean; resumed: boolean; answers: Record<string, string> }
+let declaring: Declaring | null = null;
+
+// The Charge Token this Action could consume (4.14): a face-up one on the
+// Part the Action comes from, when its text marks a [Charged] effect.
+function chargeSlotFor(attacker: Token, a: CardAction | undefined, actionId: string, granted: boolean): { slot: string | number; label: string } | undefined {
+  if (!a || granted || !/\[Charged\]|\[充能\]/i.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`)) return undefined;
+  return chargeableSlots(data!, attacker).find((x) => x.charged
+    && tokenCards(data!, attacker).some((c) => String(c.slot) === String(x.slot) && (c.card.actions ?? []).some((y) => y.id === actionId)));
+}
+
+// What the table is asked about this attack, in the order the dialogs asked it.
+function declareRows(attacker: Token, a: CardAction | undefined, defender: Token, d: Declaring): DeclareRow[] {
+  const rows: DeclareRow[] = [];
   // Shock Attack X: "Before performing this Action, may move X grids." The
-  // walk is Movement, so it spoils [Stationary] (audit Phase 4, E1), and the
-  // pad never asked: a charge still paid the Stationary bonus. Asked first,
-  // because the range and line of sight below are judged from where it ends.
+  // walk is Movement, so it spoils [Stationary] (audit Phase 4, E1). Made on
+  // the table first; the line of sight below is judged from where it ends.
   const oppNow = table.script?.opp?.uid === attacker.uid ? table.script.opp : null;
-  const shock = a && !resumed ? shockAttackOf(grantAdjusted(stationaryAdjusted(a, oppNow), attacker, oppNow)) : 0;
-  let shocked = false;
+  const shock = a && !d.resumed ? shockAttackOf(grantAdjusted(stationaryAdjusted(a, oppNow), attacker, oppNow)) : 0;
   if (a && shock > 0 && shockMoveAllowed(attacker) && !immobilizedStop(attacker, null)) {
-    const walk = await choiceDialog({
-      title: `${a.name.en}: Shock Attack ${shock}`,
-      body: `${attacker.label} may move up to ${shock} Grid${shock === 1 ? '' : 's'} before this Action. Move it on the table first, then carry on.`,
-      choices: [{ id: 'moved', label: 'It moved first', primary: true }, { id: 'no', label: 'Straight to the attack' }],
-      stacked: true,
-    });
-    if (walk === null) return;
-    shocked = walk === 'moved';
+    // Led with the walk, as its dialog did: left unanswered, the row must not
+    // pay a Stationary bonus the walk spoiled (review, 2026-09-29).
+    rows.push({ key: 'shock', label: `Shock Attack ${shock}`, options: [{ id: 'moved', label: `Moved first, up to ${shock}` }, { id: 'no', label: 'Straight to it' }] });
   }
-  // One question: the shot as the table sees it. A line of sight may exist
-  // and still pass a Terrain Object or a Unit, and each gives the defender
-  // +2 White; both together give +4 (4.4.2). Melee claims no Protection.
-  //
-  // A Melee Action's "--" is the Adjacent Grids, and one printing a Range is
-  // Extended Melee, which needs line of sight (4.6.2, p.59). The pad called
-  // every Melee reach "Base contact" (audit Phase 4, D4).
+  const walked = rows[0]?.key === 'shock' && declared(rows[0], d) === 'moved';
+  // A line of sight may pass a Terrain Object or a Unit, each giving +2 White,
+  // both +4 (4.4.2). Melee claims no Protection, and with an Aerial Unit at
+  // either end the line cannot be obstructed (4.5.2), so neither is asked.
+  if (!(a?.type === 'Melee' || attacker.aerial || defender.aerial)) {
+    rows.push({ key: 'sight', label: 'Line of sight', options: [{ id: '0', label: 'Clear' }, { id: '2t', label: 'Behind terrain +2' }, { id: '2u', label: 'Behind a unit +2' }, { id: '4', label: 'Both +4' }] });
+  }
+  // Named once, in the line above the questions, so the labels stay short.
+  rows.push({ key: 'rear', label: 'Rear arc', options: [{ id: 'no', label: 'No' }, { id: 'yes', label: 'Yes, a back attack' }] });
+  // What the board would have measured, asked instead (audit 2026-09-25): the
+  // pad stands every unit on a placeholder cell. Only where the Action can
+  // use the answer.
+  if (a?.type === 'Firing' && attacker.kind === 'mech' && pilotCard(data!, attacker)?.id === 'LPA-23-2') {
+    rows.push({ key: 'grace', label: 'Grace Note: within 3 grids', options: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] });
+  }
+  if (a && !guidedOn(table) && (stationaryBonus(a) || conditionalGrants(a).some((g) => g.when === 'stationary'))) {
+    // A turn on the spot is Movement too (FAQ E3; audit Phase 4, E9).
+    rows.push({
+      key: 'still', label: 'Stationary this Opportunity',
+      options: [{ id: 'still', label: 'Not moved or turned' }, { id: 'moved', label: 'Moved or turned' }],
+      grey: walked ? { still: 'The Shock walk was Movement.' } : undefined,
+    });
+  }
+  // Low Profile from an effect, which no board can read off positions (J12;
+  // audit Phase 6, C4).
+  if (a?.type === 'Firing' && effectLowProfileCould(data!, table.tokens, defender)) {
+    rows.push({ key: 'lowprof', label: 'Low Profile from an effect', options: [{ id: 'no', label: 'No' }, { id: 'yes', label: 'Yes' }] });
+  }
+  // FAQ A16: [Two-Handed] may be declined.
+  const hands = a && !d.granted ? twoHandedUse(data!, attacker, a, boxHands(table.tasks, attacker.uid)) : null;
+  if (hands) {
+    rows.push({
+      key: 'hands', label: 'Two-Handed', note: `${hands.note.replace(/^\[Two-Handed\]: /, '')}.`,
+      options: [{ id: 'both', label: 'Both hands' }, { id: 'one', label: 'One-handed' }],
+    });
+  }
+  // 4.14: a [Charged] effect applies only if the Token is consumed, and an
+  // either/or line is spent on ONE arm (R7MG 556_A; audit Phase 2, C3/E9).
+  const charged = chargeSlotFor(attacker, a, d.actionId, d.granted);
+  if (charged && a) {
+    const arms = chargeChoices(a);
+    rows.push({
+      key: 'charge', label: `Charge on ${charged.label}`,
+      options: arms.length
+        ? [...arms.map((x) => ({ id: `arm:${x.id}`, label: `Consume: ${x.label}` })), { id: 'no', label: 'Keep it' }]
+        : [{ id: 'yes', label: 'Consume it' }, { id: 'no', label: 'Keep it' }],
+    });
+  }
+  return rows;
+}
+
+// A row's answer: the one chosen, or the one its dialog led with; never one
+// the other answers rule out.
+function declared(row: DeclareRow, d: Declaring): string {
+  const want = d.answers[row.key] ?? row.options[0].id;
+  if (!row.grey?.[want]) return want;
+  return row.options.find((o) => !row.grey?.[o.id])?.id ?? want;
+}
+
+function declarePanel(d: Declaring): string {
+  const t = unitOf(d.uid);
+  const foe = unitOf(d.defenderUid);
+  if (!t || !foe) return `<div class="pad-panel-in">${panelHead('Attack')}<p class="pad-status">That unit is gone.</p></div>`;
+  const printed = actionOfUnit(t, d.actionId);
+  if (d.kind !== 'attack') return declareStartPanel(d, t, foe, printed);
+  const rows = declareRows(t, printed, foe, d);
+  // The reach follows the Two-Handed answer: both hands may add Range.
+  const handsRow = rows.find((r) => r.key === 'hands');
+  const a = printed && handsRow && declared(handsRow, d) === 'both'
+    ? twoHandedUse(data!, t, printed, boxHands(table.tasks, t.uid))?.action ?? printed
+    : printed;
   const melee = a?.type === 'Melee';
   const extended = melee && (a?.range ?? 0) > 0;
-  // 4.5.2: with an Aerial Unit at either end the line of sight cannot be
-  // obstructed, so neither Protection can be claimed and neither is offered.
-  const open = melee || attacker.aerial || defender.aerial;
+  // A Melee Action's "--" is the Adjacent Grids; one printing a Range is
+  // Extended Melee, which needs line of sight (4.6.2, p.59; audit Phase 4, D4).
   const range = melee
-    ? (extended ? `Extended Melee, Range ${a!.range}, with line of sight` : 'Adjacent Grids')
+    ? (extended ? `Extended Melee, Range ${a!.range}` : 'Adjacent Grids')
     : a?.range !== undefined ? `Range ${a.range}` : 'Range as printed';
-  // A Firing Action's line of sight is any line between the bases that crosses
-  // neither 3" terrain nor a Smoke Screen (4.2.4, 4.16); the question never
-  // mentioned smoke (audit Phase 4, G1).
-  const firing = a?.type === 'Firing';
-  // MELEE LOCK (4.3.5): a Locked unit performs no Firing Action unless it has
-  // Melee Firing. The pad cannot see who stands next to whom, so the table is
-  // asked, as one row of this question (ruled 2026-09-25, audit Phase 4, I6).
-  const lockRow = firing && a && !isMeleeFiring(a)
-    ? [{ id: 'locked', label: `${attacker.label} is Melee Locked` }]
-    : [];
-  // The target stands in the attacker's Forward Arc unless the Action is
-  // Omni-direction (4.2.5). The pad never asked (audit Phase 5, F4).
-  const omni = !!a && (a.keywords ?? []).some((k) => /全向|omni/i.test(JSON.stringify(k)));
-  const arcRow = (firing || melee) && !omni ? [{ id: 'arc', label: `Outside ${attacker.label}'s Forward Arc` }] : [];
   // The table's "In smoke" record, said where it decides the shot (audit
-  // Phase 4, G12): a Firing Action has no line of sight into or out of a Smoke
-  // Screen's Grid, and an Aerial unit is no exception (FAQ F1, F2).
-  const smoked = firing ? [attacker, defender].filter((u) => statusCount(u.statuses, 'smoke') > 0) : [];
-  const seen = await choiceDialog({
-    title: `${attacker.label} attacks ${defender.label}`,
-    body: `${range} · judged on the table.${firing ? ' Any one line between the bases that crosses neither 3" terrain nor a Smoke Screen is line of sight.' : ''}${
-      smoked.length ? ` ${smoked.map((u) => u.label).join(' and ')} ${smoked.length === 1 ? 'is' : 'are'} marked In smoke, so there is no line of sight for a Firing Action (4.16).` : ''}`,
-    choices: open
-      ? [{ id: '0', label: melee ? (extended ? 'In range, line of sight clear' : 'In reach') : 'In range, a line clear of smoke', primary: true }, ...arcRow, ...lockRow, { id: 'no', label: 'Not this target', cancel: true }]
-      : [
-        { id: '0', label: 'In range, line of sight clear', primary: true },
-        { id: '2t', label: 'In range, behind terrain (+2 White)' },
-        { id: '2u', label: 'In range, behind a unit (+2 White)' },
-        { id: '4', label: 'In range, behind terrain and a unit (+4 White)' },
-        ...arcRow,
-        ...lockRow,
-        { id: 'no', label: 'Not this target', cancel: true },
-      ],
-    stacked: true,
-  });
-  if (seen === null || seen === 'no') return;
-  if (seen === 'arc') {
-    toast(`${defender.label} is outside ${attacker.label}'s Forward Arc, and this Action is not Omni-direction (4.2.5).`, 'refused');
-    return;
-  }
-  if (seen === 'locked') {
-    toast(`${attacker.label} is Melee Locked, and a Firing Action without [Melee Firing] cannot be performed while it is (4.3.5).`, 'refused');
-    return;
-  }
-  const prot = seen === '4' ? '4' : seen.startsWith('2') ? '2' : '0';
-  const rear = await choiceDialog({
-    title: 'Arc',
-    body: `Is ${attacker.label} in ${defender.label}'s rear arc?`,
-    choices: [{ id: 'no', label: 'No', primary: true }, { id: 'yes', label: 'Yes, a back attack' }],
-    stacked: true,
-  });
-  if (rear === null) return;
-  // WHAT THE BOARD WOULD HAVE MEASURED, asked instead (audit 2026-09-25). The
-  // pad stands every unit on a placeholder cell, so these bonuses used to
-  // follow the placeholders: Grace Note paid out, or did not, for a table the
-  // pad had never seen, and [Stationary] never paid out in Freeform at all,
-  // where no Action Opportunity is tracked. Asked only where the Action can
-  // use the answer.
-  let graceNote: boolean | undefined;
-  if (a?.type === 'Firing' && attacker.kind === 'mech' && pilotCard(data!, attacker)?.id === 'LPA-23-2') {
-    const near = await choiceDialog({
-      title: 'Grace Note',
-      body: `Is ${defender.label} within 3 grids of ${attacker.label}? Onyx Mellow Chord adds 1 Yellow if so.`,
-      choices: [{ id: 'yes', label: 'Yes, within 3', primary: true }, { id: 'no', label: 'No' }],
-      stacked: true,
-    });
-    if (near === null) return;
-    graceNote = near === 'yes';
-  }
-  let stationary: boolean | undefined;
-  if (a && !guidedOn(table) && (stationaryBonus(a) || conditionalGrants(a).some((g) => g.when === 'stationary'))) {
-    // A turn on the spot is Movement too (FAQ E3), so the question names it:
-    // players who had only pivoted were answering "not moved" (audit Phase 4,
-    // E9). A Shock walk just taken has already answered it.
-    const still = shocked ? 'moved' : await choiceDialog({
-      title: 'Stationary',
-      body: `Has ${attacker.label} moved or turned during this Action Opportunity? [Stationary] pays out only if it has done neither: a turn on the spot counts as Movement.`,
-      choices: [{ id: 'still', label: 'No, it has not moved or turned', primary: true }, { id: 'moved', label: 'Yes, it moved or turned' }],
-      stacked: true,
-    });
-    if (still === null) return;
-    stationary = still === 'still';
-  }
-  // Low Profile from an effect, which no board can read off positions: asked
-  // only when a source could be in play (J12; audit Phase 6, C4).
-  let effectLowProfile: boolean | undefined;
-  if (a?.type === 'Firing' && effectLowProfileCould(data!, table.tokens, defender)) {
-    const hid = await choiceDialog({
-      title: 'Low Profile',
-      body: `Does ${defender.label} have Low Profile from an effect rather than a Token: an ally's Low Profile aura, KeyHole's concealment, or a Misty Eagle beside ${attacker.label}? A Highlight on it cancels that (FAQ J12).`,
-      choices: [{ id: 'no', label: 'No', primary: true }, { id: 'yes', label: 'Yes' }],
-      stacked: true,
-    });
-    if (hid === null) return;
-    effectLowProfile = hid === 'yes';
-  }
-  // FAQ A16: [Two-Handed] may be declined. The pad used to take it every time.
-  let twoHanded: 'declined' | undefined;
-  const hands = a && !granted ? twoHandedUse(data!, attacker, a, boxHands(table.tasks, attacker.uid)) : null;
-  if (hands) {
-    const use = await choiceDialog({
-      title: `[Two-Handed]: ${hands.label}`,
-      body: `${hands.note.replace(/^\[Two-Handed\]: /, '')}. The player may decline and perform it one-handed instead (FAQ A16).`,
-      choices: [{ id: 'both', label: 'Use both hands', primary: true }, { id: 'one', label: 'One-handed' }],
-      stacked: true,
-    });
-    if (use === null) return;
-    if (use === 'one') twoHanded = 'declined';
-  }
-  // 4.14: a [Charged] effect applies only if the Charge Token is consumed for
-  // this Action, and that is the player's choice, so it is asked.
-  const chargeSlot = a && !granted && /\[Charged\]|\[充能\]/i.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`)
-    ? chargeableSlots(data!, attacker).find((x) => x.charged
-      && tokenCards(data!, attacker).some((c) => String(c.slot) === String(x.slot) && (c.card.actions ?? []).some((y) => y.id === actionId)))
-    : undefined;
-  let chargeSpent = false;
-  let chargeChoice: string | undefined;
-  if (chargeSlot) {
-    // An either/or [Charged] line is spent on ONE arm (R7MG 556_A:
-    // Multi-target 3 or Suppression; audit Phase 2, C3/E9).
-    const arms = chargeChoices(a!);
-    const spend = await choiceDialog({
-      title: `${a!.name.en}: Charge`,
-      body: `${chargeSlot.label} is Charged (4.14).`,
-      choices: arms.length
-        ? [...arms.map((x, i) => ({ id: `arm:${x.id}`, label: `Consume it: ${x.label}`, primary: i === 0 })), { id: 'no', label: 'Keep it' }]
-        : [{ id: 'yes', label: 'Consume the Charge', primary: true }, { id: 'no', label: 'Keep it' }],
-      stacked: true,
-    });
-    if (spend === null) return;
-    chargeSpent = spend === 'yes' || spend.startsWith('arm:');
-    if (spend.startsWith('arm:')) chargeChoice = spend.slice(4);
-  }
-  const verdict: TableVerdict = {
-    chargeSpent,
-    ...(chargeChoice ? { chargeChoice } : {}),
-    protection: prot === '4' ? 4 : prot === '2' ? 2 : 0,
-    protectionFrom: seen === '4' ? 'both' : seen === '2u' ? 'unit' : seen === '2t' ? 'terrain' : undefined,
-    backAttack: rear === 'yes',
-    ...(graceNote !== undefined ? { graceNote } : {}),
-    ...(stationary !== undefined ? { stationary } : {}),
-    ...(twoHanded ? { twoHanded } : {}),
-    ...(effectLowProfile !== undefined ? { effectLowProfile } : {}),
+  // Phase 4, G12): no line of sight into or out of a Smoke Screen's Grid for a
+  // Firing Action, an Aerial unit no exception (FAQ F1, F2).
+  const smoked = a?.type === 'Firing' ? [t, foe].filter((u) => statusCount(u.statuses, 'smoke') > 0) : [];
+  return `<div class="pad-panel-in">${panelHead(a?.name.en ?? 'Attack')}
+    <p class="pad-lead">${esc(t.label)} attacks ${esc(foe.label)} · ${esc(range)}, judged on the table.</p>
+    ${smoked.length ? `<p class="pad-note">${esc(smoked.map((u) => u.label).join(' and '))} ${smoked.length === 1 ? 'is' : 'are'} marked In smoke: no line of sight for a Firing Action.</p>` : ''}
+    ${rows.map((r) => {
+      const now = declared(r, d);
+      return `<p class="pad-label pad-sec">${esc(r.label)}</p>
+      ${r.note ? `<p class="pad-note pad-decl-note">${esc(r.note)}</p>` : ''}
+      <div class="pad-chips">${r.options.map((o) => `<button class="pad-chip${o.id === now ? ' on' : ''}" data-act="decl" data-key="${esc(r.key)}" data-val="${esc(o.id)}"${greyWhy(!!r.grey?.[o.id], r.grey?.[o.id] ?? '')}>${esc(o.label)}</button>`).join('')}</div>`;
+    }).join('')}
+    <div class="pad-chips pad-decl-go">
+      <button class="pad-btn primary" data-act="decl-go">Attack</button>
+      <button class="pad-btn" data-act="decl-back">Another target</button>
+    </div>
+  </div>`;
+}
+
+// The one-tap kinds: what follows the pick, and the button that pays for it.
+function declareStartPanel(d: Declaring, t: Token, foe: Token, a: CardAction | undefined): string {
+  const range = a?.range !== undefined ? `Range ${a.range}` : 'Range as printed';
+  const lead = d.kind === 'scan'
+    ? `${foe.label} is in Optical Camouflage, so ${t.label} Scans it first (${range}, judged on the table). Won, it is Revealed and the attack goes on; lost, the attack ends and the Action is spent.`
+    : d.kind === 'intercept'
+      ? `${t.label} intercepts ${foe.label}: in Range at its start or its landing, with a line clear of smoke, judged on the table.`
+      : `${t.label} against ${foe.label} · ${range}, judged on the table.`;
+  const smoke = d.kind === 'intercept' ? interceptSmokeWhy(t, foe) : null;
+  const go = d.kind === 'scan' ? 'Scan' : d.kind === 'intercept' ? 'Intercept' : 'Counter-roll';
+  return `<div class="pad-panel-in">${panelHead(a?.name.en ?? (d.kind === 'intercept' ? 'Intercept' : 'Attack'))}
+    <p class="pad-lead">${esc(lead)}</p>
+    <div class="pad-chips pad-decl-go">
+      <button class="pad-btn primary" data-act="decl-go"${greyWhy(!!smoke, smoke ?? '')}>${go}</button>
+      <button class="pad-btn" data-act="decl-back">Another target</button>
+    </div>
+  </div>`;
+}
+
+// Picking the target opens its declaration in the same panel: an attack's
+// questions, or for a camouflaged target (Scanned first, 4.12.2, FAQ I12), an
+// Electronic Attack or an Interception, what follows and one button.
+function pickTarget(req: TargetRequest, attacker: Token, defender: Token): void {
+  const scan = req.mode === 'attack' && !req.granted && !req.resumed && (defender.statuses ?? []).includes('camouflage');
+  const kind: DeclareKind = req.mode === 'intercept' ? 'intercept' : req.mode === 'electronic' ? 'electronic' : scan ? 'scan' : 'attack';
+  declaring = { kind, req, uid: attacker.uid, actionId: req.actionId, defenderUid: defender.uid, granted: !!req.granted, resumed: !!req.resumed, answers: {} };
+  render();
+}
+
+// Attack: the answers become the verdict, the Action is paid, the window opens.
+function commitDeclared(): void {
+  const d = declaring;
+  if (!d || !data) return;
+  if (d.req !== targetFor) { declaring = null; render(); return; }
+  const attacker = unitOf(d.uid);
+  const defender = unitOf(d.defenderUid);
+  declaring = null;
+  targetFor = null;
+  panel = null;
+  render();
+  if (!attacker || !defender) return;
+  if (d.kind === 'scan') { void scanFirst(attacker, d.actionId, defender); return; }
+  if (d.kind === 'intercept') { void askTableAndIntercept(attacker, d.actionId, defender); return; }
+  if (d.kind === 'electronic') { void askTableAndElectronic(attacker, d.actionId, defender); return; }
+  const a = actionOfUnit(attacker, d.actionId);
+  const rows = declareRows(attacker, a, defender, d);
+  const ans = (key: string): string | undefined => {
+    const r = rows.find((x) => x.key === key);
+    return r ? declared(r, d) : undefined;
   };
+  const sight = ans('sight') ?? '0';
+  const still = ans('still');
+  const grace = ans('grace');
+  const lowprof = ans('lowprof');
+  const charge = ans('charge');
+  const verdict: TableVerdict = {
+    chargeSpent: !!charge && charge !== 'no',
+    ...(charge?.startsWith('arm:') ? { chargeChoice: charge.slice(4) } : {}),
+    protection: sight === '4' ? 4 : sight.startsWith('2') ? 2 : 0,
+    protectionFrom: sight === '4' ? 'both' : sight === '2u' ? 'unit' : sight === '2t' ? 'terrain' : undefined,
+    backAttack: ans('rear') === 'yes',
+    ...(grace !== undefined ? { graceNote: grace === 'yes' } : {}),
+    ...(still !== undefined ? { stationary: still === 'still' } : {}),
+    ...(ans('hands') === 'one' ? { twoHanded: 'declined' as const } : {}),
+    ...(lowprof !== undefined ? { effectLowProfile: lowprof === 'yes' } : {}),
+  };
+  payAndOpenAttack(attacker, d.actionId, defender, verdict, {
+    granted: d.granted, resumed: d.resumed, shocked: ans('shock') === 'moved',
+    chargeSlot: verdict.chargeSpent ? chargeSlotFor(attacker, a, d.actionId, d.granted) : undefined,
+  });
+}
+
+// The attack declared: in a guided game the Action is paid for first, and a
+// refusal is the engine's answer with the window shut; Freeform opens it
+// outright.
+function payAndOpenAttack(
+  attacker: Token, actionId: string, defender: Token, verdict: TableVerdict,
+  o: { granted: boolean; resumed: boolean; shocked: boolean; chargeSlot?: { slot: string | number } },
+): void {
+  const a = actionOfUnit(attacker, actionId);
   attackDepth = historyDepth();
-  // In a guided game the Action is paid for first; a refusal is the engine's
-  // answer and the window stays shut. Freeform opens the window outright.
   const lent = lentPay(attacker, actionId);
-  if (guidedOn(table) && !resumed && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : twoHanded ? {} : bothHands(attacker, actionId)), ...lent })) return;
+  if (guidedOn(table) && !o.resumed && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(o.granted ? { granted: true } : verdict.twoHanded ? {} : bothHands(attacker, actionId)), ...lent })) return;
   // Freeform takes the same cost off the bar. A granted attack (a Riposte)
   // costs no Ticks, and a resumed one was paid before its Scan.
-  if (!granted && !resumed) spendFree(attacker, actionId, lent.partKey);
+  if (!o.granted && !o.resumed) spendFree(attacker, actionId, lent.partKey);
   // The walk recorded as this Action's own Movement, now the Action is paid:
   // a free move rides only an Action already performed. Checked first, so a
   // granted Riposte, which owes no Movement, records nothing and shows no error.
-  if (shocked && guidedOn(table)) {
+  if (o.shocked && guidedOn(table)) {
     const walk: Command = { kind: 'maneuver', seat: attacker.side, uid: attacker.uid, to: { col: 0, row: 0 }, free: true, actionId, chain: 'join' };
     if (check(data!, table, walk).ok) send(walk);
   }
-  if (chargeSpent && chargeSlot) send({ kind: 'setCharge', seat: attacker.side, uid: attacker.uid, slot: String(chargeSlot.slot), on: false, ...(guidedOn(table) ? { chain: 'join' as const } : {}) });
+  if (verdict.chargeSpent && o.chargeSlot) send({ kind: 'setCharge', seat: attacker.side, uid: attacker.uid, slot: String(o.chargeSlot.slot), on: false, ...(guidedOn(table) ? { chain: 'join' as const } : {}) });
   panel = 'combat';
   render();
   if (!beginAttack(attacker, actionId, defender, verdict)) { panel = null; render(); return; }
@@ -1746,6 +1819,8 @@ function targetState(u: Token): string {
 }
 
 function targetPanel(): string {
+  if (declaring && declaring.req !== targetFor) declaring = null;
+  if (declaring) return declarePanel(declaring);
   const t = targetFor ? unitOf(targetFor.uid) : null;
   if (!t) return `<div class="pad-panel-in">${panelHead('Target')}<p class="pad-status">Nothing to attack with.</p></div>`;
   // Its own Parts, the Common Actions, or a lent Load's.
@@ -1779,9 +1854,15 @@ function targetPanel(): string {
     ${a?.speed === 'auto' ? `<p class="pad-note">An Automatic Action takes the nearest enemy in Range${a.type === 'Firing' || a.type === 'Melee' ? ', in sight and in its Forward Arc' : ''}${a.type === 'Firing' ? ', a Highlighted one first' : ''}${isElectronicAttack(a) ? ', measured from a Repeater too' : ''}. With none, it may take the nearest Breakable Terrain (3.5.2, FAQ O9).</p>` : ''}
     ${lit.length ? `<p class="pad-note">${esc(lit.map((u) => u.label).join(', '))} ${lit.length === 1 ? 'has' : 'have'} Highlight: if this Firing Action can target ${lit.length === 1 ? 'it' : 'one of them'} on the table, it must (6.2.1).</p>` : ''}
     ${enemies.length
-      ? enemies.map((u) => `<button class="pad-seat" data-act="pick-target" data-uid="${u.uid}">
-          <span class="pad-seat-name">${esc(u.label)}${targetState(u) ? `<small class="pad-seat-toks">${esc(targetState(u))}</small>` : ''}</span><span class="pad-seat-tag">${esc(KIND_LABEL[u.kind])}</span></button>`).join('')
-      : '<p class="pad-note">No enemy unit on the table.</p>'}
+      ? enemies.map((u) => {
+        // A camouflaged target is Scanned first (4.12.2), so the row says so
+        // and the pick starts the Scan; an Interception greys what smoke forbids.
+        const scan = mode === 'attack' && !targetFor?.granted && !targetFor?.resumed && (u.statuses ?? []).includes('camouflage');
+        const smoke = mode === 'intercept' ? interceptSmokeWhy(t, u) : null;
+        return `<button class="pad-seat" data-act="pick-target" data-uid="${u.uid}"${greyWhy(!!smoke, smoke ?? '')}>
+          <span class="pad-seat-name">${esc(u.label)}${targetState(u) ? `<small class="pad-seat-toks">${esc(targetState(u))}</small>` : ''}</span><span class="pad-seat-tag">${scan ? 'Scan first' : esc(KIND_LABEL[u.kind])}</span></button>`;
+      }).join('')
+      : `<p class="pad-note">${table.tokens.some((u) => u.side !== t.side && u.deployed !== false) ? 'No enemy unit on the table can be picked for this.' : 'No enemy unit on the table.'}</p>`}
   </div>`;
 }
 
@@ -2217,10 +2298,16 @@ function sheetHtml(s: Side = shownSide()): string {
         ${mine ? `<button class="pad-step" data-act="link-up" aria-label="Recover 1 Link"${greyIf({ kind: 'recoverLink', seat: t.side, uid: t.uid, targetUid: t.uid })}>+</button>` : ''}
       </div>
     </div>` : ''}
-    ${mine && isMech && t.stance === 'shutdown' ? (rebootWhy(table, t) === null ? `<div class="pad-row wrap">
+    ${mine && isMech && t.stance === 'shutdown' ? (() => {
+      // Not yet its moment: the Reboot buttons stay, greyed, and a long press
+      // says when it comes (notices, 2026-09-29). A paragraph stood in their
+      // place on every shut-down Mech's sheet.
+      const wait = rebootWhy(table, t);
+      return `<div class="pad-row wrap">
       <span class="pad-label">Reboot to</span>
-      <div class="pad-stances">${STANCES.filter((x) => x !== 'shutdown').map((x) => stanceBtn(x, false, `data-act="reboot" data-stance="${x}"`)).join('')}</div>
-    </div>` : `<p class="pad-note">${esc(rebootWhy(table, t) ?? '')}</p>`) : ''}
+      <div class="pad-stances">${STANCES.filter((x) => x !== 'shutdown').map((x) => stanceBtn(x, false, `data-act="reboot" data-stance="${x}"${wait ? greyWhy(true, wait) : ''}`)).join('')}</div>
+    </div>`;
+    })() : ''}
     ${mine && isMech && t.stance !== 'shutdown' ? `<div class="pad-row wrap">
       <span class="pad-label">Stance</span>
       <div class="pad-stances">${STANCES.filter((x) => x !== 'shutdown').map((x) => stanceBtn(x, t.stance === x, `data-act="stance" data-stance="${x}"${t.stance !== x ? greyIf({ kind: 'setStance', seat: t.side, uid: t.uid, stance: x }) : ''}`)).join('')}${
@@ -2381,6 +2468,8 @@ function capShort(t: Token, o: Opportunity, a: CardAction, key: string): Capsule
 // inert, with the reason on hover rather than on the screen. The pad's players
 // know the rules; a greyed button says enough.
 function inert(html: string, why: string): string {
+  // Already greyed (a Recover with no Bit, Guided's own Perform): its reason stands.
+  if (html.includes('aria-disabled="true"')) return html;
   return html.replace(/<button class="pad-chip on pad-perform"/g, `<button class="pad-chip on pad-perform"${greyWhy(true, why)}`);
 }
 
@@ -2466,6 +2555,10 @@ function actionList(t: Token, mine: boolean): string {
   const d = data!;
   const acts = guidedActions(d, t);
   if (!acts.length) return '';
+  // An Action with nothing to do greys its chips, with the reason on a long
+  // press, where it used to be refused after the tap (units.ts actionIdleWhy,
+  // the same reading the tabletop and the Match Centre grey by).
+  const idleWorld = idleWorldFor(d, table);
   // Read once for the whole list: what each row would cost against the Ticks
   // this Mech has left, on a free table only.
   const fo = mine && freeTicksOn(t) ? freeOpp(t) : null;
@@ -2555,9 +2648,11 @@ function actionList(t: Token, mine: boolean): string {
     const key = g.partKey ?? g.action.id;
     const nofit = fo && g.available ? fitShort(t, fo, g.action, key) : null;
     const short = nofit && fo ? capShort(t, fo, g.action, key) : undefined;
+    const idle = mine && g.available ? actionIdleWhy(d, t, g.action, idleWorld) : null;
+    const grey = idle ?? nofit;
     rows.push(`<div class="pad-act${open ? ' open' : ''}${g.available ? '' : ' off'}" data-act="open-action" data-id="${esc(g.action.id)}" role="button" aria-expanded="${open}">
       ${actionBlock(g.card, g.action, short)}
-      <div class="pad-act-meta">${esc(meta)}${!g.available && g.reason ? ` · <em>${esc(g.reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${nofit ? inert(perform, nofit) : perform}</span>` : ''}</div>
+      <div class="pad-act-meta">${esc(meta)}${!g.available && g.reason ? ` · <em>${esc(g.reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${grey ? inert(perform, grey) : perform}</span>` : ''}</div>
     </div>`);
   }
   // A Carrier's Load lends its Actions only while it is in Contact (FAQ O3),
@@ -2604,7 +2699,12 @@ async function pickDiscard(t: Token): Promise<string | null> {
   if (!data) return null;
   const held = tokenCards(data, t).filter(({ slot, card }) => slot !== 'pilot'
     && (t.partStates[slot as PartSlot] ?? 'intact') !== 'destroyed' && !!discardFaceOf(data!, card));
-  if (!held.length) { toast(`${t.label} holds nothing it can Discard.`, 'refused'); return null; }
+  if (!held.length) {
+    // The reading its chip is greyed by (units.ts actionIdleWhy).
+    const discard = data.commonActions.find((x) => x.id === 'COMMON_DISCARD');
+    toast((discard && actionIdleWhy(data, t, discard, idleWorldFor(data, table))) ?? `${t.label} holds nothing it can Discard.`, 'refused');
+    return null;
+  }
   // Always asked, even with one Part to name: a Discard is not taken back by
   // tapping again, the way a Charge Token is.
   return choiceDialog({ title: 'Discard', choices: [...held.map((x) => ({ id: String(x.slot), label: `${SLOT_LABEL[x.slot] ?? x.slot} · ${cardName(x.card)}` })), { id: '__no', label: 'Cancel', cancel: true }], stacked: true })
@@ -2634,6 +2734,7 @@ function commonRows(t: Token, mine: boolean): string[] {
   const acts = d.commonActions.filter((a) => a.type !== 'Passive' && relevant(a));
   if (!acts.length) return [];
   const fo = mine && freeTicksOn(t) ? freeOpp(t) : null;
+  const idleWorld = idleWorldFor(d, table);
   for (const a of acts) {
     const slots = (a as { slots?: string[] }).slots ?? [];
     // The engine's own reading (units.ts actionPartWhy): a Repaired Part still
@@ -2662,10 +2763,9 @@ function commonRows(t: Token, mine: boolean): string[] {
               // Charge and Discard act on a PART, so the row asks which one. The
               // Charge strip lower on the sheet still flips a token by hand, but
               // nothing tied it to this Action and the row looked inert.
+              // Greyed below, with the reason, when every Part is Charged.
               : mine && available && a.id === 'COMMON_CHARGE'
-                ? (chargeableSlots(d, t).some((x) => !x.charged)
-                  ? `<button class="pad-chip on pad-perform" data-act="charge-pick">Charge</button>`
-                  : '<span class="pad-perform-no">Every Part is Charged</span>')
+                ? `<button class="pad-chip on pad-perform" data-act="charge-pick">Charge</button>`
                 : mine && available && a.id === 'COMMON_DISCARD'
                   ? `<button class="pad-chip on pad-perform" data-act="discard-pick">Discard</button>`
                   // Remote Access asks which Terminal and how the roll went,
@@ -2677,9 +2777,11 @@ function commonRows(t: Token, mine: boolean): string[] {
                     : '');
     const nofit = fo && available ? fitShort(t, fo, a, a.id) : null;
     const short = nofit && fo ? capShort(t, fo, a, a.id) : undefined;
+    const idle = mine && available ? actionIdleWhy(d, t, a, idleWorld) : null;
+    const grey = idle ?? nofit;
     rows.push(`<div class="pad-act${open ? ' open' : ''}${available ? '' : ' off'}" data-act="open-action" data-id="${esc(a.id)}" role="button" aria-expanded="${open}">
       ${torso ? actionBlock(torso, a, short) : ''}
-      <div class="pad-act-meta">${esc(meta)}${reason ? ` · <em>${esc(reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${nofit ? inert(perform, nofit) : perform}</span>` : ''}</div>
+      <div class="pad-act-meta">${esc(meta)}${reason ? ` · <em>${esc(reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${grey ? inert(perform, grey) : perform}</span>` : ''}</div>
     </div>`);
   }
   return [`<details class="pad-fold pad-common-fold" data-fold="common-${drawSide}"${foldOpen(`common-${drawSide}`) ? ' open' : ''}>
@@ -3148,7 +3250,7 @@ function scoreSheet(tasks: TaskState): string {
         ${bearer
           ? `${wantsZone ? `<button class="pad-chip${i.accessed === bearer.side ? ' on' : ''}" data-act="claim" data-item="${esc(i.id)}" data-side="${i.accessed === bearer.side ? '' : bearer.side}">In ${esc(wantsZone)}</button>` : ''}
              <button class="pad-chip" data-act="box-drop" data-item="${esc(i.id)}">Dropped</button>`
-          : `<button class="pad-chip" data-act="box-take" data-item="${esc(i.id)}">Picked up</button>`}
+          : `<button class="pad-chip" data-act="box-take" data-item="${esc(i.id)}"${greyWhy(!boxTakers().length, NO_BOX_TAKER)}>Picked up</button>`}
       </span></div>`;
   }).join('');
   // The round limit, or a fallen VIP Commander (ruling I2).
@@ -3211,14 +3313,20 @@ function dropBoxesOf(t: Token): void {
   }
 }
 
+// Who could carry a Black Box: a unit with a free Freehand Part (5.3.1). The
+// "Picked up" button is greyed by it and the tap reads it again.
+function boxTakers(): { u: Token; hands: ReturnType<typeof freehandSlots> }[] {
+  if (!data) return [];
+  const tasks = normaliseTasks(table.tasks);
+  return table.tokens.filter((u) => u.kind !== 'projectile' && u.deployed !== false && !isDead(u))
+    .map((u) => ({ u, hands: freehandSlots(data!, u, boxHands(tasks, u.uid), [], true) }))
+    .filter((x) => x.hands.length);
+}
 // Who carries a Black Box: a unit with a free Freehand Part (5.3.1).
 async function takeBox(itemId: string): Promise<void> {
   if (!data) return;
-  const tasks = normaliseTasks(table.tasks);
-  const able = table.tokens.filter((u) => u.kind !== 'projectile' && u.deployed !== false && !isDead(u))
-    .map((u) => ({ u, hands: freehandSlots(data!, u, boxHands(tasks, u.uid), [], true) }))
-    .filter((x) => x.hands.length);
-  if (!able.length) { toast('No unit has a free Freehand Part to carry it (5.3.1).', 'refused'); return; }
+  const able = boxTakers();
+  if (!able.length) { toast(NO_BOX_TAKER, 'refused'); return; }
   const who = await choiceDialog({ title: 'Black Box', choices: able.map((x) => ({ id: String(x.u.uid), label: `${x.u.label} · ${sideName(x.u.side)}` })), stacked: true });
   if (who === null) return;
   const pick = able.find((x) => String(x.u.uid) === who)!;
@@ -3753,7 +3861,14 @@ function tacticWhy(side: Side, id: string): string | null {
   // A Guided game knows its Opportunities, so the moment the card's text names
   // is judged too (5.4.2; audit Phase 6, H2).
   const spec = tacticSpec(id);
-  if (guidedOn(table) && spec) return tacticWindowWhy(spec, table, side);
+  if (guidedOn(table) && spec) {
+    const moment = tacticWindowWhy(spec, table, side);
+    if (moment) return moment;
+  }
+  // Nobody it could be played on: greyed with the words the tap used to be
+  // refused with (notices, 2026-09-29). Both the sheet's Play and the Guided
+  // strip read this.
+  if (spec && !tacticTargets(spec, table, side, tacticCtx()).length) return `${spec.name}: ${spec.none}`;
   return null;
 }
 
@@ -4932,7 +5047,7 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     case 'close-panel':
       if (screen === 'collection') { screen = 'lobby'; error = null; render(); return; }
-      panel = null; picking = null; error = null; render(); return;
+      panel = null; picking = null; error = null; declaring = null; render(); return;
     case 'open-setup': panel = 'setup'; render(); return;
     case 'set-mode': send({ kind: 'configureTable', seat: mySeat(), guidedPlay: el.dataset.mode === 'guided' }); return;
     case 'set-dice': send({ kind: 'configureTable', seat: mySeat(), tableDice: el.dataset.dice === 'table' }); return;
@@ -4955,15 +5070,15 @@ function act(el: HTMLElement, ev: Event): void {
       const t = targetFor ? unitOf(targetFor.uid) : null;
       const d = unitOf(Number(el.dataset.uid));
       if (!t || !d || !targetFor) return;
-      const { actionId, mode, granted, resumed } = targetFor;
-      targetFor = null;
-      panel = null;
-      render();
-      if (mode === 'intercept') void askTableAndIntercept(t, actionId, d);
-      else if (mode === 'electronic') void askTableAndElectronic(t, actionId, d);
-      else void askTableAndAttack(t, actionId, d, !!granted, !!resumed);
+      // Declared in this same panel; Another target returns to the list.
+      pickTarget(targetFor, t, d);
       return;
     }
+    case 'decl':
+      if (declaring) { declaring.answers[el.dataset.key!] = el.dataset.val!; render(); }
+      return;
+    case 'decl-go': commitDeclared(); return;
+    case 'decl-back': declaring = null; render(); return;
     case 'g-start':
       if (!table.tokens.length) { toast('Add the squads first.', 'refused'); return; }
       startGuided(guide);

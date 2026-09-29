@@ -360,6 +360,12 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 }
 
 .pad-seat + .pad-seat { margin-top: 8px; }
+/* A target the rules rule out (an Interception into smoke): greyed, its
+   reason on a long press, like every other greyed control. */
+.pad-seat[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+/* The declaration's Attack and Another target, under its questions. */
+.pad-decl-go { margin-top: 18px; }
+.pad-decl-note { margin: 0 0 8px; }
 .pad-seat.me { background: var(--accent-lt); }
 
 .pad-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text3); flex: 0 0 auto; }
@@ -500,11 +506,10 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-turn-unit .pad-turn-name { display: block; margin-bottom: 4px; }
 .pad-bar-round.off { opacity: 0.45; cursor: default; }
 
-/* The Perform button on an action row, and the engine's reason when there is
-   none to press. */
+/* The Perform button on an action row. A refused one stays a button, greyed,
+   and says why on a long press (notices, 2026-09-29). */
 .pad-act-go { display: block; margin-top: 6px; }
 .pad-perform { min-height: 32px; }
-.pad-perform-no { font-size: 11px; color: var(--text3); }
 
 /* ---------- the unit strip ---------- */
 
