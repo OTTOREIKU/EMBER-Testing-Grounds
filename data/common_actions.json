@@ -1,6 +1,6 @@
 {
   "_comment": "The seven Common Actions from rulebook 6.1 (book p.91), plus the Remote Access Universal Action every Mech gains from 5.3.3. Every Mech has these in addition to the Actions printed on its Parts, so a squad's real options are its Part Actions plus whichever of these its surviving Parts can initiate. They are not in cards.json because they are not printed on any card, so they are transcribed here by hand. The printed rulebook always wins over this file.",
-  "_shape": "Each entry mirrors a CardAction closely enough to be merged into the guided action list: id, name, type (the Action Type, matching the card data's spelling), size (s = Short = 1 Action Tick, m = Medium = 2 Action Ticks), and the Part slots that can initiate it. Every one of them is performed in an Action Opportunity: the book prints Reveal, Stabilize System and Scan with the Tactical (hourglass) Short Action icon on p.91, so none is an End Phase action.",
+  "_shape": "Each entry mirrors a CardAction closely enough to be merged into the guided action list: id, name, type (the Action Type, matching the card data's spelling), size (s = Short = 1 Action Tick, m = Medium = 2 Action Ticks), and the Part slots that can initiate it. Every one of them is performed in an Action Opportunity: the book prints Reveal, Stabilize System and Scan with the Tactical (hourglass) Short Action icon on p.91, so none is an End Phase action. Charge and Discard carry the Swift icon (the yellow zigzag p.16 names Swift, one pip) on p.91 and on the publisher's Quick Cards, and FAQ K20 takes a Charge as a Swift Starting Action (audit Phase 7, P7A 1).",
   "_source": "rules/06_missions_and_appendix.md section 6.1, transcribed from book p.91",
   "actions": [
     {
@@ -8,7 +8,7 @@
       "name": {
         "en": "Charge"
       },
-      "type": "Tactic",
+      "type": "Swift",
       "size": "s",
       "slots": [
         "torso",
@@ -20,7 +20,7 @@
       "silence": true,
       "requires": "a Part whose Action carries the Charge icon",
       "description": {
-        "en": "· Silence.\n· Performed by one or more Parts with an Action that has the Charge Icon: that Action becomes Charged."
+        "en": "· Silence.\n· Performed by one Part with an Action that has the Charge Icon: that Action becomes Charged."
       }
     },
     {
@@ -28,7 +28,7 @@
       "name": {
         "en": "Discard"
       },
-      "type": "Tactic",
+      "type": "Swift",
       "size": "s",
       "slots": [
         "leftHand",
@@ -37,7 +37,7 @@
       "silence": true,
       "requires": "a Part with the Handheld entry",
       "description": {
-        "en": "· Silence.\n· Performed by one or more Parts with the Handheld entry: the Part switches to the Discard State."
+        "en": "· Silence.\n· Performed by one Part with the Handheld Tag: the Part switches to the Discard State."
       }
     },
     {
@@ -47,6 +47,7 @@
       },
       "type": "Melee",
       "size": "m",
+      "range": 0,
       "slots": [
         "chasis",
         "leftHand",
@@ -54,7 +55,7 @@
       ],
       "redDice": 2,
       "description": {
-        "en": "· Melee Attack: 2 red dice.\n· Performed with Chassis, Left Arm or Right Arm.\n· A Melee Action, so it gives Melee Lock (4.3.5)."
+        "en": "· Performed with Chassis, Left Arm or Right Arm."
       }
     },
     {
@@ -119,7 +120,7 @@
         "torso"
       ],
       "description": {
-        "en": "· Range 4, to any Grid of the Terminal's Tactical Zone. Performed with Torso.\n· Electronic Counter-roll against the Terminal (Electronic Value 3); a tie goes to this Mech. If successful, the Terminal is Accessed.\n· Each Terminal may be accessed once per round."
+        "en": "· Range 4. Performed with Torso.\n· Electronic Counter-roll against the Terminal, whose Electronic Value is 3. If successful, the Terminal is Accessed.\n· Each Terminal may be accessed once per round."
       }
     },
     {
@@ -135,7 +136,7 @@
       ],
       "silence": true,
       "description": {
-        "en": "· Range 6. Performed with Torso.\n· Designate an enemy Unit in the Optical Camouflage State or bearing a Low Profile Token.\n· Electronic Counter-roll against the target. If successful: a target in the Optical Camouflage State is Revealed; a target bearing Low Profile Tokens removes them.\n· Silent: the printed Action has no Silence, and FAQ I18 says the Rules Supplement will add it, so a Scan Reveals no one."
+        "en": "· Range 6. Performed with Torso.\n· Designate an enemy Unit in the Optical Camouflage State or bearing a Low Profile Token.\n· Electronic Counter-roll against the target. If successful: a target in the Optical Camouflage State is Revealed; a target bearing Low Profile Tokens removes them."
       }
     }
   ],
@@ -165,5 +166,5 @@
       "label": "Overload"
     }
   ],
-  "_text": "Descriptions are the printed rule and nothing else: no designer notes, no FAQ commentary (OTTO, 2026-09-17). The fifth Common Action is |Crawl| (Moving, Medium, R 1; Chassis, Left Arm or Right Arm; cannot be used to Break Away), checked against the printed book by OTTO on 2026-09-21. It was carried for months as 'Punch / Kick (movement)' with an invented 1-Grid shove; the book prints neither the name nor any shove. Range 1 rides in the `range` field. The Break Away bar needs no code: leaving a Melee Lock costs at least +1 Movement Range and Crawl has 1."
+  "_text": "Descriptions are the printed rule and nothing else: no designer notes, no FAQ commentary (OTTO, 2026-09-17). The fifth Common Action is |Crawl| (Moving, Medium, R 1; Chassis, Left Arm or Right Arm; cannot be used to Break Away), checked against the printed book by OTTO on 2026-09-21. It was carried for months as 'Punch / Kick (movement)' with an invented 1-Grid shove; the book prints neither the name nor any shove. Range 1 rides in the `range` field. Leaving a Melee Lock costs at least +1 Movement Range and Crawl has 1, which holds a walked Crawl; a Fairy pair flies every move and a flight ignores the Lock, so the bar is read as printed, a Crawl never leaves a Grid in which the Mech is Melee Locked (ruled R2; audit Phase 7, P7B 14). The Crawl's arms are how a Mech with its Chassis destroyed still moves 1 Grid (ruled R1, P7B 3). Punch / Kick prints R -- (range 0, the Adjacent Grids, 4.6.2) and 2 Red dice (`redDice`), and its one printed line is the Parts; the old third line, that it gives Melee Lock, was the designer note's gloss (P7B 13). The Scan's fourth line was FAQ I18's note, which read as if a Scan Reveals nobody; its Silence rides the `silence` flag. Remote Access printed neither its reach to any Grid of the Terminal's zone (FAQ P6) nor its tie (4.11.2); the Reference carries both (ruled R5; audit Phase 7, P7C 11)."
 }

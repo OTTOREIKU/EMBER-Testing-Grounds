@@ -677,6 +677,38 @@
     },
     "ZHRA-301": {
       "parray": 0
+    },
+    "023": {
+      "keywords": [
+        { "key": "震撼", "en": "Concussion" },
+        { "key": "频闪武器", "en": "Pulse Weapon" }
+      ]
+    },
+    "025": {
+      "keywords": [
+        { "key": "双手", "en": "Two-Handed" }
+      ]
+    },
+    "282": {
+      "keywords": [
+        { "key": "拦截X", "en": "Intercept X" },
+        { "key": "X姿态", "en": "X Stance" }
+      ]
+    },
+    "284": {
+      "keywords": [
+        { "key": "拦截X", "en": "Intercept X" },
+        { "key": "双手", "en": "Two-Handed" },
+        { "key": "毁伤", "en": "Mutilation" },
+        { "key": "震撼", "en": "Concussion" }
+      ]
+    },
+    "032": {
+      "keywords": [
+        { "key": "静止", "en": "Stationary" },
+        { "key": "穿甲X", "en": "Armor Piercing X" },
+        { "key": "空手", "en": "Freehand" }
+      ]
     }
   },
   "_notes": {
@@ -706,6 +738,11 @@
     "158": "DBP \"Turtle Shell\" Barricade. Same \"--\" misparse as 074. Mechanics audit Phase 3 (2026-09-25): a \"--\" is not a 0. Rulebook 4.11.2 (3): a Unit whose Electronic Value is \"-\" cannot be the Responder of a Counter-roll, while a 0 can (and always loses). Storing the dash as 0 erased that, so `electronicDash: true` now carries it beside the 0 on every card printing \"--\": 074, 158 and the seven the 074 note names (154, 155, 267, 268, PDAM-003/004/005; PDAM-005's scan shows the dash). ZHAM-004 and PDAM-007 print no Electronic box at all and are left as 0 (ruling F20: every unit card printing \"--\").",
     "ZHAM-002": "M60 \"Boomerang\" Missile. The card prints only two stat boxes, an orange Electronic 1 and a grey Armor 3, with no blue Dodge box at all; the database records armor 0 and dodge 6. Box colours were confirmed by sampling pixels, not by eye: the orange box spans x540-594 and the grey x618-666, and no blue pixels appear anywhere in the stat row. On this same GOF template ZHAM-003 prints orange/blue/grey for electronic/dodge/armor and ZHAM-004 prints blue/grey for dodge/armor, so a lone grey box after the orange one is Armor. Confirmed by a second reader against the card: 1 electronic, 3 grey, no Dodge icon present.",
     "503": "RT-16B \"Avalanche\" Assault Core. We had 48. Both the community parts sheet and the publisher's championship list say 60, and points are never printed on a card, so there was never a scan that could settle it. This closes a long-standing open question. Source: championship-legal EN parts list v1.02 (publisher).",
-    "040": "SPHX-3 Supporting Arm. We had Parry 0. The publisher list gives Armor 4 AND Parry 1; our scan shows only the Armor 4 box and is watermarked \"Ver.2019 Crowdfunding\", so it predates the current data. Source: championship-legal EN parts list v1.02 (publisher)."
+    "040": "SPHX-3 Supporting Arm. We had Parry 0. The publisher list gives Armor 4 AND Parry 1; our scan shows only the Armor 4 box and is watermarked \"Ver.2019 Crowdfunding\", so it predates the current data. Source: championship-legal EN parts list v1.02 (publisher).",
+    "023": "Type 55 Shield + CC-6 Cleaver. The bundle gave this HANDHELD face the Freehand keyword its Discard Card (024) carries, so the arm supported a [Two-Handed] Action and took a Black Box while still holding its equipment. The printed card shows HANDHELD alone and RDL 1.02 row 23 lists Handheld; row 24 is the Freehand one. Mechanics audit Phase 7 (OTTO ruled R5, P7A 3). The same for 025, 282 and 284, and their (D) faces 026, 283 and 285.",
+    "025": "AC-32 Automatic Rifle. Handheld, not Freehand: the card and RDL 1.02 row 25; Freehand is row 26's, the Discard Card. With both tags it supported its own [Two-Handed] +2 Range (P7A 3, R5).",
+    "282": "L-330 SMMG + Type 77B Bulwark. Handheld, not Freehand: the card and RDL 1.02 row 282; row 283 is the Freehand face (P7A 3, R5).",
+    "284": "L-330 SMMG + CC-85 Rock Saw. Handheld, not Freehand: the card and RDL 1.02 row 284; row 285 is the Freehand face (P7A 3, R5).",
+    "032": "R-20 Shoulder-Mounted Railgun (L). The bundle's footer carried Direct Fire, Silence and Freehand, which no English source prints: RDL 1.02 (Armaments, QR 32, FXLA-103) lists Freehand and the Single Shot, with a back text explaining Armor Piercing X alone; both front scans and the back scan (numbered 032) agree, and the publisher API record for main_id 32 lists Armor/Structure and Freehand. Its mirror 033's set is taken, so the Reference stops drawing Direct Fire and Silence chips on it and stops listing it among the cards that print Silence. No rule read the footer: Silence and sight are read off the Actions. Mechanics audit Phase 7 (P7C 10; the 2026-09-28 list ruling)."
   }
 }
