@@ -332,7 +332,7 @@ check('the HUD sends an Award from exactly that one place',
   hud.split("kind: 'award'").length - 1, 1);
 check('and the manual +1 goes through adjustVp', hud.includes("kind: 'adjustVp'"), true);
 
-const awardFn = cut(guide, 'private awardScore()', '// Stabilize System (6.1)', "the guide's awardScore");
+const awardFn = cut(guide, 'private awardScore()', 'private reboot(', "the guide's awardScore");
 check('freeplay reads the Award verdict', /const paid = perform\(/.test(awardFn), true);
 check('and turns a refusal into something the player sees', /this\.warn = paid\.ok/.test(awardFn), true);
 check('and reads whether the round is still open off the checklist, not the verdict',

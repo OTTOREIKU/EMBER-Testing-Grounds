@@ -14,9 +14,9 @@ const DISMISS_KEY = 'ember-update-dismissed';
 // build, draws the notice, and keeps it placed. Placements, as OTTO chose them:
 //   landing       the status line's right end becomes NEW VERSION · RELOAD
 //   reference     bottom-left card; full width across the bottom on a phone
-//   pad           a card in the column under EMBER PAD, screens before a table
+//   pad           its front door's status line, compact, screens before a table
 //   tabletop      above the left rail's inspector, never in a multiplayer room
-//   match centre  top of the lobby column, never once a room is joined
+//   match centre  its front door's status line, compact, never once a room is joined
 export interface UpdateOptions {
   // May the notice show right now. Checked on every sync, so a notice already
   // up is taken away the moment this turns false (a table opens, a room joins).

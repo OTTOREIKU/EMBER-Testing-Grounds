@@ -123,10 +123,11 @@ function wire(dlg: HTMLElement, make: () => BoardReport | ReferenceReport): void
     }
     const act = t.dataset.rp;
     if (act === 'close' || act === 'cancel') close();
-    else if (act === 'save') { saveReport(make()); said.textContent = 'Saved.'; }
+    else if (act === 'save') { saveReport(make()); said.textContent = 'Saved.'; said.classList.remove('bad'); }
     else if (act === 'copy') {
       void copyReport(make()).then((ok) => {
         said.textContent = ok ? 'Copied.' : 'Could not copy. Use Save instead.';
+        said.classList.toggle('bad', !ok);
       });
     }
   });

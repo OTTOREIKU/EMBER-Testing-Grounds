@@ -61,7 +61,7 @@ check('a camouflaged target is a pressable row', /const blocked = \(!hidden && n
 check('that says what will happen', /one free Scan first; the attack follows if it is Revealed \(4\.12\.2, FAQ I12\)/.test(hud), true);
 const press = hud.slice(hud.indexOf("on('[data-attacktarget]'"), hud.indexOf("on('[data-attacktarget]'") + 4200);
 check('the press asks the command before paying', /const can = ctx\.check\(scan\);\s*\n\s*if \(!can\.ok\)/.test(press), true);
-check('then pays the Tick - the attack is declared (3.4.5)', /const paid = commitAction\(ctx\);[\s\S]{0,200}?ctx\.send\(scan\);/.test(press), true);
+check('then pays the Tick - the attack is declared (3.4.5)', /const paid = commitAction\(ctx\);[\s\S]{0,200}?ctx\.send\(scan\)/.test(press), true);
 check('and the Scan carries the attack', /actionId: 'COMMON_SCAN', targetUid: t\.uid,\s*thenAttack: \{\s*actionId: m\.actionId,\s*\.\.\.\(m\.refund \? \{ charged: true \} : \{\}\),/.test(press), true);
 const apply = hud.slice(hud.indexOf("if (act === 'apply') {"), hud.indexOf("if (act === 'apply') {") + 3000);
 // Since the audit's Phase 3 (D1) every seam builds a won Counter-roll through

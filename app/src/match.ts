@@ -423,8 +423,10 @@ const relay = new Relay(api.base, {
     // the code typed back in.
     if (view.room) rememberRoom(view.room.id);
     // A refused join with nothing to show for it means the code is dead, so
-    // the door stops offering it rather than failing the same way twice.
-    else if (view.error && !view.room) forgetRoom();
+    // the door stops offering it rather than failing the same way twice, and
+    // says why instead of simply not opening the table.
+    // A dropped line is not a refusal: it is retrying, and says so in the bar.
+    else if (view.error && !view.room) { forgetRoom(); if (view.status !== 'connecting') doorErr = view.error; }
     // Arriving only to shut the table: the close needs a seat at it first.
     if (view.room && closeOnArrival) {
       closeOnArrival = false;
@@ -1501,9 +1503,14 @@ function barHtml(): string {
   // seats: "both seated" on a screen you cannot act on reads as a game you are
   // simply locked out of, rather than one you joined to watch.
   const watching = !!v.room && !v.seat;
+  // The relay's own words when the line is in trouble ("Connection lost.
+  // Retrying in 4s.", "Fell behind. Catching up…"): it sets them on the view
+  // and nothing on this page used to show them (notices audit, 2026-09-28).
   const conn = v.room
     ? v.status === 'connecting'
-      ? '<span class="pill bad">● reconnecting</span>'
+      ? `<span class="pill bad">● ${esc(v.error ?? 'reconnecting')}</span>`
+      : v.desynced
+        ? `<span class="pill bad">● ${esc(v.error ?? 'catching up')}</span>`
       : watching
         ? '<span class="pill" title="Both seats were taken, so you joined as a spectator.">● watching</span>'
         : away

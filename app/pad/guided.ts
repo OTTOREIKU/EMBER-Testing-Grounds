@@ -23,6 +23,7 @@ import { boxHands, normaliseTasks, remoteAccessWhy, terminalsInReach } from '../
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
 import { PHASES, removableTokens, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Stance, type Timing, type Token, type TokenPick } from '../src/types';
 import { choiceDialog, pickManyDialog } from '../src/dialog';
+import type { NoticeKind } from '../src/notices';
 
 // What the pad lends the guide. Kept as functions where the value moves.
 export interface GuideApi {
@@ -32,7 +33,7 @@ export interface GuideApi {
   solo: boolean;
   inRoom(): boolean;
   send(cmd: Command): boolean;
-  toast(text: string): void;
+  toast(text: string, kind?: NoticeKind): void;
   // n Yellow dice, the Hits per die. Server dice in a room, local solo.
   rollHits(n: number, label: string): Promise<number[]>;
   render(): void;
@@ -175,7 +176,7 @@ export function guideOnRemote(api: GuideApi, cmd: Command): void {
     const promised = api.state().script?.commits[cmd.seat];
     if (promised) {
       void hashDials(cmd.salt, cmd.dials).then((actual) => {
-        if (actual !== promised) api.toast(`${api.actorName(cmd.seat)}'s revealed dials do not match their commitment.`);
+        if (actual !== promised) api.toast(`${api.actorName(cmd.seat)}'s revealed dials do not match their commitment.`, 'warn');
       });
     }
   }
@@ -649,7 +650,7 @@ export async function askLinkSupport(api: GuideApi, t: Token, a: CardAction, rul
   const allies = s.tokens.filter((x) => x.kind === 'mech' && x.side === t.side && x.deployed !== false
     && (x.partStates.torso ?? 'intact') !== 'destroyed' && (x.link ?? 0) < maxLink(d, x));
   if (!allies.length) {
-    api.toast(`${what}: every Ally Mech is already at its pilot's Link Value.`);
+    api.toast(`${what}: every Ally Mech is already at its pilot's Link Value.`, 'refused');
     return beacon ? [] : null;
   }
   const row = (x: Token): string => `${x.label}${x.uid === t.uid ? ' (this Mech)' : ''}`;
@@ -689,7 +690,7 @@ export async function askTokenCleanup(api: GuideApi, t: Token, a: CardAction, ru
   const units = s.tokens.filter((x) => x.side === t.side && x.deployed !== false
     && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
     && removableTokens(x, [rule.shape]).length > 0);
-  if (!units.length) { api.toast(`${what}: no Ally Unit wears a ${shape} Token.`); return null; }
+  if (!units.length) { api.toast(`${what}: no Ally Unit wears a ${shape} Token.`, 'refused'); return null; }
   const uid = units.length === 1 ? String(units[0].uid) : await choiceDialog({
     title: what,
     body: `One ${shape} Token comes off one Ally Unit within Range ${reach}.`,
@@ -725,12 +726,12 @@ export async function askRemoteAccess(
   s: GameState,
   t: Token,
   a: CardAction,
-  toast: (text: string) => void,
+  toast: (text: string, kind?: NoticeKind) => void,
 ): Promise<{ itemId: string; name: string } | null> {
   const reach = a.range ?? 4;
   const items = normaliseTasks(s.tasks).items;
   const nothing = remoteAccessWhy(items, t, reach, null);
-  if (nothing) { toast(nothing); return null; }
+  if (nothing) { toast(nothing, 'refused'); return null; }
   const open = terminalsInReach(items, t, reach, null);
   const zoneName = (id: string) => d.zoneData.zones.find((z) => z.id === id)?.name ?? id;
   const id = await choiceDialog({
@@ -763,13 +764,13 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   const grant = selfStatusGrant(a);
   if (grant) {
     const why = selfGrantWhy(t, grant);
-    if (why) { api.toast(why); return; }
+    if (why) { api.toast(why, 'refused'); return; }
   }
   // Activate Optical Camouflage (096_B, 247_B, ZYBP-201_A): the pad performed
   // the Action and changed nothing (audit Phase 3, C3). The Status goes on
   // with the Action; the table swaps the model for the camouflage one.
   const camo = activatesCamo(a);
-  if (camo && (t.statuses ?? []).includes('camouflage')) { api.toast(`${t.label} is already in the Optical Camouflage State.`); return; }
+  if (camo && (t.statuses ?? []).includes('camouflage')) { api.toast(`${t.label} is already in the Optical Camouflage State.`, 'refused'); return; }
   // M18.4, asked before anything is paid: with no board the table says
   // whether the Grid it Unfolds in holds a unit, Aerial units and Mines aside
   // (rulings I18, I19; audit Phase 5, C5).
@@ -788,7 +789,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   const forms = formSwitch(a);
   if (forms) {
     const opts = forms.filter((id) => id !== t.cardId && d.byId.get(id));
-    if (!opts.length) { api.toast('No other form of this unit is in the card data.'); return; }
+    if (!opts.length) { api.toast('No other form of this unit is in the card data.', 'refused'); return; }
     form = opts.length === 1 ? opts[0] : await choiceDialog({ title: a.name.en ?? a.id, choices: opts.map((id) => ({ id, label: cardName(d.byId.get(id)!) })), stacked: true });
     if (form === null) return;
   }
@@ -798,7 +799,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   // Range (audit Phase 6, C6).
   if (rep?.ally) {
     const targets = allyRepairTargets(d, api.state().tokens, t, a, true);
-    if (!targets.length) { api.toast(`No Ally Unit has a Damaged Part for ${a.name.en ?? a.id} to mend.`); return; }
+    if (!targets.length) { api.toast(`No Ally Unit has a Damaged Part for ${a.name.en ?? a.id} to mend.`, 'refused'); return; }
     const pick = await choiceDialog({ title: a.name.en ?? a.id, choices: [...targets.map((x) => ({ id: `${x.unit.uid}:${x.slot}`, label: `${x.unit.label} · ${SLOT_LABEL[x.slot as PartSlot | 'main'] ?? x.slot}` })), { id: '__no', label: 'Cancel', cancel: true }], stacked: true });
     const got = targets.find((x) => `${x.unit.uid}:${x.slot}` === pick);
     if (!got) return;
@@ -811,7 +812,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
       if (rep.repair && st === 'destroyed' && !(t.repairedSlots ?? []).includes(slot)) rows.push({ id: `repaired:${slot}`, label: `Repair ${SLOT_LABEL[slot] ?? slot} · ${cardName(card)}` });
       if (rep.mend && st === 'damaged') rows.push({ id: `mend:${slot}`, label: `Mend ${SLOT_LABEL[slot] ?? slot} · ${cardName(card)}` });
     }
-    if (!rows.length) { api.toast(`${t.label} has nothing this can repair.`); return; }
+    if (!rows.length) { api.toast(`${t.label} has nothing this can repair.`, 'refused'); return; }
     const pick = await choiceDialog({ title: a.name.en ?? a.id, choices: rows, stacked: true });
     if (pick === null) return;
     const [mode, slot] = pick.split(':');
@@ -830,7 +831,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
       if (!max) return false;
       return (o.ammo?.[rule.actionId] ?? max) < max;
     });
-    if (!holders.length) { api.toast('Nothing in reach has spent any of that Ammo.'); return; }
+    if (!holders.length) { api.toast('Nothing in reach has spent any of that Ammo.', 'refused'); return; }
     const pick = holders.length === 1 ? String(holders[0].uid) : await choiceDialog({ title: a.name.en ?? a.id, body: rule.range ? `This Mech, or an Ally within Range ${rule.range}.` : 'Only this Mech is in reach.', choices: holders.map((o) => ({ id: String(o.uid), label: `${o.label}${o.uid === t.uid ? ' (this Mech)' : ''}` })), stacked: true });
     if (pick === null) return;
     const to = holders.find((o) => String(o.uid) === pick)!;
@@ -845,7 +846,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     // Optical Camouflage (FAQ I1, J3); both were offered and then refused
     // (audit Phase 3, E2). The table judges Range and sight.
     const units = targetStatusTargets(d, api.state().tokens, t, a, tag);
-    if (!units.length) { api.toast(`${a.name.en}: there is no unit to target.`); return; }
+    if (!units.length) { api.toast(`${a.name.en}: there is no unit to target.`, 'refused'); return; }
     const pick = await choiceDialog({
       title: a.name.en ?? a.id,
       body: a.range ? `One target within Range ${a.range}, in line of sight.` : 'One target.',
@@ -874,7 +875,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   let feedback: { to: Token; stance: Stance } | null = null;
   if (stanceFeedbackOf(a)) {
     const targets = stanceFeedbackTargets(d, api.state().tokens, t, a, true);
-    if (!targets.length) { api.toast(`${a.name.en}: no Ally Mech out of Shutdown Stance to switch (FAQ H2).`); return; }
+    if (!targets.length) { api.toast(`${a.name.en}: no Ally Mech out of Shutdown Stance to switch (FAQ H2).`, 'refused'); return; }
     const id = targets.length === 1 ? String(targets[0].uid) : await choiceDialog({ title: `${a.name.en}: which Ally Mech?`, choices: targets.map((x) => ({ id: String(x.uid), label: `${x.label} · ${x.stance}` })), stacked: true });
     const to = targets.find((x) => String(x.uid) === id);
     if (!to) return;
@@ -885,7 +886,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   let chargeSlot: string | null = null;
   if (isChargeAction(a)) {
     const slots = chargeableSlots(d, t).filter((x) => !x.charged);
-    if (!slots.length) { api.toast(`${t.label} has no Chargeable Part whose token is still face-down (4.14).`); return; }
+    if (!slots.length) { api.toast(`${t.label} has no Chargeable Part whose token is still face-down (4.14).`, 'refused'); return; }
     chargeSlot = slots.length === 1 ? String(slots[0].slot) : await choiceDialog({ title: a.name.en ?? a.id, choices: slots.map((x) => ({ id: String(x.slot), label: x.label })), stacked: true });
     if (chargeSlot === null) return;
   }
@@ -900,7 +901,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     ? `${t.label}: ${a.name.en}. ${shove.push
       ? `Push ${shove.grids}: an enemy Ground unit in the grid in front may be moved ${shove.grids} in a straight line, any direction you choose; settle it on the table.`
       : `Knockback ${shove.grids}: an enemy Ground unit in the grid in front may be moved ${shove.grids}, settle it on the table.`}`
-    : `${t.label}: ${a.name.en}.`);
+    : `${t.label}: ${a.name.en}.`, shove ? 'table' : 'done');
   // Push costs a pushed MECH 1 Link. The pad cannot see who stood in front, so
   // it asks; the toast said nothing and the Link never came off (audit Phase
   // 4, B4).
@@ -924,7 +925,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   const chain = 'join' as const;
   if (grant) api.send({ kind: 'applyStatus', seat, uid, targetUid: uid, statusId: grant.statusId, stacks: grant.stacks, chain });
   if (camo && api.send({ kind: 'applyStatus', seat, uid, targetUid: uid, statusId: 'camouflage', chain })) {
-    api.toast(`${t.label}: Optical Camouflage activated (4.12.2). Every Hexagon Token comes off; put the camouflage model on the table.`);
+    api.toast(`${t.label}: Optical Camouflage activated (4.12.2). Every Hexagon Token comes off; put the camouflage model on the table.`, 'table');
   }
   if (repair) api.send({ kind: 'repairPart', seat, uid, slot: repair.slot, mode: repair.mode, ...(repair.targetUid !== undefined ? { targetUid: repair.targetUid, actionId: a.id } : {}), chain });
   if (form) api.send({ kind: 'switchForm', seat, uid, actionId: a.id, cardId: form, chain });
@@ -932,7 +933,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   if (mode) api.send({ kind: 'transformPart', seat, uid, slot: mode.slot, cardId: mode.into.id, chain });
   if (unfoldsOwed(d, [t]).some((x) => x.actionId === a.id)) {
     api.send({ kind: 'unfold', seat, uid, chain, ...(occupied !== undefined ? { occupied } : {}) });
-    if (occupied) api.toast(`${t.label} Unfolded into an occupied Grid: it detonates at once, at one of the units there (FAQ M18.4).`);
+    if (occupied) api.toast(`${t.label} Unfolded into an occupied Grid: it detonates at once, at one of the units there (FAQ M18.4).`, 'table');
   }
   if (chargeSlot) api.send({ kind: 'setCharge', seat, uid, slot: chargeSlot as PartSlot, on: true, chain });
   if (tagged) api.send({ kind: 'applyStatus', seat, uid, targetUid: tagged.uid, statusId: tagged.statusId, stacks: tagged.stacks, chain });
@@ -944,12 +945,10 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     api.toast(linkTo.length ? `${a.name.en}: Link restored to ${linkTo.map((x) => x.label).join(', ')}.` : `${a.name.en}: nobody in range was short of Link.`);
   }
   if (cleaned) {
-    api.send({ kind: 'removeStatus', seat, uid, targetUid: cleaned.unit.uid, statusId: cleaned.pick.statusId, ...(cleaned.pick.face ? { face: cleaned.pick.face } : {}), chain });
-    api.toast(`${a.name.en}: ${cleaned.pick.label} removed from ${cleaned.unit.label}.`);
+    if (api.send({ kind: 'removeStatus', seat, uid, targetUid: cleaned.unit.uid, statusId: cleaned.pick.statusId, ...(cleaned.pick.face ? { face: cleaned.pick.face } : {}), chain })) api.toast(`${a.name.en}: ${cleaned.pick.label} removed from ${cleaned.unit.label}.`);
   }
   if (feedback) {
-    api.send({ kind: 'stanceFeedback', seat, uid, actionId: a.id, targetUid: feedback.to.uid, stance: feedback.stance, chain });
-    api.toast(`${a.name.en}: ${feedback.to.label} switches to ${feedback.stance} Stance.`);
+    if (api.send({ kind: 'stanceFeedback', seat, uid, actionId: a.id, targetUid: feedback.to.uid, stance: feedback.stance, chain })) api.toast(`${a.name.en}: ${feedback.to.label} switches to ${feedback.stance} Stance.`);
   }
   // Command Coordination off the back of the Action (the table judges the
   // Drone's range), then an Extra Action Opportunity the Action grants.
@@ -1177,7 +1176,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       // pad names who could owe one (audit Phase 5, B7).
       if (t.aerial) {
         const guards = interceptorsAgainst(api.data, s.tokens, t.side);
-        if (guards.length) api.toast(`Interception may be owed (4.9): ${guards.map((g) => g.label).join(', ')}, if in Range of ${t.label}'s start or landing.`);
+        if (guards.length) api.toast(`Interception may be owed (4.9): ${guards.map((g) => g.label).join(', ')}, if in Range of ${t.label}'s start or landing.`, 'table');
       }
       // A2K Data Link (GoF 1.021, 175_A): one Command Coordination after the
       // Maneuver, joined to it for Undo (audit Phase 5, F2).

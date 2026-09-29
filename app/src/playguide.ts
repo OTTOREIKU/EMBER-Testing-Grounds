@@ -1,13 +1,13 @@
-import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token, TokenPick } from './types';
+import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token } from './types';
 import { newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS, tokenFaces, zonesOf } from './types';
 import type { GameData, MissionCard } from './data';
 import { BASE, cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { actionPartWhy, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, firewatchOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
+import { actionPartWhy, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, firewatchOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { actionPipCount, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
-import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens, taskDesignations, swarmFor } from './commands';
+import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens, strictNow, taskDesignations, swarmFor } from './commands';
 import { openActivation, popDeadExtras } from './glue';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
 import { tacticFitsPhase, tacticSpec, tacticUsedRound, tacticWindowWhy } from './tactics';
@@ -178,6 +178,7 @@ export class PlayGuide {
     const sc = this.script(s);
     const now = `${s.round.n}:${s.round.phase}`;
     if (sc.stage === now || sc.stage === `${now}:locked`) return false;
+    this.warn = null;
     const leaving = sc.stage.split(':')[1];
     sc.swarm = null;
     // 3.2.3 clears the DRONES' Command Tokens on the way out, and nothing
@@ -404,8 +405,8 @@ export class PlayGuide {
     this.root.querySelectorAll<HTMLButtonElement>('[data-secondary]').forEach((b) =>
       b.addEventListener('click', () => this.cb.onPickSecondary(b.dataset.secondary as Side)),
     );
-    this.root.querySelectorAll<HTMLButtonElement>('[data-designate]').forEach((b) =>
-      b.addEventListener('click', () => this.cb.onDesignate?.(Number(b.dataset.designate))),
+    this.root.querySelectorAll<HTMLButtonElement>('[data-task-designate]').forEach((b) =>
+      b.addEventListener('click', () => this.cb.onDesignate?.(Number(b.dataset.taskDesignate))),
     );
     this.root.querySelectorAll<HTMLButtonElement>('[data-place-box]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -424,20 +425,6 @@ export class PlayGuide {
         const v = perform(this.data, s, { kind: 'placeTaskItem', seat: turn, itemId: item.id, to: { col: item.col, row: item.row } });
         this.warn = v.ok ? null : v.why ?? null;
         this.cb.onChanged();
-      }),
-    );
-    this.root.querySelectorAll<HTMLButtonElement>('[data-stabilise]').forEach((b) =>
-      b.addEventListener('click', () => this.stabilise(Number(b.dataset.stabilise))),
-    );
-    this.root.querySelectorAll<HTMLButtonElement>('[data-reveal]').forEach((b) =>
-      b.addEventListener('click', () => this.revealUnit(Number(b.dataset.reveal))),
-    );
-    this.root.querySelectorAll<HTMLButtonElement>('[data-scan]').forEach((b) =>
-      b.addEventListener('click', () => {
-        const t = this.state?.tokens.find((x) => x.uid === Number(b.dataset.scan));
-        if (!t) return;
-        this.cb.onSelectUnit(t.uid);
-        this.cb.onNote(t, 'Scan: pick a camouflaged or Low Profile enemy within Range 6 and make an Electronic counter-roll against it. On a success the camouflage is Revealed, or a Low Profile Token comes off.');
       }),
     );
     this.root.querySelectorAll<HTMLButtonElement>('[data-reboot]').forEach((b) =>
@@ -1008,7 +995,7 @@ export class PlayGuide {
     const owed = taskDesignations(this.data, s);
     const named = owed.map((d, i) => (this.notMySeat(d.by)
       ? row(d.label, `${squadLabel(d.by)} names it`, false)
-      : `<div class="pg-units"><button class="pg-unit warn" data-designate="${i}">${esc(squadLabel(d.by))}: name the ${esc(d.label)}</button></div>`)).join('');
+      : `<div class="pg-units"><button class="pg-unit warn" data-task-designate="${i}">${esc(squadLabel(d.by))}: name the ${esc(d.label)}</button></div>`)).join('');
     const boxes = s.noBoard ? [] : tasks.items.filter((i) => i.kind === 'blackbox');
     const turn = boxPlaceTurn(tasks, fp);
     const zoneName = (id: string) => zonesOf(this.data.zoneData.zones, s).find((z) => z.id === id)?.name ?? id;
@@ -1545,67 +1532,6 @@ export class PlayGuide {
     this.cb.onChanged();
   }
 
-  // Stabilize System (6.1): Torso removes 1 Square or Hexagon Token from this
-  // Mech, then restores 1 Link.
-  private stabilise(uid: number): void {
-    void (async () => {
-      const s = this.state;
-      const t = s?.tokens.find((x) => x.uid === uid);
-      if (!s || !t) return;
-      // units.ts stabiliseAsk, the question the tabletop, the Match Centre
-      // and the pad all ask: every Token worn, face included, and keeping
-      // them all only when a Link is missing (FAQ J4, J8). The guide performs
-      // Stabilize through the board's performGuided now; this door has no
-      // button left, and asks the same question in case one returns.
-      const ask = stabiliseAsk(this.data, t);
-      let pick: TokenPick | undefined;
-      if (ask.picks.length) {
-        const id = await choiceDialog({
-          title: `Stabilize ${t.label}`,
-          body: ask.body,
-          choices: [
-            ...ask.picks.map((p) => ({ id: p.id, label: stabiliseRowLabel(p) })),
-            ...(ask.keep ? [{ id: '__keep', label: STABILISE_KEEP_LABEL }] : []),
-            { id: '__cancel', label: 'Cancel', cancel: true },
-          ],
-          stacked: true,
-        });
-        if (id === null || id === '__cancel') return;
-        pick = ask.picks.find((p) => p.id === id);
-      }
-      perform(this.data, s, pick
-        ? { kind: 'stabilise', seat: t.side, uid, statusId: pick.statusId, ...(pick.face ? { face: pick.face } : {}) }
-        : { kind: 'stabilise', seat: t.side, uid, keepTokens: true });
-      this.cb.onNote(t, pick
-        ? `Stabilize System: ${pick.label} removed${ask.keep ? `, and Link restored to ${t.link}` : ''}.`
-        : `Stabilize System: Link restored to ${t.link}.`);
-      this.cb.onChanged();
-    })();
-  }
-
-  // Reveal (6.1): leave the Optical Camouflage State, then make Manifestation
-  // Movement. The board behind the guide owns unit placement, so when it
-  // offers its picker the hop is made there (onReveal; ruled 2026-09-25, audit
-  // Phase 3, F6). The guide used to TEACH the move instead, Revealing in place
-  // and naming the number, which is what it still does with no picker to hand.
-  private revealUnit(uid: number): void {
-    const s = this.state;
-    const t = s?.tokens.find((x) => x.uid === uid);
-    if (!s || !t) return;
-    if (this.cb.onReveal) {
-      this.cb.onSelectUnit(t.uid);
-      this.cb.onReveal(t, 'Reveal:', false);
-      return;
-    }
-    const range = manifestationRange(this.data, t);
-    perform(this.data, s, { kind: 'reveal', seat: t.side, uid });
-    this.cb.onSelectUnit(t.uid);
-    this.cb.onNote(t, range > 0
-      ? `Reveal: out of the Optical Camouflage State. Its marker was only a SUSPECTED position, so it now Manifests up to ${range} Grid${range === 1 ? '' : 's'} away (Stealth ${range}) - Teleportation, so terrain and units in between do not matter (4.12.2).`
-      : `Reveal: out of the Optical Camouflage State. This unit has no Stealth value, so it appears where its marker stood (4.12.2).`);
-    this.cb.onChanged();
-  }
-
   private reboot(stance: Stance): void {
     const s = this.state;
     if (!s) return;
@@ -1854,7 +1780,9 @@ export class PlayGuide {
     const priced = stanceShaped(row.action, t.stance);
     const verdict = canPerform(o, priced, row.partKey, tickOpts);
     const why = row.blocked ?? (verdict.ok ? undefined : verdict.why);
-    if (why && this.warn !== why) {
+    // Teaching warns once and lets a second press through; a strict game
+    // refuses every press (the second one used to open the attack anyway).
+    if (why && (strictNow(s) || this.warn !== why)) {
       this.warn = why;
       this.render();
       return;
@@ -2025,7 +1953,7 @@ export class PlayGuide {
     const unit = s.tokens.find((x) => x.uid === uid);
     const ga = unit && guidedActions(this.data, unit, this.cb.world()).find((g) => g.action.id === actionId);
     const why = ga && !ga.available ? ga.reason ?? null : null;
-    if (why && this.warn !== why) {
+    if (why && (strictNow(s) || this.warn !== why)) {
       this.warn = why;
       this.render();
       return;
@@ -2174,6 +2102,7 @@ export class PlayGuide {
     return `${fp}${tokens}
       <p class="pg-active">Now: <b class="side-${turn}">${esc(squadLabel(turn))}</b>
         <small>pick a ${noun} to ${verb}</small></p>
+      ${this.warn ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
       ${swarmNote}
       <div class="pg-units">
         ${units

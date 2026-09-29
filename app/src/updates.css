@@ -45,10 +45,9 @@
   .upd.float { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); width: auto; }
 }
 
-/* In the page's own flow (the pad's column, the board's rail, the lobby). */
+/* In the page's own flow (the board's rail). */
 .upd.inline { box-shadow: none; flex-shrink: 0; }
 .upd.upd-rail { margin: 8px; }
-.upd.upd-col { margin-bottom: 14px; }
 
 /* The landing page's status line: its right end, in the line's own voice,
    with the landing's round chevron. */

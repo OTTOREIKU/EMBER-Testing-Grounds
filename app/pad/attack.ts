@@ -14,6 +14,7 @@ import { boxHands, normaliseTasks } from '../src/tasks';
 import { AttackHelper, combatRoleFor, type MirrorAct } from '../src/combat';
 import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, armorPiercing, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, structureOf, tokenCards, twoHandedUse, loanedParts } from '../src/units';
 import { statusCount } from '../src/types';
+import type { NoticeKind } from '../src/notices';
 import type { CardAction, DiceData, DieColor, GameState, PartSlot, Side, Token } from '../src/types';
 import type { RolledDie } from '../src/net';
 
@@ -25,7 +26,7 @@ export interface AttackApi {
   inRoom(): boolean;
   send(cmd: Command): boolean;
   check(cmd: Command): CheckResult;
-  toast(text: string): void;
+  toast(text: string, kind?: NoticeKind): void;
   render(): void;
   // The window's panel: shown while an attack is live here or mirrored here.
   openCombat(): void;
@@ -332,7 +333,7 @@ export function mountAttack(into: HTMLElement): AttackHelper | null {
     // held reports none, FAQ C5).
     (_attacker, defender, action, hits) => {
       const kb = knockbackOf(action, a.data.actionTranslation(action.id)?.english ?? undefined);
-      if (kb && !(kb.onHit && hits === 0)) a.toast(`${defender.label}: ${kb.push ? 'Push' : 'Knockback'} ${kb.grids}, settle it on the table.`);
+      if (kb && !(kb.onHit && hits === 0)) a.toast(`${defender.label}: ${kb.push ? 'Push' : 'Knockback'} ${kb.grids}, settle it on the table.`, 'table');
     },
     (killer, victim, what) => {
       a.send({ kind: 'recordKill', seat: killer.side, uid: killer.uid, targetUid: victim.uid, what });
@@ -345,7 +346,7 @@ export function mountAttack(into: HTMLElement): AttackHelper | null {
       const box = normaliseTasks(a.state().tasks).items.find((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid);
       if (!box) return;
       if (a.send({ kind: 'dropBlackBox', seat: attacker.side, uid: attacker.uid, itemId: box.id, to: { col: victim.col, row: victim.row } })) {
-        a.toast(`${victim.label} drops its Black Box: ${attacker.label}'s player places it in contact with its base (5.3.1).`);
+        a.toast(`${victim.label} drops its Black Box: ${attacker.label}'s player places it in contact with its base (5.3.1).`, 'table');
       }
     },
     // The verdict goes back to the window, which rerolls nothing on a spend
@@ -388,7 +389,7 @@ export function mountAttack(into: HTMLElement): AttackHelper | null {
               : { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'trace' as const, fromUid: attacker.uid }],
       });
     } else {
-      a.toast(`${defender.label} may react: ${reaction.name}.`);
+      a.toast(`${defender.label} may react: ${reaction.name}.`, 'table');
     }
     a.render();
   };
@@ -408,7 +409,7 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
   const a = api!;
   if (!root) return false;
   const h = mountAttack(root);
-  if (!h) { a.toast('No dice data loaded.'); return false; }
+  if (!h) { a.toast('No dice data loaded.', 'system'); return false; }
   const adjusted = attackActionOf(attacker, actionId, verdict);
   if (!adjusted) return false;
   const action = chargeAdjusted(adjusted, !!verdict.chargeSpent, verdict.chargeChoice);
@@ -539,7 +540,7 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
   if (!view || !df || df.side !== seat) return false;
   const pay = (cmd: Command): boolean => {
     const v = a.check(cmd);
-    if (!v.ok) { a.toast(v.why); return false; }
+    if (!v.ok) { a.toast(v.why, 'refused'); return false; }
     return a.send(cmd);
   };
   switch (act) {
@@ -549,7 +550,7 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
       void rollDefensePool(call.white, call.blue).then((faces) => {
         a.send({ kind: 'answerDefense', seat, faces });
         a.render();
-      }).catch(() => a.toast('The dice did not come back. Roll again.'));
+      }).catch(() => a.toast('The dice did not come back. Roll again.', 'system'));
       return true;
     }
     case 'kcarmor': {
@@ -593,7 +594,7 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
         const out = indices.map((i) => byColor[defense[i].color]?.shift() ?? { color: defense[i].color, face: 0 });
         a.send({ kind: 'focusReroll', seat, indices, faces: out });
         a.render();
-      }).catch(() => a.toast('The reroll dice did not come back. Reroll again.'));
+      }).catch(() => a.toast('The reroll dice did not come back. Reroll again.', 'system'));
       return true;
     }
   }

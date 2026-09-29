@@ -1,0 +1,32 @@
+/* The notice line (notices.ts). Its LOOK lives here, once; WHERE it sits is
+ * each page's own rule on its host element (the pad: above the dock). Flat,
+ * one line, the pad toast's surface; a dot says what kind of notice it is.
+ * The dismiss control is the list-row .ui-x from ui.css. */
+.notice-line {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 38px; padding: 6px 6px 6px 12px;
+  background: var(--surface3); color: var(--text);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  font-size: 13px; line-height: 1.3;
+}
+.notice-line[hidden] { display: none; }
+.notice-dot {
+  width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%;
+  background: var(--text2);
+}
+.notice-line.k-refused .notice-dot { background: var(--red); }
+.notice-line.k-warn .notice-dot,
+.notice-line.k-table .notice-dot { background: var(--accent); }
+.notice-line.k-event .notice-dot { background: var(--notice-other, var(--text2)); }
+.notice-line.k-system .notice-dot { background: var(--red); }
+.notice-text { flex: 1 1 auto; min-width: 0; }
+.notice-undo {
+  flex: 0 0 auto; border: none; cursor: pointer;
+  padding: 6px 10px; border-radius: var(--radius-sm);
+  background: var(--accent-lt); color: var(--accent);
+  font: inherit; font-weight: 600;
+  transition: background 0.12s, color 0.12s;
+}
+.notice-undo:hover { background: var(--accent); color: var(--on-accent); }
+.notice-x { flex: 0 0 auto; }

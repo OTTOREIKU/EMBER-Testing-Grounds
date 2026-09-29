@@ -55,7 +55,7 @@ for (const [name, src] of [['main.ts', main], ['matchhud.ts', hud], ['playguide.
   for (const field of FINGERPRINTED) {
     // `t.charge = ...` and friends. Reads are fine; assignment is not. The
     // lookahead spares `el.dataset.mech`, which is markup rather than state.
-    const writes = [...src.matchAll(new RegExp(`\\b(?!dataset\\.)\\w+\\.${field}\\s*=[^=]`, 'g'))].map((m) => m[0].trim());
+    const writes = [...src.matchAll(new RegExp(`\\b(?!dataset\\.)\\w+\\.${field}(?:\\[[^\\]]*\\])?\\s*=[^=]`, 'g'))].map((m) => m[0].trim());
     check(`${name} assigns .${field} only where allowed`, writes.length, ALLOWED[name]?.[field] ?? 0);
   }
 }
@@ -87,9 +87,9 @@ for (const plan of tools) {
 // The inline ones: branches that both act and return true in place, so they
 // have nothing later to pay for them.
 check('the Unfold branch pays before it returns',
-  /commitAction\(ctx\);\s*\n\s*ctx\.send\(\{ kind: 'unfold'/.test(route), true);
+  /commitAction\(ctx\);\s*\n\s*(?:if \()?ctx\.send\(\{ kind: 'unfold'/.test(route), true);
 check('the Mode-change branch pays before it returns',
-  /commitAction\(ctx\);\s*\n\s*ctx\.send\(\{ kind: 'transformPart'/.test(route), true);
+  /commitAction\(ctx\);\s*\n\s*(?:if \()?ctx\.send\(\{ kind: 'transformPart'/.test(route), true);
 // The count of commitAction call sites, so deleting one is loud. Eleven tools
 // plus the no-tool path: move (x2 — the plan and the route), launch, blink,
 // attack, EW, charge, resupply, repair, unfold, transformPart (287/288's Mode

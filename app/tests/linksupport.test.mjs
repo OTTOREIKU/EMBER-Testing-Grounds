@@ -123,10 +123,12 @@ const guide = read('../src/playguide.ts');
 check('the pad\'s Link + is a plain Recover, not Stabilize',
   [pad.includes('data-act="link-up" aria-label="Recover 1 Link"'), /case 'link-up':[^\n]*kind: 'recoverLink'/.test(pad), pad.includes('data-act="stabilise" aria-label')], [true, true, false]);
 check('the pad no longer takes a lone Token without asking', /worn\.length < 2/.test(pad), false);
-check('all four Stabilize doors ask the shared question',
-  [pad, main, hud, guide].map((src) => src.includes('stabiliseAsk(')), [true, true, true, true]);
+// The guide's own Stabilize door had no button left and was removed
+// (notices audit, 2026-09-28); the guide performs it through the board.
+check('all three Stabilize doors ask the shared question',
+  [pad, main, hud].map((src) => src.includes('stabiliseAsk(')), [true, true, true]);
 check('and each has a Cancel that cancels',
-  [pad, main, guide].map((src) => src.includes("'__cancel'")).concat(hud.includes('data-act="stabcancel"')), [true, true, true, true]);
+  [pad, main].map((src) => src.includes("'__cancel'")).concat(hud.includes('data-act="stabcancel"')), [true, true, true]);
 check('the Guided pad pays for Stabilize only once it is answered',
   /api\.stabilise\?\.\(t\.uid, \(\) => api\.send\(\{ kind: 'performAction'/.test(guided), true);
 const route = cut(hud, 'function routeAction(', 'function launchPickPanel', 'routeAction');

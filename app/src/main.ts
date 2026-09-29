@@ -1676,7 +1676,7 @@ async function init() {
         void alertDialog({ title: 'Nothing to gain', body: why });
         return done(false);
       }
-      const v = perform(data, state, { kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: grant.statusId, stacks: grant.stacks });
+      const v = performChecked({ kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: grant.statusId, stacks: grant.stacks });
       if (!v.ok) {
         void alertDialog({ title: 'Refused', body: v.why ?? 'The Token was refused.' });
         return done(false);
@@ -1891,7 +1891,7 @@ async function init() {
       stacked: true,
     });
     if (pick !== 's1' && pick !== 's2') return;
-    const v = perform(data, state, { kind: 'concede', seat: pick });
+    const v = performChecked({ kind: 'concede', seat: pick });
     if (!v.ok) {
       await alertDialog({ title: 'Not conceded', body: v.why ?? 'The concession was refused.' });
       return;
@@ -5008,6 +5008,16 @@ async function init() {
     showSideTab('combat');
   }
 
+  // Refused means refused, freeplay included. Outside a strict game perform()
+  // applies a command the rules turn down and only RETURNS the reason, so the
+  // page said "Refused" with the change already on the board (notices audit,
+  // 2026-09-28). The rules are asked first; only an allowed command is done.
+  function performChecked(cmd: Command): ReturnType<typeof check> {
+    const v = check(data, state, cmd);
+    if (v.ok) perform(data, state, cmd);
+    return v;
+  }
+
   function logTo(t: Token, text: string): void {
     t.log = [...(t.log ?? []), { round: state.round.n, text }];
     if (t.log.length > 200) t.log = t.log.slice(-200);
@@ -5925,7 +5935,7 @@ async function init() {
         ...(layer.deploy ? { deploy: trimDep(layer.deploy) } : {}),
       };
     }
-    const done = perform(data, state, { kind: 'configureTable', seat: 's1', grids: want });
+    const done = performChecked({ kind: 'configureTable', seat: 's1', grids: want });
     if (!done.ok) {
       editorNote = done.why ?? 'The board size cannot change right now.';
       renderEditorBar();
@@ -6060,7 +6070,7 @@ async function init() {
     saveCustomMap(name.trim(), raw as CustomMap);
     populateMapSelect();
     const imported = `custom:${name.trim()}`;
-    const v = perform(data, state, {
+    const v = performChecked({
       kind: 'configureTable', seat: 's1', map: imported, grids: mapGrids(imported),
       // Resolved from the map that just arrived. `zones: null` alone left the
       // PREVIOUS map's Deployment Zones on the table, which on a size change is
@@ -6305,8 +6315,6 @@ async function init() {
 
   let lastStockSig = '';
 
-  // A Projectile is spent scenery and goes without asking. Anything else is a
-  // built unit with no undo behind it, so it gets a confirmation.
   // Tactics resolve here rather than in the squad list because every one of them
   // needs a target picker, and two of them need a second choice on top of that.
   // Nothing is stamped as played until the effect has actually landed, so backing
@@ -6394,6 +6402,8 @@ async function init() {
     await alertDialog({ title: spec.name, body: verdict.ok ? log : `${log}\n\n${verdict.why}` });
   }
 
+  // A Projectile is spent scenery and goes without asking. Anything else is a
+  // built unit, so it asks first; Undo takes a removal back like any move.
   async function removeUnit(uid: number): Promise<void> {
     const t = state.tokens.find((x) => x.uid === uid);
     if (!t) return;
@@ -6402,8 +6412,8 @@ async function init() {
       const ok = await confirmDialog({
         title: `Remove ${t.label}?`,
         body: carried
-          ? `It comes off the board along with ${carried} projectile${carried === 1 ? '' : 's'} it launched. There is no undo.`
-          : 'It comes off the board and out of its squad. There is no undo.',
+          ? `It comes off the board along with ${carried} projectile${carried === 1 ? '' : 's'} it launched. Undo takes it back.`
+          : 'It comes off the board and out of its squad. Undo takes it back.',
         confirmLabel: 'Remove',
         danger: true,
       });
@@ -6497,7 +6507,7 @@ async function init() {
       return done(false);
     }
     const stealth = stealthValue(action) ?? 0;
-    const v = perform(data, state, {
+    const v = performChecked({
       kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'camouflage',
     });
     if (!v.ok) {
@@ -6565,7 +6575,7 @@ async function init() {
       });
       facing = id ? (Number(id) as Facing) : undefined;
     }
-    const v = perform(data, state, { kind: 'reveal', seat: t.side, uid: t.uid, to, facing });
+    const v = performChecked({ kind: 'reveal', seat: t.side, uid: t.uid, to, facing });
     if (!v.ok) return false;
     logTo(t, to
       ? `${why} Optical Camouflage ends and ${t.label} Manifests to ${gridRef(Math.floor(to.col / 3), Math.floor(to.row / 3))} (4.12.2).`
@@ -7278,7 +7288,7 @@ async function init() {
     // The zones ride with the map: a Task already chosen has to be re-resolved
     // against the new battlefield, or it would keep scoring the old one's areas.
     const nextMission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
-    const v = perform(data, state, {
+    const v = performChecked({
       kind: 'configureTable', seat: 's1', map: mapSelect.value, grids: mapGrids(mapSelect.value),
       zones: nextMission ? tableZones(mapSelect.value, nextMission.id) : null,
       deployZones: tableDeployFor(mapDoc(mapSelect.value), nextMission?.id ?? null),
@@ -8080,7 +8090,7 @@ async function init() {
     });
     const card = open.find((c) => c.id === id);
     if (!card) return;
-    const v = perform(data, state, { kind: 'pickSecondary', seat: side, cardId: card.id });
+    const v = performChecked({ kind: 'pickSecondary', seat: side, cardId: card.id });
     if (!v.ok) {
       await alertDialog({ title: card.name, body: v.why ?? 'That pick was refused.' });
       return;
@@ -8131,7 +8141,7 @@ async function init() {
       if (pick) cmd = { kind: 'designateTask', seat: d.by, what: d.what, for: d.side, uid: pick.uid };
     }
     if (!cmd) return;
-    const v = perform(data, state, cmd);
+    const v = performChecked(cmd);
     if (!v.ok) await alertDialog({ title: d.label, body: v.why ?? 'That designation was refused.' });
   }
 
@@ -8926,7 +8936,7 @@ async function init() {
     tactics?: string[],
   ): boolean {
     const firstUid = state.nextUid;
-    const verdict = perform(data, state, { kind: 'importSquad', seat: side, name, mechs, drones });
+    const verdict = performChecked({ kind: 'importSquad', seat: side, name, mechs, drones });
     if (!verdict.ok) {
       void alertDialog({ title: 'The squad could not join', body: verdict.why });
       return false;

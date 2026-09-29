@@ -283,7 +283,7 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   check('the Match Centre apply branch handles a Scan before the FCI fallback',
     /act === 'apply'\) \{[\s\S]{0,1600}?const win = ewWinCommands\(ctx\.data, init, resp, a,/.test(hud)
       && !/STATUSES\.find\(\(x\) => x\.id === 'fci'\)/.test(hud), true);
-  check('stripping the Tokens there too', /for \(const cmd of win\.cmds\) ctx\.send\(cmd\);/.test(hud), true);
+  check('stripping the Tokens there too', /for \(const cmd of win\.cmds\) won = ctx\.send\(cmd\)\.ok && won;/.test(hud), true);
   check('and queueing the manifest debt for the target player',
     /kind: 'manifest', fromUid: uid/.test(win) && /ewWinCommands\(/.test(hud), true);
   // 2. Freeplay consumes reactions per-kind and had no manifest branch, so a

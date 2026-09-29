@@ -11,6 +11,7 @@ import { forSeat } from './attack';
 import { electronicStrength, ewWinCommands, tokenCards, loanedParts } from '../src/units';
 import { normaliseTasks, TERMINAL_EV, TERMINAL_UID, terminalStandIn, type TaskItem } from '../src/tasks';
 import { type CardAction, type CounterRoll, type DiceData, type GameState, type Side, type Token } from '../src/types';
+import type { NoticeKind } from '../src/notices';
 import type { GameData } from '../src/data';
 
 export interface EwApi {
@@ -20,7 +21,7 @@ export interface EwApi {
   solo: boolean;
   inRoom(): boolean;
   send(cmd: Command): boolean;
-  toast(text: string): void;
+  toast(text: string, kind?: NoticeKind): void;
   render(): void;
   openCombat(): void;
   closeCombat(): void;
@@ -96,7 +97,7 @@ export function beginElectronic(attacker: Token, actionId: string, defender: Tok
   }
   if (!root) return false;
   const h = mountEw(root);
-  if (!h) { a.toast('No dice data loaded.'); return false; }
+  if (!h) { a.toast('No dice data loaded.', 'system'); return false; }
   const action = actionOf(attacker, actionId);
   if (!action) return false;
   h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
@@ -121,7 +122,7 @@ export function beginElectronicAll(attacker: Token, actionId: string, targets: T
   }
   if (!root) return false;
   const h = mountEw(root);
-  if (!h) { a.toast('No dice data loaded.'); return false; }
+  if (!h) { a.toast('No dice data loaded.', 'system'); return false; }
   const action = actionOf(attacker, actionId);
   if (!action) return false;
   h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
@@ -150,13 +151,13 @@ export function beginFreeScan(attacker: Token, attackId: string, defender: Token
   }
   if (!root) return false;
   const h = mountEw(root);
-  if (!h) { a.toast('No dice data loaded.'); return false; }
+  if (!h) { a.toast('No dice data loaded.', 'system'); return false; }
   const scan = a.data.commonActions.find((x) => x.id === 'COMMON_SCAN') as CardAction | undefined;
   if (!scan) return false;
   h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
   h.start(attacker, scan, defender, {
     then: (win) => {
-      if (!win) { a.toast(`The Scan failed, so the attack on ${defender.label} ends. The Action Tick is spent (FAQ I11).`); return; }
+      if (!win) { a.toast(`The Scan failed, so the attack on ${defender.label} ends. The Action Tick is spent (FAQ I11).`, 'warn'); return; }
       a.send({ kind: 'queueReactions', seat: attacker.side, items: [{ uid: attacker.uid, actionId: attackId, count: 1, range: 0, kind: 'scanAttack', fromUid: defender.uid }] });
     },
   });
@@ -175,7 +176,7 @@ export function beginBlastScan(proj: Token, defender: Token): boolean {
   }
   if (!root) return false;
   const h = mountEw(root);
-  if (!h) { a.toast('No dice data loaded.'); return false; }
+  if (!h) { a.toast('No dice data loaded.', 'system'); return false; }
   const scan = a.data.commonActions.find((x) => x.id === 'COMMON_SCAN') as CardAction | undefined;
   if (!scan) return false;
   h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
@@ -201,7 +202,7 @@ export function beginTerminal(attacker: Token, actionId: string, item: TaskItem,
   }
   if (!root) return false;
   const h = mountEw(root);
-  if (!h) { a.toast('No dice data loaded.'); return false; }
+  if (!h) { a.toast('No dice data loaded.', 'system'); return false; }
   const action = actionOf(attacker, actionId);
   if (!action) return false;
   h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
@@ -233,7 +234,7 @@ export function beginTrace(tracer: Token, actionId: string, attacker: Token): bo
   }
   if (!root) return false;
   const h = mountEw(root);
-  if (!h) { a.toast('No dice data loaded.'); return false; }
+  if (!h) { a.toast('No dice data loaded.', 'system'); return false; }
   const action = actionOf(tracer, actionId);
   if (!action) return false;
   if (!a.send({ kind: 'spendCommand', seat: tracer.side, uid: tracer.uid, chain: 'join' })) return false;

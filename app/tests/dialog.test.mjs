@@ -108,6 +108,7 @@ const listeners = {};
 globalThis.document = {
   createElement: (t) => new El(t),
   body,
+  querySelectorAll: (sel) => body.querySelectorAll(sel),
   addEventListener: (k, fn) => ((listeners[k] ??= []).push(fn)),
   removeEventListener: (k, fn) => (listeners[k] = (listeners[k] ?? []).filter((f) => f !== fn)),
 };
@@ -189,6 +190,22 @@ check('exactly one button is the Escape target', marked.length, 1);
 check('and it is the one that said so', marked[0].dataset.id, 'cancel');
 pressEscape();
 await p;
+
+// Two dialogs stacked (a reveal prompt per owed unit, main.ts): one Escape
+// closes the TOP one only. Every dialog listens on the document and the bottom
+// one hears the key first, so it used to answer for both - including the one
+// the player never saw (notices audit, 2026-09-28).
+let bottomAnswer = 'pending';
+void confirmDialog({ title: 'reveal the first?' }).then((v) => { bottomAnswer = v; });
+const topAsk = choiceDialog({ title: 'reveal the second?', choices: [{ id: 'yes', label: 'Yes' }, { id: 'cancel', label: 'Keep it hidden', cancel: true }] });
+check('two dialogs are open', body.children.length, 2);
+pressEscape();
+check('one Escape answers the dialog on top', await topAsk, 'cancel');
+await new Promise((r) => setTimeout(r, 0));
+check('and leaves the one beneath it waiting', [bottomAnswer, body.children.length], ['pending', 1]);
+pressEscape();
+await new Promise((r) => setTimeout(r, 0));
+check('the next Escape answers that one', [bottomAnswer, body.children.length], [false, 0]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

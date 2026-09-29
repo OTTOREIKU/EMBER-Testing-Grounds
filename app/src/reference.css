@@ -288,8 +288,6 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 
 /* Sits under the scan, which is the least current source we hold. */
 .ref-scan { margin: 0; }
-.ref-scan-note { color: var(--text3); font-size: 11px; margin: -6px 0 12px; line-height: 1.5; }
-
 /* The publisher's own page for this card, the one its QR code opens. */
 .ref-official { margin: -4px 0 10px; font-size: 12px; }
 .ref-official a {

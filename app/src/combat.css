@@ -866,3 +866,36 @@
 .ah-dodgepick b { font-family: var(--mono); min-width: 1.4em; text-align: center; color: var(--text); }
 .ah-dodgepick button { min-width: 34px; }
 
+/* ---------- the hover popout, and the cue that something answers a hover ----------
+   The combat window names mechanics that answer a hover or a tap (linkMechanics,
+   inspector.ts). The board page answers in its docked #inspect-box; every other
+   host gets this floating #inspect-pop, which inspector.ts creates. It lived in
+   match.css, so on the pad a tap pinned an unstyled block somewhere below the
+   table screen (notices audit, 2026-09-28). Here it travels with the window. */
+.mech-link { cursor: help; text-decoration: underline dotted currentColor; text-underline-offset: 2px; }
+.inspect-pinnable { cursor: pointer; }
+#inspect-pop {
+  position: fixed; z-index: 1250; width: 300px; max-width: calc(100vw - 24px);
+  max-height: min(440px, calc(100vh - 24px)); overflow-y: auto;
+  background: var(--surface2); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg, 0 10px 34px rgba(0, 0, 0, 0.45)); padding: 10px 12px;
+  opacity: 0; pointer-events: none; transition: opacity 0.08s;
+}
+#inspect-pop.visible { opacity: 1; }
+/* Pinned means "I want to read this", so it becomes clickable and scrollable
+   and says which it is. */
+#inspect-pop.pinned { pointer-events: auto; box-shadow: var(--shadow-lg, 0 10px 34px rgba(0, 0, 0, 0.45)), inset 0 2px 0 0 var(--accent); }
+#inspect-pop h4 {
+  margin: 0 0 3px; font-size: 11px; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 0.7px; font-weight: 700;
+  display: flex; align-items: flex-start; gap: 6px;
+}
+#inspect-pop .inspect-sub { margin: 0 0 5px; font-size: 11px; color: var(--text2); }
+#inspect-pop ul { margin: 0; padding-left: 14px; }
+#inspect-pop li { font-size: 11.5px; color: var(--text); line-height: 1.45; margin-bottom: 2px; }
+#inspect-pop .inspect-unpin {
+  margin-left: auto; flex-shrink: 0; border: none; background: var(--surface3);
+  color: var(--text2); border-radius: var(--radius-sm); cursor: pointer; font-size: 10px;
+  line-height: 1; padding: 3px 6px;
+}
+#inspect-pop .inspect-unpin:hover { background: var(--red-lt); color: var(--red); }

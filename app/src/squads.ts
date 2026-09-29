@@ -23,7 +23,7 @@ import { PHASES, SCALES, SHAPE_NOTE, statusCount, statusesFor, statusStacks, STA
 import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
 import { tacticFitsPhase, tacticSpec, tacticUsedRound, tacticWindowWhy } from './tactics';
-import { perform } from './commands';
+import { check, perform } from './commands';
 import { dialHidden, getLocalSeat } from './loop';
 import { defaultUnitLabel, emptyCarriers, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, structureOf, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
@@ -669,8 +669,10 @@ export class SquadTracker {
       // Online: the minus is the Focus COMMAND, so it stays — on your own
       // units. The plus is a local nudge with no command behind it (the other
       // board would never hear of it), so it does not render at all there.
-      const minusBtn = this.handsOff(t) ? '' : '<button class="lk-minus" title="Spend/lose 1 Link">−</button>';
-      const plusBtn = this.online() ? '' : '<button class="lk-plus" title="Recover 1 Link">+</button>';
+      const spend = check(this.data, this.state!, { kind: 'focus', seat: t.side, uid: t.uid });
+      const recover = check(this.data, this.state!, { kind: 'recoverLink', seat: t.side, uid: t.uid, targetUid: t.uid });
+      const minusBtn = this.handsOff(t) ? '' : `<button class="lk-minus" title="${esc(spend.ok ? 'Spend/lose 1 Link' : spend.why ?? 'Not now.')}"${spend.ok ? '' : ' disabled'}>−</button>`;
+      const plusBtn = this.online() ? '' : `<button class="lk-plus" title="${esc(recover.ok ? 'Recover 1 Link' : recover.why ?? 'Not now.')}"${recover.ok ? '' : ' disabled'}>+</button>`;
       link.innerHTML = `${minusBtn}<b class="lk-val">${bolt}${Number(t.link ?? 0)}${maxLink ? `<small>/${maxLink}</small>` : ''}</b>${plusBtn}`;
       // The title carries the Link mark's own markup, so this hover draws HTML;
       // everything else in it is a number or fixed text.
@@ -1253,7 +1255,10 @@ export class SquadTracker {
         if (st === 'intact') next = hasStructure ? 'damaged' : 'destroyed';
         else if (st === 'damaged') next = 'destroyed';
         else next = 'intact';
-        t.partStates[slot as PartSlot | 'main'] = next;
+        // Through the command, like the pad's part taps, recorded by the side
+        // that dealt it: written by hand it skipped the undo history and all
+        // the bookkeeping a Part's state carries (Link, kills, Tasks, Tethers).
+        perform(this.data, this.state!, { kind: 'setPartState', seat: t.side === 's1' ? 's2' : 's1', uid: t.uid, slot: slot as PartSlot | 'main', state: next });
         this.cb.onChanged();
       });
       body.appendChild(tr);

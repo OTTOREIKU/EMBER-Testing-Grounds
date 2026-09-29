@@ -1,13 +1,13 @@
 import type { Card, MechLoadout, Side } from './types';
-import { BASE_FACTIONS, cardName, FACTION_LABEL, isDiscardCard, isModeFace, mechPartUrl, SQUAD_ORDER, squadLabel, squadNumber, tabImageUrl, type GameData } from './data';
+import { cardName, FACTION_LABEL, isDiscardCard, SQUAD_ORDER, squadLabel, squadNumber, type GameData } from './data';
 import { inspectOnHover } from './inspector';
-import { alertDialog, confirmDialog, promptDialog } from './dialog';
+import { confirmDialog, promptDialog } from './dialog';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset } from './presets';
 import { deleteSquad, isBuiltInSquad, loadSquads } from './squadstore';
 import { canBeLoad, cardFitsSquad, isCarrier, type SquadAllegiance } from './units';
 import { ICON_EXPAND, squadColour } from './icons';
 import { groupByFaction, openPartPicker } from './partpicker';
-import { BUILD_SLOTS, buildDefaultName, buildFactions, confirmLegalBuild, mechBuilderHtml, openMechSlot, slotPool, type BuildSlot } from './mechbuilder';
+import { BUILD_SLOTS, buildDefaultName, confirmLegalBuild, mechBuilderHtml, openMechSlot, slotPool, type BuildSlot } from './mechbuilder';
 import { fillPortraits } from './cardart';
 
 const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -455,10 +455,6 @@ export class Roster {
         },
       })),
     });
-  }
-
-  private mechFactions(): { factions: string[]; unknown: number } {
-    return buildFactions(this.data, this.mech);
   }
 
   private renderMechBuilder(): void {

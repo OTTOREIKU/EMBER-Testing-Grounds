@@ -70,6 +70,11 @@ function open(inner: string, wire: (panel: HTMLElement, close: () => void) => vo
   };
   const onKey = (ev: KeyboardEvent) => {
     if (ev.key !== 'Escape') return;
+    // Every open dialog listens on the document, and the bottom one hears the
+    // key first, so each asks whether it is the top backdrop: one Escape
+    // closes one dialog, the one the player is looking at.
+    const backs = document.querySelectorAll('.dlg-back');
+    if (backs[backs.length - 1] !== back) return;
     ev.stopPropagation();
     ev.preventDefault();
     dismiss();

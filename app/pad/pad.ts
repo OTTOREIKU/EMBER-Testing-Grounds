@@ -24,8 +24,9 @@
 // pad restyles a card. If a card looks different here, the bug is here.
 import './pad.css';
 // The reference page's stylesheet, because the renderers are written for it.
-// Safe beside pad.css: its body rules are scoped to `body.ref-body`, and its
-// :root tokens are the same values pad.css declares.
+// Safe beside pad.css: its body rules are scoped to `body.ref-body`. Its
+// :root tokens match pad.css's except --radius and --radius-sm (6/4 there,
+// 8/6 here), so which stylesheet loads last decides those two.
 import '../src/reference.css';
 // The picker's own chrome and the app dialogs, extracted out of styles.css so
 // a phone can open one without downloading 3400 lines of desktop board layout.
@@ -44,7 +45,7 @@ import { registerOffline } from '../src/offline';
 import { askTablePool, askTableRoll, askTargetPart } from './tabledice';
 import type { RollGroup } from '../src/combat';
 import { beginBlastScan, beginElectronic, beginElectronicAll, beginFreeScan, beginTerminal, beginTrace, ewActive, ewWatching, initEw, mountEw, syncContest } from './ew';
-import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot, type Snapshot } from '../src/history';
+import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot, snapshotBack, type Snapshot } from '../src/history';
 import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
 import { setLocalSeat } from '../src/loop';
 import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, discardFaceOf, environmentAllowance, environmentImageUrl, FACTION_LABEL, parseGridRef, isDiscardCard, isListedBox, isMine, loadData, mechArtLayers, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
@@ -64,6 +65,7 @@ import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { bindCollection, builtOnlyOn, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setBuiltOnly, setCollectionOn, shortfalls, type Collection } from '../src/collection';
 import { choiceDialog, confirmDialog, pickManyDialog, promptDialog } from '../src/dialog';
 import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updates';
+import { configureNotices, explainOnHold, notify, redrawNotice, type NoticeKind } from '../src/notices';
 import { boxHands, normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, vipFallen } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from '../src/tactics';
@@ -166,11 +168,11 @@ const relay = new Relay(api.base, {
   // the player holding this phone may be looking at a different sheet.
   onCommand: (cmd) => {
     if (!data) return;
-    applyRemote(data, table, cmd as Command);
+    const landed = applyRemote(data, table, cmd as Command).ok;
     glueAfter(data, table, cmd as Command);
     attackOnCommand(cmd as Command);
     if (!catchingUp) {
-      toastRemote(cmd as Command);
+      if (landed) toastRemote(cmd as Command);
       guideOnRemote(guide, cmd as Command);
       // The other player's Continue may have completed the pair - for the
       // phase turn, for starting a guided game, or for ending deployment.
@@ -205,7 +207,9 @@ const relay = new Relay(api.base, {
   },
   onClosed: () => {
     if (closedRoom) forgetRoom(closedRoom);
-    toast('The other player closed the table.');
+    // The relay has already put the lobby on screen by the time this runs, so
+    // the lobby's own line says it: the notice line lives on the table only.
+    error = 'The other player closed the table.';
     render();
   },
   // The host republishes the table when the server has dropped its history.
@@ -261,10 +265,7 @@ onBeforeApply((s, cmd) => {
 
 // A strict refusal is the engine teaching a rule, which is the whole point of
 // this app - so it is shown, never swallowed.
-onRefused((why) => {
-  error = why;
-  render();
-});
+onRefused((why) => refuse(why));
 
 // 'collection' is the lobby's own page for the player's collection, the same
 // panel the table's More opens, reachable before any game so a shelf can be
@@ -811,8 +812,7 @@ function stabilise(t: Token, pay?: () => boolean): void {
     // Judged before anything is paid, so a refusal costs nothing.
     const v = check(data!, table, cmd);
     if (!v.ok) {
-      error = v.why ?? 'That cannot be done.';
-      render();
+      refuse(v.why);
       return;
     }
     if (pay && !pay()) return;
@@ -982,8 +982,7 @@ function sendSquad(name: string, mechs: { name?: string; loadout: MechLoadout }[
   // actually applied.
   const verdict = perform(data, table, cmd);
   if (!verdict.ok) {
-    error = verdict.why ?? 'That squad could not join.';
-    render();
+    refuse(verdict.why ?? 'That squad could not join.');
     return false;
   }
   saveSolo();
@@ -992,7 +991,7 @@ function sendSquad(name: string, mechs: { name?: string; loadout: MechLoadout }[
   const shelf = shelfFor();
   if (shelf) {
     const short = shortfalls(data, shelf, shelfTokens(), table.tokens.filter((t) => t.uid >= firstUid));
-    if (short.length) toast(`Not in the collection: ${short.map((s) => `${cardName(s.card)} (${s.short} short)`).join(', ')}.`);
+    if (short.length) toast(`Not in the collection: ${short.map((s) => `${cardName(s.card)} (${s.short} short)`).join(', ')}.`, 'warn');
   }
   // The squad that just joined is the one to look at.
   side = seat;
@@ -1007,8 +1006,7 @@ async function importFromFile(file: File): Promise<void> {
   try {
     squad = await importSquadFile(file, data.byId);
   } catch (err) {
-    error = (err as Error).message || 'That file could not be read.';
-    render();
+    refuse((err as Error).message || 'That file could not be read.');
     return;
   }
   const ok = sendSquad(
@@ -1030,7 +1028,7 @@ async function importFromFile(file: File): Promise<void> {
   if (squad.unknownIds.length) {
     const n = squad.unknownIds.length;
     toast(`${squad.name} joined, but ${n} part${n === 1 ? '' : 's'} could not be matched and ${n === 1 ? 'was' : 'were'} left out: `
-      + `${squad.unknownIds.slice(0, 6).join(', ')}${n > 6 ? '…' : ''}`);
+      + `${squad.unknownIds.slice(0, 6).join(', ')}${n > 6 ? '…' : ''}`, 'warn');
   } else {
     toast(`${squad.name} joined.`);
   }
@@ -1095,9 +1093,7 @@ function send(cmd: Command): boolean {
   error = null;
   const verdict = check(data, table, cmd);
   if (!verdict.ok) {
-    error = verdict.why ?? 'That cannot be done.';
-    render();
-    document.querySelector('.pad-err')?.scrollIntoView({ block: 'nearest' });
+    refuse(verdict.why);
     return false;
   }
   perform(data, table, cmd);
@@ -1165,7 +1161,7 @@ const guide: GuideApi = {
   get solo() { return solo; },
   inRoom: () => !!view.room,
   send: (cmd) => send(cmd),
-  toast: (text) => toast(text),
+  toast: (text, kind) => toast(text, kind),
   rollHits,
   render: () => render(),
   selectUnit: (uid) => { const t = unitOf(uid); if (t) { picks[t.side] = uid; side = t.side; } },
@@ -1235,7 +1231,7 @@ async function callOverwatch(t: Token, actionId: string): Promise<void> {
   const what = a.name.en || a.id;
   const foes = table.tokens.filter((x) => x.side !== t.side && x.deployed !== false && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed');
   const mechs = table.tokens.filter((x) => x.side === t.side && x.kind === 'mech' && x.deployed !== false && (x.partStates.torso ?? 'intact') !== 'destroyed' && x.stance !== 'shutdown');
-  if (!foes.length || !mechs.length) { toast(!foes.length ? 'No enemy is on the table.' : 'No Ally Mech can fire.'); return; }
+  if (!foes.length || !mechs.length) { toast(!foes.length ? 'No enemy is on the table.' : 'No Ally Mech can fire.', 'refused'); return; }
   const aim = await choiceDialog({
     title: `${what}: which enemy?`,
     body: `Within Range ${a.range ?? 0} of ${t.label}, on the table.`,
@@ -1263,7 +1259,7 @@ async function callOverwatch(t: Token, actionId: string): Promise<void> {
     .filter((x) => x.slot !== 'pilot' && (mech.partStates[x.slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
     .flatMap(({ card }) => card.actions ?? [])
     .filter((x) => x.type === 'Firing');
-  if (!guns.length) { toast(`${mech.label} has no Firing Action left to make.`); return; }
+  if (!guns.length) { toast(`${mech.label} has no Firing Action left to make.`, 'refused'); return; }
   const gun = guns.length === 1 ? guns[0].id : await choiceDialog({
     title: `${mech.label}: Overwatch Strike`,
     body: `1 Firing Action against ${foe.label}, and against no one else.`,
@@ -1297,7 +1293,7 @@ initAttack({
   inRoom: () => !!view.room,
   send: (cmd) => send(cmd),
   check: (cmd) => check(data!, table, cmd),
-  toast: (text) => toast(text),
+  toast: (text, kind) => toast(text, kind),
   render: () => render(),
   openCombat: () => { if (panel !== 'combat') { panel = 'combat'; render(); } },
   closeCombat: () => {
@@ -1373,7 +1369,7 @@ initEw({
   get solo() { return solo; },
   inRoom: () => !!view.room,
   send: (cmd) => send(cmd),
-  toast: (text) => toast(text),
+  toast: (text, kind) => toast(text, kind),
   render: () => render(),
   openCombat: () => { if (panel !== 'combat') { panel = 'combat'; render(); } },
   closeCombat: () => { if (panel === 'combat') { panel = null; render(); } },
@@ -1434,7 +1430,7 @@ async function askTableAndElectronicAll(attacker: Token, a: CardAction): Promise
   if (!pool.length) {
     toast(isScanAction(a)
       ? 'No enemy is in the Optical Camouflage State or bearing a Low Profile Token, so the Scan finds nothing (4.12.4).'
-      : `No enemy unit ${a.name.en ?? a.id} can target is on the table.`);
+      : `No enemy unit ${a.name.en ?? a.id} can target is on the table.`, 'refused');
     return;
   }
   const picked = await pickManyDialog({
@@ -1497,8 +1493,7 @@ function freeformSilence(t: Token, a: CardAction | undefined): void {
   if (guidedOn(table) || !a || activatesCamo(a) || isSilentAction(data!, table.tokens, t, a)) return;
   const now = unitOf(t.uid) ?? t;
   if ((now.statuses ?? []).includes('lowProfile')) {
-    send({ kind: 'removeStatus', seat: now.side, uid: now.uid, targetUid: now.uid, statusId: 'lowProfile' });
-    toast(`${now.label}: ${a.name.en ?? a.id} has no Silence, so its Low Profile Token comes off (4.12.3).`);
+    if (send({ kind: 'removeStatus', seat: now.side, uid: now.uid, targetUid: now.uid, statusId: 'lowProfile' })) toast(`${now.label}: ${a.name.en ?? a.id} has no Silence, so its Low Profile Token comes off (4.12.3).`, 'warn');
   }
   if (!(now.statuses ?? []).includes('camouflage')) return;
   const range = manifestationRange(data!, now);
@@ -1607,11 +1602,11 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
   });
   if (seen === null || seen === 'no') return;
   if (seen === 'arc') {
-    toast(`${defender.label} is outside ${attacker.label}'s Forward Arc, and this Action is not Omni-direction (4.2.5).`);
+    toast(`${defender.label} is outside ${attacker.label}'s Forward Arc, and this Action is not Omni-direction (4.2.5).`, 'refused');
     return;
   }
   if (seen === 'locked') {
-    toast(`${attacker.label} is Melee Locked, and a Firing Action without [Melee Firing] cannot be performed while it is (4.3.5).`);
+    toast(`${attacker.label} is Melee Locked, and a Firing Action without [Melee Firing] cannot be performed while it is (4.3.5).`, 'refused');
     return;
   }
   const prot = seen === '4' ? '4' : seen.startsWith('2') ? '2' : '0';
@@ -1861,7 +1856,7 @@ async function launchFrom(t: Token, actionId: string, cardId: string): Promise<v
   // or its Landing Point. The table judges the Range, so the pad names who
   // could owe one, and asks before an Immediate Detonation (audit Phase 5, B7).
   const guards = n && projectileDelivery(action) === 'launch' ? interceptorsAgainst(data, table.tokens, t.side) : [];
-  if (guards.length) toast(`Interception may be owed (4.9): ${guards.map((g) => g.label).join(', ')}, if in Range of ${t.label} or the Landing Point.`);
+  if (guards.length) toast(`Interception may be owed (4.9): ${guards.map((g) => g.label).join(', ')}, if in Range of ${t.label} or the Landing Point.`, 'table');
   // 4.7.4: an Immediate Projectile detonates as it lands, so its Detonation
   // opens here, one landed Projectile after another.
   const now = card ? immediateDetonation(card) : null;
@@ -1893,8 +1888,7 @@ function nextDetonation(): void {
     stacked: true,
   }).then((pick) => {
     if (pick === 'no') {
-      send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid, ...(next.joined ? { chain: 'join' as const } : {}) });
-      toast(`${proj.label} was shot down before its Detonation (4.9).`);
+      if (send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid, ...(next.joined ? { chain: 'join' as const } : {}) })) toast(`${proj.label} was shot down before its Detonation (4.9).`);
       nextDetonation();
       return;
     }
@@ -1953,7 +1947,7 @@ async function rollFaces(n: number, label: string, groups?: RollGroup[]): Promis
   try {
     return (await rollDice({ yellow: n }, label, 'hits', groups)).map((d) => d.face);
   } catch {
-    toast('The server did not answer the roll.');
+    toast('The server did not answer the roll.', 'system');
     return [];
   }
 }
@@ -2140,7 +2134,7 @@ function barHtml(): string {
     ? `<em>waiting for ${esc(sideName(them))}</em>`
     : rd.them && !rd.me ? `<em>${esc(sideName(them))} is ready</em>` : '<em>Continue</em>';
   return `<div class="pad-bar-l" data-act="dock" data-dock="more" role="button">${who}</div>
-    <button class="pad-bar-round${state}" data-act="phase" title="${room ? (rd.me ? 'Waiting for the other player. Tap again to take it back.' : 'Ready to move on') : 'Next phase'}">
+    <button class="pad-bar-round${state}" data-act="phase"${stalled ? greyWhy(true, 'Finish the step on the sheet first.') : ` title="${room ? (rd.me ? 'Waiting for the other player. Tap again to take it back.' : 'Ready to move on') : 'Next phase'}"`}>
       ${roundLabel}${hint}
     </button>
     <button class="pad-bar-vp" data-act="dock" data-dock="tasks" title="Tasks and score">
@@ -2218,9 +2212,9 @@ function sheetHtml(s: Side = shownSide()): string {
     ${isMech ? `<div class="pad-row">
       <span class="pad-label">Link</span>
       <div class="pad-count">
-        ${mine ? `<button class="pad-step" data-act="link-down" aria-label="Spend 1 Link"${can({ kind: 'drainLink', seat: t.side, uid: t.uid, targetUid: t.uid, n: 1 }) ? '' : ' disabled'}>−</button>` : ''}
+        ${mine ? `<button class="pad-step" data-act="link-down" aria-label="Spend 1 Link"${link > 0 ? greyIf({ kind: 'drainLink', seat: t.side, uid: t.uid, targetUid: t.uid, n: 1 }) : greyWhy(true, 'No Link left to spend.')}>−</button>` : ''}
         <span class="pad-num">${link}<span class="pad-of"> / ${maxLink(data, t)}</span></span>
-        ${mine ? `<button class="pad-step" data-act="link-up" aria-label="Recover 1 Link"${can({ kind: 'recoverLink', seat: t.side, uid: t.uid, targetUid: t.uid }) ? '' : ' disabled'}>+</button>` : ''}
+        ${mine ? `<button class="pad-step" data-act="link-up" aria-label="Recover 1 Link"${greyIf({ kind: 'recoverLink', seat: t.side, uid: t.uid, targetUid: t.uid })}>+</button>` : ''}
       </div>
     </div>` : ''}
     ${mine && isMech && t.stance === 'shutdown' ? (rebootWhy(table, t) === null ? `<div class="pad-row wrap">
@@ -2229,12 +2223,12 @@ function sheetHtml(s: Side = shownSide()): string {
     </div>` : `<p class="pad-note">${esc(rebootWhy(table, t) ?? '')}</p>`) : ''}
     ${mine && isMech && t.stance !== 'shutdown' ? `<div class="pad-row wrap">
       <span class="pad-label">Stance</span>
-      <div class="pad-stances">${STANCES.filter((x) => x !== 'shutdown').map((x) => stanceBtn(x, t.stance === x, `data-act="stance" data-stance="${x}"${t.stance !== x && !can({ kind: 'setStance', seat: t.side, uid: t.uid, stance: x }) ? ' disabled' : ''}`)).join('')}${
+      <div class="pad-stances">${STANCES.filter((x) => x !== 'shutdown').map((x) => stanceBtn(x, t.stance === x, `data-act="stance" data-stance="${x}"${t.stance !== x ? greyIf({ kind: 'setStance', seat: t.side, uid: t.uid, stance: x }) : ''}`)).join('')}${
         // Shutdown is never chosen (3.4.2): a Mech falls into it at 0 Link or by a
         // card that forces it. A free table records what happened on the table,
         // so it can mark one by hand, as the forcing card's own command. A guided
         // game reaches it only by the rules.
-        guidedOn(table) ? '' : stanceBtn('shutdown', false, `data-act="shutdown" data-stance="shutdown"${can({ kind: 'forceShutdown', seat: t.side, uid: t.uid, targetUid: t.uid }) ? '' : ' disabled'}`)}</div>
+        guidedOn(table) ? '' : stanceBtn('shutdown', false, `data-act="shutdown" data-stance="shutdown"${greyIf({ kind: 'forceShutdown', seat: t.side, uid: t.uid, targetUid: t.uid })}`)}</div>
     </div>` : ''}
     ${mine && isMech && t.stance !== 'shutdown' && !guidedOn(table) ? `<div class="pad-row wrap">
       <span class="pad-label">Timing · this phone</span>
@@ -2244,7 +2238,7 @@ function sheetHtml(s: Side = shownSide()): string {
         // dial is this phone's own note, set in the Planning Phase (3.3). The
         // physical dial on the table is what the other player reads.
         const ic = actionIconUrl(tm.pilotKey);
-        return `<button class="pad-chip pad-dial${t.timing === tm.id ? ' on' : ''}" data-act="timing" data-timing="${tm.id}"${table.round.phase === 1 ? '' : ' disabled'}>${ic ? `<img src="${ic}" alt="">` : ''}${tm.short}${init !== undefined ? ` ${init}` : ''}</button>`;
+        return `<button class="pad-chip pad-dial${t.timing === tm.id ? ' on' : ''}" data-act="timing" data-timing="${tm.id}"${greyWhy(table.round.phase !== 1, 'Dials are set in the Planning Phase.')}>${ic ? `<img src="${ic}" alt="">` : ''}${tm.short}${init !== undefined ? ` ${init}` : ''}</button>`;
       }).join('')}</div>
     </div>` : ''}
 
@@ -2387,13 +2381,28 @@ function capShort(t: Token, o: Opportunity, a: CardAction, key: string): Capsule
 // inert, with the reason on hover rather than on the screen. The pad's players
 // know the rules; a greyed button says enough.
 function inert(html: string, why: string): string {
-  return html.replace(/<button class="pad-chip on pad-perform"/g, `<button class="pad-chip on pad-perform" disabled title="${esc(why)}"`);
+  return html.replace(/<button class="pad-chip on pad-perform"/g, `<button class="pad-chip on pad-perform"${greyWhy(true, why)}`);
 }
 
 // Whether the engine would take a command, so a control it would refuse is
 // drawn greyed instead of answering a tap with a refusal.
 function can(cmd: Command): boolean {
   return !!data && check(data, table, cmd).ok;
+}
+
+// GREYED, AND HELD IT SAYS WHY (OTTO's pick 2, 2026-09-28): a tap does
+// nothing, like the Link "+" at full Link; a long press puts the engine's own
+// reason in the notice line (notices.ts explainOnHold). LOOKED disabled
+// (aria-disabled), because a disabled button hears no pointer and could never
+// be held.
+function greyIf(cmd: Command): string {
+  if (!data) return ' aria-disabled="true"';
+  const v = check(data, table, cmd);
+  return v.ok ? '' : greyWhy(true, v.why ?? 'Not now.');
+}
+
+function greyWhy(off: boolean, why: string): string {
+  return off ? ` aria-disabled="true"${why ? ` data-why="${esc(why)}"` : ''}` : '';
 }
 
 // An Action performed from the sheet takes its cost off the bar. One that does
@@ -2438,8 +2447,8 @@ function ticksRow(t: Token, mine: boolean): string {
   }
   const o = freeOpp(t);
   const chips = mine
-    ? `<button class="pad-chip" data-act="tick-moved"${canManeuver(o).ok ? '' : ' disabled'}>Moved</button>`
-      + `<button class="pad-chip" data-act="tick-new"${t.freeTicks ? '' : ' disabled'}>New</button>`
+    ? `<button class="pad-chip" data-act="tick-moved"${greyWhy(!canManeuver(o).ok, canManeuver(o).why ?? 'The Maneuver Tick is spent.')}>Moved</button>`
+      + `<button class="pad-chip" data-act="tick-new"${greyWhy(!t.freeTicks, 'Every Tick is still fresh.')}>New</button>`
     : '';
   return `<div class="pad-row wrap pad-ticks-row">
       <span class="pad-label">Ticks</span>
@@ -2595,7 +2604,7 @@ async function pickDiscard(t: Token): Promise<string | null> {
   if (!data) return null;
   const held = tokenCards(data, t).filter(({ slot, card }) => slot !== 'pilot'
     && (t.partStates[slot as PartSlot] ?? 'intact') !== 'destroyed' && !!discardFaceOf(data!, card));
-  if (!held.length) { toast(`${t.label} holds nothing it can Discard.`); return null; }
+  if (!held.length) { toast(`${t.label} holds nothing it can Discard.`, 'refused'); return null; }
   // Always asked, even with one Part to name: a Discard is not taken back by
   // tapping again, the way a Charge Token is.
   return choiceDialog({ title: 'Discard', choices: [...held.map((x) => ({ id: String(x.slot), label: `${SLOT_LABEL[x.slot] ?? x.slot} · ${cardName(x.card)}` })), { id: '__no', label: 'Cancel', cancel: true }], stacked: true })
@@ -2871,9 +2880,9 @@ function ammoRows(t: Token): string {
   return Object.entries(t.ammo ?? {}).map(([id, n]) => `<div class="pad-row">
       <span class="pad-part-name">${esc(names()?.action?.(t.uid, id) ?? id)}</span>
       <div class="pad-count">
-        ${record ? '' : `<button class="pad-step" data-act="ammo-down" data-id="${esc(id)}"${can({ kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId: id }) ? '' : ' disabled'}>−</button>`}
+        ${record ? '' : `<button class="pad-step" data-act="ammo-down" data-id="${esc(id)}"${greyIf({ kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId: id })}>−</button>`}
         <span class="pad-num">${n}</span>
-        ${record ? '' : `<button class="pad-step" data-act="ammo-up" data-id="${esc(id)}"${can({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: id, amount: 1 }) ? '' : ' disabled'}>+</button>`}
+        ${record ? '' : `<button class="pad-step" data-act="ammo-up" data-id="${esc(id)}"${greyIf({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: id, amount: 1 })}>+</button>`}
       </div>
     </div>`).join('');
 }
@@ -2893,10 +2902,10 @@ function interceptRows(t: Token): string {
     return `<div class="pad-row">
       <span class="pad-part-name">${esc(names()?.action?.(t.uid, id) ?? id)}</span>
       <div class="pad-count">
-        <button class="pad-step" data-act="intercept-down" data-id="${esc(id)}"${n > 0 && spend ? '' : ' disabled'}>−</button>
+        <button class="pad-step" data-act="intercept-down" data-id="${esc(id)}"${greyWhy(!(n > 0 && spend), n > 0 ? 'Not now.' : 'No Interception Tokens left.')}>−</button>
         <span class="pad-num">${n}${cap !== undefined ? `<span class="pad-of"> / ${cap}</span>` : ''}</span>
-        <button class="pad-step" data-act="intercept-up" data-id="${esc(id)}"${(cap !== undefined && n >= cap) || !restore ? ' disabled' : ''}>+</button>
-        <button class="pad-chip on pad-perform" data-act="intercept" data-id="${esc(id)}"${n > 0 && spend && t.stance !== 'shutdown' ? '' : ' disabled'}${t.stance === 'shutdown' ? ' title="A Shutdown Mech cannot Intercept (4.1, 4.9)"' : ''}>Intercept</button>
+        <button class="pad-step" data-act="intercept-up" data-id="${esc(id)}"${greyWhy((cap !== undefined && n >= cap) || !restore, cap !== undefined && n >= cap ? 'Already full.' : 'Interception Tokens are never restored.')}>+</button>
+        <button class="pad-chip on pad-perform" data-act="intercept" data-id="${esc(id)}"${greyWhy(!(n > 0 && spend && t.stance !== 'shutdown'), t.stance === 'shutdown' ? 'A Shutdown Mech cannot Intercept.' : n > 0 ? 'Not now.' : 'No Interception Tokens left.')}>Intercept</button>
       </div>
     </div>`;
   }).join('');
@@ -2911,7 +2920,7 @@ function chargeRow(t: Token): string {
   if (!slots.length) return '';
   const record = guidedOn(table);
   return `<div class="pad-chips">${slots.map((s) => `<button class="pad-chip${s.charged ? ' on' : ''}"
-    data-act="charge" data-slot="${esc(s.slot)}" data-on="${s.charged ? '0' : '1'}"${record ? ' disabled title="Charged by the Charge Action, spent by a [Charged] Action"' : can({ kind: 'setCharge', seat: t.side, uid: t.uid, slot: String(s.slot), on: !s.charged }) ? '' : ' disabled'}>${esc(s.label)}</button>`).join('')}</div>`;
+    data-act="charge" data-slot="${esc(s.slot)}" data-on="${s.charged ? '0' : '1'}"${record ? greyWhy(true, 'Charged by the Charge Action, spent by a [Charged] Action') : greyIf({ kind: 'setCharge', seat: t.side, uid: t.uid, slot: String(s.slot), on: !s.charged })}>${esc(s.label)}</button>`).join('')}</div>`;
 }
 
 // ---------- the dock ----------
@@ -2962,9 +2971,9 @@ function setupPanel(): string {
   return `<div class="pad-panel-in">${panelHead(view.room ? 'Table' : 'Game')}
     ${errHtml()}
     <p class="pad-label pad-sec" style="margin-top:0">Rounds</p>
-    <div class="pad-chips">${rounds.map((n) => `<button class="pad-chip${n === limit ? ' on' : ''}" data-act="set-rounds" data-n="${n}"${n === limit || can({ kind: 'configureTable', seat: mySeat(), roundLimit: n }) ? '' : ' disabled'}>${n}</button>`).join('')}</div>
+    <div class="pad-chips">${rounds.map((n) => `<button class="pad-chip${n === limit ? ' on' : ''}" data-act="set-rounds" data-n="${n}"${n === limit ? '' : greyIf({ kind: 'configureTable', seat: mySeat(), roundLimit: n })}>${n}</button>`).join('')}</div>
     <p class="pad-label pad-sec">Points</p>
-    <div class="pad-chips">${SCALES.map((s) => `<button class="pad-chip${(table.scale ?? 'standard') === s.id ? ' on' : ''}" data-act="set-scale" data-id="${s.id}"${(table.scale ?? 'standard') === s.id || can({ kind: 'configureTable', seat: mySeat(), scale: s.id }) ? '' : ' disabled'}>${s.points}<span class="fc-n">${esc(s.name)}</span></button>`).join('')}</div>
+    <div class="pad-chips">${SCALES.map((s) => `<button class="pad-chip${(table.scale ?? 'standard') === s.id ? ' on' : ''}" data-act="set-scale" data-id="${s.id}"${(table.scale ?? 'standard') === s.id ? '' : greyIf({ kind: 'configureTable', seat: mySeat(), scale: s.id })}>${s.points}<span class="fc-n">${esc(s.name)}</span></button>`).join('')}</div>
     <p class="pad-label pad-sec">Play</p>
     <div class="pad-chips">
       <button class="pad-chip${wantsGuided() || guidedOn(table) ? '' : ' on'}" data-act="set-mode" data-mode="free"${guidedOn(table) ? ' disabled' : ''}>Freeform</button>
@@ -2976,7 +2985,7 @@ function setupPanel(): string {
       <button class="pad-chip${table.tableDice ? '' : ' on'}" data-act="set-dice" data-dice="pad" aria-pressed="${!table.tableDice}">Pad rolls</button>
     </div>
     <p class="pad-label pad-sec">Layout</p>
-    <div class="pad-chips">${data!.terrain.maps.map((m) => `<button class="pad-chip${table.map === m.id ? ' on' : ''}" data-act="set-layout" data-id="${esc(m.id)}"${table.map === m.id || can({ kind: 'configureTable', seat: mySeat(), map: m.id }) ? '' : ' disabled'}>${esc(m.name.en || m.id)}</button>`).join('')}<button class="pad-chip${table.map ? '' : ' on'}" data-act="set-layout" data-id=""${!table.map || can({ kind: 'configureTable', seat: mySeat(), map: '' }) ? '' : ' disabled'}>None</button></div>
+    <div class="pad-chips">${data!.terrain.maps.map((m) => `<button class="pad-chip${table.map === m.id ? ' on' : ''}" data-act="set-layout" data-id="${esc(m.id)}"${table.map === m.id ? '' : greyIf({ kind: 'configureTable', seat: mySeat(), map: m.id })}>${esc(m.name.en || m.id)}</button>`).join('')}<button class="pad-chip${table.map ? '' : ' on'}" data-act="set-layout" data-id=""${!table.map ? '' : greyIf({ kind: 'configureTable', seat: mySeat(), map: '' })}>None</button></div>
     <div class="pad-foot">
       <button class="pad-btn primary" data-act="${wantsGuided() && !guidedOn(table) ? 'g-start' : 'close-panel'}">${
         wantsGuided() && !guidedOn(table) ? (view.room && readiness().me ? 'Waiting for the other player…' : 'Start the guided game') : 'Start'}</button>
@@ -3198,7 +3207,7 @@ function dropBoxesOf(t: Token): void {
     send({ kind: 'dropBlackBox', seat: mySeat(), uid: t.uid, itemId: box.id, to: { col: t.col, row: t.row }, chain: 'join' });
   }
   if (held.length) {
-    toast(`${t.label} was Penetrated carrying ${held.length === 1 ? 'a Black Box, which drops' : `${held.length} Black Boxes, which drop`} in Contact with its base. The attacker places ${held.length === 1 ? 'it' : 'them'} on the table (5.3.1).`);
+    toast(`${t.label} was Penetrated carrying ${held.length === 1 ? 'a Black Box, which drops' : `${held.length} Black Boxes, which drop`} in Contact with its base. The attacker places ${held.length === 1 ? 'it' : 'them'} on the table (5.3.1).`, 'table');
   }
 }
 
@@ -3209,7 +3218,7 @@ async function takeBox(itemId: string): Promise<void> {
   const able = table.tokens.filter((u) => u.kind !== 'projectile' && u.deployed !== false && !isDead(u))
     .map((u) => ({ u, hands: freehandSlots(data!, u, boxHands(tasks, u.uid), [], true) }))
     .filter((x) => x.hands.length);
-  if (!able.length) { toast('No unit has a free Freehand Part to carry it (5.3.1).'); return; }
+  if (!able.length) { toast('No unit has a free Freehand Part to carry it (5.3.1).', 'refused'); return; }
   const who = await choiceDialog({ title: 'Black Box', choices: able.map((x) => ({ id: String(x.u.uid), label: `${x.u.label} · ${sideName(x.u.side)}` })), stacked: true });
   if (who === null) return;
   const pick = able.find((x) => String(x.u.uid) === who)!;
@@ -3383,11 +3392,11 @@ function morePanel(): string {
     <div class="pad-row">
       <span class="pad-num">${gameOver() ? 'Over' : `R${r.n}`}<span class="pad-of pad-phase"> // ${gameOver() ? 'final' : esc(PHASES[r.phase] ?? '')}</span></span>
       <div class="pad-chips">
-        <button class="pad-chip" data-act="phase-back"${r.phase > 0 && !strictLock() ? '' : ` disabled${strictLock() ? ` title="${esc(strictLock()!)}"` : ''}`}>Back a phase</button>
+        <button class="pad-chip" data-act="phase-back"${greyWhy(!(r.phase > 0 && !strictLock()), strictLock() ?? 'This is the first phase of the round.')}>Back a phase</button>
         ${gameOver() ? '' : `<button class="pad-chip on" data-act="phase">${room ? (readiness().me ? 'Waiting…' : 'Continue') : 'Next phase'}</button>`}
       </div>
     </div>
-    <button class="pad-btn" data-act="rounds-reset" style="margin-top:8px"${strictLock() ? ` disabled title="${esc(strictLock()!)}"` : ''}>Start the rounds over</button>
+    <button class="pad-btn" data-act="rounds-reset" style="margin-top:8px"${greyWhy(!!strictLock(), strictLock() ?? '')}>Start the rounds over</button>
     ${normaliseSetup(table.setup)?.stage === 'done' && !gameOver() ? '<button class="pad-btn" data-act="concede" style="margin-top:8px">Concede the game</button>' : ''}
 
     <p class="pad-label pad-sec">Squads</p>
@@ -3501,7 +3510,7 @@ async function detonate(proj: Token, actionId: string, joined = false): Promise<
   const name = a.name.en || actionId;
   const smoke = smokePlacement(a);
   if (smoke) {
-    toast(`${proj.label}: ${smoke.count} Smoke Screen${smoke.count === 1 ? '' : 's'} on the table.`);
+    toast(`${proj.label}: ${smoke.count} Smoke Screen${smoke.count === 1 ? '' : 's'} on the table.`, 'table');
     send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid, ...(joined ? { chain: 'join' as const } : {}) });
     nextDetonation();
     return;
@@ -3521,8 +3530,7 @@ async function continueDetonation(): Promise<void> {
   // A single-target card is done once its one attack has closed.
   if (d.single && d.fired) {
     detonating = null;
-    send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
-    toast(`${proj.label} detonated and is destroyed (4.7.5).`);
+    if (send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid })) toast(`${proj.label} detonated and is destroyed (4.7.5).`);
     nextDetonation();
     return;
   }
@@ -3576,8 +3584,7 @@ async function continueDetonation(): Promise<void> {
   }
   if (pick === '__done') {
     detonating = null;
-    send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
-    toast(`${proj.label} detonated and is destroyed (4.7.5).`);
+    if (send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid })) toast(`${proj.label} detonated and is destroyed (4.7.5).`);
     nextDetonation();
     return;
   }
@@ -3607,8 +3614,7 @@ async function continueDetonation(): Promise<void> {
     });
     if (through !== 'yes') {
       detonating = null;
-      send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
-      toast(`${proj.label} was shot down before its Explosion (4.9).`);
+      if (send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid })) toast(`${proj.label} was shot down before its Explosion (4.9).`);
       nextDetonation();
       return;
     }
@@ -3668,7 +3674,7 @@ async function endGame(): Promise<void> {
     if (pick === null || pick === 'cancel') return;
     if (pick === 'record') {
       const why = await recordMatch();
-      if (why) { toast(why); return; }
+      if (why) { toast(why, 'system'); return; }
       toast('Recorded to Stats.');
     }
   }
@@ -3792,7 +3798,7 @@ function tacticsHtml(side: Side): string {
     return `<div class="pad-row">
       <span class="pad-part-name">${esc(cardName(card))}<small class="pad-of"> · ${esc(spec?.timing ?? '')}</small></span>
       <div class="pad-chips">
-        ${spec ? `<button class="pad-chip${off ? '' : ' on'}" data-act="tactic-play" data-side="${side}" data-id="${esc(id)}"${off ? ` disabled${why ? ` title="${esc(why)}"` : ''}` : ''}>${thisOne ? 'Played' : usedIn !== null ? `Used, round ${usedIn}` : 'Play'}</button>` : ''}
+        ${spec ? `<button class="pad-chip${off ? '' : ' on'}" data-act="tactic-play" data-side="${side}" data-id="${esc(id)}"${greyWhy(off, why ?? 'Not now.')}>${thisOne ? 'Played' : usedIn !== null ? `Used, round ${usedIn}` : 'Play'}</button>` : ''}
         <button class="pad-chip" data-act="tactic-drop" data-side="${side}" data-id="${esc(id)}">✕</button>
       </div>
     </div>`;
@@ -3808,7 +3814,7 @@ async function playTactic(side: Side, cardId: string): Promise<void> {
   if (!data || !spec) return;
   const ctx = tacticCtx();
   const targets = tacticTargets(spec, table, side, ctx);
-  if (!targets.length) { toast(`${spec.name}: ${spec.none}`); return; }
+  if (!targets.length) { toast(`${spec.name}: ${spec.none}`, 'refused'); return; }
   let t = targets[0];
   if (targets.length > 1) {
     const pick = await choiceDialog({ title: spec.name, body: spec.prompt, choices: targets.map((x) => ({ id: String(x.uid), label: x.label })), stacked: true });
@@ -3818,7 +3824,7 @@ async function playTactic(side: Side, cardId: string): Promise<void> {
   let choice: string | undefined;
   if (spec.choices) {
     const opts = spec.choices(t, table, ctx);
-    if (!opts.length) { toast(`${spec.name}: ${spec.none}`); return; }
+    if (!opts.length) { toast(`${spec.name}: ${spec.none}`, 'refused'); return; }
     if (opts.length === 1) choice = opts[0].id;
     else {
       const pick = await choiceDialog({ title: spec.choiceTitle ?? spec.name, body: t.label, choices: opts.map((o) => ({ id: o.id, label: o.note ? `${o.label} · ${o.note}` : o.label })), stacked: true });
@@ -4190,11 +4196,10 @@ async function importBuild(file: File): Promise<void> {
   try {
     squad = await importSquadFile(file, data.byId);
   } catch (err) {
-    error = (err as Error).message || 'That file could not be read.';
-    render();
+    refuse((err as Error).message || 'That file could not be read.');
     return;
   }
-  if (!squad.mechs.length) { error = 'That file holds no Mech.'; render(); return; }
+  if (!squad.mechs.length) { refuse('That file holds no Mech.'); return; }
   let at = 0;
   if (squad.mechs.length > 1) {
     const pick = await choiceDialog({
@@ -4209,7 +4214,7 @@ async function importBuild(file: File): Promise<void> {
     at = Number(pick);
   }
   build = { ...squad.mechs[at].loadout };
-  error = squad.unknownIds.length ? `Left out, not in the card data: ${squad.unknownIds.join(', ')}.` : null;
+  if (squad.unknownIds.length) notify({ kind: 'warn', text: `Left out, not in the card data: ${squad.unknownIds.join(', ')}.` });
   render();
 }
 
@@ -4500,8 +4505,6 @@ function showImage(src: string, label: string): void {
 // player holding this one may be reading a different sheet. Each carries an
 // Undo, because the table's undo is a checkpoint either phone may publish.
 
-let toasts: { id: number; text: string; undo: boolean }[] = [];
-let toastSeq = 0;
 // Set by a long press on a worn Token, and consumed by the click the browser
 // fires when the finger lifts, so the hold does not also age the Token.
 let heldTok = false;
@@ -4518,19 +4521,25 @@ function buildChanged(): boolean {
   return BUILD_SLOTS.some((s) => (build[s.key] ?? '') !== (editing!.was[s.key] ?? ''));
 }
 
-function toast(text: string, undo = false): void {
-  const id = ++toastSeq;
-  toasts = [...toasts.slice(-2), { id, text, undo }];
-  paint('pad-toasts', toastsHtml());
-  window.setTimeout(() => {
-    toasts = toasts.filter((t) => t.id !== id);
-    paint('pad-toasts', toastsHtml());
-  }, undo ? 4500 : 2600);
+// EVERY MESSAGE ON THE TABLE goes to the one notice line above the dock
+// (src/notices.ts; OTTO's picks, 2026-09-28). What kind it is decides what the
+// line does with it: a confirmation ('done') is not shown at all, since the
+// History panel already lists the move; a step for the physical table stays
+// until tapped away. The red banner is left to the sign-in screens' forms.
+function toast(text: string, kind: NoticeKind = 'done', undoable = false): void {
+  notify({ kind, text, ...(undoable ? { undo: undoWhileLast() } : {}) });
 }
 
-function toastsHtml(): string {
-  return toasts.map((t) => `<div class="pad-toast" data-toast="${t.id}"><span>${esc(t.text)}</span>${
-    t.undo ? '<button class="pad-chip" data-act="undo">Undo</button>' : ''}<button class="ui-x" data-act="toast-x" data-id="${t.id}" aria-label="Dismiss">✕</button></div>`).join('');
+function refuse(why: string | undefined): void {
+  notify({ kind: 'refused', text: why ?? 'That cannot be done.' });
+}
+
+// Undo on the line takes back ONLY the move it announced: it is offered while
+// that move is still the newest in the history, and gone once anything else
+// has happened (the old toast's Undo undid whatever came last).
+function undoWhileLast(): () => boolean {
+  const at = snapshotBack(0)?.seq;
+  return () => at !== undefined && snapshotBack(0)?.seq === at;
 }
 
 // Which remote commands are worth announcing: anything done TO one of our
@@ -4541,12 +4550,12 @@ function toastRemote(cmd: Command): void {
   const tableWide = new Set(['award', 'pickSecondary', 'configureTable', 'advancePhase', 'setPhase', 'resetRounds', 'importSquad']);
   if (cmd.kind === 'setReady') {
     const ready = (cmd as { ready?: boolean }).ready;
-    toast(ready ? `${sideName(otherSeat())} is ready to move on.` : `${sideName(otherSeat())} is not ready yet.`);
+    toast(ready ? `${sideName(otherSeat())} is ready to move on.` : `${sideName(otherSeat())} is not ready yet.`, 'event');
     return;
   }
   const target = table.tokens.find((x) => x.uid === (c.targetUid ?? c.uid));
   if (!tableWide.has(cmd.kind) && !(target && target.side === mySeat())) return;
-  toast(labelFor(cmd, table, names()).label, true);
+  toast(labelFor(cmd, table, names()).label, 'event', true);
 }
 
 function undo(): void {
@@ -4606,7 +4615,7 @@ const SKELETON = `<header class="pad-bar" id="pad-bar"></header>
     <div class="pad-strip pad-strip-2" id="pad-strip2"></div>
     <main class="pad-sheet pad-sheet-2" id="pad-sheet2"></main>
     <div class="pad-panel" id="pad-panel" hidden></div>
-    <div class="pad-toasts" id="pad-toasts"></div>
+    <div class="pad-notice" id="pad-notice" hidden></div>
   </div>
   <nav class="pad-dock" id="pad-dock"></nav>
   <div id="ref-detail" hidden>
@@ -4730,7 +4739,7 @@ function render(): void {
     const ta = document.getElementById('pad-notes') as HTMLTextAreaElement | null;
     if (ta && ta.value !== notes) ta.value = notes;
   }
-  paint('pad-toasts', toastsHtml());
+  redrawNotice();
 }
 
 // ---------- wiring: one delegated handler ----------
@@ -4956,7 +4965,7 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'g-start':
-      if (!table.tokens.length) { toast('Add the squads first.'); return; }
+      if (!table.tokens.length) { toast('Add the squads first.', 'refused'); return; }
       startGuided(guide);
       panel = null;
       render();
@@ -4983,7 +4992,7 @@ function act(el: HTMLElement, ev: Event): void {
     case 'phase-back': {
       const r = table.round;
       if (r.phase > 0) send({ kind: 'setPhase', seat: mySeat(), phase: r.phase - 1 });
-      else toast('The round starts here. Use the rounds reset to go back further.');
+      else toast('The round starts here. Use the rounds reset to go back further.', 'refused');
       return;
     }
     case 'concede':
@@ -5107,8 +5116,7 @@ function act(el: HTMLElement, ev: Event): void {
         const pick = forms.length === 1 ? forms[0] : await choiceDialog({ title: a.name.en ?? a.id, choices: forms.map((id) => ({ id, label: cardName(data!.byId.get(id)!) })), stacked: true });
         if (!pick) return;
         const paid = spendFree(by, a.id);
-        send({ kind: 'switchForm', seat: by.side, uid: by.uid, actionId: a.id, cardId: pick, ...(paid ? { chain: 'join' as const } : {}) });
-        toast(`${by.label} switches Stance: make its one Movement on the table.`);
+        if (send({ kind: 'switchForm', seat: by.side, uid: by.uid, actionId: a.id, cardId: pick, ...(paid ? { chain: 'join' as const } : {}) })) toast(`${by.label} switches Stance: make its one Movement on the table.`);
       })();
       return;
     }
@@ -5121,7 +5129,7 @@ function act(el: HTMLElement, ev: Event): void {
     case 'lay-mine': {
       const by = unitOf(Number(el.dataset.uid));
       if (by) send({ kind: 'layMine', seat: by.side, uid: by.uid, actionId: el.dataset.id!, cardId: el.dataset.projectile!, to: { col: 0, row: 0 } });
-      if (by) toast(`${by.label} Lays a Mine on its route: place it on the table, 1 Move Range spent (FAQ M7).`);
+      if (by) toast(`${by.label} Lays a Mine on its route: place it on the table, 1 Move Range spent (FAQ M7).`, 'table');
       return;
     }
     // G4: a lent Action, asked first: only while the Carrier is in Contact.
@@ -5217,7 +5225,7 @@ function act(el: HTMLElement, ev: Event): void {
         // The shared reader: no Low Value Unit, and no camouflaged unit for a
         // Highlight (FAQ I1, J3; audit Phase 3, E2). The table judges Range.
         const units = targetStatusTargets(data!, table.tokens, by, a, grant).filter((x) => !isDead(x));
-        if (!units.length) { toast(`${a.name.en ?? 'This Action'}: there is no unit to target.`); return; }
+        if (!units.length) { toast(`${a.name.en ?? 'This Action'}: there is no unit to target.`, 'refused'); return; }
         const pick = await choiceDialog({
           title: a.name.en ?? 'Target',
           body: a.range ? `One target within Range ${a.range}, in line of sight.` : 'One target.',
@@ -5299,7 +5307,7 @@ function act(el: HTMLElement, ev: Event): void {
       const gone = red || def?.decay !== 'yellow';
       v.tokManage = null;
       if (send({ kind: 'ageStatus', ...sourceFor(t), targetUid: t.uid, statusId: id })) {
-        toast(gone ? `${def?.label ?? id} comes off.` : `${def?.label ?? id} turns red.`, true);
+        toast(gone ? `${def?.label ?? id} comes off.` : `${def?.label ?? id} turns red.`, 'warn', true);
       }
       return;
     }
@@ -5431,7 +5439,7 @@ function act(el: HTMLElement, ev: Event): void {
         }).then((ref) => {
           if (ref === null) { render(); return; }
           const at = parseGridRef(ref);
-          if (!at) { error = 'That is not a Grid. Type a letter and a number, such as C7.'; render(); return; }
+          if (!at) { refuse('That is not a Grid. Type a letter and a number, such as C7.'); render(); return; }
           send({ kind: 'setEnvironment', seat: mySeat(), at, card: id });
         });
         return;
@@ -5626,7 +5634,7 @@ function act(el: HTMLElement, ev: Event): void {
     case 'projectile': error = null; openDronePicker('projectile'); return;
     case 'tactic-add': error = null; openTacticPicker(el.dataset.side as Side); return;
     case 'record':
-      void recordMatch().then((why) => { toast(why ?? 'Recorded to Stats.'); render(); });
+      void recordMatch().then((why) => { toast(why ?? 'Recorded to Stats.', why ? 'system' : 'done'); render(); });
       return;
     case 'tactic-drop': {
       const side = el.dataset.side as Side;
@@ -5733,7 +5741,7 @@ function act(el: HTMLElement, ev: Event): void {
       const units = table.tokens.filter((x) => x.side === seat && x.kind !== 'projectile' && x.parentUid === undefined);
       const mechs = units.filter((x) => x.kind === 'mech' && (x.mech?.torso || x.mech?.chasis)).map((x) => ({ name: x.label, loadout: { ...x.mech } }));
       const drones = units.filter((x) => x.kind === 'drone').map((x) => ({ cardId: x.cardId, backpack: x.droneBackpack }));
-      if (!mechs.length && !drones.length) { error = 'Nothing on this side to save yet.'; render(); return; }
+      if (!mechs.length && !drones.length) { refuse('Nothing on this side to save yet.'); return; }
       // The hand is part of the squad (5.4): saved with it, or it reloads cheaper.
       const tactics = (table.tactics?.[seat] ?? []).filter((id) => !!data!.byId.get(id));
       void promptDialog({
@@ -5751,10 +5759,6 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'undo': undo(); return;
-    case 'toast-x':
-      toasts = toasts.filter((x) => String(x.id) !== el.dataset.id);
-      paint('pad-toasts', toastsHtml());
-      return;
 
     // ----- find -----
     case 'find-scope':
@@ -5823,7 +5827,7 @@ function installEvents(): void {
       const d = target.closest<HTMLDetailsElement>('.pad-fold[data-fold]')!;
       window.setTimeout(() => { folds = { ...folds, [d.dataset.fold!]: d.open }; store(FOLDS_KEY, JSON.stringify(folds)); }, 0);
     }
-    if (el && !(el as HTMLButtonElement).disabled) act(el, ev);
+    if (el && !(el as HTMLButtonElement).disabled && el.getAttribute('aria-disabled') !== 'true') act(el, ev);
     // Tapping the dark around the detail closes it, as on the reference.
     else if (target.id === 'ref-detail') closeLook();
   });
@@ -5952,6 +5956,10 @@ async function run(fn: () => Promise<void>): Promise<void> {
 
 void (async () => {
   installEvents();
+  // The table's one notice line: terse, as a table companion should be, and
+  // its Undo is the pad's own.
+  configureNotices({ host: () => document.getElementById('pad-notice'), voice: 'terse', onUndo: () => undo() });
+  explainOnHold(root);
   // The collection follows the account: pulled when one appears, pushed after
   // every change. The panel and the pickers redraw when it moves.
   bindCollection(api);

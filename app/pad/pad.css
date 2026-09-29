@@ -265,7 +265,10 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-btn.primary:hover, .pad-btn.primary:active { background: var(--accent); color: var(--on-accent); }
 .pad-btn.danger { background: var(--red-lt); color: var(--red); }
 .pad-btn.danger:hover, .pad-btn.danger:active { background: var(--red); color: var(--on-accent); }
-.pad-btn:disabled { opacity: 0.5; cursor: default; }
+/* ONE greyed look for every control on the pad (the notices audit found
+   four opacities). A control the rules refuse is only LOOKED disabled
+   (aria-disabled), so a long press can still ask it why. */
+.pad-btn:disabled, .pad-btn[aria-disabled="true"] { opacity: 0.4; cursor: default; }
 .pad-btn + .pad-btn { margin-top: 8px; }
 
 .pad-link {
@@ -314,8 +317,8 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-chip:hover { background: var(--surface3); color: var(--text); }
 .pad-chip.on { background: var(--accent-lt); color: var(--accent); }
 /* A chip that cannot be pressed now says so: faded, no hover, no pointer. */
-.pad-chip:disabled { opacity: 0.4; cursor: default; }
-.pad-chip:disabled:hover { background: var(--surface2); color: var(--text2); }
+.pad-chip:disabled, .pad-chip[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+.pad-chip:disabled:hover, .pad-chip[aria-disabled="true"]:hover { background: var(--surface2); color: var(--text2); }
 .pad-chip .fc-n { font-family: var(--mono); font-size: 10.5px; opacity: 0.75; margin-left: 5px; font-variant-numeric: tabular-nums; }
 
 /* ---------- lobby ---------- */
@@ -495,7 +498,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-turn .pad-chips { margin: 4px 0 6px; }
 .pad-turn-unit { padding: 4px 0 6px; }
 .pad-turn-unit .pad-turn-name { display: block; margin-bottom: 4px; }
-.pad-bar-round.off { opacity: 0.45; }
+.pad-bar-round.off { opacity: 0.45; cursor: default; }
 
 /* The Perform button on an action row, and the engine's reason when there is
    none to press. */
@@ -740,8 +743,8 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-step:hover { background: var(--surface3); color: var(--text); }
 /* A step the engine would refuse (Link already full, no Ammo left) is greyed
    and inert rather than answered with a refusal (OTTO, 2026-09-27). */
-.pad-step:disabled { opacity: 0.35; cursor: default; }
-.pad-step:disabled:hover { background: var(--surface2); color: var(--text2); }
+.pad-step:disabled, .pad-step[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+.pad-step:disabled:hover, .pad-step[aria-disabled="true"]:hover { background: var(--surface2); color: var(--text2); }
 
 .pad-num {
   font-family: var(--mono);
@@ -929,16 +932,14 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-part-open .ref-action { margin-bottom: 8px; }
 .pad-part-open .ref-kwlinks { margin: 6px 0 8px; }
 .pad-part-open .ref-trait { margin-bottom: 8px; }
-.pad-dead-note { margin: 0 0 8px; color: #e05555; }
-
 /* ---------- stances, wearing their printed token ---------- */
 
 /* The printed Stance token fills the button and its name sits under it: the
    dial on the base is read by its picture, and the picture is the control. */
 .pad-stances { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex: 1 0 100%; }
 /* A Stance the engine would not take now (a locked Stance in a guided turn). */
-.pad-stance:disabled { opacity: 0.4; cursor: default; }
-.pad-stance:disabled:hover { background: var(--surface2); color: var(--text2); }
+.pad-stance:disabled, .pad-stance[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+.pad-stance:disabled:hover, .pad-stance[aria-disabled="true"]:hover { background: var(--surface2); color: var(--text2); }
 
 .pad-stance {
   display: flex;
@@ -1207,8 +1208,10 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 }
 
 .pad-task:hover, .pad-task:active { background: var(--surface3); }
-.pad-task.discarded { opacity: 0.45; }
-.pad-task.discarded .pad-task-art { filter: grayscale(1); }
+.pad-task.discarded, .pad-task:disabled { opacity: 0.45; }
+.pad-task:disabled { cursor: default; }
+.pad-task:disabled:hover { background: var(--surface2); }
+.pad-task.discarded .pad-task-art, .pad-task:disabled .pad-task-art { filter: grayscale(1); }
 
 /* Mission art is 3:2 and Secondary art is 3:4, so the thumb fixes the HEIGHT
    and lets the width follow. */
@@ -1314,33 +1317,15 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 
 /* ---------- toasts ---------- */
 
-.pad-toasts {
+/* The one notice line (src/notices.ts draws it; notices.css is its look):
+   above the dock, over the sheet, never pushing anything. */
+.pad-notice {
   position: absolute;
   left: 10px;
   right: 10px;
   bottom: 8px;
   z-index: 60;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  pointer-events: none;
 }
-
-.pad-toast {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 8px 8px 12px;
-  border-radius: var(--radius);
-  background: var(--surface3);
-  color: var(--text);
-  font-size: 12.5px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-  pointer-events: auto;
-}
-
-.pad-toast > span { flex: 1; min-width: 0; }
-.pad-toast .pad-chip { background: var(--accent-lt); color: var(--accent); min-height: 30px; padding: 5px 10px; }
 
 /* ---------- wider screens ----------
    The pad is a phone app that must not look broken on a tablet or a desktop
@@ -1374,7 +1359,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
   .pad-sheet { grid-column: 1; grid-row: 3; display: block; }
   .pad-sheet-2 { grid-column: 2; grid-row: 3; display: block; border-left: 1px solid var(--border); }
   .pad-panel { left: auto; width: 440px; border-left: 1px solid var(--border); }
-  .pad-toasts { left: auto; width: 360px; }
+  .pad-notice { left: auto; width: 360px; }
 }
 
 @media (min-width: 1400px) {
