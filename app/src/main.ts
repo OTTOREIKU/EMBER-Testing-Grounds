@@ -58,7 +58,7 @@ import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
 import { clearHistory, historyList, recordSnapshot, snapshotBack, undoLast } from './history';
 import { idleWorldFor } from './glue';
-import { clearNotice, configureNotices, currentNotice, explainOnHold, notify, type NoticeKind } from './notices';
+import { clearNotice, configureNotices, currentNotice, explainOnHold, notify, speakInPlace, type NoticeKind } from './notices';
 import { labelFor, namesFrom } from './ledger';
 import { askTowFacing, offerHarpyDrag as sharedHarpyDrag } from './commandpick';
 import { PlayGuide } from './playguide';
@@ -473,6 +473,10 @@ async function init() {
   });
   // A greyed control says why on a long press or a hover (pick 2).
   explainOnHold(document.body);
+  // Rule numbers stay in the Reference and in Teaching (pick 4): outside a
+  // Teaching game the page reads the words; the card tooltip and a card's
+  // rulebook blocks keep theirs.
+  speakInPlace(document.body, { keep: '#card-tip, .ref-mech', active: () => !(normaliseSetup(state.setup) && !strictNow(state)) });
 
   function say(kind: NoticeKind, text: string | null | undefined, undo?: () => boolean): void {
     if (text) notify({ kind, text, undo });

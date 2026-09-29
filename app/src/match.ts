@@ -25,7 +25,7 @@ import { warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { syncUpdateNotice, watchForUpdates } from './updates';
 import { choiceDialog } from './dialog';
-import { clearNotice, configureNotices, explainOnHold, notify, type NoticeKind } from './notices';
+import { clearNotice, configureNotices, explainOnHold, notify, speakInPlace, type NoticeKind } from './notices';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { animateRemoteMove, clearRangeOverlayFor, detonationHit, ensureHud, offerCoordinationAfterManeuver, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
@@ -3385,6 +3385,9 @@ watchForUpdates({
 // Undo on it here: a shared board is rewound only by agreement (the ↩ menu).
 configureNotices({ host: () => document.getElementById('mc-notice'), voice: 'terse' });
 explainOnHold(document.body);
+// Rule numbers stay in the Reference (pick 4); the card tooltip and a card's
+// rulebook blocks keep theirs.
+speakInPlace(document.body, { keep: '#card-tip, .ref-mech' });
 
 render();
 void (async () => {
