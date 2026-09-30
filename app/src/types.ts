@@ -248,6 +248,12 @@ export interface Token {
   // Set by the Unfold itself, so a unit sharing its Grid later owes nothing
   // (rulings I18, I19; audit Phase 5, D2). Rules-bearing and fingerprinted.
   unfoldBlast?: boolean;
+  // An Unfolded Pholcus that jumped into its target's Grid to blow up there
+  // (167; FAQ I19). Its landing sets off the Mines in that Grid, and they wait
+  // for its own blast (Supplementary Rules 1.04, 1.9). Set by the jump
+  // (flyToTarget); the unit leaves the board with its blast. Rules-bearing
+  // and fingerprinted.
+  jumpBlast?: boolean;
   droneBackpack?: string;
   label: string;
   col: number;
@@ -1790,6 +1796,16 @@ export interface GameState {
   // The pad's Freeform / Guided choice, on the TABLE so the player who joins
   // a room sees what the host picked instead of their own phone's default.
   guidedPlay?: boolean;
+  // The squad that resolved the last blast while both squads owed one
+  // (Supplementary Rules 1.04, 1.9: simultaneous damage goes round-robin from
+  // the initiative player). The blasts themselves are read off the board
+  // (units.ts minesOwed, blastTurn); this is the one fact the board forgets.
+  // Cleared once nothing is owed.
+  blastLast?: Side;
+  // The Season Rules this table plays, by season id ('1.04'), set by the host
+  // at setup and fixed once the game is under way; absent means the main rules
+  // (season.ts). Rules-bearing: it changes what check() accepts.
+  season?: string;
   // The HOST has lifted the setup locks of a running Guided game (the Main Task
   // and battlefield after the edges, squads after deployment), to correct
   // something entered wrong without abandoning the game. On the table, so both
@@ -1815,6 +1831,10 @@ export interface GameState {
   // Draw the grid over art that has its own printed on it.
   alwaysGrid?: boolean;
   tactics?: Record<Side, string[]>;
+  // A seat's hand across a room: one commitment per card, never the cards
+  // (Supplementary Rules 1.04, 1.11; tactichand.ts). The seat's `tactics` is
+  // then empty, and a card is proved against these when it is played.
+  tacticsSealed?: Partial<Record<Side, string[]>>;
   tacticsPlayed?: Record<Side, string[]>;
   // A seat's collection, opened to the table so the other player may build
   // from it: the boxes owned by count and the loose singles. Absent for a

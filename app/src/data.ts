@@ -199,6 +199,10 @@ export interface SeasonRule {
   rule?: string;
   see?: string[];
   match?: string[];
+  // What the rule changes in play, on a table that turned its season on
+  // (season.ts): a Common Action's size, or how many Smoke Screens leave each
+  // Connected group in the End Phase.
+  effect?: { action?: string; size?: string; smokePerGroup?: number };
 }
 
 // One season's rules, from data/mechanics.json `seasons`: `id` is the revision

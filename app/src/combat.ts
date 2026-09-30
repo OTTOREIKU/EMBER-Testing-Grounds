@@ -3908,7 +3908,15 @@ export class AttackHelper {
     // cleaved into, reading it as newly declared a target of the Action. It is
     // not: Surplus Damage transfers damage and nothing else, "No Action effects
     // are inherited" (4.8), so Suppression stays with the declared target.
-    if (u.kind === 'mech') {
+    if (u.kind === 'mech' && cruising(this.data, u)) {
+      // Cruise Mode: no target Part is determined, and every hit counts as a
+      // Torso hit (Supplementary Rules 1.04, 3.3). A Surplus carried in from
+      // another unit hit no Part of this one first, so FAQ N7's roll for
+      // another Part does not reach it (OTTO, 2026-09-30). The Surplus that
+      // stays on a cruising Mech still rolls (otherPartFor; ruling I29).
+      this.note(`${u.label} is in Cruise Mode: no hit location is determined, so the Torso takes the Surplus (Supplementary Rules 1.04, 3.3).`, [u]);
+      this.pickPart('torso');
+    } else if (u.kind === 'mech') {
       c.step = 'part';
       this.render();
     } else {

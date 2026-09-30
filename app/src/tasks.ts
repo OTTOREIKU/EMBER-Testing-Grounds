@@ -574,29 +574,18 @@ export function isLowValue(t: Token, tagged?: (t: Token) => boolean): boolean {
   return tagged ? tagged(t) : false;
 }
 
-// A Deployable (a Barricade, a Beacon, a Mine), read off the token alone: every
-// Deployable stands on the ground (Supplementary Rules 1.04, 1.1.2) but the
-// GM-35 Mine, which keeps `aerial` for sight and Melee and is marked by its
-// `mine` record. Every other Projectile is Aerial.
-export function isDeployableToken(t: Token): boolean {
-  return t.kind === 'projectile' && (!t.aerial || !!t.mine);
-}
-
 // ---------- control zones (5.3.2) ----------
 
-// 5.3.2 and 5.3.3 are deliberately asymmetric, so the two halves differ here.
-// Capturing is interacting with a Task Item, which a Low Value Unit may never do
-// (p.82), and the rule names "Mechs or Drones". Blocking is not interacting: it
-// is standing on contested ground, and the rule widens to "no enemy Units" with
-// no Low Value carve-out. The Excavation Claim card has to print "Low Value
-// Units do not count" precisely because that exclusion is not the default, which
-// is the clearest evidence the default is presence-counts-for-everything.
-//
-// Except a Deployable: the Supplementary Rules 1.04 (1.2, 1.3) say Barricades
-// and Mines, and every Deployable with them, "cannot capture Task Targets or
-// interact with Control Zones", so one standing in a Zone contests nothing.
-// Whether that reaches the other Low Value units (a Projectile, a 0-point
-// Drone) the Supplement does not say outright; they still contest.
+// 5.3.2: a side takes a Zone with a Mech not in Shutdown, or a Drone, inside
+// and no enemy Unit inside. A Low Value Unit does neither half. Taking a Zone is
+// interacting with a Task Item, which it may never do (p.82; FAQ M15), and the
+// Supplementary Rules 1.04 (1.1.2, 1.2, 1.3) give the Low Value Tag as the
+// reason a Deployable cannot interact with a Control Zone at all, so one inside
+// does not block it either. Every Projectile carries the Tag, and so does a
+// Drone printed with it (`lowValue`). Ruled 2026-09-30 (OTTO: "low value units
+// can no longer block/contest zones"). A Shutdown Mech still blocks: it is not
+// Low Value. The Excavation Claim card prints its own exclusion because its
+// Tactical Area is not a Task Item.
 export function controlOf(cells: string[], tokens: Token[], lowValue?: (t: Token) => boolean): Side | null {
   const inside = tokens.filter((t) => t.deployed !== false && inZone(t, cells));
   if (!inside.length) return null;
@@ -607,7 +596,7 @@ export function controlOf(cells: string[], tokens: Token[], lowValue?: (t: Token
         && !isLowValue(t, lowValue)
         && ((t.kind === 'mech' && t.stance !== 'shutdown') || t.kind === 'drone'),
     );
-    const enemy = inside.some((t) => t.side !== side && !isDeployableToken(t));
+    const enemy = inside.some((t) => t.side !== side && !isLowValue(t, lowValue));
     if (holds && !enemy) return side;
   }
   return null;

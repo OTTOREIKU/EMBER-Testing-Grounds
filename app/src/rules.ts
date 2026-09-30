@@ -73,11 +73,15 @@ export interface Dissipation {
 
 // The End Phase snapshot is taken once and then applied, which is what makes the
 // merge and split notes on p.77 fall out on their own.
-export function dissipationFor(smoke: SmokeScreen[], side: Side): Dissipation {
+// `per` is how many screens leave each Connected group: 1 in the main rules,
+// 3 under Season 1.04 (season.ts smokePerGroup). A group no larger than that
+// goes whole, with the lone screens; a larger one owes `per` of its own
+// screens, which its owner picks.
+export function dissipationFor(smoke: SmokeScreen[], side: Side, per = 1): Dissipation {
   const groups = smokeGroups(smoke, side);
   return {
-    isolated: groups.filter((g) => g.length === 1).map((g) => g[0]),
-    groups: groups.filter((g) => g.length > 1),
+    isolated: groups.filter((g) => g.length <= per).flat(),
+    groups: groups.filter((g) => g.length > per),
   };
 }
 

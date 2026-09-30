@@ -2,7 +2,7 @@ import type { BoardGrids, CardAction, CombatView, Facing, FreeTicks, GameState, 
 import { addStatus, ageTokens, cellsOf, isLineUnit, gridsOf, newOpportunity, normaliseCatalog, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
 import { cardName, isMine, isUnfolded, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance, squadLabel } from './data';
-import { auraActionOf, auraCanReach, interceptPayer, repairSpec, fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, minesOwed, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyFor, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources, chargeSlotOf, discardPartOn, disarmOn, partUsable, throwWhy, shockMoveAllowed, actionIdleWhy, counterWon, multiTargetLimit, camoBrokenBy } from './units';
+import { auraActionOf, auraCanReach, interceptPayer, repairSpec, fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, minesOwed, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyFor, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources, chargeSlotOf, discardPartOn, disarmOn, partUsable, throwWhy, shockMoveAllowed, actionIdleWhy, counterWon, multiTargetLimit, camoBrokenBy, blastTurn, jumpsToTarget, blastsReady } from './units';
 import { canBeForceMoved, crawlHolders, isMeleeFiring, lockersOf, tetherCap } from './melee';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, rebooted, REBOOT_ID, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload, untouched } from './ticks';
 import { tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
@@ -11,6 +11,8 @@ import { applyKill, boxHands, boxPlaceTurn, cellToGrid, deployGrids, deployOpenG
 import { alive, canAct, dialHidden, droneActionWhy, droneLockPhase, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity, tiedChoiceWhy } from './loop';
 import { boxDropCells, dissipationFor, losNote, rangeBetween, spotsInGrid } from './rules';
 import { cleanName } from './safetext';
+import { smokePerGroup, syncSeason } from './season';
+import { sealTactic } from './secrecy';
 
 // ---------- the command layer (multiplayer phase 1) ----------
 
@@ -138,7 +140,7 @@ export type Command = (
   // Opportunity (4.1) — newOpportunity still holds the previous round's Stance
   // and cannot judge it. The card prints "may", so it is never automatic.
   | { kind: 'attackMode'; seat: Side; uid: number }
-  | { kind: 'playTactic'; seat: Side; uid: number; cardId: string; pick?: string }
+  | { kind: 'playTactic'; seat: Side; uid: number; cardId: string; pick?: string; salt?: string }
   // Nothing in 3.1.4 fixes which way a unit faces as it lands, so the facing is
   // the player's to choose while the placement is still theirs to take back.
   | { kind: 'deployUnit'; seat: Side; uid: number; to: { col: number; row: number }; stance?: Stance; camo?: boolean; facing?: Facing }
@@ -459,7 +461,7 @@ export type Command = (
   // The table itself: map, zones, mission and scale used to be local
   // mutations, which is why a host's picks never reached the guest. Tasks
   // ride in the command pre-derived, like dials ride in a reveal.
-  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; tableDice?: boolean; guidedPlay?: boolean; unlocked?: boolean; roundLimit?: number; noBoard?: boolean }
+  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; tableDice?: boolean; guidedPlay?: boolean; unlocked?: boolean; roundLimit?: number; noBoard?: boolean; season?: string | null }
   | { kind: 'startMatch'; seat: Side }
   | { kind: 'endMatch'; seat: Side }
   // A squad's open-information Secondary Task pick (3.1.3). The seat is the
@@ -474,7 +476,9 @@ export type Command = (
   // playTactic reads the *sender's* hand, which the receiving client would
   // otherwise never have seen — and because a hand set locally is a hand the
   // other player cannot see the cost of.
-  | { kind: 'setTactics'; seat: Side; cards: string[] }
+  // A plain hand (`cards`) at one table; across a room a sealed one (`sealed`,
+  // one commitment per card), so the cards never travel (1.11; tactichand.ts).
+  | { kind: 'setTactics'; seat: Side; cards?: string[]; sealed?: string[] }
   // A seat opening its collection to the table, or closing it again. Carries
   // the whole shelf, so a repeat cannot double it; `shared` false takes it back.
   | { kind: 'setInventory'; seat: Side; shared: boolean; boxes?: Record<string, number>; cards?: Record<string, number>; builtOnly?: boolean }
@@ -829,6 +833,39 @@ function guidedGame(state: GameState): boolean {
   return !!state.script && !!normaliseSetup(state.setup);
 }
 
+// Simultaneous blasts from both squads resolve in turn (Supplementary Rules
+// 1.04, 1.9): refused when `src` is an owed blast whose squad is not on turn
+// (units.ts blastTurn), or one a unit that jumped into its Grid still holds.
+// Null: nothing to keep in order.
+function blastOrderWhy(data: GameData, state: GameState, src: Token | undefined): string | null {
+  // A table with no board resolves its own Mines, in its own order: every unit
+  // there stands on a placeholder cell, so minesOwed would read every Mine
+  // beside another as set off (M6) and refuse the table's own record.
+  if (state.noBoard) return null;
+  const owed = src ? minesOwed(data, state.tokens).find((m) => m.uid === src.uid) : undefined;
+  if (!src || !owed) return null;
+  // The jump and its blast are one continuous action, so the Mines its landing
+  // set off go after it (1.9).
+  if (owed.heldBy !== undefined) {
+    const by = state.tokens.find((x) => x.uid === owed.heldBy);
+    return `${by?.label ?? 'A unit'} jumped into this Grid, and its own blast resolves before the Mines its landing set off (Supplementary Rules 1.04, 1.9).`;
+  }
+  const turn = blastTurn(data, state);
+  if (!turn || turn === src.side) return null;
+  return `Simultaneous damage resolves in turn (Supplementary Rules 1.04, 1.9): ${squadLabel(turn)} resolves one of its own first, ${
+    state.blastLast ? 'as the squads alternate' : "as this round's First Player"}.`;
+}
+
+// Which squads owe a blast right now: two means they take turns (1.9).
+function blastSides(data: GameData, state: GameState): Set<Side> {
+  const sides = new Set<Side>();
+  for (const m of blastsReady(data, state.tokens)) {
+    const side = state.tokens.find((t) => t.uid === m.uid)?.side;
+    if (side) sides.add(side);
+  }
+  return sides;
+}
+
 // Forced Movement, kill tallies, terrain destruction and the intercept queue
 // may outlive their actor: a grenade's Knockback resolves after the spent
 // projectile has left the board, and an owed Interception survives its unit
@@ -1020,8 +1057,13 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'configureTable': {
       if (cmd.map === undefined && cmd.grids === undefined && cmd.zones === undefined && cmd.deployZones === undefined
         && cmd.zoneSet === undefined && cmd.mission === undefined && cmd.tasks === undefined && cmd.scale === undefined
-        && cmd.roundLimit === undefined && cmd.noBoard === undefined && cmd.tableDice === undefined && cmd.guidedPlay === undefined && cmd.unlocked === undefined) {
+        && cmd.roundLimit === undefined && cmd.noBoard === undefined && cmd.tableDice === undefined && cmd.guidedPlay === undefined && cmd.unlocked === undefined
+        && cmd.season === undefined) {
         return no('Nothing to configure.');
+      }
+      // Only a season the data holds: null plays the main rules.
+      if (cmd.season !== undefined && cmd.season !== null && !(data.seasons ?? []).some((s) => s.id === cmd.season)) {
+        return no('That is not a season of rules this table knows.');
       }
       // The board size rides with the map it was authored at, so both seats
       // resolve identical geometry without either reading the other's map
@@ -1052,11 +1094,12 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if ((cmd.zoneSet !== undefined || cmd.mission !== undefined || cmd.zones !== undefined || cmd.deployZones !== undefined || cmd.tasks !== undefined) && tasksLocked(setup)) {
         return no('The Tasks are settled once the edges are picked (3.1.2). End the game to change them.');
       }
-      // The game's length, its scale and how it is played are the host's, and
-      // are fixed once it is under way.
-      const house = cmd.roundLimit !== undefined || cmd.scale !== undefined || cmd.noBoard !== undefined || cmd.guidedPlay !== undefined;
-      if (house && getLocalSeat() && cmd.seat !== 's1') return no('Only the host sets the game length, the scale and the way it is played.');
-      if (house && setup?.stage === 'done') return no('The game is under way, so its length, scale and way of play are fixed. End the game to change them.');
+      // The game's length, its scale, how it is played and the rules it plays
+      // by (the Season Rules) are the host's, and are fixed once it is under way.
+      const house = cmd.roundLimit !== undefined || cmd.scale !== undefined || cmd.noBoard !== undefined || cmd.guidedPlay !== undefined
+        || cmd.season !== undefined;
+      if (house && getLocalSeat() && cmd.seat !== 's1') return no('Only the host sets the game length, the scale, the way it is played and its rules.');
+      if (house && setup?.stage === 'done') return no('The game is under way, so its length, scale, way of play and rules are fixed. End the game to change them.');
       return ok;
     }
     case 'startMatch': {
@@ -1130,16 +1173,27 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'setTactics': {
-      if (!Array.isArray(cmd.cards)) return no('That is not a hand.');
-      if (cmd.cards.length > 8) return no('That is more Tactics Cards than any squad could pay for.');
-      for (const id of cmd.cards) {
-        const card = data.byId.get(id);
-        if (!card || card.category !== 'tactics_or_upgrade') return no('That is not a Tactics Card.');
-      }
-      // Only one copy of each Tactics Card may be purchased (FAQ P2), so a
-      // hand with a duplicate is refused whichever picker or import built it.
-      if (new Set(cmd.cards).size !== cmd.cards.length) {
-        return no('Only one copy of each Tactics Card may be included in a squad (FAQ P2).');
+      // A sealed hand (1.11): its shape is all this can check. What each
+      // commitment hides is proved when its card is played, and a second copy of
+      // a card it might hide can never be played twice (FAQ P2, tacticUsedRound).
+      if (cmd.sealed !== undefined) {
+        if (!Array.isArray(cmd.sealed) || cmd.cards !== undefined) return no('That is not a hand.');
+        if (cmd.sealed.length > 8) return no('That is more Tactics Cards than any squad could pay for.');
+        if (cmd.sealed.some((h) => typeof h !== 'string' || !/^[0-9a-f]{64}$/.test(h)) || new Set(cmd.sealed).size !== cmd.sealed.length) {
+          return no('That is not a sealed hand.');
+        }
+      } else {
+        if (!Array.isArray(cmd.cards)) return no('That is not a hand.');
+        if (cmd.cards.length > 8) return no('That is more Tactics Cards than any squad could pay for.');
+        for (const id of cmd.cards) {
+          const card = data.byId.get(id);
+          if (!card || card.category !== 'tactics_or_upgrade') return no('That is not a Tactics Card.');
+        }
+        // Only one copy of each Tactics Card may be purchased (FAQ P2), so a
+        // hand with a duplicate is refused whichever picker or import built it.
+        if (new Set(cmd.cards).size !== cmd.cards.length) {
+          return no('Only one copy of each Tactics Card may be included in a squad (FAQ P2).');
+        }
       }
       // The hand is chosen with the squad, so it closes when the game starts —
       // 5.4 has you holding them from the off, not drawing mid-match.
@@ -1975,6 +2029,9 @@ export function checkAfter(data: GameData, state: GameState, first: Command, the
 }
 
 export function check(data: GameData, state: GameState, cmd: Command): CheckResult {
+  // The table's Season Rules resize their Actions before anything is judged
+  // (season.ts), so both players' engines cost them the same way.
+  syncSeason(data, state);
   if (tableLevel(cmd)) return checkTable(data, state, cmd);
   const t = state.tokens.find((x) => x.uid === cmd.uid);
   if (!actorOptional(cmd)) {
@@ -2785,14 +2842,24 @@ function checkActed(
         // Value 0 cannot do (4.11.2): refused here, before the Tick is paid.
         if (electronicValue(data, t, loanedParts(data, state.tokens, t)) <= 0) return no(`${t.label} has an Electronic Value of 0, so it cannot Initiate the Counter-roll a Remote Access makes (4.11.2).`);
       }
-      // As is |Reveal| out of the Optical Camouflage State, and a Scan with no
-      // enemy anywhere on the table in the State or bearing a Low Profile
-      // Token: p.31 (Note 2) and FAQ H2/J8, in the words their greyed rows
-      // give. Only the pages refused them (audit Phase 7, P7C 8).
-      if (a.id === 'COMMON_REVEAL' || isScanAction(a)) {
-        const idle = actionIdleWhy(data, t, a, { tokens: state.tokens, noBoard: !!state.noBoard });
-        if (idle) return no(idle);
-      }
+      // An Action that could change nothing may not be performed (Supplementary
+      // Rules 1.04, 1.8; FAQ H2, J8; p.31 Note 2): a Repair with nothing to
+      // repair, a Resupply with no Ammo spent, a Token Cleanup with no Token on
+      // anyone, a form switch with no other form, a camouflage already on, and
+      // the rest of units.ts actionIdleWhy. The pages grey them with that
+      // reason; the engine refuses the same families in the same words, so a
+      // stale or hostile client cannot slip one past the other player's engine
+      // (OTTO, 2026-09-30: "if the supplement says this then yes build it in").
+      // Reveal and Scan were the first (audit Phase 7, P7C 8). Sight for a
+      // target grant is left to the page, whose board the engine may not hold.
+      const idle = actionIdleWhy(data, t, a, {
+        tokens: state.tokens,
+        noBoard: !!state.noBoard,
+        tasks: normaliseTasks(state.tasks).items,
+        zoneCells: state.noBoard ? null : zoneCells(data, state),
+        ammoLeft: (u, id) => ammoAvailable(data, state, u, id),
+      });
+      if (idle) return no(idle);
       // Movement Actions (6.3.2, 4.3.4): Immobilized stops them unless the
       // Action is Unstoppable, and so does a destroyed Chassis, whichever Part
       // prints them (ruled 2026-09-25, audit Phase 4, E7 and I10). Only the
@@ -2937,7 +3004,14 @@ function checkActed(
     case 'playTactic': {
       const spec = tacticSpec(cmd.cardId);
       if (!spec) return no('That card is not a Tactics Card the guide can resolve.');
-      if (!(state.tactics?.[cmd.seat] ?? []).includes(cmd.cardId)) return no(`${spec.name} is not in this squad's hand.`);
+      // A sealed hand proves the card by the salt its owner kept, against one of
+      // its commitments (1.11); a plain hand simply lists it.
+      const sealed = state.tacticsSealed?.[cmd.seat];
+      if (sealed?.length) {
+        if (typeof cmd.salt !== 'string' || cmd.salt.length > 64 || !sealed.includes(sealTactic(cmd.cardId, cmd.salt))) {
+          return no(`${spec.name} is not in this squad's hand.`);
+        }
+      } else if (!(state.tactics?.[cmd.seat] ?? []).includes(cmd.cardId)) return no(`${spec.name} is not in this squad's hand.`);
       // Once used, discarded for the game (FAQ P2; audit Phase 6, H1). The
       // card stays in the hand, since its points were paid for the squad.
       const usedIn = tacticUsedRound(state, cmd.seat, cmd.cardId);
@@ -3036,6 +3110,9 @@ function checkActed(
     case 'applyPenetration': {
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return no('That target is not on the board.');
+      // An Explosion's damage names its Mine: resolved in turn (1.9).
+      const order = blastOrderWhy(data, state, t);
+      if (order) return no(order);
       const card = tokenCards(data, target).find((x) => x.slot === cmd.slot)?.card;
       if (!card) return no(`${target.label} has no such Part to hit.`);
       if ((target.partStates[cmd.slot] ?? 'intact') === 'destroyed') {
@@ -4066,6 +4143,10 @@ function checkActed(
     }
     case 'despawn': {
       if (!state.tokens.some((x) => x.uid === cmd.targetUid)) return no('That unit is not on the board.');
+      // A blast done out of turn (1.9): the Mine leaves when its Explosion is
+      // resolved, so that is where the order is kept.
+      const order = blastOrderWhy(data, state, state.tokens.find((x) => x.uid === cmd.targetUid));
+      if (order) return no(order);
       return ok;
     }
     case 'recoverBit': {
@@ -4159,11 +4240,16 @@ function checkActed(
       return ok;
     }
     case 'flyToTarget': {
-      if (!t || t.kind !== 'projectile') return no('Only a Projectile flies into its target\'s Grid.');
-      const a = findAction(data, state, cmd.uid, cmd.actionId);
-      if (!a || !fliesToTarget(a)) return no('That Action flies nothing into a target\'s Grid.');
+      // An Unfolded Pholcus JUMPS into its target's Grid (167): a Drone, and
+      // only at an Enemy Unit, as its card says (Supplementary Rules 1.04, 1.9).
+      const a = t ? findAction(data, state, cmd.uid, cmd.actionId) : undefined;
+      const jump = !!a && jumpsToTarget(a);
+      if (!t || (t.kind !== 'projectile' && !jump)) return no('Only a Projectile flies into its target\'s Grid.');
+      if (!a || !(fliesToTarget(a) || jump)) return no('That Action flies nothing into a target\'s Grid.');
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target || target.deployed === false) return no('That target is not on the board.');
+      if (jump && target.side === t.side) return no(`${t.label} jumps only at an Enemy Unit.`);
+      if (jump && t.jumpBlast) return no(`${t.label} has already jumped into its target's Grid.`);
       if (!state.noBoard && rangeBetween(t, target).range > (a.range ?? 0)) return no(`${target.label} is out of ${t.label}'s Range.`);
       // A Missile Group's Units attack the same target: the one its first Unit
       // picked, while it stands (p.94; ruling I12; audit Phase 5, A5).
@@ -4311,6 +4397,7 @@ function payFocus(data: GameData, t: Token, tokens: Token[] = []): void {
 // displacement or a unit being destroyed mid-attack — six paths, one of which
 // would have been missed. The sweep is a no-op on a board with no chips on it.
 export function apply(data: GameData, state: GameState, cmd: Command): void {
+  syncSeason(data, state);
   // Where everything stood, but only while something is camouflaged: the
   // Contact Reveal is judged against it below.
   const before = state.tokens.some((x) => statusCount(x.statuses, 'camouflage') > 0) ? positionsOf(state.tokens) : null;
@@ -4326,6 +4413,8 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   // A Mine set off stays owed until it is resolved (FAQ I13; audit Phase 5,
   // C2), marked the same way.
   settleMines(data, state);
+  // The round-robin of simultaneous blasts (1.9) ends with the last of them.
+  if (state.blastLast && !minesOwed(data, state.tokens).length) delete state.blastLast;
   // 4.12.2's Contact trigger, the same way: a Movement of either unit that ends
   // in Contact, whatever command carried it (a Maneuver, a knockback, a Crush
   // swap, a Blink, a Beacon or Mine laid into Contact), derived here so both
@@ -4667,6 +4756,14 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     if (cmd.tableDice !== undefined) state.tableDice = cmd.tableDice ? true : undefined;
     if (cmd.guidedPlay !== undefined) state.guidedPlay = cmd.guidedPlay ? true : undefined;
     if (cmd.unlocked !== undefined) state.unlocked = cmd.unlocked ? true : undefined;
+    // Deleted rather than stored empty, so a table on the main rules carries
+    // nothing that says otherwise.
+    if (cmd.season !== undefined) {
+      if (cmd.season) state.season = cmd.season;
+      else delete state.season;
+      // Its Actions resize at once, not at the next check.
+      syncSeason(data, state);
+    }
     if (cmd.map !== undefined) {
       state.map = cmd.map;
       state.removedTerrain = [];
@@ -4855,8 +4952,14 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'setTactics') {
     if (!state.tactics) state.tactics = { s1: [], s2: [] };
     // Replaces rather than appends: the command carries the whole hand, so a
-    // repeat of one that was already applied cannot double it.
-    state.tactics = { ...state.tactics, [cmd.seat]: [...cmd.cards] };
+    // repeat of one that was already applied cannot double it. A sealed hand
+    // leaves the plain list empty, and a plain one clears any seal.
+    const sealed = { ...(state.tacticsSealed ?? {}) };
+    if (cmd.sealed) sealed[cmd.seat] = [...cmd.sealed];
+    else delete sealed[cmd.seat];
+    state.tactics = { ...state.tactics, [cmd.seat]: cmd.sealed ? [] : [...(cmd.cards ?? [])] };
+    if (Object.keys(sealed).length) state.tacticsSealed = sealed;
+    else delete state.tacticsSealed;
     return;
   }
   if (cmd.kind === 'setInventory') {
@@ -5068,10 +5171,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   }
   if (cmd.kind === 'dissipateSmoke') {
     // Isolated screens come off for both sides in one judgement (4.16); the
-    // Connected-group picks arrive as removeSmoke commands afterwards.
+    // Connected-group picks arrive as removeSmoke commands afterwards. Under
+    // Season 1.04 three leave each group, so a group of three or fewer goes
+    // whole here with the isolated ones.
     const smoke = state.smoke ?? [];
+    const per = smokePerGroup(data, state);
     const doomed = new Set<SmokeScreen>();
-    for (const side of ['s1', 's2'] as Side[]) for (const iso of dissipationFor(smoke, side).isolated) doomed.add(iso);
+    for (const side of ['s1', 's2'] as Side[]) for (const iso of dissipationFor(smoke, side, per).isolated) doomed.add(iso);
     state.smoke = smoke.filter((x) => !doomed.has(x));
     state.smokeRound = state.round.n;
     return;
@@ -6399,6 +6505,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       const to = flightLanding(target);
       t.col = to.col;
       t.row = to.row;
+      // A jump sets off the Mines in the Grid it lands in, and they wait for
+      // its own blast (1.9): minesOwed reads the mark.
+      const a = findAction(data, state, cmd.uid, cmd.actionId);
+      if (a && jumpsToTarget(a)) t.jumpBlast = true;
       // The group's first pick names the target the rest follow (ruling I12).
       if (t.group !== undefined) {
         for (const x of state.tokens) if (x.group === t.group && x.uid !== t.uid) x.groupTarget = target.uid;
@@ -6480,6 +6590,12 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'despawn': {
       const gone = state.tokens.find((x) => x.uid === cmd.targetUid);
+      // A Mine leaving as its Explosion is done, while both squads owed a blast,
+      // was that squad's turn: the other squad resolves next (1.9).
+      if (gone && !state.noBoard && cmd.targetUid === cmd.uid && blastSides(data, state).size === 2
+        && minesOwed(data, state.tokens).some((m) => m.uid === gone.uid)) {
+        state.blastLast = gone.side;
+      }
       // A unit taken off the board leaves its Black Boxes in the Grid it stood
       // in (ruling I20): they vanished with it (audit Phase 6, F9).
       if (gone) {

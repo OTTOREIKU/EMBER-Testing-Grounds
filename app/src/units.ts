@@ -1575,6 +1575,17 @@ export function fliesToTarget(a: CardAction): boolean {
   return FLIES_TO_TARGET.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`);
 }
 
+// The Unfolded Pholcus's Automatic Attack: "this unit Jumps to the target grid
+// and undergoes Detonation" (167). A Ground Unit's jump, not a Missile's
+// flight: nothing Intercepts it, and its landing sets off the Mines in that
+// Grid, whose blasts wait for its own (Supplementary Rules 1.04, 1.9; FAQ
+// I19). The Missiles carry the same structured moveToTarget, so the printed
+// verb is what tells the two apart.
+const JUMPS_TO_TARGET = /Jumps? to the target grid|跳跃至/i;
+export function jumpsToTarget(a: CardAction): boolean {
+  return JUMPS_TO_TARGET.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`);
+}
+
 // The flight: where the Missile comes down in the target's Grid, and the
 // Interception that owes, judged at both ends like any Aerial unit's Movement
 // (4.9, FAQ O11). The caller moves it and queues the debt; the Explosion waits
@@ -1652,6 +1663,10 @@ export function detonationBar(
   // Mines that go off together never destroy one another (FAQ I13); a Mine
   // Deployed into this one's Grid is the one its blast may catch (M6).
   if (proj.mine && x.mine) {
+    // Both set off, so they went off together, whoever set them off and
+    // whether that unit is still standing: a Pholcus that jumped in has gone
+    // with its own blast (Supplementary Rules 1.04, 1.9).
+    if (proj.mine.owed && x.mine.owed) return 'a Mine';
     const walker = inRange.some((o) => !o.mine && !o.aerial && o.uid !== proj.uid);
     return walker || x.uid < proj.uid ? 'a Mine' : '';
   }
@@ -4078,6 +4093,27 @@ export function autoNeutralTargets(
   // Enemies first, always. While one is in range, and in sight (3.5.2), there
   // is no choice to offer.
   if (autoTargetsFor(data, tokens, t, a, { terrain, smoke }).length) return [];
+  const near = containerTargets(data, tokens, terrain, t, a, smoke);
+  if (!near.length) return [];
+  // "The nearest" is the whole rule, so ties come back together and the player
+  // picks between them - the same shape autoTargetsFor uses for tied enemies.
+  const best = Math.min(...near.map((x) => x.dist));
+  return near.filter((x) => x.dist === best);
+}
+
+// Every Breakable piece an Action could target (Supplementary Rules 1.04,
+// 1.1.3, 3.1: a Container is a Neutral Unit, and an attack that targets one
+// destroys it with no roll). A Firing or Melee Action's attack list offers
+// them all (OTTO, 2026-09-30); an Automatic one only the nearest, and only with
+// no enemy in range (FAQ O9, autoNeutralTargets above). Nearest first.
+export function containerTargets(
+  data: GameData,
+  tokens: Token[],
+  terrain: TerrainPiece[],
+  t: Token,
+  a: CardAction,
+  smoke: SmokeScreen[] = [],
+): NeutralTarget[] {
   // A Container is a Unit here (A23), so it has to be one the Action could
   // target: within the reach an aura lengthens, in the Forward Arc unless
   // Omni-direction, and in sight for a Firing or Melee Action (3.5.2; ruling
@@ -4105,11 +4141,7 @@ export function autoNeutralTargets(
       dist: Math.min(...p.subCells.map((c) => Math.abs(Math.floor(c.col / 3) - g.c) + Math.abs(Math.floor(c.row / 3) - g.r))),
     }))
     .filter((x) => x.dist <= reach);
-  if (!near.length) return [];
-  // "The nearest" is the whole rule, so ties come back together and the player
-  // picks between them - the same shape autoTargetsFor uses for tied enemies.
-  const best = Math.min(...near.map((x) => x.dist));
-  return near.filter((x) => x.dist === best).sort((x, y) => x.id.localeCompare(y.id));
+  return near.sort((x, y) => x.dist - y.dist || x.id.localeCompare(y.id));
 }
 
 // ---------- Prototype Blink (FAQ E17/E20) ----------
@@ -4553,6 +4585,9 @@ export interface MineTrigger {
   why: string;
   // The Ground unit that set it off, when one did (C2, C6).
   walker?: number;
+  // A unit that jumped into this Grid and has not blown up yet: the Mine waits
+  // for that blast (Supplementary Rules 1.04, 1.9). blastsReady leaves it out.
+  heldBy?: number;
 }
 
 // Who occupies an Unfolded Pholcus's Grid for M18.4: the units standing in
@@ -4842,6 +4877,11 @@ export function minesOwed(data: GameData, tokens: Token[]): MineTrigger[] {
     const victims = walker || owedBefore
       ? inGrid.filter((o) => !isMineToken(o) && isGroundUnit(data, o))
       : inGrid.filter((o) => isMineToken(o) || isGroundUnit(data, o));
+    // A unit that jumped in to blow up here is one continuous action: "the
+    // Pholcus' entry-trigger effect is resolved first, followed by the
+    // simultaneous detonation of Mines" (Supplementary Rules 1.04, 1.9). The
+    // Mine waits while it stands, and one its blast destroys never goes off.
+    const jumper = inGrid.find((o) => o.jumpBlast);
     out.push({
       uid: m.uid,
       actionId: trigger.id,
@@ -4849,12 +4889,41 @@ export function minesOwed(data: GameData, tokens: Token[]): MineTrigger[] {
       why: walker
         ? `${walker.label} is a Ground Unit that entered its Grid`
         : owedBefore
-          ? 'it went off with the Mine beside it (FAQ I13)'
+          // With a Mine beside it (FAQ I13), or by a jumping Pholcus's
+          // landing, and whoever set it off may be gone by now (1.9).
+          ? 'it was set off, and its blast is still owed (FAQ I13; Supplementary Rules 1.04, 1.9)'
           : `${newer!.label} was Deployed into its Grid`,
       ...(walker ? { walker: walker.uid } : {}),
+      ...(jumper ? { heldBy: jumper.uid } : {}),
     });
   }
   return out;
+}
+
+// The owed blasts that may resolve now: a Mine set off in a Grid where a unit
+// that jumped in still stands waits for that unit's own blast (1.9).
+export function blastsReady(data: GameData, tokens: Token[]): MineTrigger[] {
+  return minesOwed(data, tokens).filter((m) => m.heldBy === undefined);
+}
+
+// Whose blast resolves next (Supplementary Rules 1.04, 1.9; OTTO, 2026-09-30).
+// Simultaneous damage is ordered by the controller of its sources; when both
+// squads own one, "the current initiative player determines the order in a
+// round-robin manner": this round's First Player resolves one of its own, then
+// the other squad one of its own, and so on, a squad that has none left
+// standing aside. The First Player passes each round (commands.ts), so the
+// order follows the round the blasts went off in. Null: nothing owed, or
+// nothing that may go yet (blastsReady).
+export function blastTurn(data: GameData, state: Pick<GameState, 'tokens' | 'round' | 'blastLast'>): Side | null {
+  const sides = new Set<Side>();
+  for (const m of blastsReady(data, state.tokens)) {
+    const side = state.tokens.find((t) => t.uid === m.uid)?.side;
+    if (side) sides.add(side);
+  }
+  if (!sides.size) return null;
+  if (sides.size === 1) return [...sides][0];
+  const other: Side | null = state.blastLast === 's1' ? 's2' : state.blastLast === 's2' ? 's1' : null;
+  return other ?? state.round.firstPlayer;
 }
 
 // A Mine in a Grid the walk ENTERS goes off there: the GM-35 fires "when
@@ -6071,14 +6140,16 @@ export function tokenCards(data: GameData, t: Token): { slot: PartSlot | 'pilot'
 // are left out, and Low Value units cost 0 by their own data. The ONE reader
 // for every page: the pad's own copy counted each Pilot twice (audit Phase 6,
 // G1).
-export function squadPoints(data: GameData, tokens: Token[], side: Side, hand: string[] = []): number {
+// `hidden`: Tactics Cards counted but not seen, the other seat's sealed hand,
+// each at the fixed 30 points (Supplementary Rules 1.04, 1.11).
+export function squadPoints(data: GameData, tokens: Token[], side: Side, hand: string[] = [], hidden = 0): number {
   let n = 0;
   for (const t of tokens) {
     if (t.side !== side || t.kind === 'projectile') continue;
     for (const { card } of tokenCards(data, t)) n += card.score ?? 0;
   }
   for (const id of hand) n += data.byId.get(id)?.score ?? 0;
-  return n;
+  return n + Math.max(0, hidden) * 30;
 }
 
 // ---------- defender-side dice keywords (4.10) ----------
@@ -6929,6 +7000,13 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     ...((s as { noBoard?: boolean }).noBoard ? { noBoard: true } : {}),
     ...((s as { tableDice?: boolean }).tableDice ? { tableDice: true } : {}),
     ...((s as { guidedPlay?: boolean }).guidedPlay ? { guidedPlay: true } : {}),
+    // A season id and nothing else ('1.04'): it travels between players and is
+    // drawn on the page, so anything that is not one is dropped here.
+    ...(typeof (s as { season?: unknown }).season === 'string' && /^\d{1,2}(\.\d{1,3}){1,2}$/.test((s as { season: string }).season)
+      ? { season: (s as { season: string }).season } : {}),
+    // Who resolved the last of two squads' simultaneous blasts (1.9): a seat.
+    ...((s as { blastLast?: unknown }).blastLast === 's1' || (s as { blastLast?: unknown }).blastLast === 's2'
+      ? { blastLast: (s as { blastLast: Side }).blastLast } : {}),
     ...((s as { unlocked?: boolean }).unlocked ? { unlocked: true } : {}),
     roundLimit: int((s as { roundLimit?: unknown }).roundLimit, 5),
     sideNames: Object.fromEntries((['s1', 's2'] as const)
@@ -6949,6 +7027,20 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     alwaysGrid: !!(s as { alwaysGrid?: boolean }).alwaysGrid,
     tactics: normaliseTactics((s as { tactics?: unknown }).tactics),
     tacticsPlayed: normaliseTactics((s as { tacticsPlayed?: unknown }).tacticsPlayed),
+    // A sealed hand (1.11) arrives from the other player: at most eight 64-digit
+    // commitments per seat, and nothing else, or it is dropped.
+    ...(() => {
+      const raw = (s as { tacticsSealed?: unknown }).tacticsSealed;
+      if (!raw || typeof raw !== 'object') return {};
+      const out: Partial<Record<Side, string[]>> = {};
+      for (const side of ['s1', 's2'] as Side[]) {
+        const list = (raw as Record<string, unknown>)[side];
+        if (Array.isArray(list) && list.length <= 8 && list.every((h) => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h))) {
+          if (list.length) out[side] = [...new Set(list as string[])];
+        }
+      }
+      return Object.keys(out).length ? { tacticsSealed: out } : {};
+    })(),
     // A shared collection, on the whitelist rule: absent stays absent.
     ...(() => {
       const raw = (s as { inventory?: unknown }).inventory;
@@ -7018,6 +7110,8 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       barricade: card && isBarricade(card) ? true : undefined,
       // Derived from the card like the Barricade, its record kept (C2-C4).
       unfoldBlast: t.unfoldBlast === true ? true : undefined,
+      // The Pholcus's jump, kept (1.9).
+      jumpBlast: t.jumpBlast === true ? true : undefined,
       mine: card && isMine(card)
         ? {
             spared: Array.isArray(t.mine?.spared)
