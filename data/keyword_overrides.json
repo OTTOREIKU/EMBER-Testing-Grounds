@@ -1,303 +1,315 @@
 {
- "_comment": "Glossary fixes applied on top of the generated keywords.json (which comes from the community builder bundle). Sourced from the verified rulebook digests in ../rules. Keep this file when re-running tools/extract_cards.js — it is merged at load time by the app.",
- "_source": "rules/05_advanced_combat.md §4.17, rules/06_missions_and_appendix.md §6.2",
- "_corrections": "震撼 Concussion, 穿甲X Armor Piercing and 缴械 Disarm each lost a WORD in the community bundle, and the missing word was the load-bearing one: 'reduces target by 1' never says Link, 'removes X dice' never says WHITE, and 'target Part' should be the HIT Part. The Chinese, the Japanese and the publisher's championship-legal English parts lists all agree, and the engine was already correct in all three - only the sentence a player reads was wrong. 低特征 Low Profile had (Eye} and (Dodge} with an opening PARENTHESIS, so neither rendered as a glyph and readers saw the literal text. Its \"may\" is kept as printed but noted as applied automatically: the parts lists print \"may exchange\" on all nine {Eye} cards that carry English, including 027, 503, FPA-04 and LPA-24, whose Chinese reads 视为 (\"is regarded as\") with no choice in it - so \"may\" there renders 视为 rather than granting an option, and cannot be evidence that any one exchange is optional. Where the Chinese DOES print a choice (可以) the card charges for it: ZPA-35 spends a Command Token, ZPA-38 spends a Link. Low Profile charges nothing, rulebook 6.3.3 words it as automatic, and no card reads an {Eye} in a Defense Roll. 推动X was labelled 'Knock Back X' in the bundle, which collides with 击退X 'Knockback X'; the rulebook names it Push X (it alone reduces Link). 离子武器 was OCR'd as 'lon Weapon' (capital I read as lowercase L). 多目标X shipped a truncated English value in the bundle, cut off mid-list at \"applied at this time;\" while the Chinese ran to the end of the rule; the remainder is translated from the Chinese here. Three Command entries were rewritten from rulebook 3.2.1 and 4.15: 指令生成X shipped a stray full stop (\"rather than 1.。\") and did not say the X REPLACES the default; 指令协调X read \"issue 1 Command Token to X Ally Drones\", which loses that the Drones must be DIFFERENT and that it works outside the Command Phase; 遥控武器 was OCR’d with \"Commandn per turn\" and called the phase a \"Command Stage\". Push X (推动X) said \"along the attack direction\", from the rulebook glossary (p.95); the Chinese, the Japanese (任意の直線方向) and the GoF 1.021 list print any straight direction, and OTTO ruled for the 1.021 list on 2026-09-25 (Mechanics audit Phase 4, I9). 脆弱 Fragile lost its White die (the card prints the White die glyph) and the floor of 1 White die the Chinese states; 修补 Repaired lost the last clause the Chinese and Japanese both print, 此次攻击继续命中核心, the attack goes on to the Core (FAQ J23); 高亮目标 Highlight says Attack Action where the Chinese says 射击动作, a Firing Action, as FAQ J18 rules (audit Phase 6, C10).",
- "overrides": {
-  "震撼": {
-   "en": {
-    "name": "Concussion",
-    "value": "Each {Lightning} in the attack roll reduces target Link by 1. The effect stacks, and a target driven to 0 Link Shuts Down."
-   }
+  "_comment": "Glossary fixes applied on top of the generated keywords.json (which comes from the community builder bundle). Sourced from the verified rulebook digests in ../rules. Keep this file when re-running tools/extract_cards.js — it is merged at load time by the app.",
+  "_source": "rules/05_advanced_combat.md §4.17, rules/06_missions_and_appendix.md §6.2",
+  "_corrections": "震撼 Concussion, 穿甲X Armor Piercing and 缴械 Disarm each lost a WORD in the community bundle, and the missing word was the load-bearing one: 'reduces target by 1' never says Link, 'removes X dice' never says WHITE, and 'target Part' should be the HIT Part. The Chinese, the Japanese and the publisher's championship-legal English parts lists all agree, and the engine was already correct in all three - only the sentence a player reads was wrong. 低特征 Low Profile had (Eye} and (Dodge} with an opening PARENTHESIS, so neither rendered as a glyph and readers saw the literal text. Its \"may\" is kept as printed but noted as applied automatically: the parts lists print \"may exchange\" on all nine {Eye} cards that carry English, including 027, 503, FPA-04 and LPA-24, whose Chinese reads 视为 (\"is regarded as\") with no choice in it - so \"may\" there renders 视为 rather than granting an option, and cannot be evidence that any one exchange is optional. Where the Chinese DOES print a choice (可以) the card charges for it: ZPA-35 spends a Command Token, ZPA-38 spends a Link. Low Profile charges nothing, rulebook 6.3.3 words it as automatic, and no card reads an {Eye} in a Defense Roll. 推动X was labelled 'Knock Back X' in the bundle, which collides with 击退X 'Knockback X'; the rulebook names it Push X (it alone reduces Link). 离子武器 was OCR'd as 'lon Weapon' (capital I read as lowercase L). 多目标X shipped a truncated English value in the bundle, cut off mid-list at \"applied at this time;\" while the Chinese ran to the end of the rule; the remainder is translated from the Chinese here. Three Command entries were rewritten from rulebook 3.2.1 and 4.15: 指令生成X shipped a stray full stop (\"rather than 1.。\") and did not say the X REPLACES the default; 指令协调X read \"issue 1 Command Token to X Ally Drones\", which loses that the Drones must be DIFFERENT and that it works outside the Command Phase; 遥控武器 was OCR’d with \"Commandn per turn\" and called the phase a \"Command Stage\". Push X (推动X) said \"along the attack direction\", from the rulebook glossary (p.95); the Chinese, the Japanese (任意の直線方向) and the GoF 1.021 list print any straight direction, and OTTO ruled for the 1.021 list on 2026-09-25 (Mechanics audit Phase 4, I9). 脆弱 Fragile lost its White die (the card prints the White die glyph) and the floor of 1 White die the Chinese states; 修补 Repaired lost the last clause the Chinese and Japanese both print, 此次攻击继续命中核心, the attack goes on to the Core (FAQ J23); 高亮目标 Highlight says Attack Action where the Chinese says 射击动作, a Firing Action, as FAQ J18 rules (audit Phase 6, C10).",
+  "overrides": {
+    "震撼": {
+      "en": {
+        "name": "Concussion",
+        "value": "Each {Lightning} in the attack roll reduces target Link by 1. The effect stacks, and a target driven to 0 Link Shuts Down."
+      }
+    },
+    "穿甲X": {
+      "en": {
+        "name": "Armor Piercing X",
+        "value": "Target removes X white dice before rolling."
+      }
+    },
+    "缴械": {
+      "en": {
+        "name": "Disarm",
+        "value": "Change the hit Part to Discard State."
+      }
+    },
+    "低特征": {
+      "en": {
+        "name": "Low Profile",
+        "value": "When this unit is the target of a Firing Action, may exchange {Eye} for {Dodge} in defense roll. Rulebook 6.3.3 words this as automatic - {Eye} results are regarded as {Dodge} - and nothing else in a Defense Roll reads an {Eye}, so the exchange is never against the defender and the app applies it for you."
+      }
+    },
+    "空手": {
+      "en": {
+        "name": "Freehand",
+        "value": "Tag: this limb has an open hand and can be designated to support another Part's Action. Enables [Two-Handed] conditional effects, is required by the Throw keyword, and is needed to pick up a Black Box (which then occupies the hand). Parts with the Handheld tag usually gain Freehand in their Discard state."
+      }
+    },
+    "双手": {
+      "en": {
+        "name": "Two-Handed",
+        "value": "Conditional: when performing this Action, if another Part with the Freehand tag is designated to support it, the [Two-Handed] effects listed on the card apply."
+      }
+    },
+    "导弹组X": {
+      "en": {
+        "name": "Missile Group X",
+        "value": "Each Missile Group contains X Units. They must move together and attack the same target, but Interception and Explosion damage resolve separately for each Unit. Example: an RKG70 model is a group of 3; one successful interception in flight removes 1 Unit, so 2 models arrive and cause 2 Detonations."
+      }
+    },
+    "抛射物": {
+      "en": {
+        "name": "Projectile",
+        "value": "Archetype tag on the card banner: this Unit is a Projectile (launched, then resolves in the Delay Phase). Not a special rule; see Ch. 4.7 and the card's own actions."
+      }
+    },
+    "设置物": {
+      "en": {
+        "name": "Deployable",
+        "value": "Archetype tag on the card banner: this Unit is a Deployable placed on the ground (mines, walls, beacons). Not a special rule; see Ch. 4.7 and the card's own actions."
+      }
+    },
+    "导弹": {
+      "en": {
+        "name": "Missile",
+        "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
+      }
+    },
+    "火箭": {
+      "en": {
+        "name": "Rocket",
+        "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
+      }
+    },
+    "巡航": {
+      "en": {
+        "name": "Cruising",
+        "value": "If there is no target within Range, this Projectile is not destroyed: it flies to any Grid within Range instead. No card prints this keyword at present."
+      }
+    },
+    "榴弹": {
+      "en": {
+        "name": "Grenade",
+        "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
+      }
+    },
+    "智能榴弹": {
+      "en": {
+        "name": "Smart Grenade",
+        "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
+      }
+    },
+    "烟幕弹": {
+      "en": {
+        "name": "Smoke Grenade",
+        "value": "Projectile subtype tag on the card banner. On Detonation these place Smoke Screens; see Ch. 4.16 and the card's actions."
+      }
+    },
+    "地雷": {
+      "en": {
+        "name": "Mine",
+        "value": "Deployable subtype tag on the card banner. Mines typically carry a Trigger action that detonates when a Ground Unit enters their grid."
+      }
+    },
+    "自行地雷": {
+      "en": {
+        "name": "Automatic Mine",
+        "value": "The banner of the SGM2 \"Pholcus\", printed PROJECTILE / Automatic Mine. It is Launched folded, and Unfolds into a Low Value Drone in the Delay Phase of the round it lands, detonating at once if its Grid is occupied. As a Drone it jumps to the nearest enemy in Range and detonates."
+      }
+    },
+    "墙": {
+      "en": {
+        "name": "Wall",
+        "value": "Deployable subtype tag on the card banner: a placed barrier. See the card for its height and whether it blocks line of sight."
+      }
+    },
+    "信标": {
+      "en": {
+        "name": "Beacon",
+        "value": "Deployable subtype tag on the card banner: a placed marker providing support effects. See the card's own actions."
+      }
+    },
+    "机动掩体": {
+      "en": {
+        "name": "Mobile Cover",
+        "value": "The banner tag of the DBP \"Turtle Shell\", which is a Barricade: despite the name it can neither move nor be moved, and is never Crushed. When another Ally Unit is the target of an Attack, it counts as 3-inch high Terrain. See Barricade."
+      }
+    },
+    "电子对抗": {
+      "en": {
+        "name": "Electronic Countermeasures",
+        "value": "Deployable subtype tag on the card banner: electronic-warfare support. See the card's own actions and Ch. 4.11."
+      }
+    },
+    "牵引X": {
+      "en": {
+        "name": "Tether X",
+        "value": "Place a Tether X Token on this unit (the initiating unit) and a Tethered X Token on the target, putting the two units in a Tether state. While it lasts, the tethered unit cannot voluntarily move to a position beyond X grids from the initiating unit. Note the leash binds only that end: the initiating unit may move where it likes, but doing so can break the Tether. Both Tokens are removed when any of three things happens: the initiating unit voluntarily moves beyond X grids from the tethered unit; the initiating unit is Penetrated; or either unit is forcibly moved so that the distance between them ends up greater than X. The Ols1B \"Harpoon\" Emergency Recovery System prints it."
+      }
+    },
+    "离子武器": {
+      "en": {
+        "name": "Ion Weapon",
+        "value": "When hitting a target with a Fragile Token, may exchange {Lightning} for {Heavy Hit}."
+      }
+    },
+    "推动X": {
+      "en": {
+        "name": "Push X",
+        "value": "Force the target to move X grids in a straight line, in any direction the pushing player chooses. If the target is a Mech, its Link Value is reduced by 1. It follows the Knockback X rules otherwise: it stops early if blocked by Units or Terrain."
+      }
+    },
+    "异形X": {
+      "en": {
+        "name": "Non-humanoid X",
+        "value": "When performing this Action, -X Link Value. The PLK400 \"Centaur\" High-mobility Chassis prints it on its Run, with X as 1."
+      }
+    },
+    "电子攻击": {
+      "en": {
+        "name": "Electronic Attack",
+        "value": "This Action is an Electronic Attack (EA) . When there is an effect that modifies \"Electronic Attacks\", this Action will be affected by it;If not further described, this Action targets an Enemy Unit, requires an Electronic counter-roll, and takes effect if successful."
+      }
+    },
+    "电子支援": {
+      "en": {
+        "name": "Electronic Support",
+        "value": "This Action is Electronic Support (ES). When there is an effect that modifies \"Electronic support\", this Action will be affected by it;If not further described, this Action targets Friendly Units and does not require Electronic counter-rolls. It takes effect automatically."
+      }
+    },
+    "齐射X": {
+      "en": {
+        "name": "Volley X",
+        "value": "Fire or deploy up to X Projectiles with this one Action, consuming an equal number of Ammo Tokens. You may repeat the declare-and-place steps until X projectiles have been launched, and Interception is then checked once at the end of the Action rather than per projectile."
+      }
+    },
+    "拦截X": {
+      "en": {
+        "name": "Intercept X",
+        "value": "This Action may be used for Interception, and starts the game with X Interception Tokens face-up on its Card. Interception triggers when an enemy Aerial Unit moves or is launched and either the starting or ending Grid of that movement is within this Action's Range, and it must be made while it can be. Each attempt consumes 1 Token and is a Firing Action for its bonuses and penalties, except that the target must be the unit that triggered it and need not be in the Forward Arc, and neither Terrain nor Unit Protection can be claimed. Terrain never blocks the line, but a Smoke Screen does. If the target survives, keep attempting Interceptions until it is destroyed or the Tokens run out. Tokens are never restored."
+      }
+    },
+    "追击标记": {
+      "en": {
+        "name": "Target Tracer",
+        "value": "When a Drone performs Automatic Actions, it must designate a Unit bearing a Target Tracer Token as the target even if it is not the closest Enemy Unit. When a Drone performs any Attack / Electronic Attack targeting a Unit bearing a Target Tracer Token, it is treated as being in the Offensive Stance."
+      }
+    },
+    "多目标X": {
+      "en": {
+        "name": "Multi-Target X",
+        "value": "This Action can select X targets at the same time. If it does, resolve the Attack as follows: determine the total number of Attack Dice for this Action, applying any effect that increases that number now; split those dice between the targets however you like, then run one separate attack sequence against each target in turn, rolling the dice allotted to it. If a Mech performs this Action it may Focus on each attack sequence separately. If the Attack inflicts a special effect, each attack sequence applies that effect to its own target on its own."
+      }
+    },
+    "路障": {
+      "en": {
+        "name": "Barricade",
+        "value": "While another Ally Unit is the target of an Attack, this Unit counts as 3-inch high Terrain, so it can block line of sight or grant Terrain Protection to the unit behind it."
+      }
+    },
+    "命中": {
+      "en": {
+        "name": "Hit",
+        "value": "Conditional keyword. When this Attack is resolved, the effect applies if any Damage was not offset by a [Dodge]. A [Defense] icon still counts as a Hit, so an attack can trigger this without causing a Penetration."
+      }
+    },
+    "不可阻挡": {
+      "en": {
+        "name": "Unstoppable",
+        "value": "Movement Actions with this Keyword can still be performed while the unit is Immobilized."
+      }
+    },
+    "直线移动": {
+      "en": {
+        "name": "Moving in Straight Line",
+        "value": "Conditional keyword. The effect applies if the entire Movement Path this Action makes runs in a single direction, wholly horizontal or wholly vertical across the board. (The traditional form 直線移動 also appears in the card data; it is the same keyword.)"
+      }
+    },
+    "指令生成X": {
+      "en": {
+        "name": "Command Generation X",
+        "value": "At the start of the Command Phase this Mech generates X Command Tokens instead of the default 1, placed face-up on its Torso Part Card. X REPLACES the 1 rather than adding to it (3.2.1). Six Torso cards print it: 4 on the P7-A3 Centurion, P22 Hunter and YP23 Wanderer, 2 on the P28 Dragoon, P24 Chariot and TM31Q Wild Cat. The Integrated Data Link Pod prints \"Command Generation +1\", which adds 1 to whatever the Mech generates."
+      }
+    },
+    "指令协调X": {
+      "en": {
+        "name": "Command Coordination X",
+        "value": "After performing this Action, this Mech may issue up to X Command Tokens it held back, one each to X DIFFERENT Ally Drones, laid face-down (4.15.3). Each Drone that takes one immediately performs 1 Movement Action or 1 Command Action. It works outside the Command Phase, so a Drone that already acted this round may take one: the token it was given then was removed when that phase ended."
+      }
+    },
+    "遥控武器": {
+      "en": {
+        "name": "RWS",
+        "value": "Remote Weapon Station. During the Command Phase an Ally may send a Command to this Mech to perform this Action, which is the one case where a MECH receives a Command Token rather than a Drone. This Part can only receive one Command per round."
+      }
+    },
+    "冲锋X": {
+      "en": {
+        "name": "Shock Attack X",
+        "value": "Before performing this Action, may move X grids. Mechs require a chasis to perform this Action."
+      },
+      "_note": "Typo fix only: keywords.json reads \"Actioin\". The rule is unchanged, and the [Offensive Stance] condition the three carriers print (M115 Spear, M100 Lance, M105 Halberd) is deliberately NOT folded in here - it is a per-card condition in the same bracketed form as [Stationary] and [On Hit], not part of the keyword."
+    },
+    "拖拽": {
+      "en": {
+        "name": "Drag",
+        "value": "Force the target to an adjacent grid of this Mech, and set the facing of the target. Dragging is treated as Flying Movement."
+      }
+    },
+    "击退X": {
+      "en": {
+        "name": "Knockback X",
+        "value": "After this action ends, the target is forced to move X grids along the attack direction. The target is subject to Forced Movement in a straight line, usually the direction the attacker is facing; if the path is blocked by Units or Terrain it stops early, and a Flying Unit is blocked by Units and Terrain the same way."
+      }
+    },
+    "电战节点X": {
+      "en": {
+        "name": "Warfare Node X",
+        "value": "Allies within the range may use the Electronic value of this Mech + X when making Electronic Counter-rolls. This does not change who is the Initiator and who is the Responder of the Counter-roll."
+      }
+    },
+    "Automatic Action": {
+      "en": {
+        "name": "Automatic Action:",
+        "value": "Printed on a Drone card as {!} beside the action name. The action resolves by itself in the Automatic Phase without being told to, and a Command taken in the Command Phase does not use it up: every Drone still on the board performs its Automatic Actions (3.5)."
+      }
+    },
+    "致密装甲": {
+      "en": {
+        "name": "Dense Armor",
+        "value": "When this Part is hit, it may remove every Attack Die showing a blank face, {Lightning} or {Eye} before any Reroll."
+      }
+    },
+    "低价值": {
+      "en": {
+        "name": "Low Value",
+        "value": "This Unit is not part of the Squad and has no Points Value. It is never placed during Deployment, may not interact with Task Items, cannot gain Hexagon Tokens, and is worth no Victory Points when destroyed."
+      }
+    },
+    "脆弱": {
+      "en": {
+        "name": "Fragile",
+        "value": "Units bearing a Fragile Token roll 1 fewer White Die in their Defense Roll. The effects of several Fragile Tokens stack, but a Defense Roll never drops below 1 White Die."
+      }
+    },
+    "修补": {
+      "en": {
+        "name": "Repaired",
+        "value": "A Repaired Token represents emergency repairs of a Destroyed Part. After a Destroyed Part receives a Repaired Token it may be used as normal, however when it is the target of an Attack, no Defense Roll is made, it is Destroyed immediately, and the attack goes on to the Core."
+      }
+    },
+    "高亮目标": {
+      "en": {
+        "name": "Highlight",
+        "value": "If a Unit performs a Firing Action that is able to target an Enemy Unit that has Highlight, it must target that Unit and cannot target other Units with the Attack. Other Attacks are not bound, and neither is Interception (FAQ J18, M26)."
+      }
+    },
+    "毁伤": {
+      "en": {
+        "name": "Mutilation",
+        "value": "Surplus Damage may be resolved against the Structure of the hit Part."
+      },
+      "_note": "OTTO 2026-09-28: the company lists win. Every Mutilation line on the five lists (25 rows) says the \"hit part\"; the generated glossary said the \"target Part\", the rulebook's word, which the 2026-09-03 ruling had kept. Play does not change: a Part the defender designates (Shield Up, Designated Defense) becomes the target, so the two words name the same Part."
+    },
+    "曲射": {
+      "en": {
+        "name": "Fire in arc",
+        "value": "This action does not require visual to the landing point or the target. Some cards print this keyword as Indirect Fire."
+      },
+      "aliases": [
+        "Indirect Fire"
+      ]
+    }
   },
-  "穿甲X": {
-   "en": {
-    "name": "Armor Piercing X",
-    "value": "Target removes X white dice before rolling."
-   }
-  },
-  "缴械": {
-   "en": {
-    "name": "Disarm",
-    "value": "Change the hit Part to Discard State."
-   }
-  },
-  "低特征": {
-   "en": {
-    "name": "Low Profile",
-    "value": "When this unit is the target of a Firing Action, may exchange {Eye} for {Dodge} in defense roll. Rulebook 6.3.3 words this as automatic - {Eye} results are regarded as {Dodge} - and nothing else in a Defense Roll reads an {Eye}, so the exchange is never against the defender and the app applies it for you."
-   }
-  },
-  "空手": {
-   "en": {
-    "name": "Freehand",
-    "value": "Tag: this limb has an open hand and can be designated to support another Part's Action. Enables [Two-Handed] conditional effects, is required by the Throw keyword, and is needed to pick up a Black Box (which then occupies the hand). Parts with the Handheld tag usually gain Freehand in their Discard state."
-   }
-  },
-  "双手": {
-   "en": {
-    "name": "Two-Handed",
-    "value": "Conditional: when performing this Action, if another Part with the Freehand tag is designated to support it, the [Two-Handed] effects listed on the card apply."
-   }
-  },
-  "导弹组X": {
-   "en": {
-    "name": "Missile Group X",
-    "value": "Each Missile Group contains X Units. They must move together and attack the same target, but Interception and Explosion damage resolve separately for each Unit. Example: an RKG70 model is a group of 3; one successful interception in flight removes 1 Unit, so 2 models arrive and cause 2 Detonations."
-   }
-  },
-  "抛射物": {
-   "en": {
-    "name": "Projectile",
-    "value": "Archetype tag on the card banner: this Unit is a Projectile (launched, then resolves in the Delay Phase). Not a special rule; see Ch. 4.7 and the card's own actions."
-   }
-  },
-  "设置物": {
-   "en": {
-    "name": "Deployable",
-    "value": "Archetype tag on the card banner: this Unit is a Deployable placed on the ground (mines, walls, beacons). Not a special rule; see Ch. 4.7 and the card's own actions."
-   }
-  },
-  "导弹": {
-   "en": {
-    "name": "Missile",
-    "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
-   }
-  },
-  "火箭": {
-   "en": {
-    "name": "Rocket",
-    "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
-   }
-  },
-  "巡航": {
-   "en": {
-    "name": "Cruising",
-    "value": "Printed on the M707 \"Swift\" Missile before GoF 1.021: with no target within Range it was not destroyed, flying to a Grid within Range instead. GoF 1.021 prints no Cruising on the Swift, and no card carries it now. The White Dwarf's Cruise Mode is a different rule."
-   }
-  },
-  "榴弹": {
-   "en": {
-    "name": "Grenade",
-    "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
-   }
-  },
-  "智能榴弹": {
-   "en": {
-    "name": "Smart Grenade",
-    "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
-   }
-  },
-  "烟幕弹": {
-   "en": {
-    "name": "Smoke Grenade",
-    "value": "Projectile subtype tag on the card banner. On Detonation these place Smoke Screens; see Ch. 4.16 and the card's actions."
-   }
-  },
-  "地雷": {
-   "en": {
-    "name": "Mine",
-    "value": "Deployable subtype tag on the card banner. Mines typically carry a Trigger action that detonates when a Ground Unit enters their grid."
-   }
-  },
-  "自行地雷": {
-   "en": {
-    "name": "Automatic Mine",
-    "value": "The banner of the SGM2 \"Pholcus\", printed PROJECTILE / Automatic Mine. It is Launched folded, and Unfolds into a Low Value Drone in the Delay Phase of the round it lands, detonating at once if its Grid is occupied. As a Drone it jumps to the nearest enemy in Range and detonates."
-   }
-  },
-  "墙": {
-   "en": {
-    "name": "Wall",
-    "value": "Deployable subtype tag on the card banner: a placed barrier. See the card for its height and whether it blocks line of sight."
-   }
-  },
-  "信标": {
-   "en": {
-    "name": "Beacon",
-    "value": "Deployable subtype tag on the card banner: a placed marker providing support effects. See the card's own actions."
-   }
-  },
-  "机动掩体": {
-   "en": {
-    "name": "Mobile Cover",
-    "value": "The banner tag of the DBP \"Turtle Shell\", which is a Barricade: despite the name it can neither move nor be moved, and is never Crushed. When another Ally Unit is the target of an Attack, it counts as 3-inch high Terrain. See Barricade."
-   }
-  },
-  "电子对抗": {
-   "en": {
-    "name": "Electronic Countermeasures",
-    "value": "Deployable subtype tag on the card banner: electronic-warfare support. See the card's own actions and Ch. 4.11."
-   }
-  },
-  "牵引X": {
-   "en": {
-    "name": "Tether X",
-    "value": "Place a Tether X Token on this unit (the initiating unit) and a Tethered X Token on the target, putting the two units in a Tether state. While it lasts, the tethered unit cannot voluntarily move to a position beyond X grids from the initiating unit. Note the leash binds only that end: the initiating unit may move where it likes, but doing so can break the Tether. Both Tokens are removed when any of three things happens: the initiating unit voluntarily moves beyond X grids from the tethered unit; the initiating unit is Penetrated; or either unit is forcibly moved so that the distance between them ends up greater than X. (Printed in full on the Ols1B \"Harpoon\" Emergency Recovery System card, PDLH-202, which is also where the English name Tether comes from; the keyword has no entry in the rulebook appendix.)"
-   }
-  },
-  "离子武器": {
-   "en": {
-    "name": "Ion Weapon",
-    "value": "When hitting a target with a Fragile Token, may exchange {Lightning} for {Heavy Hit}."
-   }
-  },
-  "推动X": {
-   "en": {
-    "name": "Push X",
-    "value": "Force the target to move X grids in a straight line, in any direction the pushing player chooses. If the target is a Mech, its Link Value is reduced by 1. It follows the Knockback X rules otherwise: it stops early if blocked by Units or Terrain."
-   }
-  },
-  "异形X": {
-   "en": {
-    "name": "Non-humanoid X",
-    "value": "When performing this Action, -X Link Value. The only card carrying it is the PLK400 \"Centaur\" High-mobility Chassis (ZHLT-301), whose Run is Non-humanoid 1, and its SK variant. (Name and wording both printed in English on the card and in the publisher's Part Data GoF 1.021 EN list; the keyword has no entry in the rulebook appendix.)"
-   }
-  },
-  "电子攻击": {
-   "en": {
-    "name": "Electronic Attack",
-    "value": "This Action is an Electronic Attack (EA) . When there is an effect that modifies \"Electronic Attacks\", this Action will be affected by it;If not further described, this Action targets an Enemy Unit, requires an Electronic counter-roll, and takes effect if successful."
-   }
-  },
-  "电子支援": {
-   "en": {
-    "name": "Electronic Support",
-    "value": "This Action is Electronic Support (ES). When there is an effect that modifies \"Electronic support\", this Action will be affected by it;If not further described, this Action targets Friendly Units and does not require Electronic counter-rolls. It takes effect automatically."
-   }
-  },
-  "齐射X": {
-   "en": {
-    "name": "Volley X",
-    "value": "Fire or deploy up to X Projectiles with this one Action, consuming an equal number of Ammo Tokens. You may repeat the declare-and-place steps until X projectiles have been launched, and Interception is then checked once at the end of the Action rather than per projectile."
-   }
-  },
-  "拦截X": {
-   "en": {
-    "name": "Intercept X",
-    "value": "This Action may be used for Interception, and starts the game with X Interception Tokens face-up on its Card. Interception triggers when an enemy Aerial Unit moves or is launched and either the starting or ending Grid of that movement is within this Action's Range, and it must be made while it can be. Each attempt consumes 1 Token and is a Firing Action for its bonuses and penalties, except that the target must be the unit that triggered it and need not be in the Forward Arc, and neither Terrain nor Unit Protection can be claimed. Terrain never blocks the line, but a Smoke Screen does. If the target survives, keep attempting Interceptions until it is destroyed or the Tokens run out. Tokens are never restored."
-   }
-  },
-  "追击标记": {
-   "en": {
-    "name": "Target Tracer",
-    "value": "When a Drone performs Automatic Actions, it must designate a Unit bearing a Target Tracer Token as the target even if it is not the closest Enemy Unit. When a Drone performs any Attack / Electronic Attack targeting a Unit bearing a Target Tracer Token, it is treated as being in the Offensive Stance."
-   }
-  },
-  "多目标X": {
-   "en": {
-    "name": "Multi-Target X",
-    "value": "This Action can select X targets at the same time. If it does, resolve the Attack as follows: determine the total number of Attack Dice for this Action, applying any effect that increases that number now; split those dice between the targets however you like, then run one separate attack sequence against each target in turn, rolling the dice allotted to it. If a Mech performs this Action it may Focus on each attack sequence separately. If the Attack inflicts a special effect, each attack sequence applies that effect to its own target on its own."
-   }
-  },
-  "路障": {
-   "en": {
-    "name": "Barricade",
-    "value": "While another Ally Unit is the target of an Attack, this Unit counts as 3-inch high Terrain, so it can block line of sight or grant Terrain Protection to the unit behind it."
-   }
-  },
-  "命中": {
-   "en": {
-    "name": "Hit",
-    "value": "Conditional keyword. When this Attack is resolved, the effect applies if any Damage was not offset by a [Dodge]. A [Defense] icon still counts as a Hit, so an attack can trigger this without causing a Penetration."
-   }
-  },
-  "不可阻挡": {
-   "en": {
-    "name": "Unstoppable",
-    "value": "Movement Actions with this Keyword can still be performed while the unit is Immobilized."
-   }
-  },
-  "直线移动": {
-   "en": {
-    "name": "Moving in Straight Line",
-    "value": "Conditional keyword. The effect applies if the entire Movement Path this Action makes runs in a single direction, wholly horizontal or wholly vertical across the board. (The traditional form 直線移動 also appears in the card data; it is the same keyword.)"
-   }
-  },
-  "指令生成X": {
-   "en": {
-    "name": "Command Generation X",
-    "value": "At the start of the Command Phase this Mech generates X Command Tokens instead of the default 1, placed face-up on its Torso Part Card. X REPLACES the 1 rather than adding to it (3.2.1). Six Torso cards print it: 4 on the P7-A3 Centurion, P22 Hunter and YP23 Wanderer, 2 on the P28 Dragoon, P24 Chariot and TM31Q Wild Cat. GoF 1.021 took it off the P7 Warrior. The Integrated Data Link Pod prints \"Command Generation +1\", which adds 1 to whatever the Mech generates."
-   }
-  },
-  "指令协调X": {
-   "en": {
-    "name": "Command Coordination X",
-    "value": "After performing this Action, this Mech may issue up to X Command Tokens it held back, one each to X DIFFERENT Ally Drones, laid face-down (4.15.3). Each Drone that takes one immediately performs 1 Movement Action or 1 Command Action. It works outside the Command Phase, so a Drone that already acted this round may take one: the token it was given then was removed when that phase ended."
-   }
-  },
-  "遥控武器": {
-   "en": {
-    "name": "RWS",
-    "value": "Remote Weapon Station. During the Command Phase an Ally may send a Command to this Mech to perform this Action, which is the one case where a MECH receives a Command Token rather than a Drone. This Part can only receive one Command per round."
-   }
-  },
-  "冲锋X": {
-   "en": {
-    "name": "Shock Attack X",
-    "value": "Before performing this Action, may move X grids. Mechs require a chasis to perform this Action."
-   },
-   "_note": "Typo fix only: keywords.json reads \"Actioin\". The rule is unchanged, and the [Offensive Stance] condition the three carriers print (M115 Spear, M100 Lance, M105 Halberd) is deliberately NOT folded in here - it is a per-card condition in the same bracketed form as [Stationary] and [On Hit], not part of the keyword."
-  },
-  "拖拽": {
-   "en": {
-    "name": "Drag",
-    "value": "Force the target to an adjacent grid of this Mech, and set the facing of the target. Dragging is treated as Flying Movement."
-   }
-  },
-  "击退X": {
-   "en": {
-    "name": "Knockback X",
-    "value": "After this action ends, the target is forced to move X grids along the attack direction. The target is subject to Forced Movement in a straight line, usually the direction the attacker is facing; if the path is blocked by Units or Terrain it stops early, and a Flying Unit is blocked by Units and Terrain the same way."
-   }
-  },
-  "电战节点X": {
-   "en": {
-    "name": "Warfare Node X",
-    "value": "Allies within the range may use the Electronic value of this Mech + X when making Electronic Counter-rolls. This does not change who is the Initiator and who is the Responder of the Counter-roll."
-   }
-  },
-  "Automatic Action": {
-   "en": {
-    "name": "Automatic Action:",
-    "value": "Printed on a Drone card as {!} beside the action name. The action resolves by itself in the Automatic Phase without being told to, and a Command taken in the Command Phase does not use it up: every Drone still on the board performs its Automatic Actions (3.5)."
-   }
-  },
-  "致密装甲": {
-   "en": {
-    "name": "Dense Armor",
-    "value": "When this part is hit, may remove all Attack Dice with {}, {Lightning} and {Eye} before Reroll. (GoF 1.021; the printed card read \"{Defense} may offset {Heavy Hit}\".)"
-   }
-  },
-  "低价值": {
-   "en": {
-    "name": "Low Value",
-    "value": "This Unit is not part of the Squad and has no Points Value. It is never placed during Deployment, may not interact with Task Items, cannot gain Hexagon Tokens, and is worth no Victory Points when destroyed."
-   }
-  },
-  "脆弱": {
-   "en": {
-    "name": "Fragile",
-    "value": "Units bearing a Fragile Token roll 1 fewer White Die in their Defense Roll. The effects of several Fragile Tokens stack, but a Defense Roll never drops below 1 White Die."
-   }
-  },
-  "修补": {
-   "en": {
-    "name": "Repaired",
-    "value": "A Repaired Token represents emergency repairs of a Destroyed Part. After a Destroyed Part receives a Repaired Token it may be used as normal, however when it is the target of an Attack, no Defense Roll is made, it is Destroyed immediately, and the attack goes on to the Core."
-   }
-  },
-  "高亮目标": {
-   "en": {
-    "name": "Highlight",
-    "value": "If a Unit performs a Firing Action that is able to target an Enemy Unit that has Highlight, it must target that Unit and cannot target other Units with the Attack. Other Attacks are not bound, and neither is Interception (FAQ J18, M26)."
-   }
-  },
-  "毁伤": {
-   "en": {
-    "name": "Mutilation",
-    "value": "Surplus Damage may be resolved against the Structure of the hit Part."
-   },
-   "_note": "OTTO 2026-09-28: the company lists win. Every Mutilation line on the five lists (25 rows) says the \"hit part\"; the generated glossary said the \"target Part\", the rulebook's word, which the 2026-09-03 ruling had kept. Play does not change: a Part the defender designates (Shield Up, Designated Defense) becomes the target, so the two words name the same Part."
-  }
- }
+  "_aliases": "`aliases` lists other English names the publisher prints for the same keyword; the app indexes them beside the name and links them in card text. Fire in arc is printed Indirect Fire on the RDL ML-32 (029) while the rulebook 4.7.1, the parts lists and the UN and GoF cards print Fire in arc (checked on the scans, 2026-09-29).",
+  "_entries": "A glossary entry states the RULE in the player's text; where a wording came from stays in these notes (OTTO, 2026-09-30). Non-humanoid X: name and wording are printed in English on the PLK400 Centaur chassis (ZHLT-301, and its SK variant) and in the publisher's Part Data GoF 1.021 EN list; the rulebook appendix has no entry. Command Generation X: GoF 1.021 took it off the P7 Warrior. Dense Armor: the GoF 1.021 wording; the printed card read \"{Defense} may offset {Heavy Hit}\". The list draws a blank die face where the entry says 'a blank face'; it used to come through as an empty {} and printed as literal braces. Tether X: printed in full on the Ols1B Harpoon (PDLH-202), which is also where the English name comes from; no rulebook appendix entry.",
+  "_cruising": "Cruising (rulebook 6.2) was printed on the M707 Swift Missile until the GoF 1.021 list removed it (ruling I3; audit Phase 5, A8). The entry states the rule and that no card carries it; the history stays here, not in the player's text (OTTO, 2026-09-30: the old wording was confusing, linked only the word Missile, and was reached from White Dwarf text it said it did not cover). It is unrelated to the White Dwarf's Cruise Mode, and no Reference text should say 'cruising' of that Mech, because the linker would link it here."
 }

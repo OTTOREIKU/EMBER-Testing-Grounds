@@ -1076,14 +1076,14 @@
     "175_B": {
       "description": {
         "zh": "· 本部件受击时，可在重投前移除所有显示{空白}、{闪电}和{眼睛}的攻击骰。",
-        "en": "· When this part is hit, may remove all Attack Dice with {}, {Lightning} and {Eye} before Reroll."
+        "en": "· When this part is hit, may remove all Attack Dice with a blank face, {Lightning} and {Eye} before Reroll."
       },
       "_note": "Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): Dense Armor is the 1.021 dice removal, replacing \"{Defense} may offset {Heavy Hit}\" (zh) and \"spend 1 Command Token, gains KC Armor\" (en)."
     },
     "176_B": {
       "description": {
         "zh": "· 本部件受击时，可在重投前移除所有显示{空白}、{闪电}和{眼睛}的攻击骰。",
-        "en": "· When this part is hit, may remove all Attack Dice with {}, {Lightning} and {Eye} before Reroll."
+        "en": "· When this part is hit, may remove all Attack Dice with a blank face, {Lightning} and {Eye} before Reroll."
       },
       "_note": "Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): Dense Armor is the 1.021 dice removal, replacing \"{Defense} may offset {Heavy Hit}\" (zh) and \"spend 1 Command Token, gains KC Armor\" (en)."
     },
@@ -1093,7 +1093,7 @@
       },
       "description": {
         "zh": "· 本部件受击时，可在重投前移除所有显示{空白}、{闪电}和{眼睛}的攻击骰。\n· 自动盾牌",
-        "en": "· When this part is hit, may remove all Attack Dice with {}, {Lightning} and {Eye} before Reroll.\n· Automatic Shield"
+        "en": "· When this part is hit, may remove all Attack Dice with a blank face, {Lightning} and {Eye} before Reroll.\n· Automatic Shield"
       },
       "_note": "Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): 1.021 names it Dense Armor Shield and prints the dice removal with Automatic Shield."
     },
@@ -1105,7 +1105,7 @@
       },
       "description": {
         "zh": "· 本部件受击时，可在重投前移除所有显示{空白}、{闪电}和{眼睛}的攻击骰。",
-        "en": "· When this part is hit, may remove all Attack Dice with {}, {Lightning} and {Eye} before Reroll."
+        "en": "· When this part is hit, may remove all Attack Dice with a blank face, {Lightning} and {Eye} before Reroll."
       },
       "_note": "Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): 1.021 gives the SS30 Heavy Shield Shield Up and Dense Armor; its second Passive was Defense Reaction in our data."
     },

@@ -160,6 +160,11 @@ export interface KeywordDef {
   zh?: { name?: string; value?: string };
   en?: { name?: string; value?: string };
   jp?: { name?: string; value?: string };
+  // Other English names the publisher prints for the same keyword: the RDL
+  // ML-32 prints 曲射 as "Indirect Fire" where the rulebook, the parts lists
+  // and the UN and GoF cards say "Fire in arc" (OTTO, 2026-09-29). Each one
+  // finds the entry by name and links in card text.
+  aliases?: string[];
 }
 
 export interface MechanicDef {
@@ -709,6 +714,7 @@ export async function loadData(): Promise<GameData> {
     add(k.zh?.name, k);
     add(k.en?.name?.replace(/^[•·\s]+/, ''), k);
     add(k.jp?.name, k);
+    for (const a of k.aliases ?? []) add(a, k);
   }
   const keyword = (nameOrKey: string): KeywordDef | undefined => {
     if (!nameOrKey) return undefined;
