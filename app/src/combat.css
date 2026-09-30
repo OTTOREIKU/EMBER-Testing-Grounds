@@ -231,15 +231,17 @@
 }
 .ah-primary:hover { filter: brightness(1.08); }
 /* "Pass" on a Focus offer: the same size and shape as the Focus button under
-   it, in a neutral fill with an edge, so it is plainly a button without
-   competing with the accent of the choice that costs a Link. */
+   it, filled with the page's darkest shade so it stands off the panel as
+   plainly as the amber Focus does, without competing with the choice that
+   costs a Link. Its old grey sat one step off the panel's own and was missed,
+   the amber button reading as the only thing there (OTTO, 2026-09-30). */
 .ah-pass {
   display: block; width: 100%; margin: 8px 0; padding: 7px 0;
-  background: var(--surface3); color: var(--text); font-weight: 700; font-size: 12.5px;
-  border: none; box-shadow: inset 0 0 0 1px var(--border); border-radius: var(--radius);
+  background: var(--bg); color: var(--text); font-weight: 700; font-size: 12.5px;
+  border: none; border-radius: var(--radius);
   cursor: pointer; font-family: var(--font); transition: background 0.12s;
 }
-.ah-pass:hover:not(:disabled) { background: #2c3542; }
+.ah-pass:hover:not(:disabled) { background: var(--surface3); }
 .ah-pass:disabled { background: var(--surface2); color: var(--text3); cursor: default; }
 /* WAS an emoji muted with `filter: grayscale(1)`, which is what a desaturated
    emoji looks like: muddy, differently shaped on every platform, and unable to
