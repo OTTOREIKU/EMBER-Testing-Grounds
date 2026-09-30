@@ -1304,12 +1304,10 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
    ring was on permanently. Focus lifts the field a step instead, the way
    .dlg-input does. */
 .pad-find-head .pad-input:focus-visible { outline: none; background: var(--surface3); }
-.pad-find-scopes { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; margin-bottom: 10px; }
-.pad-find-scopes::-webkit-scrollbar { display: none; }
-.pad-find-scopes .pad-chip { flex: 0 0 auto; }
-/* The chosen filter is filled solid, the Timing Dial's look. Only here: every
-   other .pad-chip.on keeps the quiet tint (see rule 2 in src/ui.css). */
-.pad-find-scopes .pad-chip.on { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+/* The scopes are the Reference's tab strip (reference.css .ref-tabs), so a
+   change to that strip reaches the pad (OTTO, 2026-09-30); only the spacing
+   under the search is the pad's. */
+.pad-find .ref-tabs { margin: 0 0 10px; }
 
 /* The tiles are the reference's; the pad only stacks them. */
 .pad-find-tiles { display: flex; flex-direction: column; gap: 0; }

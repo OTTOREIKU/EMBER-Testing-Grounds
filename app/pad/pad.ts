@@ -55,8 +55,9 @@ import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset, typ
 import { deleteSquad, isBuiltInSquad, loadSquads, saveSquad, type SavedSquad } from '../src/squadstore';
 import { bindLibrary, onLibrary } from '../src/library';
 import { hiddenBuiltIns, restoreBuiltIns } from '../src/builtins';
-import { actionBlock, cardDetail, cardRow, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, traitBlock, useCardData } from '../src/refcards';
-import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSecondary, matchStance, matchStatus, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSecondary, nmStatus, norm } from '../src/refsearch';
+import { actionBlock, cardRow, fillPortraits, keywordCard, kwLabel, linkKeywords, rulesSections, rulesTab, sheetHtml as refSheetHtml, sheetLabel as refSheetLabel, traitBlock, useCardData } from '../src/refcards';
+import { applyChangelogFilter, decorateSheetHead, holdDetailHeight, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, showDetailTab, type SheetKind, type SheetNav } from '../src/refsheet';
+import { found, matchCard, matchKeyword, matchMission, matchSecondary, nmCard, nmKeyword, nmMission, nmSecondary, norm } from '../src/refsearch';
 import { mountCardImage, mountCardImageCopy, warmAllImagesWhenIdle } from '../src/images';
 import { runFirstVisitPreload } from '../src/preload';
 import { ICON_GEAR, squadColour } from '../src/icons';
@@ -325,7 +326,8 @@ let pickFromGuide = false;
 // token's own rule text with the Remove a deliberate second tap.
 // The search. `q` lives here and not in the input, so a redraw mid-word keeps
 // what was typed; the input is only ever written back from it.
-const find: { q: string; scope: FindScope } = { q: '', scope: 'all' };
+// `rules`: the Rules scope's own filter, the Reference's (refcards.ts rulesTab).
+const find: { q: string; scope: FindScope; rules?: string } = { q: '', scope: 'all' };
 // The Collection panel's search for a card to record built pieces of.
 let invSearch = '';
 
@@ -4573,7 +4575,7 @@ function findPanel(): string {
       <input class="pad-input" id="pad-find-q" type="search" placeholder="Parts, keywords, tasks, rules…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search" />
       <button class="dlg-close pad-panel-x" data-act="close-panel" aria-label="Close">✕</button>
     </div>
-    <div class="pad-find-scopes" id="pad-find-scopes"></div>
+    <div class="ref-tabs pad-find-scopes" id="pad-find-scopes"></div>
     <div class="pad-find-body" id="pad-find-body"></div>
   </div>`;
 }
@@ -4639,40 +4641,43 @@ function findGroups(q: string, scope: FindScope): FindGroup[] {
     if (tiles.length) groups.push({ id: 'tasks', label: 'Tasks', total: tiles.length, tiles: tiles.slice(0, cap) });
   }
 
+  // The Rules are the Reference's own (refcards.ts, OTTO 2026-09-30: "import the
+  // look and style of the reference app into pad so future updates will
+  // appear"). The pad drew its own tiles and fell behind every change since:
+  // the two-layer Mechanics entries, the printed tokens, the Season Rules, the
+  // dice. As its own scope the tab is drawn whole (findBodyHtml); searching
+  // everything lists its tiles, Mechanics first.
   if (want('rules') && (q || scope === 'rules')) {
-    const tile = (title: string, body: string, foot: string) =>
-      `<article class="card"><div class="card-title">${esc(title)}</div><div class="card-body">${body}</div>${foot ? `<div class="card-foot">${foot}</div>` : ''}</article>`;
-    const mechs = found(d.mechanics, q, matchMechanic, nmMechanic)
-      .map((m) => tile(m.name, linkKeywords(m.text), m.ref ? `<span class="tag mono">${esc(m.ref)}</span>` : ''));
-    const phases = found(d.play.phases, q, matchPhase, nmPlay)
-      .map((p) => tile(`${p.order}. ${p.name} Phase`,
-        `${p.who ? `<p>${esc(p.who)}</p>` : ''}${p.can.length ? `<p class="play-can"><b>Can</b> ${esc(p.can.join(' · '))}</p>` : ''}${p.cannot.length ? `<p class="play-cant"><b>Cannot</b> ${esc(p.cannot.join(' · '))}</p>` : ''}`,
-        p.ref ? `<span class="tag mono">${esc(p.ref)}</span>` : '<span class="tag">phase</span>'));
-    const timings = found(d.play.timings, q, matchTiming, nmPlay)
-      .map((x) => tile(`${x.name} timing`, linkKeywords(x.text), '<span class="tag">timing</span>'));
-    const stances = found(d.play.stances, q, matchStance, nmPlay)
-      .map((x) => tile(`${x.name} stance`, `<p>${linkKeywords(x.effect)}</p><p class="play-can"><b>Good for</b> ${esc(x.good)}</p><p class="play-cant"><b>Costs</b> ${esc(x.cost)}</p>`,
-        x.ref ? `<span class="tag mono">${esc(x.ref)}</span>` : ''));
-    const toks = found(STATUSES, q, matchStatus, nmStatus)
-      .map((s) => {
-        const art = tokenArt(s.id, false);
-        return `<article class="card tok-card"><div class="card-title">${art ? `<span class="tok-art"><img class="tok-print" src="${esc(art)}" alt="" /></span>` : ''}${esc(s.label)}</div><div class="card-body">${linkKeywords(s.rule)}</div><div class="card-foot"><span class="tag">${esc(s.shape)} token</span>${s.decay ? `<span class="tag">${esc(s.decay)}</span>` : ''}</div></article>`;
-      });
-    const tiles = [...mechs, ...phases, ...timings, ...stances, ...toks];
-    if (tiles.length) groups.push({ id: 'rules', label: 'Rules', total: tiles.length, tiles: tiles.slice(0, cap) });
+    const secs = rulesSections(q);
+    const order = ['mechanics', 'season', 'phases', 'timings', 'stances', 'tokens', 'dice'];
+    const tiles = order.flatMap((id) => secs.find((x) => x.id === id)?.tiles ?? []);
+    const total = secs.reduce((n, x) => n + x.n, 0);
+    if (total) groups.push({ id: 'rules', label: 'Rules', total, tiles: tiles.slice(0, cap) });
   }
   return groups;
 }
 
-function findScopesHtml(groups: FindGroup[]): string {
+// The Reference's own tab strip (reference.css .ref-tabs): equal buttons in
+// rows, the open one filled, and while a search is live every scope wears its
+// count and one with nothing dims (OTTO, 2026-09-30: the pad's chips scrolled
+// sideways where the Reference's sit evenly in two rows).
+function findScopesHtml(): string {
+  const q = norm(find.q.trim());
   const counts = new Map<string, number>();
-  for (const g of groups) counts.set(g.id, (counts.get(g.id) ?? 0) + g.total);
-  return SCOPES.map((s) => `<button class="pad-chip${find.scope === s.id ? ' on' : ''}" data-act="find-scope" data-scope="${s.id}">${esc(s.label)}${
-    s.id !== 'all' && find.q.trim() && counts.has(s.id) ? `<span class="fc-n">${counts.get(s.id)}</span>` : ''}</button>`).join('');
+  if (q) for (const g of findGroups(q, 'all')) counts.set(g.id, (counts.get(g.id) ?? 0) + g.total);
+  return SCOPES.map((s) => {
+    const n = counts.get(s.id) ?? 0;
+    const live = !!q && s.id !== 'all';
+    return `<button class="${find.scope === s.id ? 'active' : ''}${live && !n ? ' no-match' : ''}" data-act="find-scope" data-scope="${s.id}">${esc(s.label)}${
+      live ? `<span class="tab-n">${n}</span>` : ''}</button>`;
+  }).join('');
 }
 
 function findBodyHtml(groups: FindGroup[]): string {
   const q = norm(find.q.trim());
+  // The Rules scope IS the Reference's Rules tab: its filter row, its sections,
+  // and its way into the master changelog and the Season Rules.
+  if (find.scope === 'rules') return rulesTab(q, find.rules);
   if (!groups.length) {
     return `<p class="ref-count">${q ? 'No matches.' : find.scope === 'all' ? 'Type to search, or pick a scope.' : 'Nothing here.'}</p>`;
   }
@@ -4687,7 +4692,7 @@ function findBodyHtml(groups: FindGroup[]): string {
 function paintFind(): void {
   if (panel !== 'find' || !data) return;
   const groups = findGroups(norm(find.q.trim()), find.scope);
-  paint('pad-find-scopes', findScopesHtml(groups));
+  paint('pad-find-scopes', findScopesHtml());
   if (paint('pad-find-body', findBodyHtml(groups))) {
     const body = document.getElementById('pad-find-body');
     if (body) fillPortraits(body, true);
@@ -4702,32 +4707,42 @@ function paintFind(): void {
 // styles it by those ids, so a card here IS the card there. The navigation is
 // the reference's too: a keyword opened from a card goes BACK to that card.
 
-type Look = { kind: 'card' | 'keyword'; key: string; tab?: string; scroll?: number };
+// `log`: opened from the master changelog, so its own Changelog shows open.
+type Look = { kind: SheetKind; key: string; tab?: string; scroll?: number; log?: boolean };
 let looks: Look[] = [];
 
 const detail = () => document.getElementById('ref-detail');
 const detailScroller = () => detail()?.querySelector('.ref-detail-inner') as HTMLElement | null;
 
+// The sheets the Reference opens, drawn by the same code (refcards.ts): a card,
+// a keyword, the master changelog, a Rules entry, a Season Rule.
 function lookHtml(v: Look): string | null {
   if (!data) return null;
-  if (v.kind === 'card') {
-    const c = data.byId.get(v.key);
-    return c ? cardDetail(c) : null;
-  }
-  return keywordDetail(v.key);
+  return refSheetHtml(v.kind, v.key);
 }
 
 function lookLabel(v: Look): string {
   if (!data) return v.key;
-  if (v.kind === 'card') return cardName(data.byId.get(v.key));
-  const def = data.keyword(v.key);
-  return def?.en?.name?.replace(/^[•·\s]+/, '') || v.key;
+  return refSheetLabel(v.kind, v.key);
 }
 
-function openLook(kind: Look['kind'], rawKey: string): void {
+// The pad's navigation, as the Reference's shared router drives it (refsheet.ts).
+const padNav: SheetNav = {
+  open: (kind, key, opts) => openLook(kind, key, opts),
+  top: () => (detail()?.hidden === false ? looks[looks.length - 1] : undefined),
+  retarget: (key) => {
+    const top = looks[looks.length - 1];
+    if (!top) return;
+    top.key = key;
+    const html = lookHtml(top);
+    if (html !== null) paintDetail(html, 0);
+  },
+};
+
+function openLook(kind: Look['kind'], rawKey: string, opts: { log?: boolean } = {}): void {
   if (!data) return;
   const key = kind === 'keyword' ? data.keyword(rawKey)?.key ?? rawKey : rawKey;
-  const v: Look = { kind, key };
+  const v: Look = { kind, key, ...(opts.log ? { log: true } : {}) };
   const html = lookHtml(v);
   if (html === null) return;
   const sheet = detail();
@@ -4741,8 +4756,9 @@ function openLook(kind: Look['kind'], rawKey: string): void {
     if (top) top.scroll = detailScroller()?.scrollTop ?? 0;
   }
   looks.push(v);
-  remember({ kind, key });
+  if (kind === 'card' || kind === 'keyword') remember({ kind, key });
   paintDetail(html, 0);
+  if (v.log) revealLog();
 }
 
 function backLook(): void {
@@ -4768,12 +4784,8 @@ function showTab(which: string): void {
   if (top) top.tab = which;
   const content = document.getElementById('ref-detail-content');
   if (!content) return;
-  for (const b of content.querySelectorAll<HTMLElement>('[data-dtab]')) {
-    const on = b.dataset.dtab === which;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-selected', String(on));
-  }
-  for (const p of content.querySelectorAll<HTMLElement>('[data-dpanel]')) p.hidden = p.dataset.dpanel !== which;
+  // The Reference's switch, which also holds the sheet's size across tabs.
+  showDetailTab(content, which);
 }
 
 function paintDetail(html: string, scrollTop: number): void {
@@ -4781,6 +4793,8 @@ function paintDetail(html: string, scrollTop: number): void {
   const content = document.getElementById('ref-detail-content');
   if (!sheet || !content) return;
   content.innerHTML = html;
+  // The head as the Reference draws it: the kicker, the name, the barcode.
+  decorateSheetHead(content);
   // The card image is MOUNTED rather than written as an <img>: images.ts holds
   // the retry and the cards that have no scan. The thumbnail on the Card tab
   // and the full one on the Photo tab hold the same scan and need DIFFERENT
@@ -4794,9 +4808,15 @@ function paintDetail(html: string, scrollTop: number): void {
     });
   });
   fillPortraits(content, false);
+  // The master changelog's filter goes on before the scroll comes back.
+  if (content.querySelector('.cl-list')) applyChangelogFilter(content);
   sheet.hidden = false;
   const scroller = detailScroller();
   if (scroller) scroller.scrollTop = scrollTop;
+  // A fresh sheet starts with no height floor, as on the Reference.
+  content.style.removeProperty('--dpanel-h');
+  delete content.dataset.panelMax;
+  holdDetailHeight(content);
   const back = document.getElementById('ref-detail-back') as HTMLButtonElement | null;
   const prev = looks.length >= 2 ? looks[looks.length - 2] : null;
   if (back) {
@@ -6154,8 +6174,18 @@ function installEvents(): void {
     // inside a panel full of keyword links, and they navigate nowhere.
     const dtab = target.closest<HTMLElement>('[data-dtab]');
     if (dtab) { ev.preventDefault(); showTab(dtab.dataset.dtab!); return; }
-    const kw = target.closest<HTMLElement>('[data-kw]');
-    if (kw) { ev.preventDefault(); openLook('keyword', kw.dataset.kw!); return; }
+    // Every other link the Reference's sheets and tabs carry, answered as the
+    // Reference answers it (refsheet.ts): the master changelog and its menu, a
+    // Rules entry, a Season Rule, a keyword, a card named in the text.
+    if (runSheetClick(ev, padNav)) return;
+    // The Rules scope's own filter row and its Season Rules bar.
+    const rulesPick = target.closest<HTMLElement>('#pad-find-body [data-rules]');
+    if (rulesPick) {
+      ev.preventDefault();
+      find.rules = rulesPick.dataset.rules || undefined;
+      paintFind();
+      return;
+    }
     const kwItem = target.closest<HTMLElement>('[data-kwitem]');
     if (kwItem) { ev.preventDefault(); openLook('keyword', kwItem.dataset.kwitem!); return; }
     const mis = target.closest<HTMLElement>('[data-mission]');
@@ -6274,7 +6304,11 @@ function installEvents(): void {
     if ((ev.target as HTMLElement).closest('.pad-tok, .pad-saved-row')) ev.preventDefault();
   });
 
+  // The master changelog's menu and search, as on the Reference.
+  document.addEventListener('focusin', runSheetFocus);
+  document.addEventListener('input', runSheetInput);
   document.addEventListener('keydown', (ev) => {
+    if (runSheetKey(ev)) return;
     if (ev.key !== 'Escape') return;
     const box = document.querySelector('.mis-lightbox');
     if (box) { box.remove(); return; }
