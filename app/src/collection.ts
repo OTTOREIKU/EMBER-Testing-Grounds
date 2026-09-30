@@ -4,7 +4,7 @@ import { faceOf, type GameData } from './data';
 // The two fields the counting reads, so a test may hand in a card list alone.
 export type CardIndex = Pick<GameData, 'cards' | 'byId'>;
 import { deployedCardCounts } from './units';
-import type { EmberApi } from './api';
+import { ApiError, type EmberApi } from './api';
 
 // A player's collection: the boxes they own by count, and the BUILT PIECES -
 // the models actually assembled from those boxes, by card. A box holds three
@@ -46,8 +46,12 @@ interface Stored {
   updatedAt?: number;
   // The account this copy belongs to. A different account signing in on the
   // same device takes its own shelf from the server rather than inheriting
-  // this one - and never pushes this one up as its own.
+  // this one - and never pushes this one up as its own. Only a pull sets it:
+  // a save made under whoever is signed in used to claim the last player's
+  // shelf on a shared device (security audit, 2026-09-30; see library.ts).
   owner?: number;
+  // A change on this device the account has not had yet.
+  unsent?: boolean;
 }
 
 const listeners = new Set<() => void>();
@@ -114,22 +118,17 @@ export function onCollection(fn: () => void): void {
 
 export function saveCollection(col: Collection, opts: { stamp?: boolean } = {}): void {
   const s = read();
+  const stamp = opts.stamp !== false;
+  if (stamp) changes += 1;
   write({
     ...s,
     owned: clean(col.boxes),
     cards: clean(col.cards),
-    updatedAt: opts.stamp === false ? col.updatedAt : Date.now(),
-    owner: api?.user?.id ?? s.owner,
+    updatedAt: stamp ? Date.now() : col.updatedAt,
+    ...(stamp ? { unsent: true } : {}),
   });
   announce();
-  if (opts.stamp !== false) schedulePush();
-}
-
-// Whether this device's copy may stand for the signed-in account: it is
-// theirs, or nobody's yet.
-function mine(): boolean {
-  const owner = read().owner;
-  return owner === undefined || owner === api?.user?.id;
+  if (stamp) schedulePush();
 }
 
 // Cards the table uses more of than the collection holds, among the given
@@ -247,52 +246,141 @@ export function remaining(data: CardIndex, col: Collection, tokens: Token[], car
 
 let api: EmberApi | null = null;
 let pushTimer = 0;
+// The account this page has read the shelf for; nothing is pushed for an
+// account before its own copy has been read (library.ts has the same rule).
+let syncedFor: number | null = null;
+let pulling: Promise<void> | null = null;
+// Counts saves, so a push can tell whether another landed while it was on the
+// wire and must not be marked as sent.
+let changes = 0;
 
 function schedulePush(): void {
-  if (!api?.user) return;
+  const me = api?.user;
+  if (!me) return;
+  // Not yet in step with this account: read its copy first, which sends this
+  // change on if it is the newer.
+  if (syncedFor !== me.id) { void pullCollection(); return; }
   window.clearTimeout(pushTimer);
   pushTimer = window.setTimeout(() => { void pushCollection(); }, 800);
 }
 
-export async function pushCollection(): Promise<void> {
-  if (!api?.user || !mine()) return;
+export async function pushCollection(): Promise<boolean> {
+  const me = api?.user;
+  if (!api || !me || syncedFor !== me.id || read().owner !== me.id) return false;
   const col = loadCollection();
+  const at = changes;
   try {
     const r = await api.putInventory(col.boxes, col.cards);
     // Take the server's clock for the stamp so the next pull compares like
     // with like; the contents are already what was just sent.
-    write({ ...read(), updatedAt: r.updatedAt, owner: api.user.id });
+    const s = read();
+    delete s.unsent;
+    write({ ...s, updatedAt: r.updatedAt, owner: me.id, ...(changes !== at ? { unsent: true } : {}) });
+    return true;
   } catch {
     // Offline or signed out: this device keeps its copy and tries again on
     // the next change.
+    return false;
   }
+}
+
+// The larger count of each entry, so a merge never loses a box or a card.
+function most(a: Record<string, number>, b: Record<string, number>): Record<string, number> {
+  const out = { ...a };
+  for (const [k, n] of Object.entries(b)) out[k] = Math.max(out[k] ?? 0, n);
+  return out;
 }
 
 // Reconcile with the account: the newer copy wins outright. A device that
 // never recorded anything simply takes the account's shelf.
-export async function pullCollection(): Promise<void> {
-  if (!api?.user) return;
+export function pullCollection(): Promise<void> {
+  if (!api?.user) return Promise.resolve();
+  pulling ??= reconcile().finally(() => { pulling = null; });
+  return pulling;
+}
+
+async function reconcile(): Promise<void> {
+  const me = api?.user;
+  if (!api || !me) return;
   let remote: { boxes: Record<string, number>; cards: Record<string, number>; updatedAt: number };
   try {
     remote = await api.getInventory();
   } catch {
     return;
   }
+  // Signed out, or somebody else signed in, while the copy was on its way.
+  if (api.user?.id !== me.id) return;
+  const owner = read().owner;
   const local = loadCollection();
   const remoteHas = Object.keys(remote.boxes).length + Object.keys(remote.cards).length > 0;
   const adopt = (): void => {
-    write({ ...read(), owned: clean(remote.boxes), cards: clean(remote.cards), updatedAt: remote.updatedAt, owner: api!.user!.id });
+    const s = read();
+    delete s.unsent;
+    write({ ...s, owned: clean(remote.boxes), cards: clean(remote.cards), updatedAt: remote.updatedAt, owner: me.id });
     announce();
   };
-  // Someone else's shelf on this device: the account takes its own, whatever
-  // the clocks say, and the other player's copy is not pushed into it.
-  if (!mine()) { adopt(); return; }
-  if (remote.updatedAt > local.updatedAt || (!hasAny(local) && remoteHas)) {
+  if (owner !== undefined && owner !== me.id) {
+    // Someone else's shelf on this device: the account takes its own, whatever
+    // the clocks say, and the other player's copy is not pushed into it.
+    adopt();
+  } else if (owner === undefined) {
+    // A shelf no account has had: recorded signed out, or since a sign-in that
+    // had not been read yet. Neither side's boxes are dropped.
+    if (!hasAny(local)) {
+      adopt();
+    } else {
+      write({
+        ...read(),
+        owned: clean(most(remote.boxes, local.boxes)),
+        cards: clean(most(remote.cards, local.cards)),
+        updatedAt: Date.now(),
+        owner: me.id,
+        unsent: true,
+      });
+      announce();
+      syncedFor = me.id;
+      await pushCollection();
+      return;
+    }
+  } else if (remote.updatedAt > local.updatedAt || (!hasAny(local) && remoteHas)) {
     adopt();
   } else if (hasAny(local) && local.updatedAt > remote.updatedAt) {
+    syncedFor = me.id;
     await pushCollection();
+    return;
   } else {
-    write({ ...read(), owner: api.user.id });
+    write({ ...read(), owner: me.id });
+  }
+  syncedFor = me.id;
+}
+
+// This device's shelf, gone: at sign-out, and when an account signs in over a
+// shelf that belongs to a different one. The two switches are this device's
+// settings, not the account's, and stay.
+function forget(): void {
+  window.clearTimeout(pushTimer);
+  syncedFor = null;
+  const s = read();
+  write({
+    ...(s.filterEnabled !== undefined ? { filterEnabled: s.filterEnabled } : {}),
+    ...(s.builtOnly !== undefined ? { builtOnly: s.builtOnly } : {}),
+  });
+  announce();
+}
+
+// Before the session ends: anything the account has not had yet goes now.
+// Throwing keeps the player signed in, so a failed send never becomes a wipe.
+async function flush(): Promise<void> {
+  const me = api?.user;
+  if (!me) return;
+  const s = read();
+  if (!s.unsent || (s.owner !== undefined && s.owner !== me.id)) return;
+  window.clearTimeout(pushTimer);
+  if (syncedFor === me.id) await pushCollection();
+  else await pullCollection();
+  const after = read();
+  if (after.unsent && (after.owner === undefined || after.owner === me.id)) {
+    throw new ApiError('Your latest collection changes have not reached your account yet, so you are still signed in. Check the connection and try again.', { offline: true });
   }
 }
 
@@ -300,8 +388,18 @@ export async function pullCollection(): Promise<void> {
 // appears and pushed after every change while one is signed in.
 export function bindCollection(a: EmberApi): void {
   api = a;
-  a.onChange((who) => { if (who) void pullCollection(); });
-  if (a.user) void pullCollection();
+  const signedIn = (who: { id: number } | null): void => {
+    // No account: whatever is on the device stays until someone signs out.
+    if (!who) return;
+    if (syncedFor !== who.id) syncedFor = null;
+    const owner = read().owner;
+    if (owner !== undefined && owner !== who.id) forget();
+    void pullCollection();
+  };
+  a.onChange(signedIn);
+  if (a.user) signedIn(a.user);
+  a.beforeSignOut(flush);
+  a.onSignedOut(forget);
   // Another tab on this origin (the board beside the pad) writing the store.
   window.addEventListener('storage', (ev) => { if (ev.key === KEY) announce(); });
 }

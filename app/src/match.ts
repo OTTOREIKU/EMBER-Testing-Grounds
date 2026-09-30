@@ -3381,8 +3381,10 @@ function wire(): void {
   });
   $('mc-out')?.addEventListener('click', () => {
     void attempt(async () => {
-      relay.leave();
+      // The table is left only once the server has ended the session: a
+      // sign-out that fails keeps the player signed in and at their table.
       await api.logout();
+      relay.leave();
       account = null;
       record = null;
       acctOpen = false;

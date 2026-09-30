@@ -1,5 +1,6 @@
 import type { MechPreset } from './presets';
 import type { SavedSquad } from './squadstore';
+import { forgetRoomsAndSecrets } from './devicedata';
 // Client for ember-api: accounts today, lobbies and the relay later.
 //
 // Everything here degrades quietly. The tool is a local-first tabletop and has
@@ -132,6 +133,8 @@ export class EmberApi {
   // keeping the value avoids depending on cookie visibility across ports.
   private csrf: string | null = null;
   private listeners = new Set<(a: Account | null) => void>();
+  private leaving = new Set<() => Promise<void>>();
+  private left = new Set<() => void>();
 
   constructor(base = defaultBase()) {
     this.base = base;
@@ -143,6 +146,20 @@ export class EmberApi {
 
   onChange(fn: (a: Account | null) => void): void {
     this.listeners.add(fn);
+  }
+
+  // Run before the server is asked to end the session, while it still works:
+  // whatever this device has not yet sent to the account goes now. A hook
+  // that throws stops the sign-out, so nothing unsent is wiped.
+  beforeSignOut(fn: () => Promise<void>): void {
+    this.leaving.add(fn);
+  }
+
+  // Run once the server has ended the session: what this device kept for the
+  // account is forgotten, so the next person on it does not see it. Never on
+  // a page opened with no session - only a sign-out.
+  onSignedOut(fn: () => void): void {
+    this.left.add(fn);
   }
 
   private announce(): void {
@@ -228,14 +245,26 @@ export class EmberApi {
   }
 
   async logout(): Promise<void> {
+    for (const fn of this.leaving) await fn();
     try {
       await this.call('/auth/logout', { method: 'POST' });
-    } finally {
-      // Whatever the server said, this browser is signed out.
-      this.account = null;
-      this.csrf = null;
-      this.announce();
+    } catch {
+      // The session cookie is httpOnly, so only the server can end it. A
+      // sign-out that never arrived used to be shown as done while the cookie
+      // lived on, and the next person to reload was signed in as this player
+      // (security audit, 2026-09-30). It is done only when the server says
+      // there is no session.
+      const still = await this.call<{ user: Account | null }>('/auth/me').then((r) => r.user, () => undefined);
+      if (still === undefined) {
+        throw new ApiError('Could not reach the server, so you are still signed in. Check the connection and try again.', { offline: true });
+      }
+      if (still) throw new ApiError('The server did not sign you out, so you are still signed in. Try again.');
     }
+    this.account = null;
+    this.csrf = null;
+    for (const fn of this.left) fn();
+    forgetRoomsAndSecrets();
+    this.announce();
   }
 
   async recordGame(report: GameReport): Promise<{ id: number }> {
