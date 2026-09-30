@@ -182,6 +182,10 @@ body {
   font: 10.5px var(--mono); letter-spacing: 0.14em; color: var(--text3);
 }
 .pad-sysline b { color: var(--green); font-weight: 600; }
+.pad-sysline-l { display: inline-flex; align-items: center; gap: 10px; }
+/* The home chip carries its own amber chevron, not the line's green. */
+.pad-sysline .ui-home b, .pad-bar .ui-home b { color: var(--accent); }
+.pad-bar .ui-home { padding-top: 0; padding-bottom: 0; min-height: 30px; }
 
 .pad-mark {
   font-family: var(--mono);
@@ -472,6 +476,10 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-bar-round.wait em { color: var(--text2); }
 .pad-bar-round.go { background: var(--accent-lt); }
 .pad-bar-round.go em { color: var(--accent); font-weight: 600; }
+/* The go chevron on the round chip while a tap turns the phase (OTTO,
+   2026-09-29): the row's own hover fills it, as the landing's does. */
+.pad-bar-round .ui-go { width: 22px; height: 22px; flex-basis: 22px; font-size: 13px; }
+.pad-bar-round:hover .ui-go, .pad-bar-round.go .ui-go { background: var(--accent); color: var(--on-accent); }
 .pad-bar-vp b { font-family: var(--mono); font-size: 16px; font-weight: 700; min-width: 1.2em; text-align: center; font-variant-numeric: tabular-nums; }
 .pad-bar-vp span { color: var(--text3); font-size: 13px; }
 
@@ -498,6 +506,17 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-turn > :first-child:not(.pad-turn-h) { padding-top: 8px; }
 
 .pad-turn-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+/* The head is the strip's fold (OTTO, 2026-09-29): a real button the width of
+   the strip, the .pad-fold arrow at its end, and the surface ladder on hover.
+   Folded, the strip is this one line and the arrow points down. */
+.pad-turn > button.pad-turn-h {
+  width: 100%; min-height: 36px; padding-bottom: 4px; border: none; border-radius: var(--radius-sm);
+  color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background 0.12s;
+}
+.pad-turn > button.pad-turn-h:hover { background: var(--surface2); }
+.pad-turn > button.pad-turn-h::after { content: '▴'; margin-left: auto; font-size: 18px; line-height: 1; opacity: 0.85; color: var(--text2); }
+.pad-turn.folded > button.pad-turn-h::after { content: '▾'; }
+.pad-turn.folded > button.pad-turn-h { margin-bottom: 0; }
 .pad-turn-h b { font-size: 14px; font-weight: 700; color: var(--text2); }
 .pad-turn-h.mine b { color: var(--accent); }
 .pad-turn-h span { font-size: 11.5px; color: var(--text3); }

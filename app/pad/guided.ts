@@ -396,7 +396,7 @@ function setupHtml(api: GuideApi, stage: string): string {
     // Entering two dice's faces per player to arrive at the same answer was
     // busywork (OTTO, 2026-09-21). Either phone may say it.
     if (s.tableDice) {
-      return head(api, 'First Player', '3.1.2', true)
+      return head(api, 'First Player', 'Setup', true)
         + `<div class="pad-chips">${(['s1', 's2'] as Side[]).map((side) =>
           btn(api, 'g-first', api.sideName(side), `data-side="${side}"`, 'pad-chip on')).join('')}</div>`;
     }
@@ -410,7 +410,7 @@ function setupHtml(api: GuideApi, stage: string): string {
         <span class="pad-turn-val">${r.length ? `${rollTotal(r)} Hits` : '—'}</span>
         ${can ? btn(api, 'g-roll', r.length ? 'Re-roll' : 'Roll 2 dice', `data-side="${side}"`) : ''}</div>`;
     }).join('');
-    return head(api, 'Roll for First Player', '3.1.2', true) + rows
+    return head(api, 'Roll for First Player', 'Setup', true) + rows
       + (tie ? '<p class="pad-turn-note">Tie: both roll again.</p>' : '')
       + (winner ? `<p class="pad-turn-note">${api.esc(api.actorName(winner))} goes first.</p>${btn(api, 'g-accept', 'Continue', '', 'pad-chip on')}` : '');
   }
@@ -429,8 +429,8 @@ function setupHtml(api: GuideApi, stage: string): string {
         ${drawing ? btn(api, 'dock', 'Discard', 'data-dock="tasks"', 'pad-chip on')
           : main ? btn(api, 'g-main', 'Change', 'data-how="pick"')
             : `${btn(api, 'g-main', 'Draw 3', 'data-how="draw"', 'pad-chip on')}${btn(api, 'g-main', 'Choose', 'data-how="pick"')}`}</div>`;
-    if (!main) return head(api, 'Main Task', '3.1.2', true) + mainRow;
-    return head(api, `${api.actorName(fp)} picks a table edge`, '3.1.2', mine(api, fp)) + mainRow
+    if (!main) return head(api, 'Main Task', 'Setup', true) + mainRow;
+    return head(api, `${api.actorName(fp)} picks a table edge`, 'Setup', mine(api, fp)) + mainRow
       + (mine(api, fp)
         ? `<div class="pad-chips">${btn(api, 'g-edge', 'White edge', 'data-edge="white"')}${btn(api, 'g-edge', 'Black edge', 'data-edge="black"')}</div>`
         : waiting(api, fp, 'picking an edge'));
@@ -503,7 +503,7 @@ function loopHtml(api: GuideApi, phase: LoopPhase): string {
   }
   const turn = turnOf(s, phase, api.data);
   if (loopComplete(s, phase, api.data) || turn === null) {
-    return head(api, `${phase} Phase over`, '', true) + `<p class="pad-turn-note">Continue when both are ready.</p>`;
+    return head(api, `${phase} Phase over`, '', true) + `<p class="pad-turn-note">Continue at the top when both are ready.</p>`;
   }
   const noun = phase === 'Command' ? 'a Drone' : phase === 'Automatic' ? 'a Drone' : 'a Projectile';
   if (!mine(api, turn)) return head(api, `${api.actorName(turn)} designates`, `${phase} Phase`, false) + waiting(api, turn, `picking ${noun} or passing`);
@@ -542,7 +542,7 @@ function planningHtml(api: GuideApi): string {
   let foot: string;
   if (api.solo) {
     foot = sc.stage === `${s.round.n}:1:locked`
-      ? '<p class="pad-turn-note">Dials locked. Continue when ready.</p>'
+      ? '<p class="pad-turn-note">Dials locked. Continue at the top when ready.</p>'
       : btn(api, 'g-lock', unset ? `Lock in (${unset} left)` : 'Lock in', unset ? 'disabled' : '', 'pad-chip on');
   } else {
     const me = api.me();
@@ -550,7 +550,7 @@ function planningHtml(api: GuideApi): string {
     const both = !!sc.commits.s1 && !!sc.commits.s2;
     const revealed = sc.revealed.includes('s1') && sc.revealed.includes('s2');
     foot = revealed
-      ? '<p class="pad-turn-note">Both revealed. Continue when ready.</p>'
+      ? '<p class="pad-turn-note">Both revealed. Continue at the top when ready.</p>'
       : committed
         ? `<p class="pad-turn-note">Committed. ${both ? 'Revealing…' : `Waiting for ${api.esc(api.actorName(other(me)))} to lock in.`}</p>`
         : btn(api, 'g-lock', unset ? `Lock in (${unset} left)` : 'Lock in', unset ? 'disabled' : '', 'pad-chip on');
@@ -562,7 +562,7 @@ function actionHtml(api: GuideApi): string {
   const s = api.state();
   const sc = ensureScript(s);
   const opp = sc.opp;
-  if (!opp) return head(api, 'Every Mech has acted', 'Action Phase', true) + '<p class="pad-turn-note">Continue when both are ready.</p>';
+  if (!opp) return head(api, 'Every Mech has acted', 'Action Phase', true) + '<p class="pad-turn-note">Continue at the top when both are ready.</p>';
   const t = s.tokens.find((x) => x.uid === opp.uid);
   if (!t) return '';
   const owner = mine(api, t.side);
@@ -1033,7 +1033,7 @@ function endHtml(api: GuideApi): string {
   // G12). Once per End Phase (4.16).
   const smoke = '<p class="pad-turn-note">Smoke Screens on the table dissipate now, once: every screen not Connected comes off, and each Connected group loses one, chosen by its owner, First Player first (4.16).</p>';
   return head(api, 'End Phase', `Round ${s.round.n}`, true) + rows + smoke
-    + (all ? (last ? btn(api, 'g-endmatch', 'End the game', '', 'pad-chip on') : `<p class="pad-turn-note">Continue to start Round ${s.round.n + 1}.</p>`) : '');
+    + (all ? (last ? btn(api, 'g-endmatch', 'End the game', '', 'pad-chip on') : `<p class="pad-turn-note">Continue at the top to start Round ${s.round.n + 1}.</p>`) : '');
 }
 
 // One designation a Task still owes (a Bounty's Mech, a Leader, a Zone), asked

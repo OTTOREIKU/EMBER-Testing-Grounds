@@ -535,7 +535,7 @@ function esc(s: string): string {
 // username once signed in, and nothing else.
 function head(): string {
   const link = !navigator.onLine ? 'OFFLINE' : account ? 'LINK <b>OK</b>' : 'LOCAL';
-  return `<div class="pad-sysline" aria-hidden="true"><span>PAD // TG-02</span><span>${link}</span></div>
+  return `<div class="pad-sysline"><span class="pad-sysline-l"><a class="ui-home" href="../"><b>‹</b>EMBER</a>PAD // TG-02</span><span>${link}</span></div>
   <div class="pad-head">
     <span class="pad-mark">Ember Pad</span>
     ${account ? `<span class="pad-sub">${esc(account.username)}</span>` : ''}
@@ -933,6 +933,36 @@ function sideFaction(s: Side): string | null {
 
 function sideColour(s: Side): string {
   return squadColour(sideFaction(s));
+}
+
+// ---------- folding the strip (OTTO, 2026-09-29) ----------
+//
+// The Planning dials for a squad fill the strip to its cap and leave half a
+// screen for the sheet a player wants to read before choosing. The strip's
+// head is its fold: one tap folds the step to that one line, the next opens
+// it. What it folds is the step's body only; a reaction owed, which sits above
+// the head, stays in view. A new step (a different head) opens it by itself,
+// so no instruction hides behind a fold made for the last one.
+let turnFold: string | null = null;
+
+function foldableTurn(html: string): string {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const was = tpl.content.querySelector('.pad-turn-h');
+  if (!was) { turnFold = null; return html; }
+  const key = (was.textContent ?? '').trim();
+  if (turnFold !== null && turnFold !== key) turnFold = null;
+  const folded = turnFold !== null;
+  // The head becomes a real button, so a keyboard opens it too.
+  const head = document.createElement('button');
+  head.className = was.className;
+  head.type = 'button';
+  head.dataset.act = 'turn-fold';
+  head.setAttribute('aria-expanded', String(!folded));
+  while (was.firstChild) head.appendChild(was.firstChild);
+  was.replaceWith(head);
+  if (folded) while (head.nextSibling) head.nextSibling.remove();
+  return tpl.innerHTML;
 }
 
 function pendingGuidedHtml(): string {
@@ -2271,7 +2301,8 @@ function barHtml(): string {
   const r = table.round;
   const rd = readiness();
   if (gameOver()) {
-    return `<div class="pad-bar-l" data-act="dock" data-dock="more" role="button">${who}</div>
+    return `<a class="ui-home" href="../"><b>‹</b>EMBER</a>
+    <div class="pad-bar-l" data-act="dock" data-dock="more" role="button">${who}</div>
     <button class="pad-bar-round over" data-act="dock" data-dock="tasks"><b>Game over</b><small>${roundLimit()} rounds</small></button>
     <button class="pad-bar-vp" data-act="dock" data-dock="tasks" title="Tasks and score">
       <b style="color:${sideColour(me)}">${vp[me]}</b><span>:</span><b style="color:${sideColour(them)}">${vp[them]}</b>
@@ -2280,14 +2311,21 @@ function barHtml(): string {
   const roundLabel = `<b>R${r.n}<i>/${roundLimit()}</i></b><small>// ${esc(PHASES[r.phase] ?? '')}</small>`;
   // In a room the chip is the Continue of a two-player agreement, and says
   // where the agreement stands; solo it simply turns the phase.
-  const stalled = guidedOn(table) && !continueAllowed(guide);
+  const guided = guidedOn(table);
+  const stalled = guided && !continueAllowed(guide);
   const state = stalled ? ' off' : !room ? '' : rd.me && !rd.them ? ' wait' : rd.them && !rd.me ? ' go' : '';
-  const hint = !room ? '' : rd.me && !rd.them
+  // Solo Guided says Continue too: the strip's notes point here.
+  const hint = !room ? (guided && !stalled ? '<em>Continue</em>' : '') : rd.me && !rd.them
     ? `<em>waiting for ${esc(sideName(them))}</em>`
     : rd.them && !rd.me ? `<em>${esc(sideName(them))} is ready</em>` : '<em>Continue</em>';
-  return `<div class="pad-bar-l" data-act="dock" data-dock="more" role="button">${who}</div>
+  // The way on is this chip, which a Guided player did not always find (OTTO,
+  // 2026-09-29): while a tap turns the phase it wears the site's go chevron
+  // (ui.css .ui-go), and loses it while the step on the sheet holds it.
+  const go = guided && !stalled ? '<span class="ui-go" aria-hidden="true">›</span>' : '';
+  return `<a class="ui-home" href="../"><b>‹</b>EMBER</a>
+    <div class="pad-bar-l" data-act="dock" data-dock="more" role="button">${who}</div>
     <button class="pad-bar-round${state}" data-act="phase"${stalled ? greyWhy(true, 'Finish the step on the sheet first.') : ` title="${room ? (rd.me ? 'Waiting for the other player. Tap again to take it back.' : 'Ready to move on') : 'Next phase'}"`}>
-      ${roundLabel}${hint}
+      ${roundLabel}${hint}${go}
     </button>
     <button class="pad-bar-vp" data-act="dock" data-dock="tasks" title="Tasks and score">
       <b style="color:${sideColour(me)}">${vp[me]}</b><span>:</span><b style="color:${sideColour(them)}">${vp[them]}</b>
@@ -4926,8 +4964,10 @@ function render(): void {
     const pending = !!data && wantsGuided() && !guidedOn(table);
     const on = (!!data && guidedOn(table)) || pending;
     turn.hidden = !on;
-    if (pending) paint('pad-turn', pendingGuidedHtml());
-    else if (on) paint('pad-turn', turnHtml(guide));
+    if (on) {
+      paint('pad-turn', foldableTurn(pending ? pendingGuidedHtml() : turnHtml(guide)));
+      turn.classList.toggle('folded', turnFold !== null);
+    }
   }
   const two = !!data && wide();
   const left = two ? mySeat() : shownSide();
@@ -5244,6 +5284,10 @@ function act(el: HTMLElement, ev: Event): void {
     case 'set-rounds': send({ kind: 'configureTable', seat: mySeat(), roundLimit: Number(el.dataset.n) }); return;
     case 'set-scale': send({ kind: 'configureTable', seat: mySeat(), scale: el.dataset.id as GameState['scale'] }); return;
     case 'phase': pressContinue(); return;
+    case 'turn-fold':
+      turnFold = turnFold === null ? (el.textContent ?? '').trim() : null;
+      render();
+      return;
     case 'phase-back': {
       const r = table.round;
       if (r.phase > 0) send({ kind: 'setPhase', seat: mySeat(), phase: r.phase - 1 });
