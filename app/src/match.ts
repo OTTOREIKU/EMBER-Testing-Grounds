@@ -1617,6 +1617,7 @@ function barHtml(): string {
       ? `<span class="pill quiet" id="mc-health" title="Click to copy a connection report">⌁</span>`
       : '';
   return `<div class="mc-bar">
+    <a class="ui-home" href="../../"><b>‹</b>EMBER</a>
     <a class="mc-logo" href="../../">EMBER <em>Testing Grounds</em><small>Match Centre</small></a>
     ${v.room ? `<span class="pill code" id="mc-code" title="Copy the room code">${esc(v.room.id)}${copied ? ' ✓' : ''}</span>` : ''}
     ${conn}${link}

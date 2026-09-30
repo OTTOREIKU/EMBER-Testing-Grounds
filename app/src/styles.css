@@ -102,9 +102,13 @@ button { font-family: inherit; }
   display: flex; align-items: center; flex-wrap: wrap; gap: 7px; row-gap: 6px;
   flex: 1; min-width: 0;
 }
+/* The home chip (ui.css .ui-home) is the first thing on the bar, as on every
+   page; the logo's block gives up its width so the controls still start
+   above the board column. */
+#toolbar .ui-home { align-self: center; margin-right: 10px; }
 #logo {
   font-weight: 700; letter-spacing: 0.5px; font-size: 15px; line-height: 25px;
-  flex: 0 0 auto; min-width: calc(var(--left-w) + var(--board-pad) - 14px);
+  flex: 0 0 auto; min-width: calc(var(--left-w) + var(--board-pad) - 14px - 86px);
 }
 /* Everything about the battlefield left this bar for the Setup tab, so what is
    left sits in a block exactly as wide as the sidebar beneath it — minus the
