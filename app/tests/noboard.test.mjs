@@ -21,7 +21,7 @@ const secrecy = readFileSync(new URL('../src/secrecy.ts', import.meta.url), 'utf
 const pad = readFileSync(new URL('../pad/pad.ts', import.meta.url), 'utf8');
 
 check('the flag is a table field', /noBoard\?: boolean;/.test(types), true);
-check('configureTable carries it', /roundLimit\?: number; noBoard\?: boolean \}/.test(cmds), true);
+check('configureTable carries it', /roundLimit\?: number; noBoard\?: boolean(; [^}]*)? \}/.test(cmds), true);
 check('and writes it', /if \(cmd\.noBoard !== undefined\) state\.noBoard = cmd\.noBoard \? true : undefined;/.test(cmds), true);
 check('a checkpoint keeps it', /\.\.\.\(\(s as \{ noBoard\?: boolean \}\)\.noBoard \? \{ noBoard: true \} : \{\}\)/.test(units), true);
 check('the fingerprint hashes it, so two phones agree they have none', /s\.noBoard \?\? null/.test(secrecy), true);
@@ -73,14 +73,16 @@ const perfCheck = cmds.slice(perfAt, cmds.indexOf("\n    case '", perfAt + 10));
 // A fourth since P7A: a Throw's free hand may be a Load lent in Contact, which
 // a table with no board judges anywhere (audit Phase 7, P7A 6). A fifth since
 // P7C: a Reveal or Scan with nothing to change is refused through the rows'
-// own reading, told whether there is a board (audit Phase 7, P7C 8), which
-// names `noBoard` twice.
+// own reading, told whether there is a board (audit Phase 7, P7C 8). Since
+// 2026-09-30 that reading asks about EVERY Action (Supplementary Rules 1.04,
+// 1.8), and is handed the zones as Remote Access is, so it names `noBoard`
+// three times.
 check('performAction reads the board in five places, and gates each',
-  (perfCheck.match(/noBoard/g) ?? []).length === 6
+  (perfCheck.match(/noBoard/g) ?? []).length === 7
     && (perfCheck.match(/loanedParts\(data, state\.tokens, t, \{ anywhere: !!state\.noBoard \}\)/g) ?? []).length === 2
     && /remoteAccessWhy\(normaliseTasks\(state\.tasks\)\.items, t, a\.range \?\? 4, state\.noBoard \? null : zoneCells\(data, state\)\)/.test(perfCheck)
     && /if \(a\.type === 'Firing' && !isMeleeFiring\(a\) && !state\.noBoard\)/.test(perfCheck)
-    && /actionIdleWhy\(data, t, a, \{ tokens: state\.tokens, noBoard: !!state\.noBoard \}\)/.test(perfCheck), true);
+    && /actionIdleWhy\(data, t, a, \{\n\s*tokens: state\.tokens,\n\s*noBoard: !!state\.noBoard,\n\s*tasks: normaliseTasks\(state\.tasks\)\.items,\n\s*zoneCells: state\.noBoard \? null : zoneCells\(data, state\),/.test(perfCheck), true);
 check('applyPenetration stays ungated', /noBoard/.test(cmds.slice(cmds.indexOf("case 'applyPenetration': {"), cmds.indexOf("case 'applyPenetration': {") + 1200)), false);
 
 check('the pad\'s tables are born without a board', /noBoard: true,\s*\n\s*\};\s*\n\}\s*\n\s*\nlet table: GameState = freshTable\(\);/.test(pad), true);

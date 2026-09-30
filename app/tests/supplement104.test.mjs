@@ -249,20 +249,42 @@ console.log('\n1.1.3, 1.4.2 Containers');
   const pk3 = card('ZHAM-003').actions.find((a) => a.id === 'ZHAM-003_A');
   check('the GM-35 blast is an "all Units" one, the PK3 a single target it may keep',
     [U.Un.explosionScope(gm35, data.actionTranslation(gm35.id)?.english ?? undefined), U.Un.explosionScope(pk3, undefined), U.Un.keptWithoutTarget(pk3)], ['all', 'single', true]);
+
+  // And in an attack (OTTO, 2026-09-30, "go with your suggestion"): a Container
+  // in a Firing or Melee Action's reach and sight is a target, and Breakable
+  // (3.1) destroys it with no roll. Omni-direction here, so the arc is moot.
+  const range = table();
+  const shooter = put(range, 's1', L(), 2, 2, { stance: 'offensive' });
+  const gun0 = U.Un.tokenCards(data, shooter).flatMap((x) => x.card.actions ?? []).find((a) => a.type === 'Firing' && (a.range ?? 0) >= 2);
+  const gun = { ...gun0, keywords: [...(gun0.keywords ?? []), { key: '全向', en: 'Omni-direction' }] };
+  const piece = (id, type, gc, gr, fragile) => ({ id, type, subCells: [{ col: gc * 3 + 1, row: gr * 3 + 1 }], height: type === 'container' ? 1 : 2, blocksLos: false, providesProtection: !fragile, isFragile: fragile });
+  const terrain = [piece('near', 'container', 3, 2, true), piece('far', 'container', 2 + (gun.range ?? 0) + 2, 2, true), piece('wall', 'low_wall', 2, 3, false)];
+  check('a Firing Action may target a Container in its reach, never one past it, nor a wall',
+    U.Un.containerTargets(data, range.tokens, terrain, shooter, gun, []).map((b) => b.id), ['near']);
+  check('the attack lists offer them on both boards, and a pick destroys it with the attacker named',
+    [/containerTargets\(ctx\.data, s\.tokens, terrain, by, a, smoke\)/.test(hud), /data-attackbox="\$\{esc\(b\.id\)\}"/.test(hud),
+      /kind: 'destroyTerrain', seat: by\.side, uid: by\.uid, pieces: \[id\]/.test(hud),
+      /containerTargets\(data, state\.tokens, currentTerrain\(\), attacker, act, state\.smoke \?\? \[\]\)/.test(main)],
+    [true, true, true, true]);
+  check('taking one off by hand asks first, as a house rule on a strict table, on both boards',
+    [/title: 'Remove this terrain by hand\?'/.test(hud), /Removing one by hand, with no Action, is a house rule/.test(main)], [true, true]);
 }
 
 // ---------- 1.2 / 1.3 Control Zones ----------
 console.log('\n1.2, 1.3 Control Zones');
 {
   // "They cannot capture Task Targets or interact with Control Zones", shared
-  // with every Deployable: one in a Zone contests nothing. A Projectile still
-  // does until OTTO rules on the other Low Value units.
+  // with every Deployable because of the Low Value Tag, so no Low Value unit in a
+  // Zone contests it: OTTO ruled it for the rest of them too, 2026-09-30 ("low
+  // value units can no longer block/contest zones").
   const zone = ['B2'];
   const at = (uid, side, extra) => ({ uid, side, kind: 'mech', stance: 'offensive', col: 4, row: 4, partStates: { torso: 'intact' }, ...extra });
   const mechIn = at(1, 's1', {});
   check('an enemy Barricade in the Zone contests nothing', U.controlOf(zone, [mechIn, at(2, 's2', { kind: 'projectile', aerial: false, barricade: true })]), 's1');
   check('nor an enemy Mine', U.controlOf(zone, [mechIn, at(3, 's2', { kind: 'projectile', aerial: true, mine: {} })]), 's1');
-  check('an enemy Missile still does', U.controlOf(zone, [mechIn, at(4, 's2', { kind: 'projectile', aerial: true })]), null);
+  check('nor an enemy Missile', U.controlOf(zone, [mechIn, at(4, 's2', { kind: 'projectile', aerial: true })]), 's1');
+  check('while a Shutdown Mech, which is not Low Value, still does',
+    U.controlOf(zone, [mechIn, at(5, 's2', { stance: 'shutdown' })]), null);
 }
 
 // ---------- 1.8 a full circle on the spot ----------
@@ -285,6 +307,22 @@ console.log('\n1.8 Turning on the spot');
     [/return !!t && \(t\.facing !== m\.facing0 \|\| Math\.abs\(m\.spin \?\? 0\) >= 4\);/.test(src('../src/main.ts')), /movePlan\.spin = \(movePlan\.spin \?\? 0\) \+ \(d === 1 \? 1 : -1\);/.test(src('../src/main.ts'))], [true, true]);
   check('the Match Centre says so to the engine',
     /const full = m\.facing === t\.facing && Math\.abs\(m\.spin\) >= 4;[\s\S]{0,300}\.\.\.\(full \? \{ spun: true \} : \{\}\)/.test(src('../src/matchhud.ts')), true);
+
+  // "That unit may not perform that action": the engine refuses an Action with
+  // nothing to change, in the words the pages grey it with (ruled 2026-09-30,
+  // OTTO). The RT-15/S Nimbus's System Cleanup takes a Square Token off an
+  // Ally, so with none worn it has nothing to do.
+  const c = table();
+  const nimbus = put(c, 's1', L({ torso: '504' }), 4, 4, { stance: 'offensive', timing: 'tactical' });
+  const ally = put(c, 's1', L(), 5, 4, { stance: 'offensive' });
+  c.script.opp = opp(nimbus.uid, { timing: 'tactical' });
+  const cleanup = { kind: 'performAction', seat: 's1', uid: nimbus.uid, actionId: '504_B', partKey: '504_B' };
+  const refused = U.commandCheck(data, c, cleanup);
+  ally.statuses = ['fragile'];
+  check('in the engine too: a System Cleanup with no Square Token on any Ally is refused, with one it is not',
+    [refused.ok, /wears a Square Token/.test(refused.why ?? ''), U.commandCheck(data, c, cleanup).ok], [false, true, true]);
+  check('every Action is asked, not only Reveal and Scan',
+    /const idle = actionIdleWhy\(data, t, a, \{\n\s*tokens: state\.tokens,/.test(src('../src/commands.ts')), true);
 }
 
 // ---------- 3.8 Assault X ----------
@@ -320,7 +358,7 @@ console.log('\n1.11 Tactic Cards');
   check('the play guide lists only the local seat\'s hand in a room',
     /const me = getLocalSeat\(\);\n\s*for \(const side of \['s1', 's2'\] as const\) \{\n\s*if \(me && side !== me\) continue;/.test(src('../src/playguide.ts')), true);
   check('and the Add tab ticks only the local seat\'s cards',
-    /heldTactics: \(\) => \{\n\s*const me = getLocalSeat\(\);\n\s*return \{ s1: !me \|\| me === 's1'/.test(src('../src/main.ts')), true);
+    /heldTactics: \(\) => \{\n\s*const me = getLocalSeat\(\);\n\s*const mine = \(side: Side\): string\[\] => \(!me \|\| me === side \? handIds\(state, side, handRoom\) : \[\]\);/.test(src('../src/main.ts')), true);
 }
 
 // ---------- the Reference: glossary, Rules entries and their changelogs ----------
@@ -353,7 +391,7 @@ console.log('\nThe Reference');
     [has('mines', /Mines one Action places never set each other off/), has('mines', /cannot stand on terrain/), has('mines', /Interception may not/)], [true, true, true]);
   check('Surplus Damage: a different Part', has('surplus_damage', /ANY cannot pick it/), true);
   check('Tactics Cards: hidden until played', has('tactics_cards', /hidden until played/), true);
-  check('Low Value Units: a Deployable denies no Zone', has('low_value_unit', /A Deployable cannot deny a Zone/), true);
+  check('Low Value Units: none blocks a Zone', has('low_value_unit', /does not stop the other side taking it/), true);
   check('The Maneuver: a full circle', has('maneuver', /a full circle included/), true);
   check('Detonation: the Containers', has('detonation', /Containers are Neutral/), true);
   check('no Rules text calls a Container terrain any more',

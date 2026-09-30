@@ -423,6 +423,20 @@ export function isUnfolded(c: any): boolean { return !!c?.isUnfolded; }
 // A Mine stands clear of terrain (Supplementary Rules 1.04, 1.3): the launch and
 // lay checks ask. A fixture says it is a Mine with its own flag.
 export function isMine(c: any): boolean { return !!c?.isMine; }
+// No fixture here plays a season, so the main rules stand; the Season Rules are
+// driven through the real engine in seasonplay.test.mjs.
+export function syncSeason(_data: any, _state: any): void {}
+export function smokePerGroup(_data: any, _state: any): number { return 1; }
+// Every Action is asked whether it could change anything (Supplementary Rules
+// 1.04, 1.8); the fixtures here all can. The reading itself is driven against
+// the real engine in supplement104.test.mjs.
+export function actionIdleWhy(_d: any, _t: any, _a: any, _w?: any): string | null { return null; }
+// No fixture here lays a Mine, so no blast is owed and there is no order to
+// keep (Supplementary Rules 1.04, 1.9); blastorder.test.mjs drives the real one.
+export function minesOwed(_data: any, _tokens: any): any[] { return []; }
+export function blastTurn(_data: any, _state: any): any { return null; }
+export function blastsReady(_data: any, _tokens: any): any[] { return []; }
+export function jumpsToTarget(_a: any): boolean { return false; }
 // No fixture here prints [Stationary] (the GSD7 Mortar is the card that does),
 // so the launch ceiling reads the printed Range (audit Phase 5, A8).
 export function stationaryAdjusted(a: any, _opp?: any): any { return a; }

@@ -51,7 +51,9 @@ check('a shutdown mech alone holds nothing', T.controlOf(ZONE, [unit(1, 's1', 1,
 check('but it still denies the zone to the enemy', T.controlOf(ZONE, [unit(1, 's1', 1, 1, { stance: 'shutdown' }), unit(2, 's2', 2, 2)]), null);
 check('any enemy unit contests it', T.controlOf(ZONE, [unit(1, 's1', 1, 1), unit(2, 's2', 2, 2)]), null);
 // Even a Low Value projectile counts as an enemy Unit inside the Zone.
-check('an enemy projectile contests it', T.controlOf(ZONE, [unit(1, 's1', 1, 1), unit(2, 's2', 2, 2, { kind: 'projectile', aerial: true })]), null);
+// No Low Value Unit blocks a Zone (Supplementary Rules 1.04, 1.1.2 to 1.3;
+// ruled 2026-09-30, OTTO).
+check('an enemy projectile does not contest it', T.controlOf(ZONE, [unit(1, 's1', 1, 1), unit(2, 's2', 2, 2, { kind: 'projectile', aerial: true })]), 's1');
 // A Deployable does not: the Supplementary Rules 1.04 (1.2, 1.3) say it cannot
 // interact with Control Zones. Ground-standing, or the GM-35 with its record.
 check('an enemy Deployable does not contest it (1.04: 1.2)', T.controlOf(ZONE, [unit(1, 's1', 1, 1), unit(2, 's2', 2, 2, { kind: 'projectile', aerial: false })]), 's1');
@@ -69,7 +71,7 @@ const LV = (t) => t.kind === 'drone' && t.cardId === 'bit';
 const bit = (uid, side, c, r) => drone(uid, side, c, r, { cardId: 'bit' });
 check('a low value drone cannot hold a zone', T.controlOf(ZONE, [bit(1, 's1', 1, 1)], LV), null);
 check('a scoring drone still can', T.controlOf(ZONE, [drone(1, 's1', 1, 1)], LV), 's1');
-check('but a low value drone still contests one', T.controlOf(ZONE, [unit(1, 's1', 1, 1), bit(2, 's2', 2, 2)], LV), null);
+check('nor does a low value drone contest one', T.controlOf(ZONE, [unit(1, 's1', 1, 1), bit(2, 's2', 2, 2)], LV), 's1');
 check('and it rides along with a unit that can hold', T.controlOf(ZONE, [bit(1, 's1', 1, 1), unit(2, 's1', 2, 2)], LV), 's1');
 
 // ---------- Terminals (5.3.3) ----------
@@ -79,7 +81,7 @@ check('and it rides along with a unit that can hold', T.controlOf(ZONE, [bit(1, 
 // would be worth 2VP a round for a unit that may not touch Task Items at all.
 check('a mech reaches a terminal', T.directAccess(ZONE, [unit(1, 's1', 1, 1)]), 's1');
 check('a low value drone does not', T.directAccess(ZONE, [bit(1, 's1', 1, 1)], LV), null);
-check('and it blocks an enemy from reaching one', T.directAccess(ZONE, [unit(1, 's1', 1, 1), bit(2, 's2', 2, 2)], LV), null);
+check('nor does it block an enemy from reaching one', T.directAccess(ZONE, [unit(1, 's1', 1, 1), bit(2, 's2', 2, 2)], LV), 's1');
 check('a shutdown mech reaches nothing', T.directAccess(ZONE, [unit(1, 's1', 1, 1, { stance: 'shutdown' })]), null);
 
 // ---------- Main Task scoring ----------

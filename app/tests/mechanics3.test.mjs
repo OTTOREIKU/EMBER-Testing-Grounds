@@ -150,12 +150,20 @@ console.log('Phase 3: stealth and electronic warfare\n');
 }
 {
   // The activating Action itself (Medium, so its own Opportunity on a Tactical
-  // dial): 4.12.2's trigger is an Action performed while IN the state.
+  // dial): 4.12.2's trigger is an Action performed while IN the state, and the
+  // activating one is performed from outside it. Performed while already in the
+  // state it could change nothing, so it may not be (Supplementary Rules 1.04,
+  // 1.8; the pages grey it with the same words).
   const s = table();
-  const oct = put(s, 's1', L({ torso: '096' }), 2, 2, { statuses: ['camouflage'], timing: 'tactical' });
+  const oct = put(s, 's1', L({ torso: '096' }), 2, 2, { timing: 'tactical' });
   open(s);
   check('C4 the Action that activates camouflage owes nothing',
     [send(s, { kind: 'performAction', seat: 's1', uid: oct.uid, actionId: '096_B', partKey: '096_B' }).ok, due(s)], [true, []]);
+  const hid = table();
+  const oct2 = put(hid, 's1', L({ torso: '096' }), 2, 2, { statuses: ['camouflage'], timing: 'tactical' });
+  open(hid);
+  check('C4 and already in the state it is refused, as changing nothing',
+    send(hid, { kind: 'performAction', seat: 's1', uid: oct2.uid, actionId: '096_B', partKey: '096_B' }).why, `${oct2.label} is already in the Optical Camouflage State.`);
 }
 {
   const s = table();

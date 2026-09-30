@@ -157,11 +157,12 @@ check('a row list inside a Rules card fills the card: the list indent is gone',
 // ---------- the master changelog (OTTO, 2026-09-30) ----------
 const groups = M.R.changelogGroups('1.04');
 const count = (t) => groups.filter((g) => g.title === t).reduce((s, g) => s + g.items.length, 0);
-// 7 rules: the Smoke Screens line left for the Season Rules (OTTO, 2026-09-30),
+// 9 rules: the Smoke Screens line left for the Season Rules (OTTO, 2026-09-30),
 // which are their own kind and lead the list ("move the seasonal button and
-// items to the front").
-check('1.04 lists 2 Season Rules, 7 rules, 11 keywords and 74 cards',
-  [count('Season'), count('Rules'), count('Keywords'), count('Cards')], [2, 7, 11, 74]);
+// items to the front"); the Pholcus and the White Dwarf joined with OTTO's
+// answers on 1.9 and 3.3 the same day.
+check('1.04 lists 2 Season Rules, 9 rules, 11 keywords and 74 cards',
+  [count('Season'), count('Rules'), count('Keywords'), count('Cards')], [2, 9, 11, 74]);
 check('in that order', [...new Set(groups.map((g) => g.title))], ['Season', 'Rules', 'Keywords', 'Cards']);
 check('its cards come faction by faction, in the record\'s order',
   groups.filter((g) => g.title === 'Cards').map((g) => `${g.fac}:${g.items.length}`), ['PD:8', 'RDL:31', 'UN:35']);
@@ -173,13 +174,13 @@ const lost = targets.filter((a) => {
   if (kind === 'season') return !data.seasons.some((s) => s.rules.some((r) => r.id === key));
   return !data.mechanics.some((m) => m.id === key);
 });
-check('every row opens something that exists', [targets.length, lost], [94, []]);
+check('every row opens something that exists', [targets.length, lost], [96, []]);
 check('no Rules line is a Season Rule any more: the Smoke Screens entry keeps no line for one',
   [Object.values(log.rules).flat().filter((e) => e.tags?.includes('OPTIONAL')).length, 'smoke_screen' in log.rules], [0, false]);
 const keysOf = (name) => groups.flatMap((g) => g.items).find((i) => i.name === name)?.keys;
 check('a card\'s keys are read off its entries',
   [keysOf('MD-4A Reaper Type I'), keysOf('Opal'), keysOf('Mines'), keysOf('Shock Attack X')],
-  [['PTS'], ['NEW'], ['CHANGED', 'REVERSED'], ['NAME', 'CHANGED']]);
+  [['PTS'], ['NEW'], ['NEW', 'CHANGED', 'REVERSED'], ['NAME', 'CHANGED']]);
 check('GoF 1.021\'s redesigned Vanguard II carries every kind of key it earned',
   M.R.changelogGroups('1.021').flatMap((g) => g.items).find((i) => /Crossbow/.test(i.name))?.keys, ['NAME', 'PTS', 'STATS', 'ACTION', 'TEXT', 'TAG']);
 // The sheet (Popup B): the revision is picked in the title, a search and the
@@ -192,11 +193,11 @@ check('the sheet picks its revision in the title from its own menu, 1.04 chosen,
   [/<button class="cl-ver-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Revision 1\.04">1\.04<span class="cl-ver-caret"/.test(sheetHtml),
     [...sheetHtml.matchAll(/aria-checked="(true|false)" data-clver="([^"]+)"><span>[^<]+<\/span><span class="fc-n">(\d+)<\/span>/g)].map((m) => `${m[2]}:${m[3]}${m[1] === 'true' ? '*' : ''}`),
     /<select/.test(sheetHtml)],
-  [true, ['1.04:94*', '1.021:56', '1.02:6'], false]);
+  [true, ['1.04:96*', '1.021:56', '1.02:6'], false]);
 check('its kinds carry their counts, and a revision with no Rules lines offers no Rules',
   [[...sheetHtml.matchAll(/data-clkind="([^"]+)">[^<]+<span class="fc-n">(\d+)<\/span>/g)].map((m) => `${m[1]}:${m[2]}`),
     [...M.R.changelogIndex('1.021').matchAll(/data-clkind="([^"]+)"/g)].map((m) => m[1])],
-  [['all:94', 'season:2', 'rules:7', 'keywords:11', 'cards:74'], ['all', 'keywords', 'cards']]);
+  [['all:96', 'season:2', 'rules:9', 'keywords:11', 'cards:74'], ['all', 'keywords', 'cards']]);
 check('the Season Rules wear their own chip, open the list on a line saying they are optional, and each is marked OPTIONAL',
   [/<button class="ref-facet season" data-clkind="season">/.test(sheetHtml),
     /<ul class="ui-list cl-list"><li class="cl-note" data-clk="season" data-cln="">Season Rules are optional: a trial beside the main rules, not part of them\.<\/li><li class="tap" data-logseason="smoke_dissipation"/.test(sheetHtml),
@@ -208,10 +209,10 @@ check('each row says what it is and carries its name for the search',
   /<li class="tap" data-logcard="PRDR-101" data-clk="cards" data-cln="md-4a reaper type i">/.test(sheetHtml), true);
 check('a price-only row shows the price, a row with more shows its keys',
   [/data-logcard="PRDR-101"[^>]*>[\s\S]*?<span class="log-pair"><s>90<\/s> → <b>84<\/b><\/span>/.test(sheetHtml),
-    /data-logrule="mines"[^>]*>[\s\S]*?<span class="cl-keys"><span class="log-key"[^>]*>CHANGED<\/span><span class="log-key warn"[^>]*>REVERSED<\/span><\/span>/.test(sheetHtml)],
+    /data-logrule="mines"[^>]*>[\s\S]*?<span class="cl-keys"><span class="log-key[^"]*"[^>]*>NEW<\/span><span class="log-key"[^>]*>CHANGED<\/span><span class="log-key warn"[^>]*>REVERSED<\/span><\/span>/.test(sheetHtml)],
   [true, true]);
 check('the way in names the newest revision and its count',
-  /<button class="cl-entry" data-clv="1\.04">[\s\S]*What changed in 1\.04[\s\S]*74 cards · 11 keywords · 7 rules · 2 optional Season Rules[\s\S]*<span class="ui-badge">94<\/span>/.test(M.R.changelogEntry()), true);
+  /<button class="cl-entry" data-clv="1\.04">[\s\S]*What changed in 1\.04[\s\S]*74 cards · 11 keywords · 9 rules · 2 optional Season Rules[\s\S]*<span class="ui-badge">96<\/span>/.test(M.R.changelogEntry()), true);
 check('a Rules entry opens as a sheet with its Advanced open, the changelog first',
   /<details class="mech-adv" open>[\s\S]*?<div class="mech-adv-b"><div class="mech-log">/.test(M.R.ruleDetail('mines')), true);
 const refSrc = readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');

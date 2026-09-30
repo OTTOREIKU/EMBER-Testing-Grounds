@@ -525,6 +525,9 @@ check('A4 and not on a Shutdown one (4.1: no Passive effects)', await reactionsA
 {
   const s = table();
   const a = put(s, 's1', L({ backpack: '001' }), 1, 1, { timing: 'tactical' });
+  // Something to repair: with nothing Damaged the Action could change nothing,
+  // and may not be performed (Supplementary Rules 1.04, 1.8).
+  a.partStates.rightHand = 'damaged';
   open(s);
   const before = a.ammo['001_A'];
   send(s, act(a, '001_A'));

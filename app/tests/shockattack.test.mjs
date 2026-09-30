@@ -133,7 +133,8 @@ const match = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
 // Snipe designation included.
 check('freeplay folds grants into the attack action', /grantAdjusted\(steadied, t, opp0/.test(main), true);
 check('the Match Centre attack panel does', /grantAdjusted\(steadied, by, opp0/.test(hud), true);
-check('twice - the target re-check too', (hud.match(/grantAdjusted\(steadied, by, opp0/g) ?? []).length, 2);
+// Three since the 1.04 Containers: a Container target re-checks the same way.
+check('three times - the target and Container re-checks too', (hud.match(/grantAdjusted\(steadied, by, opp0/g) ?? []).length, 3);
 check('and the combat window action deriver does', /grantAdjusted\(stationaryAdjusted\(printed, opp\), t, opp\)/.test(match), true);
 
 // Freeplay: the offer, the free walk, then the same targeting either way.

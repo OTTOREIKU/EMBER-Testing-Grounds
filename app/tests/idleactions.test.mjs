@@ -263,6 +263,25 @@ const idle = (s, t, a, terrain = []) => U.actionIdleWhy(data, t, a, M.idleWorldF
   }
 }
 
+// ---------- the engine refuses it too, on the pad's table (1.8) ----------
+// Supplementary Rules 1.04, 1.8: an Action that can change nothing may not be
+// taken. performAction asks the same reading the rows grey with, told there
+// is no board, so the pad's refusal and its greyed row agree.
+{
+  const s = { ...table(), noBoard: true };
+  const m = mech(s, 's1', L(), 1, 1);
+  const foe = mech(s, 's2', L(), 5, 5);
+  const scan = { kind: 'performAction', seat: 's1', uid: m.uid, actionId: 'COMMON_SCAN' };
+  const refused = M.C.check(data, s, scan);
+  check('on a table with no board, the engine refuses a Scan with nothing to find, with the row\'s reason',
+    [refused.ok, /the Scan finds nothing/.test(refused.why ?? '')], [false, true]);
+  foe.statuses = ['camouflage'];
+  // With something to find, that reason goes; this bare table then asks for
+  // the unit's Action Opportunity, a rule of its own.
+  check('...and a camouflaged enemy on the table lifts that refusal',
+    /the Scan finds nothing/.test(M.C.check(data, s, scan).why ?? ''), false);
+}
+
 // ---------- a Token on a chosen target (PRDR-202_A, Target Tag) ----------
 {
   const s = table();

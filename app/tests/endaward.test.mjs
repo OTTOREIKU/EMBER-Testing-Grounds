@@ -69,6 +69,10 @@ export function riderOnDrone(_data: any, _tokens: any, _t: any): any {
 // conditions themselves are pinned in tether.test.mjs against the real card.
 export function settleTethers(_data: any, _state: any): void {}
 export function settleEnvironments(_data: any, _state: any): any[] { return []; }
+// No fixture here plays a season, so the main rules stand; the Season Rules are
+// driven through the real engine in seasonplay.test.mjs.
+export function syncSeason(_data: any, _state: any): void {}
+export function smokePerGroup(_data: any, _state: any): number { return 1; }
 // The Mine readers are pinned against the real engine in mechanics5.test.mjs;
 // no fixture here lays one, so the honest stub marks nothing (audit Phase 5,
 // C2).

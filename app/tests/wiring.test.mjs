@@ -121,7 +121,9 @@ check('the Mode-change branch pays before it returns',
 // Twenty-seven since the second Phase 5 pass (F8): the KK9's Overwatch Strike
 // pays its Action, then calls the strike.
 // Twenty-eight since P7A: the Discard names its Part, then pays (audit Phase 7).
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 28);
+// Twenty-nine since the 1.04 Containers (Supplementary Rules 3.1): a Container
+// named as the target pays, then is destroyed with no roll.
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 29);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //

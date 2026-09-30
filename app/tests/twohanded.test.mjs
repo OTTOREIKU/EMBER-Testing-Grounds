@@ -25,8 +25,10 @@ const units = src('units.ts'), combat = src('combat.ts'), hud = src('matchhud.ts
 // its doors, and match.ts applies it where the attack actually starts - which
 // it used to skip, so the Match Centre rolled a Two-Handed weapon without the
 // rider its own picker had promised.
-check('the Match Centre reads it in both places it adjusts an Action',
-  (hud.match(/handsFor\(ctx, by, granted, m\.twoHanded\)/g) ?? []).length, 2);
+// Three sites since the 1.04 Containers (Supplementary Rules 3.1): a Container
+// named as the target re-reads the same adjusted Action before it pays.
+check('the Match Centre reads it in all three places it adjusts an Action',
+  (hud.match(/handsFor\(ctx, by, granted, m\.twoHanded\)/g) ?? []).length, 3);
 check('and freeplay asks it at both of its doors',
   (main.match(/askTwoHanded\(t, granted\)/g) ?? []).length, 2);
 check('and the Match Centre applies it where the attack starts',

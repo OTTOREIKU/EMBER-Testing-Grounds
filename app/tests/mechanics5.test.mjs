@@ -1482,6 +1482,29 @@ check('G4p the attack and launch find a lent Action', [/function commitDeclared\
   h.smoke = () => [];
   h.start(shooter, actionOf('058', '058_A') ?? actionsOf(shooter).find((a) => a.type === 'Firing'), cruiser, '');
   check('H2 its other Parts are there for a Surplus', h.otherPartFor('torso'), true);
+
+  // H2b: Cleaving carried INTO a cruising White Dwarf from another unit hit no
+  // Part of it first, so FAQ N7's roll for another Part does not reach it: the
+  // Torso takes it (Supplementary Rules 1.04, 3.3; OTTO, 2026-09-30).
+  const gun = actionOf('058', '058_A') ?? actionsOf(shooter).find((a) => a.type === 'Firing');
+  const cleave = (into) => {
+    const cl = new M.AttackHelper(data, dice, makeEl('div'), () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {});
+    cl.tokens = () => s.tokens;
+    cl.terrain = () => [];
+    cl.smoke = () => [];
+    cl.start(shooter, gun, first, '');
+    cl.ctx.surplusRound = 1;
+    cl.ctx.surplusOriginalPart = 'torso';
+    const offered = cl.cleaveTargets().some((u) => u.uid === into.uid);
+    cl.cleaveInto(into.uid);
+    return { offered, defender: cl.ctx.defender.uid, part: cl.ctx.targetPart, step: cl.ctx.step };
+  };
+  const first = put(s, 's1', L(), 4, 2);
+  check('H2b Cleaving into a cruising White Dwarf lands on the Torso, no Part rolled',
+    cleave(cruiser), { offered: true, defender: cruiser.uid, part: 'torso', step: 'defense' });
+  const plain = put(s, 's1', L(), 6, 2);
+  check('H2b the control: into a Mech out of Cruise Mode, the Part is rolled',
+    cleave(plain), { offered: true, defender: plain.uid, part: null, step: 'part' });
 }
 
 // ================= C2, C3, C4, C6. Mines: on entry, together, their own kind, a bounded Lay =================
