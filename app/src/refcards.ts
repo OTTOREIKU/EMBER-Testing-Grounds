@@ -14,13 +14,14 @@
 // are synchronous string builders called during a render; a module-level await
 // here would make every importer async. Each page calls useCardData() once,
 // after its own loadData() resolves and before it draws anything.
-import { FACTION_LABEL, actionIconUrl, cardName, mechPartUrl, portraitUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type ChangeEntry, type GameData, type KeywordDef, type MechanicDef, type RuleChange, type SeasonDef, type SeasonRule } from './data';
+import { FACTION_LABEL, HELP_CARDS, TOKEN_PRINT, actionIconUrl, cardName, helpCardUrl, mechPartUrl, portraitUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenPrintUrl, traitName, zeroCostReason, type BoxDef, type ChangeEntry, type GameData, type KeywordDef, type MechanicDef, type RuleChange, type SeasonDef, type SeasonRule } from './data';
 import { LENGTH_NAME, TICK_COST, costLabel, lengthOf, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule, type CapsuleShort } from './glyphs';
 import { linkIcon } from './icons';
 import { printsWide } from './images';
-import { matchMechanicBasic } from './refsearch';
-import { type Card, type CardAction } from './types';
+import { found, matchMechanic, matchMechanicBasic, matchPhase, matchSeason, matchStance, matchStatus, matchTiming, nmMechanic, nmPlay, nmSeason, nmStatus, norm } from './refsearch';
+import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type CardAction, type StatusDef } from './types';
+import { iconSvg } from './dice';
 
 let data: GameData;
 
@@ -1451,4 +1452,428 @@ export function keywordDetail(name: string): string | null {
         .join('')}</div>` : ''}
     ${users.length ? `<h3 class="ref-sub">Appears on ${users.length} card(s)</h3>
       <div class="ref-userlist">${shown.map(cardLink).join('')}</div>` : ''}`;
+}
+
+// ---------- the Rules tab ----------
+//
+// The Reference's Rules tab, in ONE copy for every page that shows it: the
+// Reference's own tab and the pad's Find (OTTO, 2026-09-30: "import the look
+// and style of the reference app into pad so future updates will appear").
+// The pad drew its own Rules tiles and fell behind every change made to the
+// tab since (the two-layer Mechanics entries, the printed tokens, the Season
+// Rules, the dice). A page keeps its own behaviour, which filter is chosen and
+// where the row scrolls; what the tab SHOWS is only ever drawn here.
+
+// ---------- the dice (rulebook 2.4, and the offset rules with them) ----------
+//
+// The board has fetched dice.json since it was built; the REFERENCE never had
+// it, so five dice, 38 faces and the three offset rules were modelled in data
+// and shown nowhere - on the page whose whole job is making the game's
+// information findable.
+//
+// Drawn with the app's own glyphs rather than photographs of the dice. The
+// symbols are already flat SVG on currentColor, so a face costs nothing to
+// render and reads at any size; the die's own colour carries which die it is.
+
+export interface DieEntry {
+  colour: string;
+  sides: number;
+  color: string;
+  role: string;
+  faces: { type: string; hollow?: boolean; part?: string }[][];
+}
+
+// White and yellow dice print their symbols DARK; the others print them light.
+const DARK_FACE = new Set(['white', 'yellow']);
+
+const SYMBOL_NAME: Record<string, string> = {
+  heavyHit: 'Heavy Hit', lightHit: 'Light Hit', defense: 'Defense',
+  dodge: 'Dodge', lightning: 'Lightning', eye: 'Eye', part: 'Part',
+};
+
+// The black die names its Parts in the data the way the code spells them, which
+// is not how a player reads them: `leftArm` is a field name, "Left Arm" is a
+// Part. Searching for either finds the die, because the raw key stays in the
+// haystack matchDie builds.
+const PART_NAME: Record<string, string> = {
+  torso: 'Torso', chassis: 'Chassis', leftArm: 'Left Arm',
+  rightArm: 'Right Arm', backpack: 'Backpack', any: 'Any Part',
+};
+
+export function dieEntries(): DieEntry[] {
+  const d = data.dice;
+  if (!d) return [];
+  return Object.entries(d.dice).map(([colour, spec]) => ({ colour, ...spec }));
+}
+
+// What a face is called, so a search for "hollow heavy hit" or "blank" lands.
+function faceLabel(icons: DieEntry['faces'][number]): string {
+  if (!icons.length) return 'Blank';
+  const bits = icons.map((i) => {
+    const name = i.part ? PART_NAME[i.part] ?? `${i.part} Part` : SYMBOL_NAME[i.type] ?? i.type;
+    return i.hollow ? `hollow ${name}` : name;
+  });
+  // "double Light Hit" rather than "Light Hit x2": these labels are counted in
+  // the tally below, and "2 Light Hit x2" reads as an arithmetic mistake.
+  return bits.length === 2 && bits[0] === bits[1] ? `double ${bits[0]}` : bits.join(' + ');
+}
+
+// A tally of the whole die: "4 Heavy Hit - 2 hollow Heavy Hit - 1 Lightning".
+function dieTally(die: DieEntry): string {
+  const seen = new Map<string, number>();
+  for (const f of die.faces) {
+    const k = faceLabel(f);
+    seen.set(k, (seen.get(k) ?? 0) + 1);
+  }
+  return [...seen].map(([k, n]) => `${n} ${k}`).join(' · ');
+}
+
+const nmDie = (d: DieEntry) => `${d.colour} die`;
+
+// Everything a reader might type at a die: its colour, what it is for, and
+// every symbol on it including the hollow ones. "dice" is in the haystack by
+// name because it is the word a player actually types, and the singular in
+// the entry's own label did not contain it - the Dice facet read 0 for "dice".
+export const matchDie = (die: DieEntry, q: string): boolean =>
+  !q || norm(`${die.colour} die dice ${die.role} ${die.faces.map(faceLabel).join(' ')} ${
+    die.faces.flat().map((i) => `${i.part ?? ''} ${i.type}`).join(' ')}`).includes(q);
+
+  const DURATION: Record<string, { label: string; text: string }> = {
+    green: { label: 'Green', text: 'Stays in effect until an Action or effect removes it.' },
+    yellow: {
+      label: 'Yellow',
+      text: 'Flipped to its red reverse at the end of the round, then removed at the end of the next one, so it lasts the rest of the round it arrives in and all of the next.',
+    },
+    red: { label: 'Red', text: 'Red on both faces, so it is removed at the end of the round it arrives in.' },
+  };
+  const tokenSvg = (def: StatusDef, red = false): string => {
+    const tint = red ? '#e05c5c' : def.tint;
+    const w = def.shape === 'triangle' ? 40 : def.shape === 'hexagon' ? 42 : 34;
+    const body =
+      def.shape === 'hexagon'
+        ? `<polygon points="6,13 12,3 ${w - 12},3 ${w - 6},13 ${w - 12},23 12,23" fill="${tint}" stroke="#0f1216"/>`
+        : def.shape === 'triangle'
+          ? `<polygon points="${w / 2},2 ${w - 3},24 3,24" fill="${tint}" stroke="#0f1216"/>`
+          : def.shape === 'round'
+            ? `<rect x="3" y="4" width="${w - 6}" height="18" rx="9" fill="${tint}" stroke="#0f1216"/>`
+            : def.shape === 'state'
+              ? `<rect x="3" y="4" width="${w - 6}" height="18" rx="3" fill="${tint}" stroke="#0f1216" stroke-dasharray="3 2"/>`
+              : `<rect x="3" y="4" width="${w - 6}" height="18" rx="2" fill="${tint}" stroke="#0f1216"/>`;
+    return `<svg class="tok-badge" viewBox="0 0 ${w} 26" width="${w}" height="26" aria-hidden="true">${body}
+      <text x="${w / 2}" y="17" text-anchor="middle" font-size="9" font-weight="700" fill="#0f1216">${esc(def.icon)}</text></svg>`;
+  };
+
+// Each tile a section draws, for a page that lists them one by one.
+const tilesOf = (html: string): string[] => html.match(/<article[\s\S]*?<\/article>/g) ?? [];
+
+export interface RulesSection { id: string; label: string; n: number; html: string; tiles: string[] }
+
+// Every section of the tab for this search (`q` normalised), the chosen
+// filter aside: the Reference counts and shows them, the pad lists their tiles.
+export function rulesSections(q: string): RulesSection[] {
+  const p = data.play;
+  const phases = found(p.phases, q, matchPhase, nmPlay);
+  const timings = found(p.timings, q, matchTiming, nmPlay);
+  const stances = found(p.stances, q, matchStance, nmPlay);
+  const filtered = found(data.mechanics, q, matchMechanic, nmMechanic);
+
+  const phaseHtml = phases.length
+    ? `<p class="ref-count">Round phases</p>` +
+      phases
+        .map(
+          (x) => `<article class="card">
+            <div class="card-title"><span class="play-num">${x.order}</span>${esc(x.name)}</div>
+            ${x.who ? `<div class="ref-note">${esc(x.who)}</div>` : ''}
+            <div class="card-body">
+              <p class="play-can"><b>You can</b></p><ul>${x.can.map((l) => `<li>${linkKeywords(l)}</li>`).join('')}</ul>
+              <p class="play-cant"><b>You cannot</b></p><ul>${x.cannot.map((l) => `<li>${linkKeywords(l)}</li>`).join('')}</ul>
+            </div>
+            ${x.ref ? `<div class="card-foot"><span class="tag mono">${esc(x.ref)}</span></div>` : ''}
+          </article>`,
+        )
+        .join('')
+    : '';
+
+  const timingStrip =
+    q || p.timings.length < 2
+      ? ''
+      : `<div class="tm-strip">${p.timings
+          .map((x) => {
+            const icon = actionIconUrl(TIMINGS.find((t) => t.id === x.id)?.pilotKey);
+            return `<span class="tm-step" style="--t-tint: var(--t-${esc(x.id)})">
+              ${icon ? `<img src="${icon}" alt="">` : ''}<b>${x.order}</b><span>${esc(x.name)}</span>
+            </span>`;
+          })
+          .join('<i class="tm-arrow">▸</i>')}</div>`;
+
+  const timingHtml = timings.length
+    ? `<p class="ref-count">Action timings, in the order they resolve</p>` +
+      timingStrip +
+      timings
+        .map((x) => {
+          const def = TIMINGS.find((t) => t.id === x.id);
+          const icon = actionIconUrl(def?.pilotKey);
+          return `<article class="card tm-card" style="--t-tint: var(--t-${esc(x.id)})">
+            <div class="card-title">
+              ${icon ? `<img class="tm-icon" src="${icon}" alt="">` : ''}
+              <span class="play-num tm-num">${x.order}</span><span class="tm-name">${esc(x.name)}</span> Timing
+            </div>
+            <div class="card-body">${linkKeywords(x.text)}</div>
+          </article>`;
+        })
+        .join('') +
+      (p.timingNotes && !q
+        ? `<article class="card"><div class="card-title">How timings work</div>
+            <div class="card-body"><ul>${p.timingNotes.lines.map((l) => `<li>${linkKeywords(l)}</li>`).join('')}</ul></div>
+            ${p.timingNotes.ref ? `<div class="card-foot"><span class="tag mono">${esc(p.timingNotes.ref)}</span></div>` : ''}
+          </article>`
+        : '')
+    : '';
+
+  const stanceHtml = stances.length
+    ? `<p class="ref-count">Stances</p>` +
+      stances
+        .map(
+          (x) => `<article class="card">
+            <div class="card-title">${esc(x.name)} <span class="tag mono">${esc(x.short)}</span></div>
+            <div class="card-body">
+              <p>${linkKeywords(x.effect)}</p>
+              <p class="play-can"><b>Use it when</b> ${linkKeywords(x.good)}</p>
+              <p class="play-cant"><b>Trade-off</b> ${linkKeywords(x.cost)}</p>
+            </div>
+            ${x.ref ? `<div class="card-foot"><span class="tag mono">${esc(x.ref)}</span></div>` : ''}
+          </article>`,
+        )
+        .join('') +
+      (p.stanceNotes && !q
+        ? `<article class="card"><div class="card-title">Choosing a stance</div>
+            <div class="card-body"><ul>${p.stanceNotes.lines.map((l) => `<li>${linkKeywords(l)}</li>`).join('')}</ul></div>
+            ${p.stanceNotes.ref ? `<div class="card-foot"><span class="tag mono">${esc(p.stanceNotes.ref)}</span></div>` : ''}
+          </article>`
+        : '')
+    : '';
+
+  // ---------- the dice ----------
+  const dice = found(dieEntries(), q, matchDie, nmDie);
+  const rules = data.dice?.offsetRules ?? {};
+  // The offset rules are searchable in their OWN right, not only as a footer
+  // under a die that happened to match: "penetration" is exactly what a reader
+  // types, and it appears in no die's face list, so before this it found
+  // nothing at all.
+  const matchedRules = Object.entries(rules).filter(
+    ([k, v]) => !q || norm(`${k} ${v}`).includes(q),
+  );
+  // The offset rules ride WITH the dice rather than sitting in Mechanics:
+  // they are the answer to "I rolled this, now what", and a reader looking at
+  // a Defense icon is one scroll from the sentence that says what it offsets.
+  // So they are shown whenever any die is shown, whether or not the query
+  // touched them - a search for "dice" showed the five dice and no rules,
+  // because none of the three sentences contains that word. A query that
+  // matches a rule and no die still shows the rule on its own. Only the
+  // MATCHED rules count towards the facet, because tabCounts counts them that
+  // way and the badge and the tab have to agree.
+  const shownRules = matchedRules.length ? matchedRules : dice.length ? Object.entries(rules) : [];
+  const offsetHtml = shownRules.length
+    ? `<article class="card die-rules">
+        <div class="card-title">Offsetting, and what a Hit still counts as</div>
+        <div class="card-body"><ul class="die-rulelist">${shownRules
+          .map(([k, v]) => `<li><b>${esc(k[0].toUpperCase() + k.slice(1))}</b> ${linkKeywords(v)}</li>`)
+          .join('')}</ul></div>
+      </article>`
+    : '';
+  const diceHtml = dice.length || shownRules.length
+    ? (dice.length ? `<p class="ref-count">${dice.length} ${dice.length === 1 ? 'die' : 'dice'}</p>` : '')
+      + dice.map((die) => {
+        const dark = DARK_FACE.has(die.colour);
+        const faces = die.faces
+          .map((icons) => `<span class="die-face${dark ? ' on-light' : ''}" style="background:${esc(die.color)}"
+              title="${esc(faceLabel(icons))}">${
+            icons.length ? icons.map((i) => iconSvg(i, 17)).join('') : '<i class="die-blank"></i>'
+          }</span>`)
+          .join('');
+        return `<article class="card die-card">
+          <div class="card-title"><span class="die-dot" style="background:${esc(die.color)}"></span>
+            ${esc(die.colour[0].toUpperCase() + die.colour.slice(1))} die
+            <span class="die-sides">d${die.sides}</span></div>
+          <div class="card-body">${esc(die.role)}</div>
+          <div class="die-faces">${faces}</div>
+          <div class="die-tally">${esc(dieTally(die))}</div>
+        </article>`;
+      }).join('')
+      + offsetHtml
+    : '';
+
+  const tokenList = found(STATUSES, q, matchStatus, nmStatus);
+  const tokenHtml = tokenList.length
+    ? `<p class="ref-count">Tokens and states</p>` +
+      tokenList
+        .map((d) => {
+          const dur = d.decay ? DURATION[d.decay] : null;
+          // The printed token, when we have it. The drawn badge below is our
+          // own shorthand and was only ever a stand-in: showing both put a
+          // made-up icon next to the real one and taught the wrong shape.
+          // Camouflage and In smoke keep the badge, and should — they are
+          // States (2.5.4), not tokens, and there is no printed piece to show.
+          // A token red on both faces shows only its red face (ruling I9).
+          const print = (TOKEN_PRINT[d.id] ?? []).filter((n) => d.decay !== 'red' || n.endsWith('-red'));
+          return `<article class="card tok-card">
+            <div class="card-title">
+              <span class="tok-art">${
+                print.length
+                  ? print.map((n) => `<img class="tok-print" src="${tokenPrintUrl(n)}" alt="">`).join('')
+                  : tokenSvg(d) + (d.decay === 'yellow' ? tokenSvg(d, true) : '')
+              }</span>
+              ${esc(d.label)}
+              ${
+                // THE SHAPE AND COLOUR CHIPS ARE GONE. Beside the printed
+                // token they were labelling what the picture already shows,
+                // and doing it worse: "square" and "Yellow" next to a
+                // photograph of a square yellow Fragile token is noise that
+                // reads as extra rules.
+                //
+                // `state` STAYS, because it is the one shape value that is
+                // not a shape: Camouflage and In smoke are States (2.5.4)
+                // with no printed piece at all, so the chip is the only thing
+                // saying which kind of thing this is.
+                //
+                // Nothing is lost with the other two: the body below still
+                // carries SHAPE_NOTE and the duration in prose, where they
+                // read as the rules they are.
+                d.shape === 'state' ? `<span class="tag mono">${esc(d.shape)}</span>` : ''
+              }
+            </div>
+            <div class="card-body">
+              <p>${linkKeywords(d.note)}</p>
+              <p class="ref-note">${esc(SHAPE_NOTE[d.shape])}${dur ? ` ${esc(dur.text)}` : ''}</p>
+            </div>
+          </article>`;
+        })
+        .join('')
+    : '';
+
+  const mechanicHtml = filtered.length
+    ? `<p class="ref-count">${filtered.length} mechanic${filtered.length === 1 ? '' : 's'}</p>` +
+      filtered
+        .map(
+          // With a basic view, the sources move behind Advanced with the full
+          // text, so the foot chip is only for entries still drawn whole.
+          (m) => `<article class="card">
+            <div class="card-title">${esc(m.name)}</div>
+            <div class="card-body">${mechanicBody(m, q)}</div>
+            ${m.ref && !m.basic ? `<div class="card-foot"><span class="tag mono">${esc(m.ref)}</span></div>` : ''}
+          </article>`,
+        )
+        .join('')
+    : '';
+
+  // The publisher's own quick-reference cards. They answer the questions a
+  // new player asks first - what happens this phase, what may this Mech do -
+  // so they sit at the front of the Rules tab rather than at the bottom.
+  const helpList = HELP_CARDS.filter(
+    (h) => !q || h.name.toLowerCase().includes(q) || h.note.toLowerCase().includes(q),
+  );
+  const helpHtml = helpList.length
+    ? `<p class="ref-count">Quick reference cards</p>` +
+      `<div class="help-grid">${helpList
+        .map(
+          // No loading="lazy": on this page it stopped the fetch starting at
+          // all (complete false, naturalWidth 0, and a zero-height box) even
+          // with the figure in view. Four images that are the point of the
+          // section do not want deferring anyway. width/height are the real
+          // pixel size, so the grid reserves the box before the bytes land.
+          (h) => `<figure class="help-card">
+            <a href="${helpCardUrl(h.id)}" target="_blank" rel="noopener noreferrer"
+               title="Open ${esc(h.name)} full size">
+              <img src="${helpCardUrl(h.id)}" alt="${esc(h.name)}" width="700" height="954" decoding="async">
+            </a>
+          </figure>`,
+        )
+        .join('')}</div>`
+    : '';
+
+  // The Season Rules (OTTO, 2026-09-30): the publisher's trial rules, kept
+  // apart from everything above as their own section, opening on the banner
+  // that says they are optional. A search that finds one shows the banner too.
+  const season = currentSeason();
+  const seasonList = season ? found(season.rules, q, matchSeason, nmSeason) : [];
+  const seasonHtml = season && seasonList.length
+    ? `<p class="ref-count season-count">Season Rules</p>` + seasonAbout(season) + seasonList.map((r) => seasonCard(r, season)).join('')
+    : '';
+
+  const sections = [
+    { id: 'cards', label: 'Cards', n: helpList.length, html: helpHtml },
+    { id: 'phases', label: 'Phases', n: phases.length, html: phaseHtml },
+    { id: 'timings', label: 'Timings', n: timings.length, html: timingHtml },
+    { id: 'stances', label: 'Stances', n: stances.length, html: stanceHtml },
+    { id: 'dice', label: 'Dice', n: dice.length + matchedRules.length, html: diceHtml },
+    { id: 'tokens', label: 'Tokens', n: tokenList.length, html: tokenHtml },
+    { id: 'mechanics', label: 'Mechanics', n: filtered.length, html: mechanicHtml },
+    { id: 'season', label: 'Season', n: seasonList.length, html: seasonHtml },
+  ];
+  return sections.map((x) => ({ ...x, tiles: tilesOf(x.html) }));
+}
+
+// The tab as it is drawn: the filter row, the master changelog's way in
+// (`entries`), and the chosen section or all of them.
+export function rulesTab(q: string, section?: string, opts: { entries?: boolean } = {}): string {
+  const sections = rulesSections(q);
+  const total = sections.reduce((sum, x) => sum + x.n, 0);
+  const chosen = sections.find((x) => x.id === section && x.n);
+  // The Season chip wears the Season's blue, so it never reads as one more
+  // part of the main rules, and stands first after All, as in the master
+  // changelog (OTTO, 2026-09-30); its section still comes last on the page.
+  const chips = [...sections.filter((x) => x.id === 'season'), ...sections.filter((x) => x.id !== 'season')];
+  const bar = `<div class="ref-facets ref-facets-faction">
+    <button class="ref-facet${chosen ? '' : ' active'}" data-rules="">All <span class="fc-n">${total}</span></button>
+    ${chips
+      .map(
+        (x) =>
+          `<button class="ref-facet${chosen?.id === x.id ? ' active' : ''}${x.id === 'season' ? ' season' : ''}${x.n ? '' : ' empty'}" data-rules="${x.id}"${
+            x.n ? '' : ' disabled'
+          }>${esc(x.label)} <span class="fc-n">${x.n}</span></button>`,
+      )
+      .join('')}
+  </div>`;
+
+  // The master changelog's way in, above the quick reference cards (OTTO,
+  // 2026-09-30): on the whole tab and on Cards, and not while a search is
+  // narrowing the tab to what it matched. The Season Rules' bar sits under it.
+  const clEntry = opts.entries !== false && !q && (!chosen || chosen.id === 'cards') ? changelogEntry() + seasonEntry() : '';
+  return total
+    ? bar + clEntry + (chosen ? chosen.html : sections.map((x) => x.html).join(''))
+    : bar + '<p class="ref-count">No matches</p>';
+}
+
+// ---------- the sheets both pages open ----------
+//
+// By kind, for the Reference's detail sheet and the pad's alike (OTTO,
+// 2026-09-30): a card, a keyword, the master changelog of a revision, a Rules
+// entry, a Season Rule. A page with sheets of its own (the Reference's boxes,
+// factions and comparisons) answers those first.
+export function sheetHtml(kind: string, key: string): string | null {
+  if (kind === 'card') {
+    const c = data.byId.get(key);
+    return c ? cardDetail(c) : null;
+  }
+  if (kind === 'changelog') return changelogIndex(key);
+  if (kind === 'rule') return ruleDetail(key);
+  if (kind === 'season') return seasonDetail(key);
+  if (kind === 'keyword') return keywordDetail(key);
+  return null;
+}
+
+// What the Back button names it by.
+export function sheetLabel(kind: string, key: string): string {
+  if (kind === 'card') return cardName(data.byId.get(key));
+  if (kind === 'changelog') {
+    const label = data.changelog?.versions?.find((x) => x.id === key)?.label ?? key;
+    return `What changed in ${label}`;
+  }
+  if (kind === 'rule') return data.mechanics.find((m) => m.id === key)?.name ?? key;
+  if (kind === 'season') {
+    const name = data.seasons.flatMap((s) => s.rules).find((r) => r.id === key)?.name ?? key;
+    return `${name} (Season Rule)`;
+  }
+  const def = data.keyword(key);
+  return def?.en?.name?.replace(/^[•·\s]+/, '') || key;
 }

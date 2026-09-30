@@ -131,25 +131,29 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
    they happened to fall, with a short second line. Five even columns instead:
    two tidy rows, and every label in a slot it never leaves, which is what turns
    a tab into muscle memory. */
-#ref-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
+/* `.ref-tabs` is the same strip for another page's own tabs: the pad's Find
+   wears it, so a change here reaches both (OTTO, 2026-09-30). */
+/* Every row the height of the tallest, so a label that wraps (the pad's "On
+   the table") does not leave its row taller than the next. */
+#ref-tabs, .ref-tabs { display: grid; grid-template-columns: repeat(5, 1fr); grid-auto-rows: 1fr; gap: 6px; margin-top: 10px; }
 /* The pad's chips: 34px, the group radius, and the open tab filled SOLID
    amber, the one pick-one row on the page (ui.css rule 2's kept exception;
    the style guide named these buttons the next candidate). */
-#ref-tabs button {
+#ref-tabs button, .ref-tabs button {
   flex: 0 0 auto; background: var(--surface2); color: var(--text2); border: none;
   border-radius: var(--radius); min-height: 34px; padding: 0 14px; font-size: 12.5px; font-weight: 600;
   font-family: var(--font); cursor: pointer; transition: background 0.12s, color 0.12s;
 }
-#ref-tabs button:hover { background: var(--surface3); color: var(--text); }
-#ref-tabs button.active { background: var(--accent); color: var(--on-accent); }
+#ref-tabs button:hover, .ref-tabs button:hover { background: var(--surface3); color: var(--text); }
+#ref-tabs button.active, .ref-tabs button.active { background: var(--accent); color: var(--on-accent); }
 /* While a search is live every tab wears its match count, so the strip is a
    map of where the answer sits. A tab with nothing dims instead of vanishing:
    the row must not reflow under a moving finger. */
-#ref-tabs button .tab-n {
+#ref-tabs button .tab-n, .ref-tabs button .tab-n {
   font-family: var(--mono, ui-monospace, monospace); font-size: 10.5px;
   opacity: 0.75; margin-left: 5px; font-variant-numeric: tabular-nums;
 }
-#ref-tabs button.no-match { opacity: 0.45; }
+#ref-tabs button.no-match, .ref-tabs button.no-match { opacity: 0.45; }
 
 /* ---------- the everywhere view: one search, grouped across the tabs ----------
    Result ROWS, the way a forum or a data table lists hits: one per line, name
@@ -869,7 +873,7 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 .die-rulelist b { color: var(--text); }
 
 @media (max-width: 719px) {
-  #ref-tabs button {
+  #ref-tabs button, .ref-tabs button {
     position: relative; padding: 8px 4px; font-size: 11.5px;
     display: flex; align-items: center; justify-content: center; text-align: center;
     min-width: 0;
@@ -877,7 +881,7 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
   /* The search count moves OUT of the line and into the corner. Inline it took
      10px of a 61px column, which is what pushed "Battlefield" over the edge on
      a small phone -- and the label is the thing the column exists for. */
-  #ref-tabs button .tab-n {
+  #ref-tabs button .tab-n, .ref-tabs button .tab-n {
     position: absolute; top: 1px; right: 4px; margin-left: 0;
     font-size: 9px; line-height: 1; opacity: 0.9;
   }
@@ -903,14 +907,14 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
    share of the strip, so the type steps down rather than the grid breaking into
    an uneven third row. */
 @media (max-width: 359px) {
-  #ref-tabs { gap: 5px; }
-  #ref-tabs button { font-size: 10px; padding: 8px 3px; }
+  #ref-tabs, .ref-tabs { gap: 5px; }
+  #ref-tabs button, .ref-tabs button { font-size: 10px; padding: 8px 3px; }
 }
 
 @media (min-width: 720px) {
   /* Ten tabs fit one line in the 1136px column, so the grid is a phone shape
      only -- five columns on a desktop would stack them for no reason. */
-  #ref-tabs { display: flex; flex-wrap: wrap; }
+  #ref-tabs, .ref-tabs { display: flex; flex-wrap: wrap; }
   #ref-head { padding: 14px max(22px, calc((100% - 1136px) / 2)) 12px; }
   .ref-facets {
     flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none;
@@ -1043,12 +1047,16 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
    thing sitting on top of it. That makes each card narrower than a card in the
    3-column grid, which is fine: they are read by opening them full size, and
    the row is a contact sheet. */
+/* On a phone the tab is one column and each tile keeps its own 10px under it;
+   the grid kept none, so the cards sat on the next section's heading (OTTO,
+   2026-09-30). The desktop grid's gap spaces it there instead. */
 .help-grid {
   display: grid; gap: 12px; grid-column: 1 / -1;
   grid-template-columns: repeat(2, 1fr);
+  margin-bottom: 10px;
 }
 @media (min-width: 720px) {
-  .help-grid { grid-template-columns: repeat(4, 1fr); }
+  .help-grid { grid-template-columns: repeat(4, 1fr); margin-bottom: 0; }
 }
 .help-card { margin: 0; }
 .help-card a { display: block; }

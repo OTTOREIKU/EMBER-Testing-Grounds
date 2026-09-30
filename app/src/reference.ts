@@ -11,10 +11,11 @@ import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
 import { iconSvg } from './dice';
 import { linkIcon } from './icons';
-import { cardDetail, cardRow, changelogEntry, changelogIndex, currentSeason, esc, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, mechanicBody, mechBlocks, ruleDetail, seasonAbout, seasonCard, seasonDetail, seasonEntry, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
+import { cardRow, currentSeason, dieEntries, esc, fillPortraits, keywordCard, kwLabel, linkKeywords, matchDie, mechBlocks, rulesTab, sheetHtml, sheetLabel, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
 import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSeason, matchSecondary, matchStance, matchStatus, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSeason, nmSecondary, nmStatus, norm, rank } from './refsearch';
 import { installDiagnostics } from './diagnostics';
 import { boxPicker, compareGrid, exclusiveToggle, isExclusiveTo, sharedCount } from './boxcompare';
+import { applyChangelogFilter, decorateSheetHead, holdDetailHeight, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, showDetailTab, type SheetNav } from './refsheet';
 import type { ReportCategory } from './report';
 import { openReferenceReport } from './reportui';
 // FIRST, before anything else in this module runs. A net that is installed
@@ -340,71 +341,7 @@ const nmMap = (m: TerrainMap) => m.name.en || m.id;
 const nmEnv = (e: EnvironmentCard) => e.name;
 const nmFaction = (f: (typeof data.factions)[number]) => f.name;
 const nmBox = (b: (typeof data.boxes)[number]) => b.name.en || b.name.zh || b.key;
-const nmDie = (d: DieEntry) => `${d.colour} die`;
 
-// ---------- the dice (rulebook 2.4, and the offset rules with them) ----------
-//
-// The board has fetched dice.json since it was built; the REFERENCE never had
-// it, so five dice, 38 faces and the three offset rules were modelled in data
-// and shown nowhere - on the page whose whole job is making the game's
-// information findable.
-//
-// Drawn with the app's own glyphs rather than photographs of the dice. The
-// symbols are already flat SVG on currentColor, so a face costs nothing to
-// render and reads at any size; the die's own colour carries which die it is.
-
-interface DieEntry {
-  colour: string;
-  sides: number;
-  color: string;
-  role: string;
-  faces: { type: string; hollow?: boolean; part?: string }[][];
-}
-
-// White and yellow dice print their symbols DARK; the others print them light.
-const DARK_FACE = new Set(['white', 'yellow']);
-
-const SYMBOL_NAME: Record<string, string> = {
-  heavyHit: 'Heavy Hit', lightHit: 'Light Hit', defense: 'Defense',
-  dodge: 'Dodge', lightning: 'Lightning', eye: 'Eye', part: 'Part',
-};
-
-// The black die names its Parts in the data the way the code spells them, which
-// is not how a player reads them: `leftArm` is a field name, "Left Arm" is a
-// Part. Searching for either finds the die, because the raw key stays in the
-// haystack matchDie builds.
-const PART_NAME: Record<string, string> = {
-  torso: 'Torso', chassis: 'Chassis', leftArm: 'Left Arm',
-  rightArm: 'Right Arm', backpack: 'Backpack', any: 'Any Part',
-};
-
-function dieEntries(): DieEntry[] {
-  const d = data.dice;
-  if (!d) return [];
-  return Object.entries(d.dice).map(([colour, spec]) => ({ colour, ...spec }));
-}
-
-// What a face is called, so a search for "hollow heavy hit" or "blank" lands.
-function faceLabel(icons: DieEntry['faces'][number]): string {
-  if (!icons.length) return 'Blank';
-  const bits = icons.map((i) => {
-    const name = i.part ? PART_NAME[i.part] ?? `${i.part} Part` : SYMBOL_NAME[i.type] ?? i.type;
-    return i.hollow ? `hollow ${name}` : name;
-  });
-  // "double Light Hit" rather than "Light Hit x2": these labels are counted in
-  // the tally below, and "2 Light Hit x2" reads as an arithmetic mistake.
-  return bits.length === 2 && bits[0] === bits[1] ? `double ${bits[0]}` : bits.join(' + ');
-}
-
-// A tally of the whole die: "4 Heavy Hit - 2 hollow Heavy Hit - 1 Lightning".
-function dieTally(die: DieEntry): string {
-  const seen = new Map<string, number>();
-  for (const f of die.faces) {
-    const k = faceLabel(f);
-    seen.set(k, (seen.get(k) ?? 0) + 1);
-  }
-  return [...seen].map(([k, n]) => `${n} ${k}`).join(' · ');
-}
 
 // ---------- one predicate per pool, shared by the tab lists AND the badges ----------
 //
@@ -421,13 +358,6 @@ const matchBox = (b: (typeof data.boxes)[number], q: string): boolean => {
   const contents = boxContents(b.key).map((i) => cardName(i.card)).join(' ');
   return norm(`${b.name.en ?? ''} ${b.name.zh ?? ''} ${b.key} ${contents}`).includes(q);
 };
-// Everything a reader might type at a die: its colour, what it is for, and
-// every symbol on it including the hollow ones. "dice" is in the haystack by
-// name because it is the word a player actually types, and the singular in
-// the entry's own label did not contain it - the Dice facet read 0 for "dice".
-const matchDie = (die: DieEntry, q: string): boolean =>
-  !q || norm(`${die.colour} die dice ${die.role} ${die.faces.map(faceLabel).join(' ')} ${
-    die.faces.flat().map((i) => `${i.part ?? ''} ${i.type}`).join(' ')}`).includes(q);
 
 const wantFor = (t: Tab): ((c: Card) => boolean) =>
   t === 'parts'
@@ -821,294 +751,9 @@ function render(): void {
   }
 
   if (tab === 'rules') {
-    const p = data.play;
-    const phases = found(p.phases, q, matchPhase, nmPlay);
-    const timings = found(p.timings, q, matchTiming, nmPlay);
-    const stances = found(p.stances, q, matchStance, nmPlay);
-    const filtered = found(data.mechanics, q, matchMechanic, nmMechanic);
-
-    const phaseHtml = phases.length
-      ? `<p class="ref-count">Round phases</p>` +
-        phases
-          .map(
-            (x) => `<article class="card">
-              <div class="card-title"><span class="play-num">${x.order}</span>${esc(x.name)}</div>
-              ${x.who ? `<div class="ref-note">${esc(x.who)}</div>` : ''}
-              <div class="card-body">
-                <p class="play-can"><b>You can</b></p><ul>${x.can.map((l) => `<li>${linkKeywords(l)}</li>`).join('')}</ul>
-                <p class="play-cant"><b>You cannot</b></p><ul>${x.cannot.map((l) => `<li>${linkKeywords(l)}</li>`).join('')}</ul>
-              </div>
-              ${x.ref ? `<div class="card-foot"><span class="tag mono">${esc(x.ref)}</span></div>` : ''}
-            </article>`,
-          )
-          .join('')
-      : '';
-
-    const timingStrip =
-      q || p.timings.length < 2
-        ? ''
-        : `<div class="tm-strip">${p.timings
-            .map((x) => {
-              const icon = actionIconUrl(TIMINGS.find((t) => t.id === x.id)?.pilotKey);
-              return `<span class="tm-step" style="--t-tint: var(--t-${esc(x.id)})">
-                ${icon ? `<img src="${icon}" alt="">` : ''}<b>${x.order}</b><span>${esc(x.name)}</span>
-              </span>`;
-            })
-            .join('<i class="tm-arrow">▸</i>')}</div>`;
-
-    const timingHtml = timings.length
-      ? `<p class="ref-count">Action timings, in the order they resolve</p>` +
-        timingStrip +
-        timings
-          .map((x) => {
-            const def = TIMINGS.find((t) => t.id === x.id);
-            const icon = actionIconUrl(def?.pilotKey);
-            return `<article class="card tm-card" style="--t-tint: var(--t-${esc(x.id)})">
-              <div class="card-title">
-                ${icon ? `<img class="tm-icon" src="${icon}" alt="">` : ''}
-                <span class="play-num tm-num">${x.order}</span><span class="tm-name">${esc(x.name)}</span> Timing
-              </div>
-              <div class="card-body">${linkKeywords(x.text)}</div>
-            </article>`;
-          })
-          .join('') +
-        (p.timingNotes && !q
-          ? `<article class="card"><div class="card-title">How timings work</div>
-              <div class="card-body"><ul>${p.timingNotes.lines.map((l) => `<li>${linkKeywords(l)}</li>`).join('')}</ul></div>
-              ${p.timingNotes.ref ? `<div class="card-foot"><span class="tag mono">${esc(p.timingNotes.ref)}</span></div>` : ''}
-            </article>`
-          : '')
-      : '';
-
-    const stanceHtml = stances.length
-      ? `<p class="ref-count">Stances</p>` +
-        stances
-          .map(
-            (x) => `<article class="card">
-              <div class="card-title">${esc(x.name)} <span class="tag mono">${esc(x.short)}</span></div>
-              <div class="card-body">
-                <p>${linkKeywords(x.effect)}</p>
-                <p class="play-can"><b>Use it when</b> ${linkKeywords(x.good)}</p>
-                <p class="play-cant"><b>Trade-off</b> ${linkKeywords(x.cost)}</p>
-              </div>
-              ${x.ref ? `<div class="card-foot"><span class="tag mono">${esc(x.ref)}</span></div>` : ''}
-            </article>`,
-          )
-          .join('') +
-        (p.stanceNotes && !q
-          ? `<article class="card"><div class="card-title">Choosing a stance</div>
-              <div class="card-body"><ul>${p.stanceNotes.lines.map((l) => `<li>${linkKeywords(l)}</li>`).join('')}</ul></div>
-              ${p.stanceNotes.ref ? `<div class="card-foot"><span class="tag mono">${esc(p.stanceNotes.ref)}</span></div>` : ''}
-            </article>`
-          : '')
-      : '';
-
-    const DURATION: Record<string, { label: string; text: string }> = {
-      green: { label: 'Green', text: 'Stays in effect until an Action or effect removes it.' },
-      yellow: {
-        label: 'Yellow',
-        text: 'Flipped to its red reverse at the end of the round, then removed at the end of the next one, so it lasts the rest of the round it arrives in and all of the next.',
-      },
-      red: { label: 'Red', text: 'Red on both faces, so it is removed at the end of the round it arrives in.' },
-    };
-    const tokenSvg = (def: StatusDef, red = false): string => {
-      const tint = red ? '#e05c5c' : def.tint;
-      const w = def.shape === 'triangle' ? 40 : def.shape === 'hexagon' ? 42 : 34;
-      const body =
-        def.shape === 'hexagon'
-          ? `<polygon points="6,13 12,3 ${w - 12},3 ${w - 6},13 ${w - 12},23 12,23" fill="${tint}" stroke="#0f1216"/>`
-          : def.shape === 'triangle'
-            ? `<polygon points="${w / 2},2 ${w - 3},24 3,24" fill="${tint}" stroke="#0f1216"/>`
-            : def.shape === 'round'
-              ? `<rect x="3" y="4" width="${w - 6}" height="18" rx="9" fill="${tint}" stroke="#0f1216"/>`
-              : def.shape === 'state'
-                ? `<rect x="3" y="4" width="${w - 6}" height="18" rx="3" fill="${tint}" stroke="#0f1216" stroke-dasharray="3 2"/>`
-                : `<rect x="3" y="4" width="${w - 6}" height="18" rx="2" fill="${tint}" stroke="#0f1216"/>`;
-      return `<svg class="tok-badge" viewBox="0 0 ${w} 26" width="${w}" height="26" aria-hidden="true">${body}
-        <text x="${w / 2}" y="17" text-anchor="middle" font-size="9" font-weight="700" fill="#0f1216">${esc(def.icon)}</text></svg>`;
-    };
-    // ---------- the dice ----------
-    const dice = found(dieEntries(), q, matchDie, nmDie);
-    const rules = data.dice?.offsetRules ?? {};
-    // The offset rules are searchable in their OWN right, not only as a footer
-    // under a die that happened to match: "penetration" is exactly what a reader
-    // types, and it appears in no die's face list, so before this it found
-    // nothing at all.
-    const matchedRules = Object.entries(rules).filter(
-      ([k, v]) => !q || norm(`${k} ${v}`).includes(q),
-    );
-    // The offset rules ride WITH the dice rather than sitting in Mechanics:
-    // they are the answer to "I rolled this, now what", and a reader looking at
-    // a Defense icon is one scroll from the sentence that says what it offsets.
-    // So they are shown whenever any die is shown, whether or not the query
-    // touched them - a search for "dice" showed the five dice and no rules,
-    // because none of the three sentences contains that word. A query that
-    // matches a rule and no die still shows the rule on its own. Only the
-    // MATCHED rules count towards the facet, because tabCounts counts them that
-    // way and the badge and the tab have to agree.
-    const shownRules = matchedRules.length ? matchedRules : dice.length ? Object.entries(rules) : [];
-    const offsetHtml = shownRules.length
-      ? `<article class="card die-rules">
-          <div class="card-title">Offsetting, and what a Hit still counts as</div>
-          <div class="card-body"><ul class="die-rulelist">${shownRules
-            .map(([k, v]) => `<li><b>${esc(k[0].toUpperCase() + k.slice(1))}</b> ${linkKeywords(v)}</li>`)
-            .join('')}</ul></div>
-        </article>`
-      : '';
-    const diceHtml = dice.length || shownRules.length
-      ? (dice.length ? `<p class="ref-count">${dice.length} ${dice.length === 1 ? 'die' : 'dice'}</p>` : '')
-        + dice.map((die) => {
-          const dark = DARK_FACE.has(die.colour);
-          const faces = die.faces
-            .map((icons) => `<span class="die-face${dark ? ' on-light' : ''}" style="background:${esc(die.color)}"
-                title="${esc(faceLabel(icons))}">${
-              icons.length ? icons.map((i) => iconSvg(i, 17)).join('') : '<i class="die-blank"></i>'
-            }</span>`)
-            .join('');
-          return `<article class="card die-card">
-            <div class="card-title"><span class="die-dot" style="background:${esc(die.color)}"></span>
-              ${esc(die.colour[0].toUpperCase() + die.colour.slice(1))} die
-              <span class="die-sides">d${die.sides}</span></div>
-            <div class="card-body">${esc(die.role)}</div>
-            <div class="die-faces">${faces}</div>
-            <div class="die-tally">${esc(dieTally(die))}</div>
-          </article>`;
-        }).join('')
-        + offsetHtml
-      : '';
-
-    const tokenList = found(STATUSES, q, matchStatus, nmStatus);
-    const tokenHtml = tokenList.length
-      ? `<p class="ref-count">Tokens and states</p>` +
-        tokenList
-          .map((d) => {
-            const dur = d.decay ? DURATION[d.decay] : null;
-            // The printed token, when we have it. The drawn badge below is our
-            // own shorthand and was only ever a stand-in: showing both put a
-            // made-up icon next to the real one and taught the wrong shape.
-            // Camouflage and In smoke keep the badge, and should — they are
-            // States (2.5.4), not tokens, and there is no printed piece to show.
-            // A token red on both faces shows only its red face (ruling I9).
-            const print = (TOKEN_PRINT[d.id] ?? []).filter((n) => d.decay !== 'red' || n.endsWith('-red'));
-            return `<article class="card tok-card">
-              <div class="card-title">
-                <span class="tok-art">${
-                  print.length
-                    ? print.map((n) => `<img class="tok-print" src="${tokenPrintUrl(n)}" alt="">`).join('')
-                    : tokenSvg(d) + (d.decay === 'yellow' ? tokenSvg(d, true) : '')
-                }</span>
-                ${esc(d.label)}
-                ${
-                  // THE SHAPE AND COLOUR CHIPS ARE GONE. Beside the printed
-                  // token they were labelling what the picture already shows,
-                  // and doing it worse: "square" and "Yellow" next to a
-                  // photograph of a square yellow Fragile token is noise that
-                  // reads as extra rules.
-                  //
-                  // `state` STAYS, because it is the one shape value that is
-                  // not a shape: Camouflage and In smoke are States (2.5.4)
-                  // with no printed piece at all, so the chip is the only thing
-                  // saying which kind of thing this is.
-                  //
-                  // Nothing is lost with the other two: the body below still
-                  // carries SHAPE_NOTE and the duration in prose, where they
-                  // read as the rules they are.
-                  d.shape === 'state' ? `<span class="tag mono">${esc(d.shape)}</span>` : ''
-                }
-              </div>
-              <div class="card-body">
-                <p>${linkKeywords(d.note)}</p>
-                <p class="ref-note">${esc(SHAPE_NOTE[d.shape])}${dur ? ` ${esc(dur.text)}` : ''}</p>
-              </div>
-            </article>`;
-          })
-          .join('')
-      : '';
-
-    const mechanicHtml = filtered.length
-      ? `<p class="ref-count">${filtered.length} mechanic${filtered.length === 1 ? '' : 's'}</p>` +
-        filtered
-          .map(
-            // With a basic view, the sources move behind Advanced with the full
-            // text, so the foot chip is only for entries still drawn whole.
-            (m) => `<article class="card">
-              <div class="card-title">${esc(m.name)}</div>
-              <div class="card-body">${mechanicBody(m, q)}</div>
-              ${m.ref && !m.basic ? `<div class="card-foot"><span class="tag mono">${esc(m.ref)}</span></div>` : ''}
-            </article>`,
-          )
-          .join('')
-      : '';
-
-    // The publisher's own quick-reference cards. They answer the questions a
-    // new player asks first - what happens this phase, what may this Mech do -
-    // so they sit at the front of the Rules tab rather than at the bottom.
-    const helpList = HELP_CARDS.filter(
-      (h) => !q || h.name.toLowerCase().includes(q) || h.note.toLowerCase().includes(q),
-    );
-    const helpHtml = helpList.length
-      ? `<p class="ref-count">Quick reference cards</p>` +
-        `<div class="help-grid">${helpList
-          .map(
-            // No loading="lazy": on this page it stopped the fetch starting at
-            // all (complete false, naturalWidth 0, and a zero-height box) even
-            // with the figure in view. Four images that are the point of the
-            // section do not want deferring anyway. width/height are the real
-            // pixel size, so the grid reserves the box before the bytes land.
-            (h) => `<figure class="help-card">
-              <a href="${helpCardUrl(h.id)}" target="_blank" rel="noopener noreferrer"
-                 title="Open ${esc(h.name)} full size">
-                <img src="${helpCardUrl(h.id)}" alt="${esc(h.name)}" width="700" height="954" decoding="async">
-              </a>
-            </figure>`,
-          )
-          .join('')}</div>`
-      : '';
-
-    // The Season Rules (OTTO, 2026-09-30): the publisher's trial rules, kept
-    // apart from everything above as their own section, opening on the banner
-    // that says they are optional. A search that finds one shows the banner too.
-    const season = currentSeason();
-    const seasonList = season ? found(season.rules, q, matchSeason, nmSeason) : [];
-    const seasonHtml = season && seasonList.length
-      ? `<p class="ref-count season-count">Season Rules</p>` + seasonAbout(season) + seasonList.map((r) => seasonCard(r, season)).join('')
-      : '';
-
-    const sections = [
-      { id: 'cards', label: 'Cards', n: helpList.length, html: helpHtml },
-      { id: 'phases', label: 'Phases', n: phases.length, html: phaseHtml },
-      { id: 'timings', label: 'Timings', n: timings.length, html: timingHtml },
-      { id: 'stances', label: 'Stances', n: stances.length, html: stanceHtml },
-      { id: 'dice', label: 'Dice', n: dice.length + matchedRules.length, html: diceHtml },
-      { id: 'tokens', label: 'Tokens', n: tokenList.length, html: tokenHtml },
-      { id: 'mechanics', label: 'Mechanics', n: filtered.length, html: mechanicHtml },
-      { id: 'season', label: 'Season', n: seasonList.length, html: seasonHtml },
-    ];
-    const total = sections.reduce((sum, x) => sum + x.n, 0);
-    const chosen = sections.find((x) => x.id === rulesSection && x.n);
-    // The Season chip wears the Season's blue, so it never reads as one more
-    // part of the main rules, and stands first after All, as in the master
-    // changelog (OTTO, 2026-09-30); its section still comes last on the page.
-    const chips = [...sections.filter((x) => x.id === 'season'), ...sections.filter((x) => x.id !== 'season')];
-    const bar = `<div class="ref-facets ref-facets-faction">
-      <button class="ref-facet${chosen ? '' : ' active'}" data-rules="">All <span class="fc-n">${total}</span></button>
-      ${chips
-        .map(
-          (x) =>
-            `<button class="ref-facet${chosen?.id === x.id ? ' active' : ''}${x.id === 'season' ? ' season' : ''}${x.n ? '' : ' empty'}" data-rules="${x.id}"${
-              x.n ? '' : ' disabled'
-            }>${esc(x.label)} <span class="fc-n">${x.n}</span></button>`,
-        )
-        .join('')}
-    </div>`;
-
-    // The master changelog's way in, above the quick reference cards (OTTO,
-    // 2026-09-30): on the whole tab and on Cards, and not while a search is
-    // narrowing the tab to what it matched. The Season Rules' bar sits under it.
-    const clEntry = !q && (!chosen || chosen.id === 'cards') ? changelogEntry() + seasonEntry() : '';
-    el.innerHTML = total
-      ? bar + clEntry + (chosen ? chosen.html : sections.map((x) => x.html).join(''))
-      : bar + '<p class="ref-count">No matches</p>';
+    // The tab is drawn by refcards.ts, the ONE copy the pad's Find shows too
+    // (OTTO, 2026-09-30); this page keeps which filter is chosen and the row.
+    el.innerHTML = rulesTab(q, rulesSection);
     // On a screen too narrow for every chip the row scrolls sideways, and a
     // chosen chip past its edge (Season, the last) left the reader unable to
     // see what the tab was narrowed to. The row alone scrolls, never the page.
@@ -1264,18 +909,12 @@ let navStack: DetailView[] = [];
 const sheet = () => document.getElementById('ref-detail')!;
 const sheetScroller = () => sheet().querySelector('.ref-detail-inner') as HTMLElement;
 
+// This page's own sheets first; the ones the pad opens too come from refcards.ts.
 function viewHtml(v: DetailView): string | null {
-  if (v.kind === 'card') {
-    const c = data.byId.get(v.key);
-    return c ? cardDetail(c) : null;
-  }
   if (v.kind === 'box') return boxDetail(v.key);
   if (v.kind === 'faction') return factionDetail(v.key);
   if (v.kind === 'compare') return compareDetail(v.key);
-  if (v.kind === 'changelog') return changelogIndex(v.key);
-  if (v.kind === 'rule') return ruleDetail(v.key);
-  if (v.kind === 'season') return seasonDetail(v.key);
-  return keywordDetail(v.key);
+  return sheetHtml(v.kind, v.key);
 }
 
 // Redraws whatever sheet is open, in place: the exclusive tick and the compare
@@ -1329,24 +968,13 @@ const TAB_CATEGORY: Record<string, ReportCategory> = {
 };
 
 function viewLabel(v: DetailView): string {
-  if (v.kind === 'card') return cardName(data.byId.get(v.key));
   if (v.kind === 'box') {
     const b = data.boxes.find((x) => x.key === v.key);
     return b ? b.name.en || b.name.zh || b.key : v.key;
   }
   if (v.kind === 'faction') return data.factions.find((x) => x.key === v.key)?.name ?? v.key;
   if (v.kind === 'compare') return 'Compare boxes';
-  if (v.kind === 'changelog') {
-    const label = data.changelog?.versions?.find((x) => x.id === v.key)?.label ?? v.key;
-    return `What changed in ${label}`;
-  }
-  if (v.kind === 'rule') return data.mechanics.find((m) => m.id === v.key)?.name ?? v.key;
-  if (v.kind === 'season') {
-    const name = data.seasons.flatMap((s) => s.rules).find((r) => r.id === v.key)?.name ?? v.key;
-    return `${name} (Season Rule)`;
-  }
-  const def = data.keyword(v.key);
-  return def?.en?.name?.replace(/^[•·\s]+/, '') || v.key;
+  return sheetLabel(v.kind, v.key);
 }
 
 function navigateDetail(kind: DetailView['kind'], rawKey: string, opts: { log?: boolean } = {}): void {
@@ -1369,75 +997,8 @@ function navigateDetail(kind: DetailView['kind'], rawKey: string, opts: { log?: 
   if (v.log) revealLog();
 }
 
-// The master changelog's search and kind chips (Popup B of the design study),
-// applied in place to the rows the sheet drew: typing never redraws the sheet,
-// so the search keeps its focus, and Back from an item finds the list filtered
-// as it was left. A new revision, or the sheet opened afresh, starts clear.
-let clFilter: { kind: string; q: string } = { kind: 'all', q: '' };
 
-function applyChangelogFilter(root: HTMLElement): void {
-  const list = root.querySelector<HTMLElement>('.cl-list');
-  if (!list) return;
-  const input = root.querySelector<HTMLInputElement>('#cl-q');
-  if (input && input.value !== clFilter.q) input.value = clFilter.q;
-  root.querySelectorAll<HTMLElement>('[data-clkind]').forEach((b) => b.classList.toggle('active', b.dataset.clkind === clFilter.kind));
-  const q = norm(clFilter.q.trim());
-  let shown = 0;
-  list.querySelectorAll<HTMLElement>('li[data-clk]:not(.cl-note)').forEach((li) => {
-    const on = (clFilter.kind === 'all' || li.dataset.clk === clFilter.kind) && (!q || norm(li.dataset.cln ?? '').includes(q));
-    li.hidden = !on;
-    if (on) shown++;
-  });
-  // The Season Rules' note shows with their rows and not under a search, and is
-  // never counted as a match.
-  list.querySelectorAll<HTMLElement>('li.cl-note').forEach((li) => {
-    li.hidden = !!q || !(clFilter.kind === 'all' || li.dataset.clk === clFilter.kind);
-  });
-  const none = root.querySelector<HTMLElement>('.cl-none');
-  if (none) none.hidden = shown > 0;
-}
 
-// The master changelog's revision menu (refcards.ts changelogIndex), our own
-// list where a native select's was the system's: it opens under the revision's
-// pill, closes on a pick, on a click anywhere else and on Escape (which then
-// leaves the sheet open), and the arrow keys walk it.
-function versionMenu(): { btn: HTMLButtonElement; menu: HTMLElement } | null {
-  const root = document.getElementById('ref-detail-content');
-  const btn = root?.querySelector<HTMLButtonElement>('.cl-ver-btn');
-  const menu = root?.querySelector<HTMLElement>('.cl-ver-menu');
-  return btn && menu ? { btn, menu } : null;
-}
-
-function openVersionMenu(open: boolean): void {
-  const m = versionMenu();
-  if (!m) return;
-  m.menu.hidden = !open;
-  m.btn.setAttribute('aria-expanded', String(open));
-  if (open) m.menu.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
-}
-
-// Whether a menu was open to close; `focus` hands the focus back to its pill.
-function closeVersionMenu(focus = false): boolean {
-  const m = versionMenu();
-  if (!m || m.menu.hidden) return false;
-  openVersionMenu(false);
-  if (focus) m.btn.focus();
-  return true;
-}
-
-// A card or keyword opened from the master changelog shows its own Changelog,
-// open and scrolled to; a Rules entry's is already open, at the top of its
-// Advanced. Only on the way in: Back restores the scroll the reader left.
-function revealLog(): void {
-  const content = document.getElementById('ref-detail-content');
-  const log = content?.querySelector<HTMLDetailsElement>('details.ref-log, details.mech-adv');
-  if (!log) return;
-  log.open = true;
-  holdDetailHeight(content!);
-  const scroller = sheetScroller();
-  const top = log.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
-  scroller.scrollTop = Math.max(0, top - 56);
-}
 
 function backDetail(): void {
   if (navStack.length < 2) return closeDetail();
@@ -1448,60 +1009,19 @@ function backDetail(): void {
   paintDetail(html, prev.scroll ?? 0);
 }
 
-// Switching tabs is pure DOM and never a re-render: repainting would remount
-// the card image, restart its load and throw away the scroll position, for a
-// change that only decides which of three panels is visible.
-function showDetailTab(root: HTMLElement, which: string): void {
-  root.querySelectorAll<HTMLElement>('[data-dtab]').forEach((b) => {
-    const on = b.dataset.dtab === which;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-selected', String(on));
-  });
-  root.querySelectorAll<HTMLElement>('[data-dpanel]').forEach((p) => {
-    p.hidden = p.dataset.dpanel !== which;
-  });
-  holdDetailHeight(root);
-}
 
-// THE SHEET KEEPS ITS SIZE ACROSS TABS. The three panels are different lengths,
-// so switching threw the whole popup up and down the screen and moved the tab
-// strip out from under the pointer that had just used it.
-//
-// The floor is the TALLEST panel seen so far rather than the tallest possible:
-// measuring the hidden ones would mean unhiding, reading and rehiding all three
-// on every switch, which is three forced reflows for a number that only ever
-// grows. So it settles after the reader has visited the long tab once, and
-// never shrinks back within a card.
-function holdDetailHeight(root: HTMLElement): void {
-  const open = root.querySelector<HTMLElement>('[data-dpanel]:not([hidden])');
-  if (!open) return;
-  // Read the CONTENT height with the floor lifted, or every measurement after
-  // the first would just report the floor back to itself.
-  root.style.setProperty('--dpanel-h', 'auto');
-  const natural = open.scrollHeight;
-  // THE RAW MAX IS STORED, THE CAP IS APPLIED ON THE WAY OUT. Storing the
-  // capped value instead makes the floor ratchet DOWNWARD: each visit clamps
-  // the previous clamp, so the tallest panel's height is forgotten and the
-  // sheet ends up sized to whichever tab was seen last. That is the opposite of
-  // what the floor is for.
-  const raw = Math.max(natural, Number(root.dataset.panelMax ?? 0));
-  root.dataset.panelMax = String(raw);
-
-  // The cap is what stops the floor pushing the sheet past the window and
-  // putting a scrollbar on a card that would otherwise fit. Measured from
-  // `offsetTop` and the sheet's own max-height, both of which are independent
-  // of the floor being set, so this cannot chase itself the way a measurement
-  // off the live rect would.
-  const scroller = root.closest('.ref-detail-inner') as HTMLElement | null;
-  let cap = Infinity;
-  if (scroller) {
-    const cs = getComputedStyle(scroller);
-    const maxH = parseFloat(cs.maxHeight);
-    const padBottom = parseFloat(cs.paddingBottom) || 0;
-    if (Number.isFinite(maxH)) cap = Math.max(200, maxH - open.offsetTop - padBottom);
-  }
-  root.style.setProperty('--dpanel-h', `${Math.min(raw, cap)}px`);
-}
+// This page's navigation, as the shared router (refsheet.ts) drives it.
+const sheetNav: SheetNav = {
+  open: (kind, key, opts) => navigateDetail(kind, key, opts),
+  top: () => (sheet().hidden ? undefined : navStack[navStack.length - 1]),
+  retarget: (key) => {
+    const top = navStack[navStack.length - 1];
+    if (!top) return;
+    top.key = key;
+    const html = viewHtml(top);
+    if (html !== null) paintDetail(html, 0);
+  },
+};
 
 function paintDetail(html: string, scrollTop: number): void {
   const content = document.getElementById('ref-detail-content')!;
@@ -1514,15 +1034,7 @@ function paintDetail(html: string, scrollTop: number): void {
   content.innerHTML = html;
   const cover = content.querySelector('.box-cover');
   if (oldCover && cover && oldSrc && cover.querySelector('img')?.src === oldSrc) cover.replaceWith(oldCover);
-  // The sheet's head as the pad's unit header (STYLE-GUIDE, the Reference
-  // round): the meta line the renderers write under the name becomes the
-  // kicker above it, and our barcode, seeded by the name, goes under it.
-  const h2 = content.querySelector('h2');
-  if (h2) {
-    const meta = h2.nextElementSibling;
-    if (meta?.matches('p.ref-meta')) { meta.classList.replace('ref-meta', 'ref-kick'); h2.before(meta); }
-    h2.insertAdjacentHTML('afterend', barcodeSvg(h2.textContent ?? '', 'ref-code'));
-  }
+  decorateSheetHead(content);
   content.querySelectorAll<HTMLElement>('[data-img]').forEach((slot) => {
     // Two slots hold the same scan now: the thumbnail on the Card tab and the
     // full one on the Photo tab. They take different classes because
@@ -1646,94 +1158,8 @@ async function init(): Promise<void> {
 
   document.addEventListener('click', (ev) => {
     const t = ev.target as HTMLElement;
-    // The detail's own tabs, answered before anything else: they are buttons
-    // inside a panel full of keyword links, and they navigate nowhere.
-    const dtab = t.closest<HTMLElement>('[data-dtab]');
-    if (dtab) {
-      const root = document.getElementById('ref-detail-content');
-      if (root) showDetailTab(root, dtab.dataset.dtab!);
-      return;
-    }
-    // The master changelog's revision menu: the pill opens and closes it, a
-    // revision in it switches the list in place, its filter cleared and its
-    // scroll at the top, and any other click closes it on the way through.
-    const verBtn = t.closest<HTMLElement>('.cl-ver-btn');
-    if (verBtn) {
-      ev.preventDefault();
-      openVersionMenu(verBtn.getAttribute('aria-expanded') !== 'true');
-      return;
-    }
-    const verOpt = t.closest<HTMLElement>('[data-clver]');
-    if (verOpt) {
-      ev.preventDefault();
-      const top = navStack[navStack.length - 1];
-      if (top?.kind === 'changelog' && verOpt.dataset.clver !== top.key) {
-        clFilter = { kind: 'all', q: '' };
-        top.key = verOpt.dataset.clver!;
-        const html = viewHtml(top);
-        if (html !== null) paintDetail(html, 0);
-      } else openVersionMenu(false);
-      versionMenu()?.btn.focus();
-      return;
-    }
-    closeVersionMenu();
-    // The master changelog (OTTO, 2026-09-30): a revision chip, or the bar in
-    // the Rules tab, opens that revision's list, and on the open sheet switches
-    // it in place; a row opens its card, keyword or Rules entry with its own
-    // Changelog showing, Back returning to the list.
-    const clv = t.closest<HTMLElement>('[data-clv]');
-    if (clv) {
-      ev.preventDefault();
-      clFilter = { kind: 'all', q: '' };
-      navigateDetail('changelog', clv.dataset.clv!);
-      return;
-    }
-    const clkind = t.closest<HTMLElement>('[data-clkind]');
-    if (clkind) {
-      ev.preventDefault();
-      clFilter.kind = clkind.dataset.clkind!;
-      const root = document.getElementById('ref-detail-content');
-      if (root) applyChangelogFilter(root);
-      return;
-    }
-    const logItem = t.closest<HTMLElement>('[data-logcard], [data-logkw], [data-logrule], [data-logseason]');
-    if (logItem) {
-      ev.preventDefault();
-      const d = logItem.dataset;
-      if (d.logcard) navigateDetail('card', d.logcard, { log: true });
-      else if (d.logkw) navigateDetail('keyword', d.logkw, { log: true });
-      else if (d.logrule) navigateDetail('rule', d.logrule, { log: true });
-      else if (d.logseason) navigateDetail('season', d.logseason);
-      return;
-    }
-    // A Season Rule, from the callout on the Rules entry it changes or from a
-    // search; and from a Season Rule, the Rules entries it names.
-    const seasonLink = t.closest<HTMLElement>('[data-season]');
-    if (seasonLink) {
-      ev.preventDefault();
-      navigateDetail('season', seasonLink.dataset.season!);
-      return;
-    }
-    const ruleSheet = t.closest<HTMLElement>('[data-rulesheet]');
-    if (ruleSheet) {
-      ev.preventDefault();
-      navigateDetail('rule', ruleSheet.dataset.rulesheet!);
-      return;
-    }
-    const kw = t.closest<HTMLElement>('[data-kw]');
-    if (kw) {
-      ev.preventDefault();
-      navigateDetail('keyword', kw.dataset.kw!);
-      return;
-    }
-    // A card named in the text, answered before the tile it sits in: inside a
-    // keyword tile the tile took the click and opened the keyword instead.
-    const cardLink = t.closest<HTMLElement>('a.kw-link[data-card]');
-    if (cardLink) {
-      ev.preventDefault();
-      navigateDetail('card', cardLink.dataset.card!);
-      return;
-    }
+    // Every link both pages' sheets and tabs carry (refsheet.ts).
+    if (runSheetClick(ev, sheetNav)) return;
     // Also live in the everywhere view, which reuses the keyword cards.
     const kwItem = t.closest<HTMLElement>('[data-kwitem]');
     if (kwItem && (tab === 'keywords' || (allMode && norm(query.trim())))) {
@@ -1826,13 +1252,7 @@ async function init(): Promise<void> {
     }
   });
   // The master changelog's search, filtering in place as it is typed.
-  document.addEventListener('input', (ev) => {
-    const el = ev.target as HTMLElement;
-    if (el.id !== 'cl-q') return;
-    clFilter.q = (el as HTMLInputElement).value;
-    const root = document.getElementById('ref-detail-content');
-    if (root) applyChangelogFilter(root);
-  });
+  document.addEventListener('input', runSheetInput);
   document.getElementById('ref-detail-back')!.addEventListener('click', backDetail);
   document.getElementById('ref-detail-close')!.addEventListener('click', closeDetail);
 
@@ -1864,31 +1284,11 @@ async function init(): Promise<void> {
     if (ev.target === ev.currentTarget) closeDetail();
   });
   document.addEventListener('keydown', (ev) => {
-    // An open revision menu takes Escape and the arrows first; the sheet
-    // stays open under it.
-    const m = versionMenu();
-    if (m && !m.menu.hidden) {
-      if (ev.key === 'Escape') {
-        ev.preventDefault();
-        closeVersionMenu(true);
-        return;
-      }
-      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
-        ev.preventDefault();
-        const opts = [...m.menu.querySelectorAll<HTMLElement>('[data-clver]')];
-        const at = opts.indexOf(document.activeElement as HTMLElement);
-        const next = ev.key === 'ArrowDown' ? (at + 1) % opts.length : (at - 1 + opts.length) % opts.length;
-        opts[next]?.focus();
-        return;
-      }
-    }
+    if (runSheetKey(ev)) return;
     if (ev.key === 'Escape') closeDetail();
   });
   // Tabbing out of the revision menu closes it, as a click elsewhere does.
-  document.addEventListener('focusin', (ev) => {
-    const m = versionMenu();
-    if (m && !m.menu.hidden && !(ev.target as HTMLElement).closest('.cl-ver')) openVersionMenu(false);
-  });
+  document.addEventListener('focusin', runSheetFocus);
 
   render();
 }
