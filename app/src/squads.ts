@@ -352,10 +352,14 @@ export class SquadTracker {
     const counts = new Map<string, number>();
     for (const id of held) counts.set(id, (counts.get(id) ?? 0) + 1);
     const running = !!this.state && !!normaliseSetup(this.state.setup);
-    // In a room only the local seat plays its own hand: the other squad's
-    // rows keep their place, disabled (audit Phase 6, H5).
+    // In a room only the local seat plays its own hand (audit Phase 6, H5), and
+    // the other squad's is hidden until played (Supplementary Rules 1.04, 1.11):
+    // its rows are the cards it has used, and the rest are only a count. The
+    // names still travel with the shared state (secrecy.ts); this stops the
+    // panel printing them, which it did, disabled, until then.
     const seat = getLocalSeat();
     const notMine = !!seat && seat !== side;
+    let hidden = 0;
     for (const [id, n] of counts) {
       const card = this.data.byId.get(id);
       if (!card) continue;
@@ -363,6 +367,10 @@ export class SquadTracker {
       // A card played in any round is discarded for the game (FAQ P2; audit
       // Phase 6, H1). Free play keeps no rounds worth policing.
       const usedIn = running && this.state ? tacticUsedRound(this.state, side, id) : null;
+      if (notMine && usedIn === null) {
+        hidden += n;
+        continue;
+      }
       // In a game under way: its own phase and the moment its text names
       // (5.4.2; audit Phase 6, H2), greyed in place with the reason.
       const st = this.state;
@@ -403,6 +411,12 @@ export class SquadTracker {
       });
       row.append(name, timing, play);
       box.appendChild(row);
+    }
+    if (hidden) {
+      const rest = document.createElement('p');
+      rest.className = 'sq-tac-hidden';
+      rest.textContent = `${hidden} hidden until played`;
+      box.appendChild(rest);
     }
     return box;
   }

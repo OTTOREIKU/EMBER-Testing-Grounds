@@ -420,6 +420,9 @@ export function unfoldsInto(c: any): any { return c?.unfoldsInto; }
 // The far side of unfoldsInto: the launch check refuses an Unfolded Pholcus
 // (audit Phase 5, A8). A fixture says so with its own flag.
 export function isUnfolded(c: any): boolean { return !!c?.isUnfolded; }
+// A Mine stands clear of terrain (Supplementary Rules 1.04, 1.3): the launch and
+// lay checks ask. A fixture says it is a Mine with its own flag.
+export function isMine(c: any): boolean { return !!c?.isMine; }
 // No fixture here prints [Stationary] (the GSD7 Mortar is the card that does),
 // so the launch ceiling reads the printed Range (audit Phase 5, A8).
 export function stationaryAdjusted(a: any, _opp?: any): any { return a; }

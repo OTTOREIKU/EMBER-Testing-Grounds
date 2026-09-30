@@ -4,9 +4,9 @@ import { iconSvg } from './dice';
 import { ICON_BLOCKED, ICON_BOLT, ICON_BURST, ICON_DICE, ICON_PIERCE, ICON_SHIELD, ICON_SIGNAL } from './icons';
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
-import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
+import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, Opportunity, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, tallyCounter, resolveCounterRoll, type AttackReaction, type MultiTarget } from './units';
+import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, tallyCounter, resolveCounterRoll, type AttackReaction, type MultiTarget, ignoresProtection } from './units';
 import { timingOf } from './ticks';
 import { isTerminalStandIn, TERMINAL_EV } from './tasks';
 import { inArc, largeGridOf, losBetween, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
@@ -1033,6 +1033,11 @@ export class AttackHelper {
   // during its own Action, such as by a Mine it sets off (ruling I24; FAQ
   // O16, O5; audit Phase 5).
   actingUid: (() => number | null) | null = null;
+  // The running Opportunity, for the rules that read its state rather than
+  // the unit's: [Stationary] (no Movement yet this Opportunity), which the
+  // pilot Tourmaline's Shadow asks of every Firing Action. Null on a page
+  // that tracks none, and the trait then stays off.
+  opportunity: (() => Opportunity | null) | null = null;
   // A boardless table's answers the geometry would otherwise give: Grace Note's
   // "within 3 grids" (null: measure the board).
   tableGrace: boolean | null = null;
@@ -1443,7 +1448,7 @@ export class AttackHelper {
     const terrain = this.terrain ? this.terrain() : [];
     const smoke = this.smoke ? this.smoke() : [];
     const prot = protectionFor(attacker, defender, action, terrain, board, smoke,
-      ignoresProtectionOnHighlight(this.data, attacker) && statusCount(defender.statuses, 'highlight') > 0,
+      ignoresProtection(this.data, attacker, defender, this.opportunity?.() ?? null),
       (t) => providesUnitProtectionToAllies(this.data, t));
     return {
       losNote: losNote(attacker, defender, action, terrain, board, smoke),
@@ -1662,7 +1667,7 @@ export class AttackHelper {
     // door dropped them, so 095 Responsive Targetting was silently dead on
     // every Multi-Target shot the moment the queue opened one.
     const prot = protectionFor(m.attacker, defender, m.action, terrain, board, smoke,
-      ignoresProtectionOnHighlight(this.data, m.attacker) && statusCount(defender.statuses, 'highlight') > 0,
+      ignoresProtection(this.data, m.attacker, defender, this.opportunity?.() ?? null),
       (t) => providesUnitProtectionToAllies(this.data, t));
     // A boardless host reads nothing: the primary carries the table's answers,
     // every later target the generic line.
@@ -4391,8 +4396,8 @@ export class AttackHelper {
     // A Shutdown Mech "cannot activate any Passive effects" (4.1), and Dense
     // Armor is a Passive.
     if (c.defender.kind === 'mech' && c.defender.stance === 'shutdown') return;
-    const slot = denseArmorSlot(this.data, c.defender);
-    if (!slot || slot !== (c.targetPart ?? 'main')) return;
+    const slot = denseArmorSlot(this.data, c.defender, c.targetPart ?? 'main');
+    if (!slot) return;
     const gone = c.attackRoll.filter((d) => this.denseTakes(d));
     if (!gone.length) return;
     c.attackRoll = c.attackRoll.filter((d) => !this.denseTakes(d));
@@ -4938,8 +4943,8 @@ export class AttackHelper {
       ${(() => {
         // Dense Armor (GoF 1.021) when the dice are on the table: nothing here
         // can take them, so the step says to.
-        const slot = !c.surplusRound && this.handsOff && c.defender.stance !== 'shutdown' ? denseArmorSlot(this.data, c.defender) : null;
-        return slot && slot === (c.targetPart ?? 'main')
+        const slot = !c.surplusRound && this.handsOff && c.defender.stance !== 'shutdown' ? denseArmorSlot(this.data, c.defender, c.targetPart ?? 'main') : null;
+        return slot
           ? `<p class="ah-protect">Dense Armor (GoF 1.021): ${SLOT_LABEL[slot as PartSlot | 'main'] ?? slot} is the Part hit, so remove every Attack die showing a blank, [Lightning] or [Eye] before any reroll.</p>`
           : '';
       })()}

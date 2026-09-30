@@ -177,6 +177,9 @@ export function transformFaces(_data: any, _c: any): string[] { return []; }
 // No fixture here launches an Unfolded Pholcus (card 167 is the only one), so
 // the honest stub is "never" (audit Phase 5, A8).
 export function isUnfolded(_c: any): boolean { return false; }
+// No fixture here places a Mine, so the terrain check (Supplementary Rules 1.04,
+// 1.3) never applies.
+export function isMine(_c: any): boolean { return false; }
 // No fixture here prints [Stationary] (the GSD7 Mortar is the card that does),
 // so the launch ceiling reads the printed Range (audit Phase 5, A8).
 export function stationaryAdjusted(a: any, _opp?: any): any { return a; }

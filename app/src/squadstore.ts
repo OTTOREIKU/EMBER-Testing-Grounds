@@ -23,8 +23,10 @@ const SLOTS: (keyof MechLoadout)[] = ['torso', 'chasis', 'leftHand', 'rightHand'
 
 // Squads that ship with the app, so a first-time player has two sides to put on
 // the board without building anything. Both are drawn from a single Raid
-// 2-Player Starter Set and land a point apart, 383 to 382 - a 600 point game
-// needs a second box.
+// 2-Player Starter Set and were built a point apart, 383 to 382; the 1.04 lists
+// moved them to 376 and 346 (2026-09-30). They stay so until they are rebuilt
+// from the Raid box's own first-match lists, which OTTO is supplying. A 600
+// point game needs a second box either way.
 //
 // The shape is forced by what the box holds: two RDL torsos, chassis and pilots
 // but only one of each for UN, so RDL fields two mechs and UN one mech that
@@ -35,7 +37,7 @@ const BUILT_IN: SavedSquad[] = [
     id: 'builtin:squad-raid-rdl',
     name: 'RAID-RDL-Starter',
     saved: 0,
-    // 197 + 186 = 383.
+    // 191 + 185 = 376 on the 1.04 list (197 + 186 = 383 on 1.02).
     mechs: [
       {
         name: 'Dune Brawler',
@@ -52,7 +54,7 @@ const BUILT_IN: SavedSquad[] = [
     id: 'builtin:squad-raid-un',
     name: 'RAID-UN-Starter',
     saved: 0,
-    // 295 for the mech plus 87 of drones: Porcupine CIWS 51 and Raven
+    // 259 for the mech on the 1.04 list (295 on 1.02) plus 87 of drones: Porcupine CIWS 51 and Raven
     // Interference 36. The CIWS is here for its Intercept 3, which is the answer
     // to the ML-34 rack on the RDL side and the reason to prefer it over the
     // Porcupine Ion - they are two faces of one card, so only one can be

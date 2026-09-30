@@ -574,6 +574,14 @@ export function isLowValue(t: Token, tagged?: (t: Token) => boolean): boolean {
   return tagged ? tagged(t) : false;
 }
 
+// A Deployable (a Barricade, a Beacon, a Mine), read off the token alone: every
+// Deployable stands on the ground (Supplementary Rules 1.04, 1.1.2) but the
+// GM-35 Mine, which keeps `aerial` for sight and Melee and is marked by its
+// `mine` record. Every other Projectile is Aerial.
+export function isDeployableToken(t: Token): boolean {
+  return t.kind === 'projectile' && (!t.aerial || !!t.mine);
+}
+
 // ---------- control zones (5.3.2) ----------
 
 // 5.3.2 and 5.3.3 are deliberately asymmetric, so the two halves differ here.
@@ -583,6 +591,12 @@ export function isLowValue(t: Token, tagged?: (t: Token) => boolean): boolean {
 // no Low Value carve-out. The Excavation Claim card has to print "Low Value
 // Units do not count" precisely because that exclusion is not the default, which
 // is the clearest evidence the default is presence-counts-for-everything.
+//
+// Except a Deployable: the Supplementary Rules 1.04 (1.2, 1.3) say Barricades
+// and Mines, and every Deployable with them, "cannot capture Task Targets or
+// interact with Control Zones", so one standing in a Zone contests nothing.
+// Whether that reaches the other Low Value units (a Projectile, a 0-point
+// Drone) the Supplement does not say outright; they still contest.
 export function controlOf(cells: string[], tokens: Token[], lowValue?: (t: Token) => boolean): Side | null {
   const inside = tokens.filter((t) => t.deployed !== false && inZone(t, cells));
   if (!inside.length) return null;
@@ -593,7 +607,7 @@ export function controlOf(cells: string[], tokens: Token[], lowValue?: (t: Token
         && !isLowValue(t, lowValue)
         && ((t.kind === 'mech' && t.stance !== 'shutdown') || t.kind === 'drone'),
     );
-    const enemy = inside.some((t) => t.side !== side);
+    const enemy = inside.some((t) => t.side !== side && !isDeployableToken(t));
     if (holds && !enemy) return side;
   }
   return null;

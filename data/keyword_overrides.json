@@ -24,7 +24,7 @@
     "低特征": {
       "en": {
         "name": "Low Profile",
-        "value": "When this unit is the target of a Firing Action, may exchange {Eye} for {Dodge} in defense roll. Rulebook 6.3.3 words this as automatic - {Eye} results are regarded as {Dodge} - and nothing else in a Defense Roll reads an {Eye}, so the exchange is never against the defender and the app applies it for you."
+        "value": "When this unit is the target of a Firing Action, may exchange {Eye} for {Dodge} in defense roll. Rulebook 6.3.3 words this as automatic - {Eye} results are regarded as {Dodge} - and nothing else in a Defense Roll reads an {Eye}, so the exchange is never against the defender."
       }
     },
     "空手": {
@@ -54,7 +54,7 @@
     "设置物": {
       "en": {
         "name": "Deployable",
-        "value": "Archetype tag on the card banner: this Unit is a Deployable placed on the ground (mines, walls, beacons). Not a special rule; see Ch. 4.7 and the card's own actions."
+        "value": "Archetype tag on the card banner: this Unit is a Deployable, placed on the ground (mines, walls, beacons). With no model it counts as a Ground Unit. Every Deployable is a Low Value Unit, cannot be forcibly moved, and cannot capture Task Targets or interact with Control Zones. See Ch. 4.7 and the card's own actions."
       }
     },
     "导弹": {
@@ -96,7 +96,7 @@
     "地雷": {
       "en": {
         "name": "Mine",
-        "value": "Deployable subtype tag on the card banner. Mines typically carry a Trigger action that detonates when a Ground Unit enters their grid."
+        "value": "Deployable subtype tag on the card banner. A Mine is a small Ground Unit whose Grid still counts as empty: any unit may enter it or be placed on it, and the Mine itself stands clear of terrain. It usually detonates when a Ground Unit enters its Grid, and a Mine arriving on a unit does not set it off. Mines one Action places never set each other off, and a Mine placed later sets off those already there."
       }
     },
     "自行地雷": {
@@ -108,7 +108,7 @@
     "墙": {
       "en": {
         "name": "Wall",
-        "value": "Deployable subtype tag on the card banner: a placed barrier. See the card for its height and whether it blocks line of sight."
+        "value": "Deployable subtype tag on the card banner of the AS3 Inflatable Walls, which are Barricades 3 inches high: like Terrain they block line of sight and give Terrain Protection. See Barricade."
       }
     },
     "信标": {
@@ -120,7 +120,7 @@
     "机动掩体": {
       "en": {
         "name": "Mobile Cover",
-        "value": "The banner tag of the DBP \"Turtle Shell\", which is a Barricade: despite the name it can neither move nor be moved, and is never Crushed. When another Ally Unit is the target of an Attack, it counts as 3-inch high Terrain. See Barricade."
+        "value": "The banner tag of the DBP \"Turtle Shell\", a Barricade 2 inches high: it gives Terrain Protection to any unit behind it and blocks no line of sight. Despite the name it can neither move nor be moved, and it is never Crushed. See Barricade."
       }
     },
     "电子对抗": {
@@ -192,8 +192,9 @@
     "路障": {
       "en": {
         "name": "Barricade",
-        "value": "While another Ally Unit is the target of an Attack, this Unit counts as 3-inch high Terrain, so it can block line of sight or grant Terrain Protection to the unit behind it."
-      }
+        "value": "Deployable subtype tag on the card banner, the one category for the DBP \"Turtle Shell\", the AS3 Inflatable Walls and the two Containers. A Barricade is a Ground Unit with a Height like Terrain: the AS3 walls are 3 inches, the Turtle Shell 2, the Containers 1. Like Terrain it blocks line of sight at 3 inches and gives Terrain Protection at 2 inches or more, but it gives no Unit Protection. It cannot be forcibly moved, a Crush destroys it unless its card says otherwise, and it cannot capture Task Targets or interact with Control Zones."
+      },
+      "_note": "Supplementary Rules 1.04 (1.2) make Barricade the Deployable category and replace the Barricade keyword FAQ A23 had already removed, which made the Turtle Shell 3-inch Terrain only while another Ally Unit was the target of an Attack."
     },
     "命中": {
       "en": {
@@ -234,9 +235,12 @@
     "冲锋X": {
       "en": {
         "name": "Shock Attack X",
-        "value": "Before performing this Action, may move X grids. Mechs require a chasis to perform this Action."
+        "value": "Before performing this Action, this unit may move up to X Grids. A Mech whose Chassis is destroyed cannot make this move, but may still perform the Action. Some rules print this keyword as Assault X."
       },
-      "_note": "Typo fix only: keywords.json reads \"Actioin\". The rule is unchanged, and the [Offensive Stance] condition the three carriers print (M115 Spear, M100 Lance, M105 Halberd) is deliberately NOT folded in here - it is a per-card condition in the same bracketed form as [Stationary] and [On Hit], not part of the keyword."
+      "_note": "Typo fix only: keywords.json reads \"Actioin\". The rule is unchanged, and the [Offensive Stance] condition the three carriers print (M115 Spear, M100 Lance, M105 Halberd) is deliberately NOT folded in here - it is a per-card condition in the same bracketed form as [Stationary] and [On Hit], not part of the keyword. Supplementary Rules 1.04 (3.8) define it as Assault X: \"may additionally move up to X spaces\", for any unit, and for a Mech only the move needs the Chassis, as the Chinese says. The old English, \"Mechs require a chasis to perform this Action\", read as if the whole Action did.",
+      "aliases": [
+        "Assault X"
+      ]
     },
     "拖拽": {
       "en": {
@@ -265,7 +269,7 @@
     "致密装甲": {
       "en": {
         "name": "Dense Armor",
-        "value": "When this Part is hit, it may remove every Attack Die showing a blank face, {Lightning} or {Eye} before any Reroll."
+        "value": "No longer a keyword. The Parts that had it now print it as a Passive Action named Dense Armor: when that Part is hit, it may remove every Attack Die showing a blank face, {Lightning} or {Eye} before any Reroll. A Mech wearing it on two Parts uses whichever Part is hit."
       }
     },
     "低价值": {
@@ -307,9 +311,35 @@
       "aliases": [
         "Indirect Fire"
       ]
+    },
+    "顺劈": {
+      "en": {
+        "name": "Cleaving",
+        "value": "Surplus Damage may be resolved against another random Part, or against another Unit in Range. Another Part must be a different one: a Part Die showing the Part first hit is rerolled, and on ANY that Part cannot be chosen."
+      }
+    },
+    "霰射": {
+      "en": {
+        "name": "Scatter-shot",
+        "value": "If the target is a Mech, Surplus Damage may be resolved against another random Part. It must be a different one: a Part Die showing the Part first hit is rerolled, and on ANY that Part cannot be chosen."
+      }
+    },
+    "Breakable": {
+      "en": {
+        "name": "Breakable",
+        "value": "A Unit or Part with this tag is destroyed as soon as it is picked as the target of any Melee, Firing or Explosion attack, with no roll and no other resolution, even from an attack that deals no damage. The two Containers carry it."
+      },
+      "_note": "Supplementary Rules 1.04, 3.1. No card in our data prints it yet: the Containers are still terrain pieces here, and an attack that takes one removes it with no roll, which is this rule."
+    },
+    "Transformation": {
+      "en": {
+        "name": "Transformation",
+        "value": "A Part with this tag has two or more forms, each its own Part card, and may be deployed in any of them. Performing an Action with the Transformation keyword may transform it: the card is replaced with the other form's. Triangle Tokens move to the new card; a Round Token moves only to an Action of the same name there, and otherwise stays with the old card."
+      },
+      "_note": "Supplementary Rules 1.04, 3.2 (the tag and the keyword). The White Dwarf Core (287, 288) and the Ols1B Harpoon (PDLH-202, PDLH-202-T) are the Parts that transform."
     }
   },
-  "_aliases": "`aliases` lists other English names the publisher prints for the same keyword; the app indexes them beside the name and links them in card text. Fire in arc is printed Indirect Fire on the RDL ML-32 (029) while the rulebook 4.7.1, the parts lists and the UN and GoF cards print Fire in arc (checked on the scans, 2026-09-29).",
-  "_entries": "A glossary entry states the RULE in the player's text; where a wording came from stays in these notes (OTTO, 2026-09-30). Non-humanoid X: name and wording are printed in English on the PLK400 Centaur chassis (ZHLT-301, and its SK variant) and in the publisher's Part Data GoF 1.021 EN list; the rulebook appendix has no entry. Command Generation X: GoF 1.021 took it off the P7 Warrior. Dense Armor: the GoF 1.021 wording; the printed card read \"{Defense} may offset {Heavy Hit}\". The list draws a blank die face where the entry says 'a blank face'; it used to come through as an empty {} and printed as literal braces. Tether X: printed in full on the Ols1B Harpoon (PDLH-202), which is also where the English name comes from; no rulebook appendix entry.",
+  "_aliases": "`aliases` lists other English names the publisher prints for the same keyword; the app indexes them beside the name and links them in card text. Fire in arc is printed Indirect Fire on the RDL ML-32 (029) while the rulebook 4.7.1, the parts lists and the UN and GoF cards print Fire in arc (checked on the scans, 2026-09-29). Shock Attack X is named Assault X in the Supplementary Rules 1.04 (3.8), the Japanese 突撃 too; the cards print Shock Attack.",
+  "_entries": "A glossary entry states the RULE in the player's text; where a wording came from stays in these notes (OTTO, 2026-09-30). Non-humanoid X: name and wording are printed in English on the PLK400 Centaur chassis (ZHLT-301, and its SK variant) and in the publisher's Part Data GoF 1.021 EN list; the rulebook appendix has no entry. Command Generation X: GoF 1.021 took it off the P7 Warrior. Dense Armor: the GoF 1.021 wording; the printed card read \"{Defense} may offset {Heavy Hit}\". The list draws a blank die face where the entry says 'a blank face'; it used to come through as an empty {} and printed as literal braces. Supplementary Rules 1.04 (3.7) removed it as a keyword, so the entry says so and keeps the rule: the Action it became is still named Dense Armor, and card text links here. Tether X: printed in full on the Ols1B Harpoon (PDLH-202), which is also where the English name comes from; no rulebook appendix entry.",
   "_cruising": "Cruising (rulebook 6.2) was printed on the M707 Swift Missile until the GoF 1.021 list removed it (ruling I3; audit Phase 5, A8). The entry states the rule and that no card carries it; the history stays here, not in the player's text (OTTO, 2026-09-30: the old wording was confusing, linked only the word Missile, and was reached from White Dwarf text it said it did not cover). It is unrelated to the White Dwarf's Cruise Mode, and no Reference text should say 'cruising' of that Mech, because the linker would link it here."
 }

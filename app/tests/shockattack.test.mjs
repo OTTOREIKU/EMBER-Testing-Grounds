@@ -119,7 +119,9 @@ check('a Mech with its chassis may take the walk',
   U.shockMoveAllowed({ kind: 'mech', partStates: { chasis: 'intact' } }), true);
 check('a damaged chassis still walks', U.shockMoveAllowed({ kind: 'mech', partStates: { chasis: 'damaged' } }), true);
 check('a destroyed one does not', U.shockMoveAllowed({ kind: 'mech', partStates: { chasis: 'destroyed' } }), false);
-check('and a drone is not a Mech with a chassis', U.shockMoveAllowed({ kind: 'drone', partStates: {} }), false);
+// The Supplementary Rules 1.04 (3.8) gate only a Mech: "If this unit is a
+// Mech, this effect does not apply when its Chassis has been destroyed".
+check('and any other unit makes the move (1.04, 3.8)', U.shockMoveAllowed({ kind: 'drone', partStates: {} }), true);
 
 // ---------- the wiring, on BOTH boards ----------
 const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');

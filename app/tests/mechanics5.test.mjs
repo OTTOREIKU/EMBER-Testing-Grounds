@@ -772,10 +772,14 @@ check('G4p the attack and launch find a lent Action', [/function commitDeclared\
   const open = sight();
   droneOn(n, 's2', 'PDAM-003', 0, 0, { col: 14, row: 16 });
   check('E1 and a wall squarely in the way blocks the line', [open, sight()], ['clear', 'blocked']);
+  // The Supplementary Rules 1.04 (1.2) replaced the Turtle Shell's reading:
+  // it is 2-inch terrain for whoever stands behind it, where it had been
+  // 3-inch terrain for its own allies only (supplement104.test.mjs).
   const guard = scene('158', 's2');
-  check('E1 a Turtle Shell guarding its ally is 3-inch terrain', cover(guard).white, 2);
+  check('E1 a Turtle Shell in front of its ally pays Terrain Protection', cover(guard).white, 2);
   const foe = scene('158', 's1');
-  check('E1 but not for a Firing Action at its enemy: it is only a small unit then', [cover(foe).white, /not Large/.test(cover(foe).note)], [0, true]);
+  check('E1 and in front of its enemy too, as terrain, not as a small unit (1.04, 1.2)',
+    [cover(foe).white, /Terrain Protection/.test(cover(foe).note), /not Large/.test(cover(foe).note)], [2, true, false]);
 }
 
 // ================= E1b. a wall is a 1x3 line, across its facing (OTTO, 2026-09-28) =================

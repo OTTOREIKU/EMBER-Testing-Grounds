@@ -239,8 +239,11 @@ export interface Token {
   // as it arrived, where they stood, which did not ENTER it (ruling I15).
   // `owed`: it went off with a Mine beside it, and stays owed once that one's
   // blast has killed the unit that set them off (FAQ I13; audit Phase 5, C2,
-  // C3, C4). Rules-bearing, so boardFingerprint carries it.
-  mine?: { spared?: { uid: number; col: number; row: number }[]; owed?: boolean };
+  // C3, C4). `batch`: the Movement that Laid it, the same for every Mine one
+  // Movement lays, which are placed together and never set each other off
+  // (Supplementary Rules 1.04, 1.3). Rules-bearing, so boardFingerprint
+  // carries it.
+  mine?: { spared?: { uid: number; col: number; row: number }[]; owed?: boolean; batch?: string };
   // An Unfolded Pholcus that came up in an occupied Grid owes M18.4's blast.
   // Set by the Unfold itself, so a unit sharing its Grid later owes nothing
   // (rulings I18, I19; audit Phase 5, D2). Rules-bearing and fingerprinted.

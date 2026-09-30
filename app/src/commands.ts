@@ -1,8 +1,8 @@
 import type { BoardGrids, CardAction, CombatView, Facing, FreeTicks, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
 import { addStatus, ageTokens, cellsOf, isLineUnit, gridsOf, newOpportunity, normaliseCatalog, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
-import { cardName, isUnfolded, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance, squadLabel } from './data';
-import { auraActionOf, auraCanReach, interceptPayer, repairSpec, fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, minesOwed, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources, chargeSlotOf, discardPartOn, disarmOn, partUsable, throwWhy, shockMoveAllowed, actionIdleWhy, counterWon, multiTargetLimit, camoBrokenBy } from './units';
+import { cardName, isMine, isUnfolded, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance, squadLabel } from './data';
+import { auraActionOf, auraCanReach, interceptPayer, repairSpec, fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, minesOwed, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyFor, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources, chargeSlotOf, discardPartOn, disarmOn, partUsable, throwWhy, shockMoveAllowed, actionIdleWhy, counterWon, multiTargetLimit, camoBrokenBy } from './units';
 import { canBeForceMoved, crawlHolders, isMeleeFiring, lockersOf, tetherCap } from './melee';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, rebooted, REBOOT_ID, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload, untouched } from './ticks';
 import { tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
@@ -104,7 +104,9 @@ export type Command = (
     // A Mine in a Grid the walk entered stopped it there (ruling I16): `halt`
     // is how many Grids of the Movement are left for later, and a `resume`
     // goes on with them once the blast is resolved (audit Phase 5, C1).
-    halt?: number; resume?: boolean }
+    // `spun`: it turned a full circle on the spot, so it ends facing where it
+    // began and has still made a Movement (Supplementary Rules 1.04, 1.8).
+    halt?: number; resume?: boolean; spun?: boolean }
   // A Crush with no escape square (4.3.6, book p.47): "If NONE of the Grids
   // within Range of that Forced Movement can be entered, the crushed Unit
   // instead exchanges positions with the Crushing Unit."
@@ -749,6 +751,18 @@ function stampBoxDrops(state: GameState, t: Token, moved = false): void {
 // less what has been destroyed. Null for a player's own custom map, which
 // lives in one browser, so a rule that needs terrain leaves that board to its
 // page rather than judging it on an empty table (audit Phase 4, D6).
+// A Mine is a small Ground Unit (Supplementary Rules 1.04, 1.3), so it stands
+// clear of terrain; units it may share a Grid with. Judged on the terrain the
+// engine knows, which a table with no board or an unknown map does not have.
+function mineOnTerrain(data: GameData, state: GameState, col: number, row: number): string | null {
+  if (state.noBoard) return null;
+  const terrain = knownTerrain(data, state);
+  if (!terrain) return null;
+  return terrain.some((p) => p.subCells.some((x) => x.col === col && x.row === row))
+    ? 'A Mine is a Ground Unit, so it cannot stand on terrain (Supplementary Rules 1.04, 1.3). Pick a cell of that Grid the terrain leaves free.'
+    : null;
+}
+
 function knownTerrain(data: GameData, state: GameState): TerrainPiece[] | null {
   if (!state.map) return [];
   const base = data.boardMaps?.find((m) => m.id === state.map)?.pieces ?? data.terrain?.layouts?.[state.map];
@@ -1934,14 +1948,17 @@ function movementReach(data: GameData, state: GameState, t: Token): number {
 //     destroyed Chassis: a turn on the spot is all it can record (FAQ E4).
 //   - A Movement Action at its own Range, or the Maneuver Value when it prints
 //     none (`action.range || maneuverRange`), plus a straight run's bonus.
-//   - Any other Action's Movement, a Shock Attack walk (its X) or a Stance
-//     Change's, at the larger of its X and the Maneuver Value.
+//   - A Shock Attack walk at its X: "may additionally move up to X spaces"
+//     (Supplementary Rules 1.04, 3.8). This used to take the larger of X and
+//     the Maneuver Value, so a Shock Attack 1 walked a Mech's full Maneuver.
+//   - Any other Action's Movement, or a Stance Change's, at the Maneuver Value.
 function movementCeiling(data: GameData, state: GameState, t: Token, a: CardAction | null): number {
   const base = maneuverRange(data, t);
   if (!a) return base;
   if (a.type === 'Moving') return (a.range || base) + straightLineBonus(a);
   const o = oppOf(state, t.uid);
-  return Math.max(base, shockAttackOf(grantAdjusted(a, t, o?.uid === t.uid ? o : null)));
+  const x = shockAttackOf(grantAdjusted(a, t, o?.uid === t.uid ? o : null));
+  return x > 0 ? x : base;
 }
 
 // Whether `then` would be accepted once `first` has landed. The pages ask a
@@ -3825,7 +3842,7 @@ function checkActed(
       const lo = oppOf(state, cmd.uid);
       const act = findAction(data, state, cmd.uid, cmd.actionId);
       if (lo && act) {
-        const cap = volleyOf(act);
+        const cap = volleyFor(data, t, act, lo);
         const live = (lo.launched ?? []).filter((x) => x.actionId === cmd.actionId && x.uids.some((u) => state.tokens.some((tk) => tk.uid === u))).length;
         if (live >= cap) return no(`${act.name?.en || 'This Action'} launches ${cap === 1 ? 'once' : `at most ${cap} times`} per performance (Volley ${cap}).`);
       }
@@ -3837,6 +3854,10 @@ function checkActed(
       // (FAQ M18.3); the Unfolded one is never launched (audit Phase 5, A8).
       const shot = data.byId.get(cmd.cardId);
       if (shot && isUnfolded(shot)) return no(`${cardName(shot)} is never launched: the folded Pholcus Unfolds into it (FAQ M18.3).`);
+      if (shot && isMine(shot)) {
+        const offTerrain = mineOnTerrain(data, state, col, row);
+        if (offTerrain) return no(offTerrain);
+      }
       // A 1x3 line unit stands across its facing, wholly inside one Large Grid
       // (types.ts baseCells; OTTO, 2026-09-28).
       if (!state.noBoard && isLineUnit({ cardId: cmd.cardId })) {
@@ -3998,6 +4019,9 @@ function checkActed(
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
       }
+      // A Mine stands clear of terrain (Supplementary Rules 1.04, 1.3).
+      const offTerrain = mineOnTerrain(data, state, col, row);
+      if (offTerrain) return no(offTerrain);
       // Which Grids are legal and what the Move Range paid for is the route's
       // business, and the route is gone by the time this arrives — the driver
       // that drew it only offers Grids on it. Laying is a Passive, so unlike
@@ -5409,12 +5433,14 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         sc.opp = freeGrid
           ? { ...o, moved: true, preMoved: true, movedFrom: from }
           : { ...lockStance(t, spendManeuver(o)), movedFrom: from };
-      } else if (o && sc && (from.col !== cmd.to.col || from.row !== cmd.to.row || t.facing !== faced)) {
+      } else if (o && sc && (from.col !== cmd.to.col || from.row !== cmd.to.row || t.facing !== faced || cmd.spun)) {
         // A free or granted Movement costs no Tick but is still Movement, and
         // [Stationary] asks whether the unit performed ANY Movement in its
         // Opportunity (p.96, FAQ K24), a turn on the spot included (E3). A
         // Shock Attack's walk left `moved` false, so the Tempest kept its Extra
         // Firing Tick and a Railgun its Stationary Range (audit Phase 4, E1).
+        // A full circle on the spot too, which ends facing the same way
+        // (Supplementary Rules 1.04, 1.8).
         sc.opp = { ...o, moved: true, movedFrom: o.movedFrom ?? from };
       }
       // The Mine's stop, and the going on (ruling I16; audit Phase 5, C1).
@@ -6396,6 +6422,15 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // route. Facing is the layer's own so a mirrored seat draws it identically.
       const tok = makeDroneToken(state, data, card, t.side);
       const laid = { ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: t.facing };
+      // Every Mine one Movement Lays is placed at once, so none of them sets
+      // off another (Supplementary Rules 1.04, 1.3); a Mine placed later into
+      // the Grid still sets off the ones there (M6). The Movement is named by
+      // its layer, the round and phase, and the route it walked, which both
+      // boards send with each Lay.
+      if (laid.mine) {
+        const route = (cmd.route ?? []).map((p) => `${Math.floor(p.col / 3)},${Math.floor(p.row / 3)}`).join(';');
+        laid.mine = { ...laid.mine, batch: `lay:${t.uid}:${state.round.n}:${state.round.phase}:${route}` };
+      }
       state.tokens.push(laid);
       // Laid or launched alike, a unit already standing in the Grid is spared
       // until it moves (ruling I15; OTTO, 2026-09-28). Not the layer: M7 Lays

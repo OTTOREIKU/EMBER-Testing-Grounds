@@ -694,7 +694,7 @@ check('503 turns Eyes into Heavy Hits', A.eyesAreHeavyHits(data, wearing('503'))
 // Dense Armor is the PART's since GoF 1.021 (OTTO's ruling, 2026-09-25): the
 // reader names the slot, and every carrier is found by one signature or other.
 check('ZHDR-301 carries Dense Armor, on the Part it is on', A.denseArmorSlot(data, wearing('ZHDR-301')), 'torso');
-check('and so do the keyword Cores', [A.denseArmorSlot(data, wearing('175')), A.denseArmorSlot(data, wearing('176'))], ['torso', 'torso']);
+check('and so do the two Armored Cores, by their Passive Action (the keyword is retired: Supplement 1.04, 3.7)', [A.denseArmorSlot(data, wearing('175')), A.denseArmorSlot(data, wearing('176'))], ['torso', 'torso']);
 check('and the SS30 Heavy Shield, which 1.021 gave it', A.denseArmorSlot(data, wearing('ZHLA-301')), 'torso');
 check('and a Part without it does not', A.denseArmorSlot(data, wearing('002')), null);
 check('and a destroyed one offers nothing', A.denseArmorSlot(data, wearing('175', { torso: 'destroyed' })), null);

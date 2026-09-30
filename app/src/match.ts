@@ -13,7 +13,7 @@ import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, parseGridR
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells, resetHudTools, startActionFromCard, startSupportPick } from './matchhud';
 import { printedDeployment } from './overlays';
-import { actionIdleWhy, ignoresProtectionOnHighlight, kcArmorReady, knockbackOf, migrateState, multiTargetLimit, providesUnitProtectionToAllies, squadAllegiance, squadPoints, tokenCards, unfoldsOwed, type AttackReaction } from './units';
+import { actionIdleWhy, kcArmorReady, knockbackOf, migrateState, multiTargetLimit, providesUnitProtectionToAllies, squadAllegiance, squadPoints, tokenCards, unfoldsOwed, type AttackReaction, ignoresProtection } from './units';
 import { idleWorldFor } from './glue';
 import { countHits, normaliseSetup } from './setup';
 import { lowValueOf } from './scoring';
@@ -992,7 +992,7 @@ function startAttack(uid: number, actionId: string, targetUid: number, mode: 'at
   const gd = data;
   const prot = mode === 'attack'
     ? protectionFor(attacker, defender, action, terrain, state.tokens, smoke,
-        ignoresProtectionOnHighlight(gd, attacker) && statusCount(defender.statuses, 'highlight') > 0,
+        ignoresProtection(gd, attacker, defender, state.script?.opp),
         (t) => providesUnitProtectionToAllies(gd, t))
     : { white: 0, note: '' };
   attackHelper.roller = combatRoller();
@@ -1270,6 +1270,7 @@ function mountSide(): void {
     );
     attackHelper.tokens = () => state.tokens;
     attackHelper.boxHands = (uid) => boxHands(state.tasks, uid);
+    attackHelper.opportunity = () => state.script?.opp ?? null;
     // A Multi-Target's camouflaged extra target earns its own free Scan (p.71,
     // FAQ I12; ruled 2026-09-25, F3), which this page never offered: the
     // engine's free Scan, judged at the marker by the attack's reach, arc and

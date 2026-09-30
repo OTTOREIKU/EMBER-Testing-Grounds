@@ -17,9 +17,11 @@ const SLOTS: (keyof MechLoadout)[] = ['torso', 'chasis', 'leftHand', 'rightHand'
 
 // Builds that ship with the app rather than being saved on one device, so
 // somebody opening the tabletop for the first time has something to drop on the
-// board. Everything below comes from a single Raid 2-Player Starter Set, and
-// RDL's 383 sits one point off UN's 382 - as close as the box allows, since
-// every RDL swap moves in threes.
+// board. Everything below comes from a single Raid 2-Player Starter Set. They
+// were built a point apart, RDL 383 to UN 382, as close as the box allowed;
+// the 1.04 lists moved them to RDL 376 and UN 346 (2026-09-30). They stay as
+// they are until they are rebuilt from the Raid box's own first-match lists,
+// which OTTO is supplying, so the gap is known and deliberate for now.
 //
 // The Raid box prints several cards as two faces of ONE card, so these use at
 // most one face of each: the RDL chassis is RL-08C (its other face is RL-08),
@@ -33,14 +35,14 @@ const BUILT_IN: MechPreset[] = [
     id: 'builtin:raid-rdl-1',
     name: 'RAID-RDL-Starter 1',
     saved: 0,
-    // Dune brawler, 197 points.
+    // Dune brawler, 191 points on the 1.04 list (197 on 1.02).
     mech: { torso: '014', chasis: '534', leftHand: '535', rightHand: '025', backpack: '532', pilot: 'FPA-04-2' },
   },
   {
     id: 'builtin:raid-rdl-2',
     name: 'RAID-RDL-Starter 2',
     saved: 0,
-    // Mire fire support, 186 points. Its ML-34 rack is what the box's two MC-3
+    // Mire fire support, 185 points on 1.04 (186 on 1.02). Its ML-34 rack is what the box's two MC-3
     // Razor Missiles are for.
     mech: { torso: '533', chasis: '020', leftHand: '032', rightHand: '033', backpack: '004', pilot: 'FPA-63' },
   },
@@ -48,7 +50,7 @@ const BUILT_IN: MechPreset[] = [
     id: 'builtin:raid-un',
     name: 'RAID-UN-Starter',
     saved: 0,
-    // Wild Cat, 295 points. The other 87 are two drones - Porcupine CIWS and
+    // Wild Cat, 259 points on the 1.04 list (295 on 1.02). The other 87 are two drones - Porcupine CIWS and
     // Raven Interference - which are added from the Drones tab rather than built
     // here. The CIWS carries Intercept 3, which is what answers the missile rack
     // on the Mire build.

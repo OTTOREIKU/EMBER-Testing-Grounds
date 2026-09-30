@@ -60,13 +60,31 @@ export function missileGroupOf(card: Card): number {
 }
 
 export function volleyOf(a: CardAction): number {
-  const hay = [
+  const m = /(?:齐射|斉射|Vol+(?:ey|y))\s*(\d+)/i.exec(volleyText(a));
+  return m ? Math.max(1, Number(m[1])) : 1;
+}
+
+// A function declaration, hoisted: tests/launch.test.mjs slices volleyOf out
+// of this file with what follows it, so its helper has to live below it.
+function volleyText(a: CardAction): string {
+  return [
     a.description?.zh ?? '',
     a.description?.en ?? '',
     ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? ''),
   ].join(' ');
-  const m = /(?:齐射|斉射|Vol+(?:ey|y))\s*(\d+)/i.exec(hay);
-  return m ? Math.max(1, Number(m[1])) : 1;
+}
+
+// The Volley a launch is actually allowed, which a pilot can change. Opal
+// (UN parts list 1.04), Bondage: "When this unit performs a Projectile Action
+// during Projectile Timing, if the action does not have Volley, it will be
+// considered as having Volley 2." Every launch reader asks this rather than
+// volleyOf - the engine's cap, both launch pages and the pad - or one of them
+// lets Opal fire twice and another refuses the second. `opp` is the running
+// Opportunity; its timing is the dial's.
+export function volleyFor(data: GameData, t: Token | undefined, a: CardAction, opp?: { timing?: Timing } | null): number {
+  if (/(?:齐射|斉射|Vol+(?:ey|y))\s*\d+/i.test(volleyText(a))) return volleyOf(a);
+  if (t && a.type === 'Projectile' && opp?.timing === 'projectile' && pilotIs(data, t, PILOT_OPAL)) return 2;
+  return 1;
 }
 
 // ---------- SNIPE 狙击 (keywords.json) ----------
@@ -623,8 +641,12 @@ export function chargeChoices(a: CardAction): { id: string; label: string }[] {
 
 // ---------- Shock Attack X (冲锋X) ----------
 //
-// "Before performing this Action, may move X grids. Mechs require a chasis to
-// perform this Action." Today the keyword reaches an Action only through the
+// "Before performing this action, this unit may additionally move up to X
+// spaces. If this unit is a Mech, this effect does not apply when its Chassis
+// has been destroyed." That is the Supplementary Rules 1.04 (3.8), which name it
+// Assault X; our cards print Shock Attack, the Chinese 冲锋X for both. The old
+// English read "Mechs require a chasis to perform this Action". Today the
+// keyword reaches an Action only through the
 // grant above, so this reads the INLINE keywords an adjusted copy carries,
 // plus any unconditional bare line — excluding grant and gate lines the way
 // snipeOn does, or the reader would arm off the very description that says
@@ -651,11 +673,13 @@ export function shockAttackOf(a: CardAction): number {
 // ask for — warn-don't-block keeps that half a table call. The Chinese says
 // so outright: 机甲下肢被摧毁时不生效, "no effect when the lower limbs are
 // destroyed". A Repaired Chassis carries the move (ruled R5; audit Phase 7,
-// P7B 12).
+// P7B 12). Any other unit makes the move: 3.8 gates only a Mech, where this
+// used to refuse every Drone (no Drone prints the keyword today).
 export function shockMoveAllowed(t: Token): boolean {
   // chassisGone's test, written out: shockattack.test.mjs cuts this reader out
   // of the file with the [condition] block and nothing else.
-  return t.kind === 'mech' && ((t.partStates['chasis'] ?? 'intact') !== 'destroyed' || (t.repairedSlots ?? []).includes('chasis'));
+  if (t.kind !== 'mech') return true;
+  return (t.partStates['chasis'] ?? 'intact') !== 'destroyed' || (t.repairedSlots ?? []).includes('chasis');
 }
 
 // Pulse Weapon: "May exchange {Lightning} for {Heavy Hit}." Ion Weapon is the
@@ -1581,9 +1605,10 @@ export function blastScanState(reactions: { uid: number; kind?: string; fromUid?
 export function explosionScope(a: CardAction, english?: string): 'single' | 'all' {
   const printed = (a.description?.en ?? '').trim() || (english ?? '').trim();
   const hay = printed || a.description?.zh || '';
-  // "all GROUND units" counts as all: the GM-35 Mine prints that, and FAQ M22
-  // widens it past ground anyway - a Mine catches the Flying and Aerial units
-  // sharing its Grid too.
+  // "all GROUND units" counts as all: the GM-35 Mine prints that. WHICH units
+  // an area blast catches is not decided here: a Mine's are minesOwed's (the
+  // Ground units in its Grid; FAQ 1.04 M22 took the Flying and Aerial ones out
+  // again, where V1.03 had widened the blast to them).
   // The PD sheet writes it three ways: "all units", "all unit" (FG33, FG12)
   // and "all targets" (the Explosive Wall). All three are area blasts; the
   // singular read as one target and the grenades asked for a single victim.
@@ -2502,12 +2527,15 @@ export function missileGuidance(
         // Measured from the beacon to the TARGET, not to the attacker.
         if (!world?.tableJudges && eff.requireTargetWithinSourceRange && rangeBetween(b, defender).range > (a.range ?? 0)) continue;
         // 协同观测 Coordinated Observation (TM31RS, 539) asks for SIGHT rather
-        // than Range: "allies firing at a target THIS unit can see". Terrain and
-        // the other units both block it, so the caller has to supply them --
-        // without a world to look through, the answer is no rather than yes.
+        // than Range: "targets that are visible to this mech". Visible is not
+        // blocked: 3-inch terrain hides a target, and a 1- or 2-inch piece or a
+        // unit in the way only obstructs (Supplementary Rules 1.04, 1.1.1), as
+        // the Radar and Early Warning read it. This demanded a fully clear line
+        // until then. The caller has to supply the terrain -- without a world to
+        // look through, the answer is no rather than yes.
         if (eff.requireSourceLosToTarget && !world?.tableJudges) {
           if (!world) continue;
-          if (losBetween(b, defender, world.terrain, tokens) !== 'clear') continue;
+          if (losBetween(b, defender, world.terrain, tokens) === 'blocked') continue;
         }
         out.push(b);
       }
@@ -2561,6 +2589,24 @@ export function ignoresLowProfile(data: GameData, t: Token): boolean {
 // Firing Actions ignore Terrain Protection and Unit Protection both.
 export function ignoresProtectionOnHighlight(data: GameData, t: Token): boolean {
   return t.kind === 'mech' && partSays(data, t, /高亮目标[^。]*无视地形保护和单位保护|ignor\w*\s+Terrain\s+Protection\s+and\s+Unit\s+Protection/i);
+}
+
+// Whether this attacker's Firing Action sets aside the defender's Terrain and
+// Unit Protection. Two sources: 095 Responsive Targetting against a Highlighted
+// unit, and the pilot Tourmaline (UN parts list 1.04), Shadow: "[Stationary]
+// When performing a Firing Action, target's Terrain Protection and Unit
+// Protection are not applied." Stationary is the running Opportunity's (no
+// Movement yet, the two flags stationaryAdjusted reads), so without one - a
+// table that tracks no Opportunities - the trait stays off, as every other
+// [Stationary] effect does. The ONE question for all five protection readers
+// (the attack window twice, freeplay, the Match Centre's two), so a sixth
+// source is added here and nowhere else.
+export function ignoresProtection(
+  data: GameData, attacker: Token, defender: Token,
+  opp?: { uid?: number; moved?: boolean; maneuvered?: boolean } | null,
+): boolean {
+  if (ignoresProtectionOnHighlight(data, attacker) && statusCount(defender.statuses, 'highlight') > 0) return true;
+  return !!opp && opp.uid === attacker.uid && !opp.moved && !opp.maneuvered && pilotIs(data, attacker, PILOT_TOURMALINE);
 }
 
 // ZHDR-101 N11 Vanguard I "Scutum", Mobile Bunker: "本机可以为友军提供单位保护"
@@ -2708,11 +2754,19 @@ export function eyesAreHeavyHits(data: GameData, t: Token): boolean {
 //
 // The PART, because the trigger is that Part being the one hit: this returns
 // its slot ('main' on a Drone) so the attack window can ask whether THIS hit is
-// on it. A card carries it by any of its signatures - the keyword, the 1.021
-// English, or the older Chinese prose ZHDR-301 and the two Cores still print.
-export function denseArmorSlot(data: GameData, t: Token): string | null {
+// on it. A card carries it by any of its signatures - the 1.021 English, the
+// older Chinese prose ZHDR-301 and the two Cores still print, or the keyword,
+// which the Supplementary Rules 1.04 (3.7) retired: the ability is now each
+// Part's own passive Action, and our data carries it on no card.
+//
+// `hit` names the Part the attack landed on, and then only THAT Part answers.
+// Without it the first carrier is returned, which hid the second when a Mech
+// wore two: a P28 or P24 core with an SS30 Heavy Shield read as Torso only, so
+// a hit on the shield never lost its dice.
+export function denseArmorSlot(data: GameData, t: Token, hit?: string): string | null {
   for (const { slot, card } of tokenCards(data, t)) {
     if (slot === 'pilot') continue;
+    if (hit !== undefined && slot !== hit) continue;
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     const kw = (card.keywords ?? []).some((k: { key?: string; en?: string }) => /致密装甲|Dense\s*Armor/i.test(`${k.key ?? ''} ${k.en ?? ''}`));
     const says = (card.actions ?? []).some((a: CardAction) => /remove all Attack Dice with/i.test(a.description?.en ?? '')
@@ -4217,8 +4271,9 @@ export function earlyWarningCover(
 //     and this is a Drone seeing a target, the question FAQ F5 answers "still
 //     works" for the Radar. It went with 164 and applied smoke until then.
 //  2. 'obstructed' STILL SEES. Obstruction buys the defender White dice; it
-//     does not hide them. Both neighbours read `!== 'blocked'`; only 539
-//     Coordinated Observation demands 'clear', and that card says so.
+//     does not hide them. Both neighbours read `!== 'blocked'`, and so does
+//     539 Coordinated Observation since the Supplementary Rules 1.04 (1.1.1)
+//     said what a 1- or 2-inch piece does to sight: nothing.
 //  3. DRONES ONLY. `kind === 'drone'` and not merely "not a mech", or a Missile
 //     in flight would count as a spotter — projectiles are their own kind.
 //
@@ -4700,7 +4755,9 @@ export function settleEnvironments(data: GameData, state: GameState): EnvEvent[]
     } else if (t.envSeen) {
       delete t.envSeen;
     }
-    if (card === 'fragile-platform' && isGroundUnit(data, t)) {
+    // A Mine is a Ground Unit too (Supplementary Rules 1.04, 1.3), though it
+    // keeps `aerial` for sight and Melee, and one placed here has entered.
+    if (card === 'fragile-platform' && (isGroundUnit(data, t) || !!t.mine)) {
       const rest = (state.environments ?? []).filter((e) => !(e.col === g.c && e.row === g.r));
       if (rest.length) state.environments = rest;
       else delete state.environments;
@@ -4760,23 +4817,31 @@ export function minesOwed(data: GameData, tokens: Token[]): MineTrigger[] {
     const trigger = (card.actions ?? []).find((a) => (a.redDice ?? 0) + (a.yellowDice ?? 0) > 0);
     if (!trigger) continue;
     const g = largeGridOf(m);
-    // The blast catches everything in the Grid, ally, Flying and Aerial alike
-    // (M6/M22) - but only a Ground Unit sets it off, by ENTERING the Grid: one
+    // The blast catches the GROUND units in the Grid, allies included (M6), and
+    // not the Flying or Aerial units above it: FAQ 1.04 reversed M22, which in
+    // V1.03 said they were caught too (ruling I17 followed V1.03 and is
+    // superseded). Only a Ground Unit sets it off, by ENTERING the Grid: one
     // that stood there as the Mine arrived is spared until it moves (ruling
     // I15; audit Phase 5, C3).
     const inGrid = live.filter((o) => o.uid !== m.uid && coversGrid(o, g));
     const walker = inGrid.find((o) => isGroundUnit(data, o) && !mineSpares(m, o));
     // Deploying a Mine into a Grid that already holds one sets off the one that
     // was already there (M6). Uids are minted in order, so the higher uid is
-    // the Mine that just arrived.
-    const newer = inGrid.find((o) => o.uid > m.uid && isMineToken(o));
+    // the Mine that just arrived. Not one Laid by the same Movement: Mines one
+    // Action places are placed together and do not set each other off
+    // (Supplementary Rules 1.04, 1.3), where the second used to fire the first.
+    const newer = inGrid.find((o) => o.uid > m.uid && isMineToken(o) && !(o.mine?.batch && o.mine.batch === m.mine?.batch));
     // One that went off with a Mine beside it stays owed (FAQ I13; C2).
     const owedBefore = !!m.mine?.owed;
     if (!walker && !newer && !owedBefore) continue;
     // Mines that go off together are treated as exploding at the same time,
     // so one never destroys another (FAQ I13); a Mine Deployed into the Grid
-    // is the one the blast may catch (M6).
-    const victims = walker || owedBefore ? inGrid.filter((o) => !isMineToken(o)) : inGrid;
+    // is the one the blast may catch (M6). A Mine keeps `aerial` in the model
+    // (for sight and Melee) but is its own kind here, which is why it is named
+    // rather than left to isGroundUnit (M22 spares Flying and Aerial units).
+    const victims = walker || owedBefore
+      ? inGrid.filter((o) => !isMineToken(o) && isGroundUnit(data, o))
+      : inGrid.filter((o) => isMineToken(o) || isGroundUnit(data, o));
     out.push({
       uid: m.uid,
       actionId: trigger.id,
@@ -5512,6 +5577,12 @@ export function maxLink(data: GameData, t: Token): number {
 export function pilotIs(data: GameData, t: Token, id: string): boolean {
   return pilotCard(data, t)?.id === id;
 }
+
+// The two UN pilots the 1.04 list adds. Their ids are OURS (cards_extra.json):
+// the list prints neither a serial nor a QR id, so when the publisher assigns
+// them, these two constants and the two cards change together.
+export const PILOT_OPAL = 'LPA-OPAL';
+export const PILOT_TOURMALINE = 'LPA-TOURMALINE';
 
 // How many Parts a unit still has. `partStates` holds only the equipped slots,
 // so a Mech built without a Backpack starts at FOUR, not five, and a Repaired
@@ -6953,6 +7024,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
               ? t.mine.spared.filter((x: { uid?: unknown; col?: unknown; row?: unknown }) => typeof x?.uid === 'number' && typeof x?.col === 'number' && typeof x?.row === 'number')
               : undefined,
             owed: t.mine?.owed === true ? true : undefined,
+            batch: typeof t.mine?.batch === 'string' && t.mine.batch.length <= 200 ? t.mine.batch : undefined,
           }
         : undefined,
       lastDamagedBy: t.lastDamagedBy,

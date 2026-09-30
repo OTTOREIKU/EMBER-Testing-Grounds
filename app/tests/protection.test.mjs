@@ -230,8 +230,10 @@ const source = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf
 for (const [file, callee] of [['combat.ts', 'protectionFor'], ['main.ts', 'protectionForShared'],
   ['match.ts', 'protectionFor'], ['matchhud.ts', 'protectionFor']]) {
   const text = source(file);
-  check(`${file} hands protectionFor the 095 reading`,
-    new RegExp(`${callee}\\([\\s\\S]{0,400}?ignoresProtectionOnHighlight`).test(text), true);
+  // The shared question since 1.04 (units.ts ignoresProtection): 095's reading
+  // and the pilot Tourmaline's Stationary Shadow, asked in one place.
+  check(`${file} hands protectionFor the shared protection question (095, Tourmaline)`,
+    new RegExp(`${callee}\\([\\s\\S]{0,400}?ignoresProtection\\(`).test(text), true);
   check(`${file} hands protectionFor the ZHDR-101 predicate`,
     new RegExp(`${callee}\\([\\s\\S]{0,400}?providesUnitProtectionToAllies`).test(text), true);
 }

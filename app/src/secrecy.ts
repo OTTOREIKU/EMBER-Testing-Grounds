@@ -121,7 +121,9 @@ export function boardFingerprint(state: GameState): string {
       t.group ?? null,
       t.groupTarget ?? null,
       // A Mine's spared units and its owed mark (C2, C3): minesOwed reads both.
-      t.mine ? `${(t.mine.spared ?? []).map((x) => `${x.uid}@${x.col},${x.row}`).sort().join(';')}|${t.mine.owed ? 1 : 0}` : null,
+      // Its batch too (1.3), and only when it has one, so every other Mine
+      // hashes as it did.
+      t.mine ? `${(t.mine.spared ?? []).map((x) => `${x.uid}@${x.col},${x.row}`).sort().join(';')}|${t.mine.owed ? 1 : 0}${t.mine.batch ? `|${t.mine.batch}` : ''}` : null,
       // The Pholcus's M18.4 blast, owed by its Unfold (D2).
       t.unfoldBlast ? 1 : null,
       // Who stands inside its auras on a table with no board: every aura rule

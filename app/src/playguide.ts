@@ -136,6 +136,11 @@ export class PlayGuide {
   private data: GameData;
   private cb: GuideCallbacks;
   private state: GameState | null = null;
+  // An attacking Action's Command Coordination, held until the attack has
+  // resolved and any Riposte it drew is answered (FAQ 1.04 C8/C9), and the
+  // offer while it runs. See settleCoordination.
+  private coordHeld: { uid: number; upTo: number } | null = null;
+  private coordRun: Promise<void> | null = null;
   // The Drone that took its Data Link move first (the YP23, GoF 1.021), so
   // the button is spent once used (audit Phase 5, F9).
   private preMoved: number | null = null;
@@ -664,7 +669,11 @@ export class PlayGuide {
   // timing decides which phase it belongs to, and 5.4.2 caps play at 1 a round.
   private tacticsHtml(s: GameState, phase: string): string {
     const rows: string[] = [];
+    // In a room a seat sees and plays its own hand only: the other squad's is
+    // hidden until played (Supplementary Rules 1.04, 1.11).
+    const me = getLocalSeat();
     for (const side of ['s1', 's2'] as const) {
+      if (me && side !== me) continue;
       const held = s.tactics?.[side] ?? [];
       if (!held.length) continue;
       const spent = (s.tacticsPlayed?.[side] ?? []).filter((e) => e.startsWith(`${s.round.n}:`));
@@ -1901,11 +1910,52 @@ export class PlayGuide {
       // type of this Mech's, and the Warrior Torso does exactly that to Melee.
       const coord = coordinationFor(this.data, t, row.action);
       if (coord > 0) {
+        // An ATTACK's Coordination waits for the attack (FAQ 1.04 C8/C9): this
+        // runs when the target is picked, before a die is rolled. The page
+        // settles it once the attack is over (settleCoordination).
+        if (row.action.type === 'Firing' || row.action.type === 'Melee') {
+          this.coordHeld = { uid: t.uid, upTo: coord };
+          this.cb.onChanged();
+          return;
+        }
         void this.offerCoordination(s, t, coord).then(() => this.cb.onChanged());
         return;
       }
       this.cb.onChanged();
     });
+  }
+
+  // THE HELD COORDINATION (FAQ 1.04). C8: a Riposte ends the attacker's Action
+  // Opportunity at once, and Command Coordination comes after the attack, so a
+  // Riposte skips it. C9: after an attack the attacker's effects resolve first
+  // and the defender's second, so the Coordination comes before the defender's
+  // Target Tracing. The page asks this before it prompts any of the defender's
+  // reactions and when the attack window closes: a Riposte still owed holds it
+  // back (it is answered first, C7), and only then is it offered, or skipped.
+  // The uid while one is held or being offered, so the page can wait for it.
+  coordinationHeld(): number | null {
+    return this.coordHeld?.uid ?? (this.coordRun ? -1 : null);
+  }
+
+  settleCoordination(): Promise<void> {
+    if (this.coordRun) return this.coordRun;
+    const p = this.coordHeld;
+    const s = this.state;
+    if (!p || !s) return Promise.resolve();
+    if ((s.script?.reactions ?? []).some((r) => r.kind === 'riposte' && r.fromUid === p.uid)) return Promise.resolve();
+    this.coordHeld = null;
+    const t = s.tokens.find((x) => x.uid === p.uid);
+    if (!t) return Promise.resolve();
+    if (s.script?.opp?.uid !== p.uid) {
+      this.cb.onNote(t, `${t.label}'s Action Opportunity ended before its Command Coordination came due, so the Coordination is skipped (a Riposte ends it at once: FAQ C8).`);
+      this.cb.onChanged();
+      return Promise.resolve();
+    }
+    this.coordRun = this.offerCoordination(s, t, p.upTo).then(() => {
+      this.coordRun = null;
+      this.cb.onChanged();
+    });
+    return this.coordRun;
   }
 
   // Command Coordination X (4.15.3). The offer itself lives in commandpick.ts
@@ -1927,6 +1977,8 @@ export class PlayGuide {
     if (!o) return;
     const t = s.tokens.find((x) => x.uid === o.uid);
     if (!t) return;
+    // A Coordination still held for an attack lapses with the Opportunity.
+    if (this.coordHeld?.uid === o.uid) this.coordHeld = null;
     // The Integrated Data Link Pod coordinates when the Opportunity ENDS, not
     // off any one Action, so its offer has to come before the Opportunity is
     // closed - a Passive is never performed and the per-Action path can never

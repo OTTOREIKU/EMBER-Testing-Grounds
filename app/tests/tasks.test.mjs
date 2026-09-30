@@ -51,7 +51,11 @@ check('a shutdown mech alone holds nothing', T.controlOf(ZONE, [unit(1, 's1', 1,
 check('but it still denies the zone to the enemy', T.controlOf(ZONE, [unit(1, 's1', 1, 1, { stance: 'shutdown' }), unit(2, 's2', 2, 2)]), null);
 check('any enemy unit contests it', T.controlOf(ZONE, [unit(1, 's1', 1, 1), unit(2, 's2', 2, 2)]), null);
 // Even a Low Value projectile counts as an enemy Unit inside the Zone.
-check('an enemy projectile contests it', T.controlOf(ZONE, [unit(1, 's1', 1, 1), unit(2, 's2', 2, 2, { kind: 'projectile' })]), null);
+check('an enemy projectile contests it', T.controlOf(ZONE, [unit(1, 's1', 1, 1), unit(2, 's2', 2, 2, { kind: 'projectile', aerial: true })]), null);
+// A Deployable does not: the Supplementary Rules 1.04 (1.2, 1.3) say it cannot
+// interact with Control Zones. Ground-standing, or the GM-35 with its record.
+check('an enemy Deployable does not contest it (1.04: 1.2)', T.controlOf(ZONE, [unit(1, 's1', 1, 1), unit(2, 's2', 2, 2, { kind: 'projectile', aerial: false })]), 's1');
+check('nor an enemy Mine (1.04: 1.3)', T.controlOf(ZONE, [unit(1, 's1', 1, 1), unit(2, 's2', 2, 2, { kind: 'projectile', aerial: true, mine: {} })]), 's1');
 check('a friendly projectile does not hold it alone', T.controlOf(ZONE, [unit(1, 's1', 1, 1, { kind: 'projectile' })]), null);
 check('an undeployed unit is not in the zone', T.controlOf(ZONE, [unit(1, 's1', 1, 1, { deployed: false })]), null);
 check('two friendly units still take it', T.controlOf(ZONE, [unit(1, 's1', 1, 1), drone(3, 's1', 2, 2)]), 's1');

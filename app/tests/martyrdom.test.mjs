@@ -50,7 +50,9 @@ check('both screens hand off to startDetonation',
   && /if \(p\) startDetonation\(p, next\.actionId\);/.test(main), true);
 // Which is what supplies `destroyAfter: true` for free.
 check('and that flow despawns the wreck when it closes',
-  /data-act="detdone"[\s\S]{0,300}kind: 'despawn'/.test(hud), true);
+  // Wider since 1.04: an "all Units" blast first destroys the Containers it
+  // caught (Supplementary Rules 1.04, 1.4.2), then the despawn.
+  /data-act="detdone"[\s\S]{0,1400}kind: 'despawn'/.test(hud), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

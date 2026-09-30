@@ -69,7 +69,7 @@ import { configureNotices, explainOnHold, notify, redrawNotice, speakInPlace, ty
 import { boxHands, normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, vipFallen } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from '../src/tactics';
-import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop } from '../src/units';
+import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop, volleyFor } from '../src/units';
 import { gameResult } from '../src/tasks';
 import { isSilentAction, actionSilenceDenier, auraReach, auraEffectsOf, auraActionOf, auraCanReach, auraReachable, inAuraReach, aurasAtRoll, type AuraAtRoll, actionRange, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf, discardSlots, commonActionStop, commonPartKey } from '../src/units';
 import { canManeuver, canPerform, costOf, lengthOf, LENGTH_NAME, markAction, markExtra, markManeuver, spendAction, spendManeuver, tickBarState, timingOf } from '../src/ticks';
@@ -2007,11 +2007,15 @@ async function launchFrom(t: Token, actionId: string, cardId: string): Promise<v
   // Every magazine that can pay, the Pod's and then an Ammunition Pack's under
   // 086_B, the same count launch() itself works to (audit Phase 2, C6).
   const ammo = ammoAvailable(data, table, t, actionId);
-  const most = Math.min(volleyOf(action), ammo ?? Infinity);
+  // volleyFor: Opal's Projectile Actions at Projectile Timing count as
+  // Volley 2 (UN parts list 1.04). The running Opportunity, guided or free.
+  const opp = guidedOn(table) ? (table.script?.opp?.uid === t.uid ? table.script.opp : null) : freeTicksOn(t) ? freeOpp(t) : null;
+  const volley = volleyFor(data, t, action, opp);
+  const most = Math.min(volley, ammo ?? Infinity);
   let count = Math.max(1, most);
   if (most > 1) {
     const pick = await choiceDialog({
-      title: `${action.name.en || 'Volley'} · Volley ${volleyOf(action)}`,
+      title: `${action.name.en || 'Volley'} · Volley ${volley}`,
       body: 'How many are launched?',
       choices: Array.from({ length: most }, (_, i) => most - i).map((k, i) => ({ id: String(k), label: String(k), primary: i === 0 })),
     });

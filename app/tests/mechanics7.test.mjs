@@ -636,6 +636,18 @@ const P = await import(`${pageOut.href}?t=${Date.now()}`);
   lancer.partStates.chasis = 'intact';
   lancer.statuses = ['immobilized'];
   check('R6 Immobilized still stops it', /Immobilized/.test(why(s, walk)), true);
+  // Supplementary Rules 1.04 (3.8): "may additionally move up to X spaces".
+  // The ceiling was the larger of X and the Maneuver Value, so Shock Attack 1
+  // let a Mech walk its whole Maneuver before the Thrust. 022 is a Maneuver 2
+  // Chassis, the most any Chassis prints.
+  const t2 = table();
+  const quick = put(t2, 's1', L({ rightHand: 'ZHRA-103', chasis: '022' }), 4, 4, { stance: 'offensive', timing: 'melee' });
+  t2.script.opp = opp(quick.uid, { timing: 'melee' });
+  send(t2, act(quick, 'ZHRA-103_A'));
+  const two = move(quick, 6, 4, { free: true, actionId: 'ZHRA-103_A' });
+  check('1.04 3.8 the fixture could Maneuver two Grids', U.maneuverRange(data, quick), 2);
+  check('1.04 3.8 but the Shock Attack 1 walk is up to X: one Grid', ok(t2, move(quick, 5, 4, { free: true, actionId: 'ZHRA-103_A' })), true);
+  check('1.04 3.8 and not two', /at most 1 Grid/.test(why(t2, two)), true);
 }
 
 // ---------- P7B 11: the Common Actions are a Mech's (3.4.3) ----------

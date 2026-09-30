@@ -286,13 +286,13 @@ for (const [name, src] of [['main.ts', main], ['matchhud.ts', hud]]) {
     /import \{[^}]*\bammoHolder\b[^}]*\} from '\.\/commands'/.test(src), true);
 }
 const startLaunch = main.slice(main.indexOf('function startLaunch(t: Token'), main.indexOf('function endTargeting'));
-check('freeplay startLaunch was located', startLaunch.includes('volleyOf'), true);
+check('freeplay startLaunch was located', startLaunch.includes('volleyFor'), true);
 check('and sizes the volley off the magazine that pays',
   // ammoAvailable reads that holder AND the Ammunition Pack 086_B lends an
   // empty Pod (audit Phase 2, C6), the same pools launch() itself pays from.
   startLaunch.includes('ammoAvailable(data, state, t, action.id)'), true);
 const startPlan = hud.slice(hud.indexOf('export function startLaunchPlan'), hud.indexOf('// A Landing Point is a Grid'));
-check('the Match Centre launch plan was located', startPlan.includes('volleyOf'), true);
+check('the Match Centre launch plan was located', startPlan.includes('volleyFor'), true);
 check('and sizes its volley off the same one',
   startPlan.includes('ammoAvailable(ctx.data, ctx.state, t, actionId)'), true);
 

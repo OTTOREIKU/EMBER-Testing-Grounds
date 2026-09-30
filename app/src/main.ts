@@ -22,7 +22,7 @@ import {
 } from './boards';
 import { openColourPicker } from './colourpicker';
 import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
-import { cardName, dataUrl, discardFaceOf, environmentAllowance, environmentLookup, isAerial, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, type SecondaryTask, setSquadNames, SQUAD_ORDER, squadLabel, unitSize } from './data';
+import { cardName, dataUrl, discardFaceOf, environmentAllowance, environmentLookup, isAerial, isMine, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, type SecondaryTask, setSquadNames, SQUAD_ORDER, squadLabel, unitSize } from './data';
 import {
   deleteCustomMap,
   emptyCustomMap,
@@ -46,7 +46,7 @@ import {
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
-import { boxDropCellIn, boxDropCells, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
+import { boxDropCellIn, boxDropCells, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot, mineSpot } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, crawlHolders, lockersOf, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -65,7 +65,7 @@ import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, Opportunity, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, cellsOf, DEFAULT_GRIDS, isLineUnit, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { interceptHeld, interceptPayer, allyRepairTargets, boxNoteText, electronicStrength, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction, actionIdleWhy, type IdleWorld, resupplyHolders, selfRepairOptions, isCharged, discardSlots, actionPartWhy, chassisGone, commonActionStop, riposteMelees } from './units';
+import { interceptHeld, interceptPayer, allyRepairTargets, boxNoteText, electronicStrength, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, type AttackReaction, actionIdleWhy, type IdleWorld, resupplyHolders, selfRepairOptions, isCharged, discardSlots, actionPartWhy, chassisGone, commonActionStop, riposteMelees, ignoresProtection, volleyFor } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -205,6 +205,11 @@ async function init() {
       if (t) panel.showToken(t);
       showSideTab('details');
       checkInterceptFollowUp();
+      // The attack is over: an attacking Action's held Command Coordination may
+      // be offered now (FAQ 1.04 C8/C9). A Riposte still owed holds it back, and
+      // when the defender's reactions are queued the prompt above has already
+      // started it, so this only reaches the attack that drew none.
+      void playGuide.settleCoordination();
       // An "all Units" blast goes back to its list until Done (A1).
       if (blast?.attacking) {
         blast.attacking = false;
@@ -250,6 +255,7 @@ async function init() {
   attackHelper.boxHands = (uid) => boxHands(state.tasks, uid);
   // Whose Action is running, for a lent Load's Dodge (ruling I24).
   attackHelper.actingUid = () => state.script?.opp?.uid ?? null;
+  attackHelper.opportunity = () => state.script?.opp ?? null;
   attackHelper.terrain = () => currentTerrain();
   attackHelper.smoke = () => state.smoke ?? [];
   // What a defender set off by being shot at. Queued rather than placed inline,
@@ -1287,7 +1293,7 @@ async function init() {
 
   function protectionFor(attacker: Token, defender: Token, action: { type?: string }): { white: number; note: string } {
     return protectionForShared(attacker, defender, action, currentTerrain(), state.tokens, state.smoke ?? [],
-      ignoresProtectionOnHighlight(data, attacker) && statusCount(defender.statuses, 'highlight') > 0,
+      ignoresProtection(data, attacker, defender, state.script?.opp),
       (t) => providesUnitProtectionToAllies(data, t));
   }
 
@@ -2024,7 +2030,8 @@ async function init() {
     // offers the owed targets only (ruling I11; B9).
     const owed = (x: Token) => x.uid === interceptPrefer || interceptOwedAt(state, t.uid, actionId, x.uid);
     const inReach = state.tokens.filter(
-      (x) => x.side !== t.side && (owed(x) || (!strictNow(state) && x.aerial && rangeBetween(t, x).range <= reach)),
+      // A landed Mine is a Ground Unit (1.3), whatever its `aerial` flag says.
+      (x) => x.side !== t.side && (owed(x) || (!strictNow(state) && x.aerial && !x.mine && rangeBetween(t, x).range <= reach)),
     );
     // Smoke over every line takes the shot away (FAQ F3; audit Phase 4, G4).
     const targets = inReach.filter((x) => owed(x) || !smokeBlocks(t, x, state.smoke ?? []));
@@ -2322,7 +2329,10 @@ async function init() {
     // one here would burn a uid the launch command then cannot reproduce.
     const spot = line
       ? lineSpot(c, r, face, currentTerrain(), state.tokens)
-      : standingSpot(c, r, unitSize(m.card), isAerial(m.card), currentTerrain(), state.tokens, undefined, { col: t.col, row: t.row });
+      // A Mine keeps clear of terrain and may share its Grid with a unit (1.3).
+      : isMine(m.card)
+        ? mineSpot(c, r, currentTerrain(), { col: t.col, row: t.row })
+        : standingSpot(c, r, unitSize(m.card), isAerial(m.card), currentTerrain(), state.tokens, undefined, { col: t.col, row: t.row });
     if (!spot) {
       say('refused', line
         ? `${cardName(m.card)} is a 1x3 line: facing ${['North', 'East', 'South', 'West'][face]} it needs a clear ${face % 2 ? 'column' : 'row'} of that Grid, and none is. Pick another Grid or another facing.`
@@ -2458,7 +2468,10 @@ async function init() {
     // And ammoAvailable, not one magazine: an empty Pod still fires out of an
     // Ammunition Pack carrying 086_B (audit Phase 2, C6).
     const ammo = ammoAvailable(data, state, t, action.id);
-    const shots = Math.min(volleyOf(action), ammo === undefined ? volleyOf(action) : ammo);
+    // volleyFor, not the printed Volley: Opal's Projectile Actions at
+    // Projectile Timing count as Volley 2 (UN parts list 1.04).
+    const volley = volleyFor(data, t, action, launchOpp(t.uid));
+    const shots = Math.min(volley, ammo === undefined ? volley : ammo);
     if (shots <= 0) {
       say('refused', `${action.name.en || action.id} has no Ammo Tokens left (4.13).`);
       return done(false);
@@ -2515,7 +2528,12 @@ async function init() {
       s1: squadPoints(data, state.tokens, 's1', state.tactics?.s1 ?? []),
       s2: squadPoints(data, state.tokens, 's2', state.tactics?.s2 ?? []),
     }),
-    heldTactics: () => ({ s1: state.tactics?.s1 ?? [], s2: state.tactics?.s2 ?? [] }),
+    // In a room the other squad's hand is hidden until played (Supplementary
+    // Rules 1.04, 1.11), so its buttons carry no tick for a card it holds.
+    heldTactics: () => {
+      const me = getLocalSeat();
+      return { s1: !me || me === 's1' ? state.tactics?.s1 ?? [] : [], s2: !me || me === 's2' ? state.tactics?.s2 ?? [] : [] };
+    },
     // Through the command layer rather than by hand: a hand set locally is a
     // hand the other client never sees, and check() for playTactic reads the
     // *sender's* hand — so a card played across a table would be refused.
@@ -2669,6 +2687,10 @@ async function init() {
     // inside the plan, so a plan that has only turned is a finished Movement
     // (FAQ E3, E18), and Cancel turns it back.
     facing0: Facing;
+    // The net quarter turns Q and E made inside the plan: four one way is a
+    // full circle, a legal Movement that ends facing where it began
+    // (Supplementary Rules 1.04, 1.8), which a new facing could not show.
+    spin?: number;
     // `halt`: the Grids a Mine's stop kept back, for the guide's command (C1).
     done: (moved: boolean, halt?: number) => void;
     // The Red Shoes' controller, when the unit moving is the one it steers:
@@ -2785,7 +2807,7 @@ async function init() {
 
   function planTurned(m: NonNullable<typeof movePlan>): boolean {
     const t = state.tokens.find((x) => x.uid === m.uid);
-    return !!t && t.facing !== m.facing0;
+    return !!t && (t.facing !== m.facing0 || Math.abs(m.spin ?? 0) >= 4);
   }
 
   // The shared reading, not a local copy of it: Mobility Stance doubles a Mech's
@@ -2901,6 +2923,7 @@ async function init() {
       label: opts.label,
       action: opts.action ?? null,
       facing0: t.facing,
+      spin: opts.turn === 1 ? 1 : opts.turn === 3 ? -1 : 0,
       done,
       ...(opts.controller ? { controller: opts.controller } : {}),
     };
@@ -2952,7 +2975,9 @@ async function init() {
       steerSettle(t, m, { col: t.col, row: t.row }, [], `${t.label} is turned on the spot to face ${['North', 'East', 'South', 'West'][t.facing]} (The Red Shoes).`);
       return;
     }
-    logTo(t, `${t.label} turns on the spot to face ${['North', 'East', 'South', 'West'][t.facing]}.`);
+    logTo(t, t.facing === m.facing0
+      ? `${t.label} turns a full circle on the spot. It faces the same way, and it has made a Movement, so it is no longer Stationary (Supplementary Rules 1.04, 1.8).`
+      : `${t.label} turns on the spot to face ${['North', 'East', 'South', 'West'][t.facing]}.`);
     const linkCost = nonHumanoidCost(m.action ?? null);
     if (linkCost > 0) {
       t.link = Math.max(0, (t.link ?? 0) - linkCost);
@@ -3035,7 +3060,7 @@ async function init() {
       : undefined;
     const path = cut > 0 ? m.path.slice(0, cut + 1) : m.path;
     if (path.length < 2) {
-      if (t.facing !== m.facing0) commitPivot(t, m);
+      if (planTurned(m)) commitPivot(t, m);
       return;
     }
     // Each stop takes the free part of its Grid rather than the middle, so a unit
@@ -3397,6 +3422,14 @@ async function init() {
       });
       if (!where) return;
       const [c, r] = where.split(',').map(Number);
+      // On a cell of the Grid that terrain leaves free: a Mine is a Ground Unit
+      // (Supplementary Rules 1.04, 1.3). It used to go on the middle cell,
+      // whatever stood there.
+      const at = mineSpot(c, r, currentTerrain());
+      if (!at) {
+        say('refused', `Terrain fills ${gridRef(c, r)}, so ${what} has nowhere to go there: a Mine is a Ground Unit (Supplementary Rules 1.04, 1.3).`);
+        continue;
+      }
       // Through the command layer so a mirrored seat mints the same uid, which
       // is also what lets minesOwed tell a Mine that just arrived from one that
       // was already there (M6).
@@ -3404,7 +3437,7 @@ async function init() {
       // the Maneuver, so the engine judges the Grid against the Movement it was
       // laid along, a flight against its two ends (FAQ M29).
       const v = perform(data, state, {
-        kind: 'layMine', seat: t.side, uid: t.uid, actionId: lay.actionId, cardId: lay.cardId, to: { col: c * 3 + 1, row: r * 3 + 1 },
+        kind: 'layMine', seat: t.side, uid: t.uid, actionId: lay.actionId, cardId: lay.cardId, to: at,
         route: path.map((g) => ({ col: g.c * 3 + 1, row: g.r * 3 + 1 })), ...(flying || t.aerial ? { flying: true } : {}),
       });
       if (!v.ok && (state.script?.strict || getLocalSeat())) return;
@@ -4396,6 +4429,16 @@ async function init() {
   // Centre, so neither page owns the rule.
   function renderReactionPrompt(): void {
     if (smokePlacing) return;
+    // The attacker's held Command Coordination comes before the defender's
+    // reactions (FAQ 1.04 C9), unless a Riposte from the same attack is still
+    // owed: that one is answered first (C7), and ending the Opportunity skips
+    // the Coordination (C8). The ONE place that waits for it, so a reaction is
+    // never prompted twice.
+    const held = playGuide.coordinationHeld();
+    if (held !== null && !(state.script?.reactions ?? []).some((r) => r.kind === 'riposte' && r.fromUid === held)) {
+      void playGuide.settleCoordination().then(() => renderReactionPrompt());
+      return;
+    }
     // In an online freeplay room only the DEFENDER's client may answer — the
     // other seat's resolveReaction would apply locally and never travel. A
     // local table has no seat, so both sides prompt as before.
@@ -4843,7 +4886,8 @@ async function init() {
   // list comes back when that window closes and after no other attack.
   // `scanned`: camouflaged targets this Projectile has tried its Scan on (A3).
   // `flew`: the target a Missile has already flown to (A2).
-  let blast: { uid: number; actionId: string; hit: number[]; attacking: boolean; scanned?: number[]; flew?: number } | null = null;
+  // `terrainHit`: it has already taken a Container, so it is spent.
+  let blast: { uid: number; actionId: string; hit: number[]; attacking: boolean; scanned?: number[]; flew?: number; terrainHit?: boolean } | null = null;
 
   // p.71: a single-target Explosion at a unit in Optical Camouflage Scans it
   // first, the Projectile the Initiator. A won Scan owes the unit its Reveal,
@@ -4918,11 +4962,14 @@ async function init() {
       ? blast
       : (blast = { uid: proj.uid, actionId, hit: [], attacking: false });
     // What the card lets it take (4.7.5; A5), and whether it stays with
-    // nothing to take (the PK3; A6).
+    // nothing to take (the PK3; A6). A Container is a Neutral Unit
+    // (Supplementary Rules 1.04, 1.1.3), which a single-target Explosion MAY
+    // take and so may leave alone (1.4.2): it no longer stops the PK3 staying.
+    // An "all Units" one MUST take it, and Done destroys any left (3.1).
     const pool = targets.map((x) => x.t);
     const barOf = (t: Token) => detonationBar(state.tokens, proj, action, pool, t);
     const legal = targets.filter(({ t }) => !barOf(t));
-    const stays = !legal.length && !terrain.length && keptWithoutTarget(action);
+    const stays = !legal.length && !burst.terrainHit && keptWithoutTarget(action);
     body.innerHTML = `<div class="attack-helper">
       <div class="ah-head"><b>${ICON_BURST} ${escapeHtml(detonateHeading(name, proj.label))}</b>
         <span class="dim">R${range} from ${escapeHtml(proj.label)}</span></div>
@@ -4934,7 +4981,9 @@ async function init() {
             ? '<p class="dim">This card says <b>all Units within range</b>, so it hits allies too and every unit listed takes a separate attack. Resolve them one at a time (4.7.6).</p>'
             : '<p class="dim">This card damages a <b>single target</b>, so only one of these takes the attack. Pick it, resolve it, then destroy the projectile (4.7.5, 4.7.6).</p>'
           : terrain.length
-            ? '<p class="dim">No target within range, but Destructible Terrain is always a legal target, so this projectile still has something to hit (4.7.5).</p>'
+            ? stays
+              ? '<p class="dim">No unit within range but a Container, which is a Neutral Unit it may take or leave (Supplementary Rules 1.04, 1.4.2). Left alone, this card is not removed: it stays for a later Delay Phase (GoF 1.021).</p>'
+              : '<p class="dim">No unit within range but a Container, which is a Neutral Unit this projectile may still hit (Supplementary Rules 1.04, 1.4.2).</p>'
             : stays
               ? '<p class="dim">No target and no Destructible Terrain within range. This card is not removed then: it stays for a later Delay Phase (GoF 1.021).</p>'
               : '<p class="dim">No target and no Destructible Terrain within range. A projectile with a delayed action that needs a target is destroyed instead (4.7.5).</p>'}
@@ -4955,8 +5004,10 @@ async function init() {
           .join('')}</div>
       </div>
       ${terrain.length
-        ? `<div class="ah-step"><h4>Or hit Destructible Terrain</h4>
-            <p class="dim">Terrain takes no roll. It is removed directly when a Firing, Melee or Explosion attack hits it (p.21). Only the 1-inch Containers can be destroyed; Buildings and Defense walls cannot.</p>
+        ? `<div class="ah-step"><h4>${scope === 'all' ? 'The Containers it caught' : 'Or hit a Container'}</h4>
+            <p class="dim">${scope === 'all'
+              ? 'A Container is a Neutral Unit, and this card says all Units within range, so each one here is caught too (Supplementary Rules 1.04, 1.4.2). Breakable: it is destroyed with no roll (3.1), and Done destroys any left.'
+              : 'A Container is a Neutral Unit and Breakable: an attack that picks it destroys it with no roll (Supplementary Rules 1.04, 1.1.3, 3.1). Buildings and Defense walls are terrain and cannot be destroyed.'}</p>
             <div class="ah-partpick" id="det-terrain">${terrain
               .map(({ piece, dist }) => `<button class="chip" data-terrain="${escapeHtml(piece.id)}">
                   <b>TERRAIN</b> ${escapeHtml(terrainLabel(piece))}
@@ -4982,6 +5033,13 @@ async function init() {
     if (det) inspectOnHover(remove, { title: det.name, sub: det.ref, lines: [det.text] });
     remove.addEventListener('click', () => {
       blast = null;
+      // "All Units" includes the Neutral Containers (1.4.2): any still standing
+      // in range goes with the blast.
+      const left = scope === 'all' ? terrain.map((x) => x.piece.id).filter((id) => !(state.removedTerrain ?? []).includes(id)) : [];
+      if (left.length && perform(data, state, { kind: 'destroyTerrain', seat: proj.side, uid: proj.uid, pieces: left }).ok) {
+        board.renderTerrain(currentTerrain());
+        logTo(proj, `${name} catches ${left.length === 1 ? 'the Container' : `${left.length} Containers`} in range as well: a Neutral Unit, destroyed with no roll (Supplementary Rules 1.04, 1.4.2, 3.1).`);
+      }
       if (stays) {
         board.clearHighlights();
         logTo(proj, `${proj.label} finds no target within Range and stays on the board (GoF 1.021).`);
@@ -5039,11 +5097,14 @@ async function init() {
         const id = b.dataset.terrain!;
         if (state.removedTerrain?.includes(id)) return;
         const hit = currentTerrain().find((p) => p.id === id);
-        perform(data, state, { kind: 'destroyTerrain', seat: proj.side, uid: proj.uid, pieces: [id] });
+        if (!perform(data, state, { kind: 'destroyTerrain', seat: proj.side, uid: proj.uid, pieces: [id] }).ok) return;
         board.renderTerrain(currentTerrain());
-        logTo(proj, `${name} destroys ${hit ? terrainLabel(hit) : 'terrain'}. Destructible Terrain takes no roll.`);
-        b.disabled = true;
+        logTo(proj, `${name} destroys ${hit ? terrainLabel(hit) : 'a Container'}. A Container is Breakable: no roll (Supplementary Rules 1.04, 3.1).`);
         onChanged();
+        // It has taken something now, so a PK3 no longer stays: drawn again,
+        // the button says so.
+        burst.terrainHit = true;
+        startDetonation(proj, actionId);
       }),
     );
     showSideTab('combat');
@@ -7133,16 +7194,16 @@ async function init() {
     const caught = next.victims
       .map((u) => state.tokens.find((t) => t.uid === u)?.label)
       .filter((x): x is string => !!x);
-    // The blast is indiscriminate and catches everything in the Grid, allies
-    // and the Flying or Aerial units above it included (M6/M22). It never
-    // Reveals a camouflaged victim, and a Mech whose Chassis survives carries
-    // on moving (M19).
+    // The blast is indiscriminate: it catches every Ground unit in the Grid,
+    // allies included (M6), but not the Flying or Aerial units above it (FAQ
+    // 1.04 M22, reversed from V1.03). It never Reveals a camouflaged victim, and
+    // a Mech whose Chassis survives carries on moving (M19).
     //
     // The blast is the rule on every table, so it goes off at once and the
     // line says so (pick 5; Teaching asked, with a house-rule skip). Started
     // after this sweep's render, where the dialog used to put it.
     logTo(m, `${m.label} Detonates: ${next.why}.`);
-    say('event', `${m.label} Detonates: ${next.why}. The Explosion catches ${caught.join(', ') || 'nothing else'}, ally or not (FAQ M6/M22).`);
+    say('event', `${m.label} Detonates: ${next.why}. The Explosion catches ${caught.join(', ') || 'nothing else'}, ally or not (FAQ M6); Flying and Aerial units in the Grid are not caught (M22).`);
     startBlastWhenFree(m.uid, next.actionId);
   }
 
@@ -9482,6 +9543,7 @@ async function init() {
       // the Silence and pays the costs once, and Cancel turns it back.
       if (movePlan?.uid === t.uid) {
         t.facing = ((t.facing + d) % 4) as Facing;
+        movePlan.spin = (movePlan.spin ?? 0) + (d === 1 ? 1 : -1);
         onChanged();
         renderMoveCtrl();
         return;

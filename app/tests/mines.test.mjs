@@ -114,9 +114,9 @@ check('the GM-35 Trigger carries the explosion dice', (() => {
   return a ? [a.id, a.redDice, a.yellowDice, a.range ?? 0] : null;
 })(), ['074_A', 3, 1, 0]);
 
-// FAQ M22: the blast catches every unit in the Grid. The card prints "all
-// ground units" and the FAQ widens it, so the wizard must read it as "all".
-check('a Mine blast reads as all-units, not single (M22)',
+// The card prints "all ground units": an area blast, so the wizard reads it
+// as "all". Which units it catches is minesOwed's, below (M22).
+check('a Mine blast reads as an area blast, not single',
   M.explosionScope((byId.get('074').actions ?? [])[0]), 'all');
 // Pholcus damages its target only — the printed English is what governs.
 check("Pholcus's jump stays single-target", M.explosionScope((byId.get('167').actions ?? [])[0]), 'single');
@@ -152,10 +152,11 @@ check('an ally sets it off too (M6)',
 check('a Flying Unit never triggers it (M3/M24)',
   M.minesOwed(data, [mineAt(1, 4, 4), tok(2, 'RAVEN', 4, 4)]), []);
 check('nor does an Aerial one', M.minesOwed(data, [mineAt(1, 4, 4), tok(2, 'DFLY', 4, 4, { aerial: true })]), []);
-// ...but once a Ground Unit does set it off, everything in the Grid is caught,
-// the Flying and Aerial units above it included (M22).
+// ...and once a Ground Unit does set it off, the Flying and Aerial units
+// above it are still not caught: FAQ 1.04 reversed M22, which in V1.03 said
+// they were.
 const mixed = M.minesOwed(data, [mineAt(1, 4, 4), tok(2, 'RAVEN', 4, 5), tok(3, 'DFLY', 5, 4, { aerial: true }), mech(4, 3, 3)]);
-check('a Ground Unit catches the Flying and Aerial with it (M22)', mixed[0]?.victims.sort(), [2, 3, 4]);
+check('a Ground Unit\'s blast spares the Flying and Aerial units above it (M22, FAQ 1.04)', mixed[0]?.victims.sort(), [4]);
 
 // The Grid, not the cell: a 3x3 Mech overlaps a whole Large Grid.
 check('the test is per Large Grid, not per cell',
@@ -168,6 +169,10 @@ check('a Mech in the next Grid is clear',
 const two = M.minesOwed(data, [mineAt(1, 4, 4), mineAt(9, 4, 5)]);
 check('a new Mine sets off the older one (M6)', two.map((x) => x.uid), [1]);
 check('and the new Mine is the one in the blast', two[0].victims, [9]);
+// A Mine is Aerial in the model but its own kind: M22 spares Flying and Aerial
+// units, never the Mine that arrived.
+const withFlyer = M.minesOwed(data, [mineAt(1, 4, 4), mineAt(9, 4, 5), tok(2, 'RAVEN', 5, 5)]);
+check('a Mine set off by a new Mine still spares a Flying unit there (M22)', withFlyer[0]?.victims, [9]);
 
 // A destroyed Mine is not a Mine, and a reserve unit is not on the board.
 check('a destroyed Mine owes nothing',

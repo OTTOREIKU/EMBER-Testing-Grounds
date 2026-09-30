@@ -26,7 +26,7 @@ check('the drag note waits for both of its commands',
 check('a won Counter-roll sends every command and speaks only if all landed',
   /let won = true;\s*for \(const cmd of win\.cmds\) won = ctx\.send\(cmd\)\.ok && won;\s*if \(won\) ctx\.noteNow\(/.test(hud), true);
 check('the detonation note on terrain needs a projectile and a landed command',
-  /if \(proj && ctx\.send\(\{ kind: 'destroyTerrain'[^\n]*\}\)\.ok\) ctx\.noteNow\('Destructible Terrain takes no roll/.test(hud), true);
+  /if \(proj && ctx\.send\(\{ kind: 'destroyTerrain'[^\n]*\}\)\.ok\) \{\s*ctx\.noteNow\('A Container is Breakable/.test(hud), true);
 
 // The pad had the same habit with its toasts: a refused send puts its reason in
 // the red line, and the toast straight after said it had happened anyway.
