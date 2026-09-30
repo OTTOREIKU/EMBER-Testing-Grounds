@@ -2,6 +2,7 @@ import { faceHtml } from '../src/combat';
 import type { RollGroup } from '../src/combat';
 import type { DiceData, DieColor } from '../src/types';
 import { expandGlyphs } from '../src/glyphs';
+import { partIconUrl } from '../src/dice';
 
 // Dice rolled AT THE TABLE. Some players want the dice in their hand, and a
 // pad beside a physical game has real dice on it anyway.
@@ -172,9 +173,9 @@ export function askTargetPart(
       <h3 class="dlg-title">Black Die</h3>
       <p class="td-pool">${esc(target)}</p>
       <div class="td-parts">${parts.filter((p) => DIE_PART[p.slot]).map((p) => `<button class="td-partrow${p.state === 'destroyed' ? ' gone' : ''}" data-part="${esc(DIE_PART[p.slot])}">
-          <b>${esc(p.label)}</b><span>${esc(p.name)}</span>${p.state !== 'intact' ? `<em>${esc(p.state)}</em>` : ''}
+          <img class="part-icon" src="${esc(partIconUrl(DIE_PART[p.slot]))}" alt=""><b>${esc(p.label)}</b><span>${esc(p.name)}</span>${p.state !== 'intact' ? `<em>${esc(p.state)}</em>` : ''}
         </button>`).join('')}
-        <button class="td-partrow" data-part="any"><b>Any</b><span>The attacker designates</span></button>
+        <button class="td-partrow" data-part="any"><img class="part-icon" src="${esc(partIconUrl('any'))}" alt=""><b>Any</b><span>The attacker designates</span></button>
       </div>
     </div>`;
     back.addEventListener('click', (ev) => {

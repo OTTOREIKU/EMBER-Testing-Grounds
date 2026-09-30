@@ -26,6 +26,13 @@ const PART_SHORT: Record<string, string> = {
   any: 'ANY',
 };
 
+// The Black Die's Part faces: the rules' own printed icons, a white Mech on a
+// black tile with the Part lit (Project-Documents/Icon Artwork; OTTO,
+// 2026-09-30, replacing darker ones). One path, for every page that shows one.
+export function partIconUrl(part: string): string {
+  return assetUrl(`dice/black_${part}.webp`);
+}
+
 export function iconSvg(icon: DiceIcon, size = 20): string {
   const s = size;
   // HOLLOW is a rules-bearing face, not decoration: seven of them (2 red Heavy,
@@ -73,7 +80,7 @@ export function iconSvg(icon: DiceIcon, size = 20): string {
       break;
     case 'part': {
       const part = icon.part ?? 'any';
-      return `<img class="part-icon" src="${assetUrl(`dice/black_${part}.webp`)}" alt="${PART_SHORT[part] ?? part}" title="${PART_SHORT[part] ?? part}">`;
+      return `<img class="part-icon" src="${partIconUrl(part)}" alt="${PART_SHORT[part] ?? part}" title="${PART_SHORT[part] ?? part}">`;
     }
     default:
       return '';

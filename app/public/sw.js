@@ -12,7 +12,7 @@ const KEEP = [ASSET_CACHE, RUNTIME_CACHE];
 //
 // Add a prefix here when an image is CORRECTED rather than added, and it can be
 // removed again a release later once the caches have turned over.
-const REPLACED = ['/assets/battlefield/'];
+const REPLACED = ['/assets/battlefield/', '/assets/dice/'];
 
 async function dropReplaced() {
   const cache = await caches.open(ASSET_CACHE);
