@@ -65,6 +65,44 @@
   transition: background 0.12s, color 0.12s;
 }
 
+/* A LIST OF THINGS (OTTO, 2026-09-29: "a unified UI for how we handle lists
+ * of things"): the pad's collection rows, made shared. Rows are blocks with a
+ * small gap, never hairlines (rule 1); the name runs, the numbers sit at the
+ * right in mono, and a count is the amber badge. A page sets --ui-row when its
+ * rows sit on a surface of the same colour (the pad's panels use --surface).
+ * The Reference's box lists use it; the pad's .pad-inv-row is the same row and
+ * moves onto it when next touched. */
+.ui-list { list-style: none; margin: 0 0 16px; padding: 0; }
+.ui-list > li, .ui-row {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 40px; padding: 6px 10px; margin-bottom: 4px;
+  border-radius: var(--radius); background: var(--ui-row, var(--surface2));
+  transition: background 0.12s;
+}
+.ui-list > li.tap, .ui-row.tap { cursor: pointer; }
+.ui-list > li.tap:hover, .ui-row.tap:hover { background: var(--surface3); }
+.ui-row-name { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 500; line-height: 1.3; }
+.ui-row-meta { flex: 0 0 auto; font: 11.5px var(--mono); color: var(--text2); font-variant-numeric: tabular-nums; }
+.ui-badge {
+  flex: 0 0 auto; min-width: 2.2em; text-align: center;
+  font: 700 11px var(--mono); color: var(--accent); background: var(--accent-lt);
+  border-radius: 999px; padding: 2px 7px; font-variant-numeric: tabular-nums;
+}
+
+/* HOME (OTTO, 2026-09-29): the way back to the landing page from anywhere,
+ * the FIRST thing on every page's top line, in the status-line voice. A mono
+ * chip, quiet until hovered, its back chevron in amber. The landing page has
+ * none, being home. */
+.ui-home {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
+  font: 600 10.5px var(--mono); letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text3); text-decoration: none; white-space: nowrap;
+  padding: 5px 8px 5px 7px; border-radius: var(--radius-sm); background: var(--surface2);
+  transition: background 0.12s, color 0.12s;
+}
+.ui-home b { color: var(--accent); font-weight: 700; }
+.ui-home:hover { background: var(--surface3); color: var(--text); }
+
 /* The close control for a dialog, popover or sheet. Sits over the panel's own
  * corner, which is why it is absolutely positioned and carries a shadow. */
 .dlg-close {
