@@ -324,7 +324,10 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
    never part of the main rules, so it wears the Season's blue, as it does on
    the Reference. */
 .pad-chip.season { color: var(--blue); }
-.pad-chip.season.on { background: var(--blue-lt); color: var(--blue); }
+/* Picked, it is filled solid in that blue, the way a timing dial fills in its
+   own colour: the tint alone read the same as the chip unpicked, blue text on
+   grey either way (OTTO, 2026-09-30). */
+.pad-chip.season.on { background: var(--blue); color: var(--on-accent); font-weight: 700; }
 .pad-season-note b { color: var(--blue); }
 .pad-bar-season { color: var(--blue); }
 /* A chip that cannot be pressed now says so: faded, no hover, no pointer. */

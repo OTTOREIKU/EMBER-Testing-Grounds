@@ -3249,7 +3249,10 @@ function rulesRow(): string {
   const on = tableSeason(data!, table);
   const chip = (id: string, label: string, cls = ''): string => {
     const picked = (table.season ?? '') === id;
-    return `<button class="pad-chip${cls}${picked ? ' on' : ''}" data-act="set-season" data-season="${esc(id)}" aria-pressed="${picked}"${
+    // `data-pickseason`, never `data-season`: that one is a Season Rule LINK to
+    // the shared router (refsheet.ts), which is asked before this button and
+    // swallowed the tap (OTTO, 2026-09-30, "I cannot tell ... selected or not").
+    return `<button class="pad-chip${cls}${picked ? ' on' : ''}" data-act="set-season" data-pickseason="${esc(id)}" aria-pressed="${picked}"${
       picked ? '' : greyIf({ kind: 'configureTable', seat: mySeat(), season: id || null })}>${esc(label)}</button>`;
   };
   return `<p class="pad-label pad-sec">Rules</p>
@@ -5288,7 +5291,7 @@ function act(el: HTMLElement, ev: Event): void {
     case 'open-setup': panel = 'setup'; render(); return;
     case 'set-mode': send({ kind: 'configureTable', seat: mySeat(), guidedPlay: el.dataset.mode === 'guided' }); return;
     case 'set-dice': send({ kind: 'configureTable', seat: mySeat(), tableDice: el.dataset.dice === 'table' }); return;
-    case 'set-season': send({ kind: 'configureTable', seat: mySeat(), season: el.dataset.season || null }); return;
+    case 'set-season': send({ kind: 'configureTable', seat: mySeat(), season: el.dataset.pickseason || null }); return;
     case 'attack': {
       const t = unitOf(Number(el.dataset.uid));
       if (!t) return;
