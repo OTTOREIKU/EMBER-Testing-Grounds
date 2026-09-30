@@ -1532,6 +1532,14 @@ async function init(): Promise<void> {
       navigateDetail('keyword', kw.dataset.kw!);
       return;
     }
+    // A card named in the text, answered before the tile it sits in: inside a
+    // keyword tile the tile took the click and opened the keyword instead.
+    const cardLink = t.closest<HTMLElement>('a.kw-link[data-card]');
+    if (cardLink) {
+      ev.preventDefault();
+      navigateDetail('card', cardLink.dataset.card!);
+      return;
+    }
     // Also live in the everywhere view, which reuses the keyword cards.
     const kwItem = t.closest<HTMLElement>('[data-kwitem]');
     if (kwItem && (tab === 'keywords' || (allMode && norm(query.trim())))) {

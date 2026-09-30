@@ -270,8 +270,10 @@ check('the entry\'s own note rides along as a tooltip', /tr\.note \? ` title="\$
 // ---------- LINK THE THING, NOT THE WORD FOR IT ----------
 // "Launch 1 MC-3 "Razor" Missile" linked `Missile`, the keyword, when the
 // reader wants the projectile the sentence names and that we hold a card for.
-check('projectiles and drones join the link patterns',
-  /c\.category !== 'projectile' && c\.category !== 'drone'/.test(ref), true);
+// Every card since the 2026-09-30 audit, not only Projectiles and Drones: the
+// Rules name Parts, pilots and Tactics Cards too (linkaudit.test runs it).
+check('every card joins the link patterns, with no category gate',
+  /for \(const c of data\.cards\) \{\s*const n = stripQuotes/.test(ref) && !/c\.category !== 'projectile' && c\.category !== 'drone'/.test(ref), true);
 check('and emit a card link rather than a keyword one',
   /h\.card[\s\S]{0,120}?data-card="\$\{esc\(h\.label\)\}"/.test(ref), true);
 // Longest-first is what lets the card beat the keyword for the same span.
@@ -293,7 +295,7 @@ check('quotes are stripped, not merely varied', /function stripQuotes/.test(ref)
 check('and the old variant matcher is gone', /function quoteLoose/.test(ref), false);
 check('card names are stripped when the pattern is built',
   /stripQuotes\(\(c\.name\?\.en \?\? ''\)\.trim\(\)\)\.text/.test(ref), true);
-check('and cards match against the stripped copy', /const hay = card \? bare\.text : src/.test(ref), true);
+check('and cards match against the stripped copy', /cardPattern\.exec\(bare\.text\)/.test(ref), true);
 // The span that gets wrapped has to be the ORIGINAL one, quotes and all, or
 // every quotation mark on the page would silently vanish.
 check('spans map back to real coordinates', /bare\.map\[m\.index\]/.test(ref), true);

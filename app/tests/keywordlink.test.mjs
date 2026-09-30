@@ -210,7 +210,7 @@ const ref = readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8'
 // reason: one rank() or two pages disagree about what comes first.
 const search = readFileSync(new URL('../src/refsearch.ts', import.meta.url), 'utf8').replace(/\bexport /g, '');
 check('the hit finder is shared, not duplicated', /function linkHits\(src: string\)/.test(refcards), true);
-check('linkKeywords paints those hits', /const hits = linkHits\(src\);/.test(refcards), true);
+check('linkKeywords paints those hits', /const hits = linkHits\(src\)\.filter\(/.test(refcards), true);
 check('and linksIn reports the same ones', /export function linksIn\(text: string\)/.test(refcards), true);
 check('the index reads keyword text through it', /linksIn\(k\.en\?\.value \?\? ''\)\.keywords/.test(ref), true);
 check('and card text through it too', /linksIn\(text\)\.keywords/.test(ref), true);

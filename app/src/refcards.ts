@@ -152,7 +152,12 @@ function deployedBy(c: Card): Card[] {
   return deployIndex.get(c.id) ?? [];
 }
 
-let linkPatterns: { name: string; re: RegExp; len: number; card?: boolean }[] | null = null;
+let linkPatterns: { name: string; re: RegExp; len: number; lower: boolean }[] | null = null;
+// Every card name as ONE alternation, longest first, and the id each stands
+// for. One pass per text however many cards there are: the list grew from the
+// Projectiles and Drones to every card (audit, 2026-09-30).
+let cardPattern: RegExp | null = null;
+const cardByName = new Map<string, string>();
 
 // THE QUOTES DO NOT AGREE, in three different ways at once:
 //   card 071  `MC-3 "Razor" Missile`      text: straight quotes    -> same
@@ -167,13 +172,23 @@ let linkPatterns: { name: string; re: RegExp; len: number; card?: boolean }[] | 
 // span that gets wrapped in the anchor has to be the ORIGINAL one, quotes and
 // all: rebuilding the text from the stripped copy would silently delete every
 // quotation mark on the page.
+// The source is ESCAPED by the time it gets here (linkKeywords runs esc first),
+// and since the injection fix esc writes a straight quote as `&quot;`. The
+// strip only knew the characters, so `MC-3 "Razor" Missile` stopped matching
+// its card and the bare word Missile took the link instead, on every launcher
+// (audit, 2026-09-30). The entities are quotes too.
 const QUOTE = /["“”'‘’]/;
+const QUOTE_ENTITY = /^&(?:quot|#39|#x27|apos);/;
 
 function stripQuotes(s: string): { text: string; map: number[] } {
   let text = '';
   const map: number[] = [];
   for (let i = 0; i < s.length; i++) {
     if (QUOTE.test(s[i])) continue;
+    if (s[i] === '&') {
+      const ent = QUOTE_ENTITY.exec(s.slice(i, i + 7));
+      if (ent) { i += ent[0].length - 1; continue; }
+    }
     text += s[i];
     map.push(i);
   }
@@ -190,70 +205,101 @@ function linkHits(src: string): { start: number; end: number; label: string; car
   if (!linkPatterns) {
     const seen = new Set<string>();
     linkPatterns = [];
-    for (const k of data.keywords) {
-      const n = k.en?.name?.replace(/^[•·\s]+/, '') ?? '';
+    // The name and every other name the publisher prints for it (aliases:
+    // Indirect Fire beside Fire in arc), each linking to the one entry.
+    for (const k of data.keywords) for (const raw of [k.en?.name, ...(k.aliases ?? [])]) {
+      const n = raw?.replace(/^[•·\s]+/, '') ?? '';
       if (n.length < 3 || seen.has(n.toLowerCase())) continue;
       seen.add(n.toLowerCase());
       const body = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\bX\b/g, '\\d+');
       try {
-        linkPatterns.push({ name: n, re: new RegExp(`\\b${body}\\b`, 'gi'), len: n.length });
+        linkPatterns.push({ name: n, re: new RegExp(`\\b${body}\\b`, 'gi'), len: n.length, lower: n[0] === n[0].toLowerCase() && n[0] !== n[0].toUpperCase() });
       } catch {
       }
     }
     // THE THING ITSELF, not the word for it. "Launch 1 MC-3 "Razor" Missile"
     // used to link `Missile`, the keyword, when the reader almost certainly
     // wants the projectile the sentence names and which we hold a card for.
-    // Projectiles and drones only: those are what an Action launches, deploys
-    // or fires by name, and both are cards a reader can open.
+    // EVERY card now, not only what an Action launches: the Rules and the
+    // glossary name Parts, pilots and Tactics Cards (the OCSP Overloading
+    // Pack, Hammerhead, Additional Instructions), and each is a card a reader
+    // can open (OTTO, 2026-09-30).
     //
-    // Sorting longest-first below is what makes this win: `MC-3 "Razor"
-    // Missile` is 20 characters against `Missile`'s 7, so the card claims the
-    // span and the keyword cannot overlap it. Where the text says only
-    // "Missile", the keyword still links, which is the right answer there.
+    // The longest name wins a span, which is what makes `MC-3 "Razor" Missile`
+    // (20 characters) beat `Missile` (7): hits are taken longest first below.
+    // Where the text says only "Missile", the keyword still links.
+    const names: string[] = [];
     for (const c of data.cards) {
-      if (c.category !== 'projectile' && c.category !== 'drone') continue;
       const n = stripQuotes((c.name?.en ?? '').trim()).text.replace(/\s+/g, ' ').trim();
-      // Short names are the ones that collide with ordinary words; every real
-      // projectile and drone name is ten characters or more.
-      //
-      // CJK is rejected for the usual reason: an `en` field is not proof of
-      // English here. name_overrides fixes 154 and 155 at load, so this is
-      // belt and braces rather than a live case, but a Chinese name could only
-      // ever match Chinese text and the length floor does not catch one - a
-      // four-character Chinese name is a long phrase.
+      // Short names are the ones that collide with ordinary words; a keyword's
+      // name is the keyword's. CJK is rejected for the usual reason: an `en`
+      // field is not proof of English here.
       if (n.length < 8 || CJK.test(n) || seen.has(n.toLowerCase())) continue;
       seen.add(n.toLowerCase());
-      const body = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      try {
-        linkPatterns.push({ name: c.id, re: new RegExp(body, 'gi'), len: n.length, card: true });
-      } catch {
-      }
+      cardByName.set(n.toLowerCase(), c.id);
+      names.push(n);
     }
-    // Sorted on the matched NAME length, never the pattern source: quoteLoose
-    // inflates a card pattern by four characters per quote, so source length
-    // would rank by punctuation rather than by how much text is claimed.
+    names.sort((a, b) => b.length - a.length);
+    try {
+      cardPattern = names.length
+        ? new RegExp(names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')).join('|'), 'gi')
+        : null;
+    } catch {
+      cardPattern = null;
+    }
     linkPatterns.sort((a, b) => b.len - a.len);
   }
 
-  const hits: { start: number; end: number; label: string; card?: boolean }[] = [];
+  // Every candidate first, then the longest take their spans.
+  const found: { start: number; end: number; label: string; card?: boolean; len: number }[] = [];
   // The quote-stripped copy, built once. Cards match against it; keywords match
   // the original, because a keyword name never contains a quote.
   const bare = stripQuotes(src);
-  for (const { name, re, card } of linkPatterns) {
-    const hay = card ? bare.text : src;
+  const word = /[A-Za-z0-9]/;
+  if (cardPattern) {
+    cardPattern.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = cardPattern.exec(bare.text))) {
+      if (!m[0]) { cardPattern.lastIndex++; continue; }
+      // A whole name, not the inside of a longer word.
+      const before = bare.text[m.index - 1];
+      const after = bare.text[m.index + m[0].length];
+      // A plural or a possessive still names the card ("GS-2 Smoke Grenades",
+      // "the HD-2 Data Backpack's +1", whose apostrophe the strip took): one
+      // trailing s is allowed, and stays outside the link.
+      const after2 = bare.text[m.index + m[0].length + 1];
+      const plural = after === 's' && !(after2 && word.test(after2));
+      if ((before && word.test(before)) || (after && word.test(after) && !plural)) continue;
+      // A card's name is printed with a capital, like a keyword's (below).
+      if (/[a-z]/.test(m[0][0])) continue;
+      const id = cardByName.get(m[0].replace(/\s+/g, ' ').toLowerCase());
+      // A hit is in stripped coordinates and has to come back to real ones
+      // before anything slices the source with it. `end` maps off the LAST
+      // character rather than the one past it, which would run off the array
+      // on a match that ends the string.
+      const start = bare.map[m.index];
+      const last = bare.map[m.index + m[0].length - 1];
+      if (!id || start === undefined || last === undefined) continue;
+      found.push({ start, end: last + 1, label: id, card: true, len: m[0].length });
+    }
+  }
+  for (const { name, re, len, lower } of linkPatterns) {
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
-    while ((m = re.exec(hay))) {
-      // A card hit is in stripped coordinates and has to come back to real
-      // ones before anything slices the source with it. `end` maps off the LAST
-      // character rather than the one past it, which would run off the array on
-      // a match that ends the string.
-      const start = card ? bare.map[m.index] : m.index;
-      const last = card ? bare.map[m.index + m[0].length - 1] : m.index + m[0].length - 1;
-      if (start === undefined || last === undefined) continue;
-      const end = last + 1;
-      if (!hits.some((h) => start < h.end && end > h.start)) hits.push({ start, end, label: name, card });
+    while ((m = re.exec(src))) {
+      // A keyword is printed with a capital. The same word in lower case is
+      // the ordinary word: "the hit Part", "a cruising Mech", "designate 1
+      // enemy" are prose, and linking them sent readers to entries that were
+      // not about what they were reading (audit, 2026-09-30).
+      const first = m[0][0];
+      if (!lower && first === first.toLowerCase() && first !== first.toUpperCase()) continue;
+      found.push({ start: m.index, end: m.index + m[0].length, label: name, len });
     }
+  }
+  found.sort((a, b) => b.len - a.len || a.start - b.start);
+  const hits: { start: number; end: number; label: string; card?: boolean }[] = [];
+  for (const f of found) {
+    if (!hits.some((h) => f.start < h.end && f.end > h.start)) hits.push({ start: f.start, end: f.end, label: f.label, card: f.card });
   }
   hits.sort((a, b) => a.start - b.start);
   return hits;
@@ -269,11 +315,13 @@ export function linksIn(text: string): { keywords: string[]; cards: string[] } {
   };
 }
 
-export function linkKeywords(text: string): string {
+// `own`: the keyword whose entry this text is. Its own name stays plain there:
+// a link from an entry to itself goes nowhere (25 entries did it).
+export function linkKeywords(text: string, own?: KeywordDef): string {
   // Glyph placeholders are masked out before the keyword pass, because several
   // of them ({Heavy Hit}, {Dodge}) are keyword names in their own right.
   const { masked: src, restore } = maskGlyphs(esc(text));
-  const hits = linkHits(src);
+  const hits = linkHits(src).filter((h) => h.card || !own || data.keyword(h.label) !== own);
   if (!hits.length) return restore(src);
 
   let out = '';
@@ -390,7 +438,7 @@ export function keywordCard(k: KeywordDef): string {
   const isTag = /tag on the card banner/.test(val);
   return `<article class="card card-tap" data-kwitem="${esc(name)}">
     <div class="card-title">${esc(name)}</div>
-    <div class="card-body">${val ? linkKeywords(val) : '<em>No English glossary text for this keyword.</em>'}</div>
+    <div class="card-body">${val ? linkKeywords(val, k) : '<em>No English glossary text for this keyword.</em>'}</div>
     <div class="card-foot">
       ${isTag ? '<span class="tag">type tag</span>' : '<span class="tag">keyword</span>'}
     </div>
@@ -901,7 +949,7 @@ export function keywordDetail(name: string): string | null {
   const kwName = (k: KeywordDef) => k.en?.name?.replace(/^[•·\s]+/, '') || k.key;
   return `<h2>${esc(label)}</h2>
     <p class="ref-meta">Keyword: rulebook glossary</p>
-    <p>${def.en?.value ? linkKeywords(def.en.value) : '<em>No English glossary text.</em>'}</p>
+    <p>${def.en?.value ? linkKeywords(def.en.value, def) : '<em>No English glossary text.</em>'}</p>
     ${related.length ? `<h3 class="ref-sub">Related keywords</h3>
       <div class="ref-userlist">${related
         .map((k) => `<a class="ref-userlink kw" data-kw="${esc(kwName(k))}">${esc(kwName(k))}</a>`)
