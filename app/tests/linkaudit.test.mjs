@@ -129,10 +129,17 @@ check('Dense Armor names the blank face', /blank face/.test(entry_('Dense Armor'
 // ---------- and the link opens the card ----------
 // A keyword tile is itself clickable, and it answered first: a card named
 // inside one opened the keyword. The card link is asked before the tile.
+// The card link is answered by the shared router (refsheet.ts), which each page
+// asks before its own keyword-tile branch (OTTO, 2026-09-30).
 const refSrc = readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8');
-const linkAt = refSrc.indexOf("closest<HTMLElement>('a.kw-link[data-card]')");
-check('a card link is answered before the keyword tile it sits in',
-  linkAt > 0 && linkAt < refSrc.indexOf("closest<HTMLElement>('[data-kwitem]')"), true);
+const sheetSrc = readFileSync(new URL('../src/refsheet.ts', import.meta.url), 'utf8');
+const padSrc = readFileSync(new URL('../pad/pad.ts', import.meta.url), 'utf8');
+const before = (src, first, then) => src.indexOf(first) > 0 && src.indexOf(first) < src.indexOf(then);
+check('a card link is answered before the keyword tile it sits in, on the Reference and the pad alike',
+  [sheetSrc.includes("closest<HTMLElement>('a.kw-link[data-card]')"),
+    before(refSrc, 'if (runSheetClick(ev, sheetNav)) return;', "closest<HTMLElement>('[data-kwitem]')"),
+    before(padSrc, 'if (runSheetClick(ev, padNav)) return;', "closest<HTMLElement>('[data-kwitem]')")],
+  [true, true, true]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

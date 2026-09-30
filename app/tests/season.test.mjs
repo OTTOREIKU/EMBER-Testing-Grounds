@@ -115,7 +115,11 @@ check('a search finds a Season Rule by its name, by "season" and by "optional"',
   [1, 2, 2, 1, 0]);
 
 // ---------- the page ----------
-const ref = read('../src/reference.ts');
+// THE REFERENCE IS THREE FILES: its Rules tab and the sheet's behaviours moved
+// into refcards.ts and refsheet.ts so the pad shows and does the same
+// (OTTO, 2026-09-30). These pins are about what the Reference renders and
+// does, so they read the set as one body of source.
+const ref = ['../src/reference.ts', '../src/refcards.ts', '../src/refsheet.ts'].map(read).join('\n');
 check('the Rules tab has a Season section, last, in its own blue, opening on the banner',
   [/\{ id: 'mechanics', label: 'Mechanics', n: filtered\.length, html: mechanicHtml \},\n\s*\{ id: 'season', label: 'Season', n: seasonList\.length, html: seasonHtml \},\n\s*\];/.test(ref),
     /\$\{x\.id === 'season' \? ' season' : ''\}/.test(ref),
@@ -128,9 +132,9 @@ check('the tab badge and the everywhere search count the Season Rules, and a hit
     /chip\(`data-season="\$\{esc\(s\.id\)\}"`, s\.name, `\$\{season!\.label\} · optional`\)/.test(ref)],
   [true, true]);
 check('a Season Rule opens as a sheet, from the callout, a search or the changelog, and its links open the Rules entries',
-  [/if \(v\.kind === 'season'\) return seasonDetail\(v\.key\);/.test(ref),
-    /const seasonLink = t\.closest<HTMLElement>\('\[data-season\]'\);[\s\S]{0,120}navigateDetail\('season', seasonLink\.dataset\.season!\);/.test(ref),
-    /const ruleSheet = t\.closest<HTMLElement>\('\[data-rulesheet\]'\);[\s\S]{0,120}navigateDetail\('rule', ruleSheet\.dataset\.rulesheet!\);/.test(ref),
+  [/if \(kind === 'season'\) return seasonDetail\(key\);/.test(ref),
+    /const seasonLink = t\.closest<HTMLElement>\('\[data-season\]'\);[\s\S]{0,120}nav\.open\('season', seasonLink\.dataset\.season!\);/.test(ref),
+    /const ruleSheet = t\.closest<HTMLElement>\('\[data-rulesheet\]'\);[\s\S]{0,120}nav\.open\('rule', ruleSheet\.dataset\.rulesheet!\);/.test(ref),
     /return `\$\{name\} \(Season Rule\)`;/.test(ref),
     /open\.kind === 'rule' \|\| open\.kind === 'season' \? 'rules'/.test(ref)],
   [true, true, true, true, true]);

@@ -38,6 +38,9 @@ const ref = [
   // ...and the search predicates, which moved to refsearch.ts so the pad's
   // Find ranks the same way. The nameKo pins below count across the set.
   readFileSync(new URL('../src/refsearch.ts', import.meta.url), 'utf8'),
+  // ...and the detail sheet's behaviours, which moved to refsheet.ts so the
+  // pad's sheet does what the Reference's does (OTTO, 2026-09-30).
+  readFileSync(new URL('../src/refsheet.ts', import.meta.url), 'utf8'),
 ].join('\n');
 const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/reference.css', import.meta.url), 'utf8');

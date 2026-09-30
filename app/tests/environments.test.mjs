@@ -191,18 +191,26 @@ check('four card kinds now use the one thumb',
 // A phone showed ten tabs in a 347px strip holding 731px of them, so six sat
 // off the right edge with nothing to say they were there.
 const refcss = src('reference.css');
+// `.ref-tabs` beside the id since 2026-09-30: the pad's Find wears the same
+// strip (OTTO: "import the look and style of the reference app into pad").
 ok('the phone strip is an even grid, not a scroller or a ragged wrap',
-  /#ref-tabs \{[^}]*grid-template-columns: repeat\(5, 1fr\)/.test(refcss));
+  /#ref-tabs, \.ref-tabs \{[^}]*grid-template-columns: repeat\(5, 1fr\)/.test(refcss));
+ok('every row the height of the tallest, so a wrapped label leaves no row taller',
+  /#ref-tabs, \.ref-tabs \{[^}]*grid-auto-rows: 1fr/.test(refcss));
 ok('and nothing is left scrolling horizontally there',
-  !/#ref-tabs \{[^}]*overflow-x/.test(refcss));
+  !/#ref-tabs, \.ref-tabs \{[^}]*overflow-x/.test(refcss));
 // One row on a desktop: five columns there would stack ten tabs that fit on a
 // single line in the 1136px column.
 ok('while the desktop keeps them on one row',
-  /#ref-tabs \{ display: flex; flex-wrap: wrap; \}/.test(refcss));
+  /#ref-tabs, \.ref-tabs \{ display: flex; flex-wrap: wrap; \}/.test(refcss));
 // The search count sits in the corner rather than in the line. Inline it took
 // 10px of a 61px column, which is what pushed the longest label over the edge.
 ok('the search count is a corner badge on a phone',
-  /#ref-tabs button \.tab-n \{[^}]*position: absolute/.test(refcss));
+  /#ref-tabs button \.tab-n, \.ref-tabs button \.tab-n \{[^}]*position: absolute/.test(refcss));
+// The pad's Find scopes ARE that strip: its own chips scrolled sideways.
+ok('the pad\'s Find scopes wear the Reference\'s strip, not a copy of it',
+  /<div class="ref-tabs pad-find-scopes" id="pad-find-scopes"><\/div>/.test(readFileSync(new URL('../pad/pad.ts', import.meta.url), 'utf8'))
+  && !/\.pad-find-scopes \{/.test(readFileSync(new URL('../pad/pad.css', import.meta.url), 'utf8')));
 
 // High Temperature hands out a Fragile Token, which the app already models.
 ok('the Fragile Token it grants is a real status',

@@ -215,21 +215,28 @@ check('the way in names the newest revision and its count',
   /<button class="cl-entry" data-clv="1\.04">[\s\S]*What changed in 1\.04[\s\S]*74 cards · 11 keywords · 9 rules · 2 optional Season Rules[\s\S]*<span class="ui-badge">96<\/span>/.test(M.R.changelogEntry()), true);
 check('a Rules entry opens as a sheet with its Advanced open, the changelog first',
   /<details class="mech-adv" open>[\s\S]*?<div class="mech-adv-b"><div class="mech-log">/.test(M.R.ruleDetail('mines')), true);
-const refSrc = readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+// THE REFERENCE IS THREE FILES: its Rules tab and the sheet's behaviours moved
+// into refcards.ts and refsheet.ts so the pad shows and does the same
+// (OTTO, 2026-09-30). These pins are about what the Reference renders and
+// does, so they read the set as one body of source.
+const refSrc = ['reference.ts', 'refcards.ts', 'refsheet.ts']
+  .map((f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n')).join('\n');
 check('the Rules tab puts the way in above the quick reference cards, and not under a search',
-  /const clEntry = !q && \(!chosen \|\| chosen\.id === 'cards'\) \? changelogEntry\(\) \+ seasonEntry\(\) : '';\n\s*el\.innerHTML = total\n\s*\? bar \+ clEntry \+/.test(refSrc), true);
+  /const clEntry = opts\.entries !== false && !q && \(!chosen \|\| chosen\.id === 'cards'\) \? changelogEntry\(\) \+ seasonEntry\(\) : '';\n\s*return total\n\s*\? bar \+ clEntry \+/.test(refSrc), true);
 check('a row opens its thing with its Changelog showing, and Back returns to the list',
-  [/if \(d\.logcard\) navigateDetail\('card', d\.logcard, \{ log: true \}\);/.test(refSrc), /if \(v\.log\) revealLog\(\);/.test(refSrc),
+  [/if \(d\.logcard\) nav\.open\('card', d\.logcard, \{ log: true \}\);/.test(refSrc), /if \(v\.log\) revealLog\(\);/.test(refSrc),
     /kind: 'card' \| 'keyword' \| 'box' \| 'faction' \| 'compare' \| 'changelog' \| 'rule' \| 'season';/.test(refSrc),
-    /else if \(d\.logseason\) navigateDetail\('season', d\.logseason\);/.test(refSrc)], [true, true, true, true]);
+    /else if \(d\.logseason\) nav\.open\('season', d\.logseason\);/.test(refSrc)], [true, true, true, true]);
 check('Back finds the list filtered as it was left: the filter goes on before the scroll comes back',
   /if \(content\.querySelector\('\.cl-list'\)\) applyChangelogFilter\(content\);\n\s*sheet\(\)\.hidden = false;\n\s*lockRefPage\(\);\n\s*sheetScroller\(\)\.scrollTop = scrollTop;/.test(refSrc), true);
 check('the kinds and the search filter in place, and a new revision starts clear',
   [/clFilter\.kind = clkind\.dataset\.clkind!;/.test(refSrc), /if \(el\.id !== 'cl-q'\) return;\n\s*clFilter\.q = /.test(refSrc),
-    /const verOpt = t\.closest<HTMLElement>\('\[data-clver\]'\);[\s\S]{0,200}clFilter = \{ kind: 'all', q: '' \};/.test(refSrc)], [true, true, true]);
+    /const verOpt = t\.closest<HTMLElement>\('\[data-clver\]'\);[\s\S]{0,200}resetChangelogFilter\(\);/.test(refSrc)
+    && /export function resetChangelogFilter\(\): void \{\n\s*clFilter\.kind = 'all';\n\s*clFilter\.q = '';/.test(refSrc)], [true, true, true]);
 check('the revision menu closes on a click elsewhere, and takes Escape and the arrows before the sheet does',
   [/\n\s*closeVersionMenu\(\);\n\s*\/\/ The master changelog \(OTTO, 2026-09-30\): a revision chip/.test(refSrc),
-    /if \(m && !m\.menu\.hidden\) \{\n\s*if \(ev\.key === 'Escape'\) \{\n\s*ev\.preventDefault\(\);\n\s*closeVersionMenu\(true\);\n\s*return;/.test(refSrc),
+    /if \(m && !m\.menu\.hidden\) \{\n\s*if \(ev\.key === 'Escape'\) \{\n\s*ev\.preventDefault\(\);\n\s*closeVersionMenu\(true\);\n\s*return true;/.test(refSrc)
+    && /if \(runSheetKey\(ev\)\) return;/.test(refSrc),
     /ev\.key === 'ArrowDown' \|\| ev\.key === 'ArrowUp'/.test(refSrc)],
   [true, true, true]);
 check('and it is drawn as the site draws a panel: the ladder, the amber tint for the chosen one',
