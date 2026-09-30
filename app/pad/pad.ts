@@ -201,8 +201,21 @@ const relay = new Relay(api.base, {
   // it waits for it; a board no build can read is dropped.
   onCheckpoint: (s) => {
     const m = migrated(s);
-    if (m) table = m;
-    else if (!data) waitingBoard = s;
+    if (m) {
+      // An arriving board carries no Timing Dial for a squad that has not
+      // revealed (net.ts strips them), so this phone's own would be blanked.
+      // They are its secret until the reveal, and go back on as the board
+      // page puts its own back.
+      const seat = view.seat;
+      if (seat && !table.script?.revealed.includes(seat)) {
+        for (const t of table.tokens) {
+          if (t.side !== seat || t.timing === undefined) continue;
+          const u = m.tokens.find((x) => x.uid === t.uid);
+          if (u) u.timing = t.timing;
+        }
+      }
+      table = m;
+    } else if (!data) waitingBoard = s;
     render();
   },
   onCatchUp: (active) => {
@@ -5156,9 +5169,11 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     case 'signout':
       void run(async () => {
+        // The table is left only once the server has ended the session: a
+        // sign-out that fails keeps the player signed in and at their table.
+        await api.logout();
         relay.leave();
         solo = false;
-        await api.logout();
         account = null;
         screen = 'signin';
       });

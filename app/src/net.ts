@@ -80,6 +80,24 @@ function relayUrl(apiBase: string): string {
   return `${apiBase.replace(/^http/, 'ws')}/relay`;
 }
 
+// A checkpoint is the whole board, and it is filed on the server and handed
+// to the other player, so no Timing Dial leaves in one until its squad has
+// revealed. The tabletop and the Match Centre stripped theirs in their own
+// snapshot; the pad published its table raw, dials and all (security audit,
+// 2026-09-30). Every page's board passes through here, so this one strip
+// covers them all.
+export function withoutSecretDials(board: unknown): unknown {
+  if (!board || typeof board !== 'object' || !Array.isArray((board as { tokens?: unknown }).tokens)) return board;
+  const copy = JSON.parse(JSON.stringify(board)) as { tokens: unknown[]; script?: { revealed?: unknown } };
+  const shown = copy.script?.revealed;
+  const revealed: unknown[] = Array.isArray(shown) ? shown : [];
+  for (const t of copy.tokens) {
+    const tok = t as { kind?: unknown; side?: unknown; timing?: unknown } | null;
+    if (tok && tok.kind === 'mech' && !revealed.includes(tok.side)) delete tok.timing;
+  }
+  return copy;
+}
+
 export class Relay {
   private url: string;
   private hooks: NetHooks;
@@ -459,7 +477,7 @@ export class Relay {
       return;
     }
     this.checkpointDue = false;
-    this.send({ t: 'checkpoint', rev: this.lastRev, state: this.hooks.snapshot() });
+    this.send({ t: 'checkpoint', rev: this.lastRev, state: withoutSecretDials(this.hooks.snapshot()) });
     this.set({ desynced: false });
   }
 
