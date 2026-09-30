@@ -151,8 +151,10 @@ check('the tabletop and the Reference start it',
   [/async function init\(\) \{\s*watchImageFallbacks\(\);/.test(src('../src/main.ts')), /async function init\(\): Promise<void> \{\s*watchImageFallbacks\(\);/.test(src('../src/reference.ts'))], [true, true]);
 
 // ---------- the pad draws no raw board ----------
+// The migrated board may have this phone's own unrevealed dials put back on it
+// before it is taken (security audit, 2026-09-30); the raw one still only waits.
 check('a board the pad cannot migrate waits for the card data, and is never cast raw',
-  /if \(m\) table = m;\s*else if \(!data\) waitingBoard = s;/.test(src('../pad/pad.ts')) && !/\(s as GameState\) : table/.test(src('../pad/pad.ts')), true);
+  /if \(m\) \{[\s\S]{0,700}?table = m;\s*\} else if \(!data\) waitingBoard = s;/.test(src('../pad/pad.ts')) && !/\(s as GameState\) : table/.test(src('../pad/pad.ts')), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
