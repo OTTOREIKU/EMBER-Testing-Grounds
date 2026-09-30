@@ -83,6 +83,15 @@ check('its sheet answers the Reference\'s links and keys, heads the sheet and fi
     /document\.addEventListener\('input', runSheetInput\);/.test(pad)],
   [true, true, true, true, true]);
 
+// No pad control may carry an attribute the shared router reads as a LINK: it
+// is asked before the pad's own buttons, so the button's tap never arrives. The
+// Rules row's Season chip carried `data-season` and could not be pressed at all.
+const ROUTER = /data-(?:season|rulesheet|clv|clkind|clver|logcard|logkw|logrule|logseason|dtab)="/;
+const padFiles = ['../pad/pad.ts', '../pad/guided.ts', '../pad/attack.ts', '../pad/tabledice.ts', '../pad/ew.ts'].map(src);
+const clashes = padFiles.flatMap((text) => [...text.matchAll(/data-act="[^"]*"[^>]{0,400}?>/g)].map((m) => m[0]).filter((tag) => ROUTER.test(tag)));
+check('no pad button wears an attribute the shared router takes for a link', clashes, []);
+check('the Season chip names its season in its own attribute', /data-act="set-season" data-pickseason="/.test(pad), true);
+
 // ---------- and so does the Reference ----------
 const ref = src('../src/reference.ts');
 check('the Reference draws its tab and sheets from the same place',

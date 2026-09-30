@@ -129,7 +129,7 @@ const pad = src('../pad/pad.ts');
 check('the pad\'s setup has a Rules row: the main rules, or a season in blue',
   [/\$\{rulesRow\(\)\}\n\s*<p class="pad-label pad-sec">Dice<\/p>/.test(pad),
     /chip\('', 'Main rules'\)\}\$\{\[\.\.\.\(data!\.seasons \?\? \[\]\)\]\.reverse\(\)\.map\(\(s\) => chip\(s\.id, s\.label, ' season'\)\)/.test(pad),
-    /case 'set-season': send\(\{ kind: 'configureTable', seat: mySeat\(\), season: el\.dataset\.season \|\| null \}\); return;/.test(pad)],
+    /case 'set-season': send\(\{ kind: 'configureTable', seat: mySeat\(\), season: el\.dataset\.pickseason \|\| null \}\); return;/.test(pad)],
   [true, true, true]);
 check('it says what the season changes, and that it is optional, and the bar names it in play',
   [/<b>\$\{esc\(on\.label\)\}, optional:<\/b>/.test(pad), /<span class="pad-bar-season" title="\$\{esc\(season\.label\)\} rules: optional, not the main rules">/.test(pad)],
