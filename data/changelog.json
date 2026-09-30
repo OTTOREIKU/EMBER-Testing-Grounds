@@ -1785,6 +1785,34 @@
      "CHANGED"
     ],
     "text": "A Mine is now a small Ground Unit whose Grid counts as empty. Mines one Action places no longer set each other off, a Mine stands clear of terrain, Interception cannot target it, and it contests no Control Zone."
+   },
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.9",
+    "tags": [
+     "NEW"
+    ],
+    "text": "New: blasts that go off together resolve one at a time. Each squad orders its own, and when both squads own one, the player with the initiative (this round's First Player) resolves one of theirs first, then the squads take turns. A Pholcus that jumps into a mined Grid sets its Mines off, but its own blast resolves first, and a Mine it destroyed does not go off."
+   }
+  ],
+  "pholcus": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.9",
+    "tags": [
+     "CLARIFIED"
+    ],
+    "text": "Spelled out: the Unfolded Pholcus is a Ground Unit, so its jump sets off the Mines in the Grid it lands in, and its own blast resolves before theirs. A Mine its blast destroyed does not go off."
+   }
+  ],
+  "white_dwarf": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 3.3",
+    "tags": [
+     "CLARIFIED"
+    ],
+    "text": "Spelled out: in Cruise Mode no hit location is determined and every hit is a Torso hit, so Cleaving's Surplus carried into it from another unit hits the Torso. Surplus that stays on it still rolls for another Part (FAQ N7)."
    }
   ],
   "command_tokens": [
@@ -1820,11 +1848,11 @@
   "low_value_unit": [
    {
     "v": "1.04",
-    "source": "Supplementary Rules 1.04, 1.2, 1.3, 4.1",
+    "source": "Supplementary Rules 1.04, 1.1.2, 1.2, 1.3, 4.1",
     "tags": [
      "CHANGED"
     ],
-    "text": "A Deployable, such as a Barricade or a Mine, cannot interact with Control Zones, so one in a Zone no longer denies it. Cannot carry Hexagon Tokens is now printed as part of the tag, as FAQ J3 and M23 already ruled."
+    "text": "No Low Value unit, a Projectile, a Deployable or a Low Value Drone, can take or block a Control Zone: one in a Zone no longer denies it. Cannot carry Hexagon Tokens is now printed as part of the tag, as FAQ J3 and M23 already ruled."
    }
   ],
   "maneuver": [
