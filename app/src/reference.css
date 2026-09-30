@@ -12,9 +12,12 @@
 
   --accent: #f0b429;
   --accent-lt: rgba(240, 180, 41, 0.13);
+  /* A tint's hovered step, for a control that is already tinted. */
+  --accent-md: rgba(240, 180, 41, 0.2);
   --on-accent: #0f1216;
   --blue: #5cb3ff;
   --blue-lt: rgba(92, 179, 255, 0.13);
+  --blue-md: rgba(92, 179, 255, 0.2);
   --green: #3ddc84;
   --green-lt: rgba(61, 220, 132, 0.13);
 
@@ -510,6 +513,46 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 .mech-adv > summary:hover,
 .mech-adv > summary:focus-visible { color: var(--text2); text-decoration: underline; }
 .mech-adv > .mech-adv-b { margin-top: 6px; }
+/* A Rules entry's changelog (OTTO, 2026-09-30; refcards.ts mechanicLog): the
+   FIRST thing inside Advanced. The same mono amber label and list rows as a
+   card's Changelog, the revision in the amber badge, the source small beneath
+   the sentence. The tag on the closed summary says a change is waiting. */
+.mech-adv-new {
+  margin-left: 4px; padding: 1px 6px; border-radius: 999px;
+  font: 600 9.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--accent); background: var(--accent-lt);
+}
+.mech-log { margin: 0 0 12px; }
+.mech-log-k {
+  margin: 0 0 6px; font: 600 10px var(--mono); letter-spacing: 0.26em;
+  text-transform: uppercase; color: var(--accent);
+}
+.mech-log-list { margin-bottom: 0; }
+/* A changelog row (OTTO, 2026-09-30, Chips A of the design study): the
+   revision's chip on its own line, the sentence under it, then where the change
+   comes from, so every row's text starts at one edge whatever its revision is
+   called. The chip is the summary's UPDATED tag. A card's revisions open on the
+   same chip, their source under their rows. */
+/* Two classes, because ui.css's .ui-list > li (display: flex) loads after this
+   sheet and would otherwise win at the same weight. */
+.ui-list.mech-log-list > li {
+  flex-direction: column; align-items: flex-start; gap: 6px; padding: 9px 10px 10px;
+}
+.log-ver {
+  flex: 0 0 auto; padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  font: 600 9.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--accent); background: var(--accent-lt);
+}
+.log-say { font-size: 12.5px; line-height: 1.5; color: var(--text2); }
+.log-src { font: 500 10.5px var(--mono); color: var(--text3); }
+.ref-log-b > .log-rev { margin: 14px 0 6px; }
+.ref-log-b > .log-rev:first-child { margin-top: 0; }
+.log-rev-src { margin: 0 0 2px; }
+/* A .ui-list inside a Rules card is rows, not bullets: the card body's list
+   indent (.card-body ul, the stronger rule) pushed the changelog rows in from
+   the text around them (OTTO, 2026-09-30). */
+.card-body ul.ui-list { padding-left: 0; margin-top: 0; }
+.card-body ul.mech-log-list { margin-bottom: 0; }
 /* The full text arrives in paragraphs and lists (ruleBlocks), spaced like the
    basic view above it so the two layers read as one card. */
 .mech-adv-b p, .ref-mech-b > p { margin: 0 0 8px; }
@@ -520,6 +563,199 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 .mech-src { margin: 8px 0 0; font-size: 11px; color: var(--text3); }
 @media (prefers-reduced-motion: reduce) {
   .mech-adv > summary::after { transition: none; }
+}
+/* THE CHANGELOG (OTTO, 2026-09-30; refcards.ts changelogBlock): what the
+   publisher's list revisions changed on this card, closed under the stat strip.
+   Closed it is one slim bar in the sheet's own surface, like a trait or an
+   Action: the mono amber label, a plain line saying which revision, the count
+   in the amber badge and a caret. Open, each revision is a small mono label over
+   the site's list rows (ui.css .ui-list), set a step darker because they sit on
+   surface2; the old value struck and dim, the new one bright. */
+.ref-log {
+  margin: 12px 0 10px; padding: 8px 11px; border-radius: var(--radius);
+  background: var(--surface2); --ui-row: var(--surface);
+}
+.ref-log > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 9px; min-height: 22px;
+}
+.ref-log > summary::-webkit-details-marker { display: none; }
+.ref-log > summary::after {
+  content: '▾'; margin-left: auto; color: var(--accent);
+  font-size: 10px; line-height: 1; transition: transform 140ms ease;
+}
+.ref-log[open] > summary::after { transform: rotate(180deg); }
+.ref-log-k { font: 600 10.5px var(--mono); letter-spacing: 0.26em; text-transform: uppercase; color: var(--accent); }
+.ref-log-s { font-size: 12px; color: var(--text2); }
+.ref-log > summary:hover .ref-log-s,
+.ref-log > summary:focus-visible .ref-log-s { color: var(--text); text-decoration: underline; }
+.ref-log-b { margin-top: 10px; }
+.ref-log-list { margin-bottom: 6px; }
+.ref-log-list > li { min-height: 34px; }
+.ref-log-list > li.log-text { align-items: flex-start; padding-top: 8px; padding-bottom: 8px; }
+.log-pair { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.log-pair s { color: var(--text3); }
+.log-pair b { color: var(--text); font-weight: 700; }
+.log-none { font-style: italic; }
+/* A name at the right ("was PL29 Stealth Chassis") is words, not numbers, so it
+   keeps the body face where .ui-row-meta would set it in mono. */
+.log-meta { flex: 0 1 auto; min-width: 0; text-align: right; font-size: 12px; color: var(--text2); }
+.log-note { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 400; color: var(--text3); }
+/* Inside an Action's block, one line per thing that changed: a fixed mono tag
+   column (NAME, RANGE, GAINS...) so the values start in one place. */
+.log-line {
+  display: flex; align-items: baseline; gap: 8px; margin: 5px 0 0;
+  font-size: 12.5px; font-weight: 400; line-height: 1.5; color: var(--text2);
+}
+.log-was { color: var(--text3); }
+/* The old wording still links, but quietly: it is history, not a place to go. */
+.log-was .kw-link { color: inherit; text-decoration-color: var(--border); }
+.log-tag {
+  flex: 0 0 5.2em; font: 600 9.5px var(--mono);
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+}
+.log-was .log-tag { color: var(--text3); }
+.ref-log-foot { margin: 8px 0 0; font-size: 11.5px; color: var(--text3); }
+/* THE MASTER CHANGELOG (OTTO, 2026-09-30; refcards.ts changelogEntry,
+   changelogIndex). The way in (Way in A of the design study) is the card's
+   closed Changelog bar, full width above the quick reference cards, with the go
+   chevron because it opens a sheet. The sheet (Popup B): the revision as a pick
+   beside the title, a search, the kinds as the facet chips, and one list of
+   .ui-list rows: the kind over the name, the keys or the points, the chevron. */
+.cl-entry {
+  /* The tab lays its cards out in columns; the bar spans them, as the quick
+     reference grid below it does. */
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px;
+  margin: 0 0 18px; padding: 8px 10px 8px 12px; border: none; border-radius: var(--radius);
+  background: var(--surface2); color: var(--text); font-family: var(--font); text-align: left; cursor: pointer;
+  transition: background 0.12s;
+}
+.cl-entry:hover, .cl-entry:focus-visible { background: var(--surface3); outline: none; }
+.cl-entry:focus-visible .cl-entry-t { text-decoration: underline; }
+.cl-entry-t { font-size: 12.5px; font-weight: 500; }
+.cl-entry-s { min-width: 0; font-size: 12px; color: var(--text3); }
+.cl-entry .ui-badge { margin-left: auto; }
+#ref-detail h2.cl-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+/* The revision pick (OTTO, 2026-09-30: the native list "more match our UI
+   style"): the amber pill opens our own menu under it, a panel on the surface
+   ladder whose rows light on hover and whose chosen revision takes the amber
+   tint, each with its count. It appears in place: chrome never slides. */
+.cl-ver { position: relative; display: inline-flex; }
+.cl-ver-btn {
+  display: inline-flex; align-items: center; gap: 9px; min-height: 30px; padding: 0 10px;
+  border: none; border-radius: var(--radius); cursor: pointer;
+  background: var(--accent-lt); color: var(--accent); font: 600 12px var(--mono);
+  transition: background 0.12s, color 0.12s;
+}
+.cl-ver-btn:hover, .cl-ver-btn[aria-expanded="true"] { background: var(--accent-md); }
+.cl-ver-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent); }
+.cl-ver-caret { font-size: 10px; }
+.cl-ver-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; min-width: max(100%, 168px);
+  display: flex; flex-direction: column; gap: 2px; padding: 4px;
+  border-radius: var(--radius); background: var(--surface2); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.cl-ver-menu[hidden] { display: none; }
+.cl-ver-opt {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 34px; padding: 0 10px;
+  border: none; border-radius: var(--radius-sm); cursor: pointer; text-align: left;
+  background: transparent; color: var(--text2); font: 600 12px var(--mono);
+  transition: background 0.12s, color 0.12s;
+}
+.cl-ver-opt:hover, .cl-ver-opt:focus-visible { background: var(--surface3); color: var(--text); outline: none; }
+.cl-ver-opt[aria-checked="true"] { background: var(--accent-lt); color: var(--accent); }
+.cl-ver-opt[aria-checked="true"]:hover, .cl-ver-opt[aria-checked="true"]:focus-visible { background: var(--accent-md); }
+.cl-ver-opt .fc-n { color: var(--text3); font-weight: 500; }
+.cl-ver-opt[aria-checked="true"] .fc-n { color: inherit; }
+.cl-q-label { position: absolute; left: -9999px; }
+.cl-q {
+  display: block; width: 100%; box-sizing: border-box; margin: 2px 0 10px; padding: 10px 12px;
+  border: none; outline: none; border-radius: var(--radius);
+  background: var(--surface2); color: var(--text); font: 13px var(--font);
+}
+.cl-q::placeholder { color: var(--text3); }
+.cl-q:focus { background: var(--surface3); }
+.cl-kinds { margin: 0 0 14px; }
+.cl-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cl-kind { font: 600 9.5px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text3); }
+.cl-kind[data-fac="RDL"] { color: var(--rdl); }
+.cl-kind[data-fac="UN"] { color: var(--un); }
+.cl-kind[data-fac="GOF"] { color: var(--gof); }
+.cl-kind[data-fac="PD"] { color: var(--pd); }
+.cl-kind[data-fac="COLLABORATION"] { color: var(--collab); }
+.cl-none { margin: 10px 2px 0; font-size: 12.5px; color: var(--text3); }
+.log-key {
+  padding: 2px 6px; border-radius: 999px; white-space: nowrap;
+  font: 600 9px var(--mono); letter-spacing: 0.08em; color: var(--text2); background: var(--surface3);
+}
+.log-key.new { color: var(--green); background: var(--green-lt); }
+.log-key.warn { color: var(--accent); background: var(--accent-lt); }
+.log-key.opt { color: var(--blue); background: var(--blue-lt); }
+.ui-list.cl-list > li { gap: 8px; min-height: 44px; padding-right: 8px; }
+.cl-keys { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 45%; }
+/* THE SEASON RULES (OTTO, 2026-09-30; refcards.ts seasonAbout, seasonCard,
+   seasonDetail, seasonCallout, seasonEntry). The publisher's trial rules are
+   never part of the main rules, so everything about them wears the blue of the
+   OPTIONAL key: the Rules tab's chip and bar, the banner the section opens on,
+   the kicker over each rule, the Season half of each comparison, the callout on
+   the Rules entry one changes, and their kind in the master changelog. */
+.ref-count.season-count, .ref-kick.season-meta { color: var(--blue); }
+.ref-facet.season { color: var(--blue); }
+.ref-facet.season.active { background: var(--blue-lt); color: var(--blue); }
+.cl-entry.season-entry { margin-top: -10px; }
+.season-entry .ref-log-k { color: var(--blue); }
+.season-entry .ui-badge, .season-entry .ui-go { background: var(--blue-lt); color: var(--blue); }
+.season-k {
+  margin: 0 0 5px; font: 600 10px var(--mono); letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--blue);
+}
+/* The banner spans the tab's columns, the rules sit under it. */
+.card.season-about { grid-column: 1 / -1; min-height: 0; background: linear-gradient(var(--blue-lt), var(--blue-lt)), var(--surface); }
+.season-about .card-body { color: var(--text); }
+.season-card .card-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.season-vs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 10px 0 8px; }
+.season-vs-k { grid-column: 1 / -1; margin: 0; font-size: 11.5px; color: var(--text3); }
+.season-vs-main, .season-vs-new {
+  display: flex; flex-direction: column; gap: 3px; padding: 8px 10px;
+  border-radius: var(--radius); background: var(--surface2);
+}
+.season-vs-new { background: var(--blue-lt); }
+.season-vs-main span, .season-vs-new span {
+  font: 600 9.5px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text3);
+}
+.season-vs-new span { color: var(--blue); }
+.season-vs-main b, .season-vs-new b { font-size: 12.5px; font-weight: 600; line-height: 1.35; color: var(--text); }
+.season-sees { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.season-see, .season-callout {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px;
+  padding: 6px 8px 6px 12px; border: none; border-radius: var(--radius);
+  font: 500 12.5px/1.45 var(--font); text-align: left; cursor: pointer; transition: background 0.12s;
+}
+.season-see { background: var(--surface2); color: var(--text); }
+.season-see:hover, .season-see:focus-visible { background: var(--surface3); outline: none; }
+.season-see > span:first-child, .season-callout-t { flex: 1; min-width: 0; }
+.season-callout { margin: 8px 0 10px; padding: 8px 8px 9px 12px; background: var(--blue-lt); color: var(--text2); }
+.season-callout:hover, .season-callout:focus-visible { background: var(--blue-md); outline: none; }
+/* The kicker on its own line over the sentence, as a changelog row's chip. */
+.season-callout-t { display: flex; flex-direction: column; gap: 2px; }
+.season-callout-t .season-k { margin: 0; }
+.season-callout .ui-go { background: transparent; color: var(--blue); }
+.season-banner {
+  display: flex; align-items: baseline; gap: 8px; margin: 0 0 12px; padding: 10px 12px;
+  border-radius: var(--radius); background: var(--blue-lt); font-size: 12.5px; line-height: 1.5; color: var(--text2);
+}
+.season-banner b { color: var(--blue); }
+.cl-kind.opt { color: var(--blue); }
+.ui-list.cl-list > li.cl-note {
+  min-height: 0; padding: 8px 12px; background: var(--blue-lt); color: var(--blue); font-size: 12px; line-height: 1.45;
+}
+@media (max-width: 520px) {
+  .cl-entry { flex-wrap: wrap; row-gap: 2px; }
+  .cl-entry-s { order: 5; flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ref-log > summary::after { transition: none; }
 }
 .ref-note { color: var(--text3); font-size: 11.5px; }
 .ref-boxes { color: var(--text2); font-size: 11.5px; margin-top: 16px; }

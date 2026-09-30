@@ -14,7 +14,7 @@
 // are synchronous string builders called during a render; a module-level await
 // here would make every importer async. Each page calls useCardData() once,
 // after its own loadData() resolves and before it draws anything.
-import { FACTION_LABEL, actionIconUrl, cardName, mechPartUrl, portraitUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type GameData, type KeywordDef, type MechanicDef } from './data';
+import { FACTION_LABEL, actionIconUrl, cardName, mechPartUrl, portraitUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type ChangeEntry, type GameData, type KeywordDef, type MechanicDef, type RuleChange, type SeasonDef, type SeasonRule } from './data';
 import { LENGTH_NAME, TICK_COST, costLabel, lengthOf, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule, type CapsuleShort } from './glyphs';
 import { linkIcon } from './icons';
@@ -388,17 +388,371 @@ export function mechBlocks(...text: (string | undefined)[]): string {
 // a player needs most) and, behind Advanced, the full breakdown with its FAQ
 // rulings and sources. An entry without a basic view draws its text as before.
 // `q` is the Rules search: when only the Advanced text answers it, Advanced
-// starts open so the match is on screen.
-export function mechanicBody(m: MechanicDef, q = ''): string {
+// starts open so the match is on screen. `open`: always open, for the sheet the
+// master changelog opens an entry in.
+export function mechanicBody(m: MechanicDef, q = '', open = false): string {
   if (!m.basic) return ruleBlocks(m.text);
   const points = (m.points ?? []).map((p) => `<li>${linkKeywords(p)}</li>`).join('');
+  const log = mechanicLog(m);
+  const newest = newestOf(data.changelog?.rules?.[m.id] ?? []);
   return `<p class="mech-basic">${linkKeywords(m.basic)}</p>`
     + (points ? `<ul class="mech-points">${points}</ul>` : '')
-    + `<details class="mech-adv"${matchMechanicBasic(m, q) ? '' : ' open'}>`
-    + `<summary>Advanced</summary>`
-    + `<div class="mech-adv-b">${ruleBlocks(m.text)}</div>`
+    + seasonCallout(m)
+    + `<details class="mech-adv"${open || !matchMechanicBasic(m, q) ? ' open' : ''}>`
+    // The tag says there is a change inside while the section is closed.
+    + `<summary>Advanced${newest ? ` <span class="mech-adv-new">Updated ${esc(versionLabel(newest))}</span>` : ''}</summary>`
+    + `<div class="mech-adv-b">${log}${ruleBlocks(m.text)}</div>`
     + (m.ref ? `<p class="mech-src">${esc(m.ref)}</p>` : '')
     + `</details>`;
+}
+
+// A Rules entry's changelog (OTTO, 2026-09-30): at the TOP of Advanced, "so
+// people see it first before reading on". One row per change, newest first,
+// the revision in the amber badge and the source under the sentence. The
+// basic view and the full text above and below it are already the current
+// rule; this says what changed and when (data/changelog.json `rules`).
+function mechanicLog(m: MechanicDef): string {
+  const rows = ruleLogRows(data.changelog?.rules?.[m.id] ?? []);
+  return rows ? `<div class="mech-log"><p class="mech-log-k">Changelog</p><ul class="ui-list mech-log-list">${rows}</ul></div>` : '';
+}
+
+function versionLabel(v: string): string {
+  return (data.changelog?.versions ?? []).find((x) => x.id === v)?.label ?? v;
+}
+
+// The revisions in the order the data lists them, oldest first. A string sort
+// happened to put 1.04 after 1.021; the list's own order is the one to trust.
+function versionRank(v: string): number {
+  return (data.changelog?.versions ?? []).findIndex((x) => x.id === v);
+}
+
+function newestOf(list: { v: string }[]): string | undefined {
+  return [...list].sort((a, b) => versionRank(a.v) - versionRank(b.v)).pop()?.v;
+}
+
+// A changelog row (OTTO, 2026-09-30, Chips A of the design study): the
+// revision's chip on its own line, the sentence under it at the row's full
+// width, and where the change comes from under that, so every row's text starts
+// at the same edge whatever its revision is called. Beside the text, "GoF
+// 1.021" pushed its sentence further in than "1.04" did.
+function logVer(v: string): string {
+  return `<span class="log-ver">${esc(versionLabel(v))}</span>`;
+}
+
+// The rows a Rules entry and a glossary keyword share, newest first. `own`: the
+// keyword whose sheet this is, which its own lines do not link.
+function ruleLogRows(list: RuleChange[], own?: KeywordDef): string {
+  return [...list].reverse()
+    .map((e) => `<li>${logVer(e.v)}<div class="log-say">${linkKeywords(e.text, own)}</div>${
+      e.source ? `<div class="log-src">${esc(e.source)}</div>` : ''}</li>`)
+    .join('');
+}
+
+// A glossary keyword's changelog (data/changelog.json `keywords`): the closed
+// bar a card carries under its stats, under the keyword's text, which is
+// already the rule as it now stands.
+export function keywordLog(def: KeywordDef): string {
+  const list = data.changelog?.keywords?.[def.key] ?? [];
+  const rows = ruleLogRows(list, def);
+  if (!rows) return '';
+  const newest = newestOf(list) ?? '';
+  return `<details class="ref-log">
+    <summary><span class="ref-log-k">Changelog</span><span class="ref-log-s">Changed in ${esc(versionLabel(newest))}</span><span class="ui-badge">${list.length}</span></summary>
+    <div class="ref-log-b"><ul class="ui-list mech-log-list">${rows}</ul></div>
+  </details>`;
+}
+
+// ---------- the master changelog (OTTO, 2026-09-30) ----------
+//
+// Every card, keyword and Rules entry one revision changed, in a sheet the Rules
+// tab opens from a bar above the quick reference cards. A row names the thing,
+// says what kind of change in a few short keys (or, for a card whose only change
+// is its points, the two numbers), and a tap opens it with its own Changelog
+// showing: nothing here repeats the detail.
+const KEY_NAMES: Record<string, string> = {
+  NEW: 'new to the game', NAME: 'a new name', PTS: 'points', STATS: 'a printed stat', ACTION: 'an Action',
+  TEXT: 'its wording', TAG: 'no longer Low Value', CHANGED: 'the rule changed',
+  CLARIFIED: 'spelled out, played the same', REVERSED: 'an old ruling undone', RETIRED: 'no longer a keyword',
+  OPTIONAL: 'a Season Rule, not part of the main rules',
+};
+const KEY_ORDER = Object.keys(KEY_NAMES);
+const KEY_TONE: Record<string, string> = { NEW: ' new', REVERSED: ' warn', RETIRED: ' warn', OPTIONAL: ' opt' };
+const CARD_STATS = new Set(['armor', 'structure', 'parray', 'dodge', 'electronic', 'move']);
+const ACTION_FIELDS = new Set(['range', 'dice', 'length', 'timing']);
+// The phase order of the 1.04 record: GoF, PD, RDL, UN, Collab.
+const FACTION_ORDER = ['GOF', 'PD', 'RDL', 'UN', 'COLLABORATION'];
+
+// A card's keys, read off its entries for the revision.
+function cardKeys(entries: ChangeEntry[]): string[] {
+  const k = new Set<string>();
+  for (const e of entries) {
+    if (e.kind === 'added') k.add('NEW');
+    else if (e.kind === 'renamed' || e.kind === 'action-renamed') k.add('NAME');
+    else if (e.field === 'score') k.add('PTS');
+    else if (e.field && CARD_STATS.has(e.field)) k.add('STATS');
+    else if (e.kind === 'action-added' || e.kind === 'action-removed' || (e.field && ACTION_FIELDS.has(e.field))) k.add('ACTION');
+    else if (e.field === 'text' || e.field === 'trait') k.add('TEXT');
+    else if (e.kind === 'low-value-lost') k.add('TAG');
+  }
+  return KEY_ORDER.filter((x) => k.has(x));
+}
+
+// A Rules entry's or a keyword's keys: the tags its lines carry, CHANGED where a
+// line has none.
+function lineKeys(list: RuleChange[]): string[] {
+  const k = new Set(list.flatMap((e) => (e.tags?.length ? e.tags : ['CHANGED'])));
+  return KEY_ORDER.filter((x) => k.has(x));
+}
+
+// The sheet carries no legend, so a key says what it means on hover.
+function keyChips(keys: string[]): string {
+  return keys.map((k) => `<span class="log-key${KEY_TONE[k] ?? ''}" title="${esc(KEY_NAMES[k] ?? k)}">${esc(k)}</span>`).join('');
+}
+
+// `kind` and `fac` label the row, and `sub` a Season Rule's kind of change; `pts`
+// is a card's old and new points when its points are its only change; `attr` is
+// what a tap asks the page to open.
+interface IndexItem {
+  name: string;
+  keys: string[];
+  attr: string;
+  kind: 'rules' | 'keywords' | 'season' | 'cards';
+  fac?: string;
+  pts?: [number, number];
+  sub?: string;
+}
+interface IndexGroup { title: 'Rules' | 'Keywords' | 'Season' | 'Cards'; fac?: string; items: IndexItem[] }
+
+const byItemName = (a: IndexItem, b: IndexItem): number => a.name.localeCompare(b.name);
+
+// One revision's changes: its Season Rules, Rules, Keywords, then the cards
+// faction by faction.
+export function changelogGroups(v: string): IndexGroup[] {
+  const log = data.changelog;
+  const rules: IndexItem[] = Object.entries(log?.rules ?? {}).flatMap(([id, list]) => {
+    const m = data.mechanics.find((x) => x.id === id);
+    const mine = list.filter((e) => e.v === v);
+    return m && mine.length ? [{ name: m.name, keys: lineKeys(mine), attr: `data-logrule="${esc(m.id)}"`, kind: 'rules' as const }] : [];
+  }).sort(byItemName);
+  const kws: IndexItem[] = Object.entries(log?.keywords ?? {}).flatMap(([key, list]) => {
+    const def = data.keyword(key);
+    const mine = list.filter((e) => e.v === v);
+    return def && mine.length
+      ? [{ name: def.en?.name?.replace(/^[•·\s]+/, '') || def.key, keys: lineKeys(mine), attr: `data-logkw="${esc(def.key)}"`, kind: 'keywords' as const }]
+      : [];
+  }).sort(byItemName);
+  // The season that came with this revision, as its own kind: its rules change
+  // nothing in the main rules, so they are not listed among them.
+  const season: IndexItem[] = ((data.seasons ?? []).find((s) => s.id === v)?.rules ?? [])
+    .map((r) => ({ name: r.name, keys: ['OPTIONAL'], attr: `data-logseason="${esc(r.id)}"`, kind: 'season' as const, sub: seasonKind(r) }))
+    .sort(byItemName);
+  const byFac = new Map<string, IndexItem[]>();
+  for (const [id, entries] of Object.entries(log?.cards ?? {})) {
+    const c = data.byId.get(id);
+    const mine = entries.filter((e) => e.v === v);
+    if (!c || !mine.length) continue;
+    const fac = data.factionOf(c) ?? '';
+    const keys = cardKeys(mine);
+    const score = mine.find((e) => e.field === 'score');
+    const pts = keys.length === 1 && keys[0] === 'PTS' && typeof score?.from === 'number' && typeof score?.to === 'number'
+      ? [score.from, score.to] as [number, number]
+      : undefined;
+    byFac.set(fac, [...(byFac.get(fac) ?? []), {
+      name: cardName(c), keys, attr: `data-logcard="${esc(id)}"`, kind: 'cards', ...(fac ? { fac } : {}), ...(pts ? { pts } : {}),
+    }]);
+  }
+  const rank = (f: string) => (FACTION_ORDER.includes(f) ? FACTION_ORDER.indexOf(f) : FACTION_ORDER.length);
+  // The Season Rules lead (OTTO, 2026-09-30: "move the seasonal button and
+  // items to the front"), under the line saying they are optional.
+  const groups: IndexGroup[] = [];
+  if (season.length) groups.push({ title: 'Season', items: season });
+  if (rules.length) groups.push({ title: 'Rules', items: rules });
+  if (kws.length) groups.push({ title: 'Keywords', items: kws });
+  for (const fac of [...byFac.keys()].sort((a, b) => rank(a) - rank(b))) {
+    groups.push({ title: 'Cards', ...(fac ? { fac } : {}), items: byFac.get(fac)!.sort(byItemName) });
+  }
+  return groups;
+}
+
+function countLine(groups: IndexGroup[]): string {
+  const n = (t: IndexGroup['title']) => groups.filter((g) => g.title === t).reduce((s, g) => s + g.items.length, 0);
+  return ([[n('Cards'), 'card'], [n('Keywords'), 'keyword'], [n('Rules'), 'rule'], [n('Season'), 'optional Season Rule']] as [number, string][])
+    .filter(([k]) => k)
+    .map(([k, w]) => `${k} ${w}${k === 1 ? '' : 's'}`)
+    .join(' · ');
+}
+
+const itemCount = (groups: IndexGroup[]): number => groups.reduce((s, g) => s + g.items.length, 0);
+
+// The revisions that changed anything, newest first.
+function changedVersions(): { id: string; label: string; groups: IndexGroup[] }[] {
+  return [...(data.changelog?.versions ?? [])].reverse()
+    .map((x) => ({ id: x.id, label: x.label, groups: changelogGroups(x.id) }))
+    .filter((x) => x.groups.length);
+}
+
+// The way in (Way in A of the design study): the card's closed Changelog bar,
+// full width at the top of the Rules tab, naming the newest revision. It opens a
+// sheet rather than folding open, so it wears the go chevron where the card's
+// bar has its caret.
+export function changelogEntry(): string {
+  const newest = changedVersions()[0];
+  if (!newest) return '';
+  return `<button class="cl-entry" data-clv="${esc(newest.id)}">
+    <span class="ref-log-k">Changelog</span>
+    <span class="cl-entry-t">What changed in ${esc(newest.label)}</span>
+    <span class="cl-entry-s">${esc(countLine(newest.groups))}</span>
+    <span class="ui-badge">${itemCount(newest.groups)}</span><span class="ui-go" aria-hidden="true">›</span>
+  </button>`;
+}
+
+// The sheet (Popup B of the design study): the revision as a pick beside the
+// title, a search, the kinds as the facet chips with their counts, and one list
+// with each row's kind above its name. The search and the chips work in place
+// (reference.ts applyChangelogFilter), so typing never redraws the sheet.
+export function changelogIndex(v: string): string | null {
+  const all = changedVersions();
+  const now = all.find((x) => x.id === v);
+  if (!now) return null;
+  const items = now.groups.flatMap((g) => g.items);
+  const count = (k: IndexItem['kind']) => items.filter((i) => i.kind === k).length;
+  // The revision is picked from our own menu under the title's pill: a native
+  // select's list is drawn by the system, in its colours and not the site's
+  // (OTTO, 2026-09-30: "more match our UI style"). Each revision carries its
+  // count; reference.ts opens, walks and closes it.
+  const pick = all.map((x) => `<button class="cl-ver-opt" type="button" role="menuitemradio" aria-checked="${x.id === v}" data-clver="${esc(x.id)}">`
+    + `<span>${esc(x.label)}</span><span class="fc-n">${itemCount(x.groups)}</span></button>`).join('');
+  const kinds = ([['all', 'All', items.length], ['season', 'Season', count('season')], ['rules', 'Rules', count('rules')], ['keywords', 'Keywords', count('keywords')], ['cards', 'Cards', count('cards')]] as [string, string, number][])
+    .filter(([id, , n]) => id === 'all' || n)
+    .map(([id, label, n]) => `<button class="ref-facet${id === 'all' ? ' active' : ''}${id === 'season' ? ' season' : ''}" data-clkind="${id}">${esc(label)} <span class="fc-n">${n}</span></button>`)
+    .join('');
+  const kindLabel = (i: IndexItem): string =>
+    i.kind === 'rules' ? 'Rule' : i.kind === 'keywords' ? 'Keyword' : i.kind === 'season' ? `Season · ${i.sub ?? ''}`
+      : i.fac ? `Card · ${FACTION_LABEL[i.fac] ?? i.fac}` : 'Card';
+  // The Season Rules' rows open on a line saying what they are, so no one reads
+  // a trial as a change to the main rules. It shows with them, not under a
+  // search (reference.ts applyChangelogFilter).
+  const note = '<li class="cl-note" data-clk="season" data-cln="">Season Rules are optional: a trial beside the main rules, not part of them.</li>';
+  const rows = items.map((i, n) => (i.kind === 'season' && items[n - 1]?.kind !== 'season' ? note : '')
+    + `<li class="tap" ${i.attr} data-clk="${i.kind}" data-cln="${esc(i.name.toLowerCase())}">`
+    + `<span class="cl-name"><span class="cl-kind${i.kind === 'season' ? ' opt' : ''}"${i.fac ? ` data-fac="${esc(i.fac)}"` : ''}>${esc(kindLabel(i))}</span><span class="ui-row-name">${esc(i.name)}</span></span>`
+    + (i.pts ? `<span class="log-pair"><s>${i.pts[0]}</s> → <b>${i.pts[1]}</b></span>` : `<span class="cl-keys">${keyChips(i.keys)}</span>`)
+    + '<span class="ui-go" aria-hidden="true">›</span></li>').join('');
+  return `<h2 class="cl-title">What changed <span class="cl-ver">`
+    + `<button class="cl-ver-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Revision ${esc(now.label)}">${esc(now.label)}<span class="cl-ver-caret" aria-hidden="true">▾</span></button>`
+    + `<span class="cl-ver-menu" role="menu" aria-label="Revisions" hidden>${pick}</span></span></h2>
+    <p class="ref-meta">Changelog · publisher revisions</p>
+    <label class="cl-q-label" for="cl-q">Search this revision</label>
+    <input id="cl-q" class="cl-q" type="search" placeholder="Search this revision" autocomplete="off">
+    <div class="ref-facets cl-kinds">${kinds}</div>
+    <ul class="ui-list cl-list">${rows}</ul>
+    <p class="cl-none" hidden>Nothing in ${esc(now.label)} matches that.</p>`;
+}
+
+// A Rules entry as a sheet, which only the master changelog opens: the entry as
+// the Rules tab draws it, its Advanced open so its changelog is on screen.
+export function ruleDetail(id: string): string | null {
+  const m = data.mechanics.find((x) => x.id === id);
+  if (!m) return null;
+  return `<h2>${esc(m.name)}</h2><p class="ref-meta">Rules · Mechanics</p><div class="card-body ref-rule">${mechanicBody(m, '', true)}</div>`;
+}
+
+// ---------- the Season Rules (OTTO, 2026-09-30) ----------
+//
+// The publisher's Season Rules are a trial beside the main rules, never part of
+// them, and OTTO: "We definitely want to make sure users realize that some
+// changes are optional and not officially adjusted." So wherever one appears it
+// is in blue, the OPTIONAL key's colour: the Rules tab's Season section opens on
+// a banner saying so, each rule sets the main rules' value beside the Season's,
+// and the Rules entry a Season Rule changes carries a callout to it, with its
+// own text and changelog left as the main rule still stands.
+export function currentSeason(): SeasonDef | undefined {
+  const all = data.seasons ?? [];
+  return all[all.length - 1];
+}
+
+function seasonOf(id: string): { s: SeasonDef; r: SeasonRule } | undefined {
+  for (const s of [...(data.seasons ?? [])].reverse()) {
+    const r = s.rules.find((x) => x.id === id);
+    if (r) return { s, r };
+  }
+  return undefined;
+}
+
+const seasonKind = (r: SeasonRule): string => (r.kind === 'action' ? 'Action change' : 'Rule change');
+const OPTIONAL_CHIP = '<span class="log-key opt" title="Not part of the main rules">OPTIONAL</span>';
+
+// The banner a season's rules open on.
+export function seasonAbout(s: SeasonDef): string {
+  return `<article class="card season-about">
+    <p class="season-k">${esc(s.label)} · Optional</p>
+    <div class="card-title">Not part of the main rules</div>
+    <div class="card-body"><p>${linkKeywords(s.about)}</p></div>
+    <div class="card-foot"><span class="tag mono">${esc(s.ref)}</span></div>
+  </article>`;
+}
+
+// What a Season Rule says, the same on its card and on its sheet: the short
+// statement, the main rules' value beside the Season's, the points, and the
+// Rules entries to read with it.
+function seasonBody(r: SeasonRule, s: SeasonDef): string {
+  const sees = [...(r.rule ? [r.rule] : []), ...(r.see ?? [])]
+    .map((id) => data.mechanics.find((m) => m.id === id))
+    .filter((m): m is MechanicDef => !!m)
+    .map((m) => `<button class="season-see" data-rulesheet="${esc(m.id)}"><span>${esc(m.name)}${
+      m.id === r.rule ? ' in the main rules' : ''}</span><span class="ui-go" aria-hidden="true">›</span></button>`)
+    .join('');
+  return `<p class="mech-basic">${linkKeywords(r.basic)}</p>`
+    + `<div class="season-vs"><p class="season-vs-k">${esc(r.what)}</p>`
+    + `<div class="season-vs-main"><span>Main rules</span><b>${esc(r.main)}</b></div>`
+    + `<div class="season-vs-new"><span>${esc(s.label)}</span><b>${esc(r.season)}</b></div></div>`
+    + `<ul class="mech-points">${r.points.map((p) => `<li>${linkKeywords(p)}</li>`).join('')}</ul>`
+    + (sees ? `<div class="season-sees">${sees}</div>` : '');
+}
+
+export function seasonCard(r: SeasonRule, s: SeasonDef): string {
+  return `<article class="card season-card">
+    <p class="season-k">${esc(s.label)} · ${esc(seasonKind(r))}</p>
+    <div class="card-title">${esc(r.name)} ${OPTIONAL_CHIP}</div>
+    <div class="card-body">${seasonBody(r, s)}</div>
+    <div class="card-foot"><span class="tag mono">${esc(r.ref)}</span></div>
+  </article>`;
+}
+
+// A Season Rule as a sheet, which the master changelog and a Rules entry's
+// callout open: what it is first, then the rule as its card draws it.
+export function seasonDetail(id: string): string | null {
+  const hit = seasonOf(id);
+  if (!hit) return null;
+  const { s, r } = hit;
+  return `<h2>${esc(r.name)}</h2><p class="ref-meta season-meta">${esc(s.label)} · ${esc(seasonKind(r))}</p>
+    <p class="season-banner">${OPTIONAL_CHIP}<span><b>Not part of the main rules.</b> ${linkKeywords(s.about)}</span></p>
+    <div class="card-body ref-rule">${seasonBody(r, s)}</div>
+    <p class="mech-src">${esc(r.ref)}</p>`;
+}
+
+// Under the points of the Rules entry a Season Rule changes. The entry's own
+// text and changelog stay the main rule, which the Season did not change.
+function seasonCallout(m: MechanicDef): string {
+  const s = currentSeason();
+  const r = s?.rules.find((x) => x.rule === m.id);
+  if (!s || !r) return '';
+  return `<button class="season-callout" data-season="${esc(r.id)}">`
+    + `<span class="season-callout-t"><span class="season-k">${esc(s.label)} · Optional</span>${esc(r.basic)}</span>`
+    + '<span class="ui-go" aria-hidden="true">›</span></button>';
+}
+
+// The Rules tab's way in, under the Changelog bar and in its shape, in the
+// Season's blue. It narrows the tab to the Season section.
+export function seasonEntry(): string {
+  const s = currentSeason();
+  if (!s?.rules.length) return '';
+  return `<button class="cl-entry season-entry" data-rules="season">
+    <span class="ref-log-k">Season Rules</span>
+    <span class="cl-entry-t">${esc(s.label)} · optional</span>
+    <span class="cl-entry-s">A trial beside the main rules, not part of them</span>
+    <span class="ui-badge">${s.rules.length}</span><span class="ui-go" aria-hidden="true">›</span>
+  </button>`;
 }
 
 // The full text in readable pieces: a blank line starts a paragraph, and lines
@@ -651,6 +1005,137 @@ export function traitBlock(c: Card): string {
   return trait;
 }
 
+// ---------- the Changelog (OTTO, 2026-09-30) ----------
+//
+// What the publisher's list revisions have changed on this card since it was
+// printed. The stat strip and the Actions above it always show the CURRENT
+// values; this says which of them a printed card in someone's hand gets wrong,
+// even where no new card art exists. Closed by default: a reader holding the
+// card opens it, everyone else reads the current values and moves on.
+// data/changelog.json, newest revision first. Every string is escaped here,
+// and the text lines go through linkKeywords, which escapes as well.
+const CHANGE_STAT: Record<string, string> = {
+  score: 'Points', armor: 'Armor', structure: 'Structure', parray: 'Parry', dodge: 'Dodge', electronic: 'Electronic', move: 'Move',
+};
+const CHANGE_ACTION: Record<string, string> = { range: 'Range', dice: 'Dice', length: 'Length', timing: 'Timing' };
+const LENGTH_WORD: Record<string, string> = { S: 'Short', M: 'Medium', L: 'Long' };
+
+function changeValue(field: string, v: string | number | null | undefined): string {
+  if (v === null || v === undefined || v === '') return '<span class="log-none">none</span>';
+  // Dice the way the card draws them: "1Y2R" is {1Y}{2R} to the glyph pass.
+  if (field === 'dice') return linkKeywords(String(v).replace(/(\d+)\s*([YRWB])/gi, '{$1$2}'));
+  if (field === 'length') return esc(LENGTH_WORD[String(v).toUpperCase()] ?? String(v));
+  return esc(String(v));
+}
+
+function changePair(field: string, e: ChangeEntry): string {
+  return `<span class="log-pair"><s>${changeValue(field, e.from)}</s> → <b>${changeValue(field, e.to)}</b></span>`;
+}
+
+// A text change as its lines: reworded ones as Now over Was, then what the card
+// gained, then what it lost.
+function textLines(e: ChangeEntry): string {
+  const line = (tag: string, html: string, was = false) =>
+    `<p class="log-line${was ? ' log-was' : ''}"><span class="log-tag">${tag}</span><span>${html}</span></p>`;
+  return [
+    ...(e.changed ?? []).map(([was, now]) => line('Now', linkKeywords(now)) + line('Was', linkKeywords(was), true)),
+    ...(e.gains ?? []).map((t) => line('Gains', linkKeywords(t))),
+    ...(e.loses ?? []).map((t) => line('Loses', linkKeywords(t), true)),
+  ].join('');
+}
+
+// One revision's changes to one card, as list rows: the card's own stats first,
+// one row each with the numbers at the right; then ONE block per Action holding
+// everything that Action changed, so a redesigned Action reads as one thing and
+// not as five rows each repeating its name; then what left the card.
+function changeRows(c: Card, entries: ChangeEntry[]): string {
+  const note = (e: ChangeEntry) => (e.note ? `<small class="log-note">${esc(e.note)}</small>` : '');
+  const out: string[] = [];
+  for (const e of entries) {
+    if (e.action) continue;
+    if (e.field && CHANGE_STAT[e.field]) {
+      out.push(`<li><span class="ui-row-name">${CHANGE_STAT[e.field]}${note(e)}</span><span class="ui-row-meta">${changePair(e.field, e)}</span></li>`);
+    } else if (e.kind === 'renamed') {
+      out.push(`<li><span class="ui-row-name">Renamed${note(e)}</span><span class="log-meta">was ${esc(String(e.from ?? ''))}</span></li>`);
+    } else if (e.kind === 'low-value-lost') {
+      out.push(`<li><span class="ui-row-name">No longer a Low Value unit${note(e)}</span></li>`);
+    } else if (e.kind === 'added') {
+      // A card a list adds has no printing to differ from, which is also why it
+      // wears a drawn placeholder rather than a scan.
+      out.push(`<li><span class="ui-row-name">New on the ${esc(e.list ?? '')} parts list${note(e)}</span></li>`);
+    } else if (e.field === 'trait') {
+      out.push(`<li class="log-text"><div class="ui-row-name">Trait${textLines(e)}${note(e)}</div></li>`);
+    }
+  }
+  const byAction = new Map<string, ChangeEntry[]>();
+  for (const e of entries) if (e.action) byAction.set(e.action, [...(byAction.get(e.action) ?? []), e]);
+  for (const a of c.actions ?? []) {
+    const es = byAction.get(a.id);
+    if (!es) continue;
+    const name = esc(a.name?.en || a.name?.zh || '');
+    const lines = es.map((e) => {
+      if (e.kind === 'action-added') return '<p class="log-line"><span class="log-tag">New</span><span>A new Action on this card</span></p>';
+      if (e.kind === 'action-renamed') return `<p class="log-line"><span class="log-tag">Name</span><span>was ${esc(String(e.from ?? ''))}</span></p>`;
+      if (e.field && CHANGE_ACTION[e.field]) return `<p class="log-line"><span class="log-tag">${CHANGE_ACTION[e.field]}</span>${changePair(e.field, e)}</p>`;
+      if (e.field === 'text') return textLines(e);
+      return '';
+    }).join('');
+    out.push(`<li class="log-text"><div class="ui-row-name">${name}${lines}${es.map(note).join('')}</div></li>`);
+  }
+  for (const e of entries) {
+    if (e.kind === 'action-removed') {
+      out.push(`<li><span class="ui-row-name">Action removed${note(e)}</span><span class="log-meta">${esc(e.name ?? '')}</span></li>`);
+    }
+  }
+  return out.join('');
+}
+
+// What a card's revision rests on, for the head beside its chip: the version's
+// `source`, "{faction}" standing for the card's own ("PD parts list 1.04").
+function versionSource(c: Card, v: string): string {
+  const src = (data.changelog?.versions ?? []).find((x) => x.id === v)?.source ?? '';
+  if (!src.includes('{faction}')) return src;
+  const fac = data.factionOf(c);
+  if (fac) return src.replace('{faction}', FACTION_LABEL[fac] ?? fac);
+  const bare = src.replace('{faction} ', '');
+  return bare.charAt(0).toUpperCase() + bare.slice(1);
+}
+
+export function changelogBlock(c: Card): string {
+  const entries = data.changelog?.cards?.[c.id] ?? [];
+  if (!entries.length) return '';
+  const versions = data.changelog?.versions ?? [];
+  const label = (v: string) => versions.find((x) => x.id === v)?.label ?? v;
+  // Newest first, in the order the versions are listed.
+  const order = [...new Set(entries.map((e) => e.v))]
+    .sort((a, b) => versions.findIndex((x) => x.id === b) - versions.findIndex((x) => x.id === a));
+  // Each revision as the Rules rows have it: its chip on its own line, the rows,
+  // and what the change rests on under them ("PD parts list 1.04").
+  const groups = order.map((v) => {
+    const rows = changeRows(c, entries.filter((e) => e.v === v));
+    const src = versionSource(c, v);
+    return rows
+      ? `<div class="log-rev">${logVer(v)}</div><ul class="ui-list ref-log-list">${rows}</ul>${src ? `<p class="log-src log-rev-src">${esc(src)}</p>` : ''}`
+      : '';
+  }).join('');
+  if (!groups) return '';
+  const points = entries.some((e) => e.field === 'score');
+  // Said only where a value moved: a card new to a list has nothing printed on
+  // it that is now wrong.
+  const moved = entries.some((e) => !!e.field);
+  const fresh = entries.every((e) => e.kind === 'added');
+  const foot = moved
+    // "The stats above", not "the card above": the thumbnail beside the name IS
+    // the printed card, and pointing a reader at "the card" sends them to the
+    // one place still showing the old values (OTTO, 2026-09-30).
+    ? `<p class="ref-log-foot">The stats above show the current values; a printed card can show the older ones.${points ? ' Points are never printed on a card.' : ''}</p>`
+    : '';
+  return `<details class="ref-log">
+    <summary><span class="ref-log-k">Changelog</span><span class="ref-log-s">${fresh ? 'New' : 'Changed'} in ${esc(label(order[0]))}</span><span class="ui-badge">${entries.length}</span></summary>
+    <div class="ref-log-b">${groups}${foot}</div>
+  </details>`;
+}
+
 export function cardDetail(c: Card): string {
   // Link is the one stat the printed card colours, tinting its mark to the
   // pilot's faction, so it is drawn through the mask rather than as one more
@@ -815,6 +1300,7 @@ export function cardDetail(c: Card): string {
       ${c.category === 'pilot' ? `<div class="ref-portrait" data-portrait="${esc(c.id)}" data-portrait-label="${esc(cardName(c)).replace(/"/g, '&quot;')}"></div>` : ''}
       ${free ? `<p class="ref-free">Costs 0 points: ${esc(free)}.</p>` : ''}
       ${stats || pilotStats ? `<div class="ref-stats">${stats}${pilotStats}</div>` : ''}
+      ${changelogBlock(c)}
       ${trait}
       ${actions ? `<h3 class="ref-sub">Actions</h3>${actions}` : ''}
       ${
@@ -935,13 +1421,21 @@ export function keywordDetail(name: string): string | null {
   // says the word are both "cards this keyword is on" to a reader, and two
   // headings made them look like different kinds of answer. The printed ones
   // lead because that is the stronger claim, but nothing labels them apart.
+  // An Action NAMED after a keyword is that keyword's ability printed as an
+  // Action, so it counts as printing it: Dense Armor since the Supplementary
+  // Rules 1.04 (3.7) retired the keyword for exactly that, and KC Armor and
+  // Fire Control Interference all along. Not for a banner tag, where an Action
+  // called Missile or Grenade names what it launches, not a rule.
+  const isTag = /tag on the card banner/.test(def.en?.value ?? '');
+  const names = new Set([label, ...(def.aliases ?? [])].map((n) => n.trim().toLowerCase()));
+  const named = (c: Card) => !isTag && (c.actions ?? []).some((a) => names.has((a.name?.en ?? '').trim().toLowerCase()));
   const prints = data.cards.filter((c) =>
-    [...(c.keywords ?? []), ...((c.actions ?? []).flatMap((a) => a.keywords ?? []))].some(
+    named(c) || [...(c.keywords ?? []), ...((c.actions ?? []).flatMap((a) => a.keywords ?? []))].some(
       (k) => data.keyword(k.key || k.inline || k.en || '')?.key === def.key,
     ));
   const says = (refs.cards.get(def.key) ?? [])
     .map((id) => data.byId.get(id))
-    .filter((c): c is NonNullable<typeof c> => !!c);
+    .filter((c): c is NonNullable<typeof c> => !!c && !prints.includes(c));
   const users = [...prints, ...says];
   const shown = users.slice(0, 40);
   const cardLink = (c: { id: string }) =>
@@ -950,6 +1444,7 @@ export function keywordDetail(name: string): string | null {
   return `<h2>${esc(label)}</h2>
     <p class="ref-meta">Keyword: rulebook glossary</p>
     <p>${def.en?.value ? linkKeywords(def.en.value, def) : '<em>No English glossary text.</em>'}</p>
+    ${keywordLog(def)}
     ${related.length ? `<h3 class="ref-sub">Related keywords</h3>
       <div class="ref-userlist">${related
         .map((k) => `<a class="ref-userlink kw" data-kw="${esc(kwName(k))}">${esc(kwName(k))}</a>`)

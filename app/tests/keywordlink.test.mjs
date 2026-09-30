@@ -111,6 +111,9 @@ const INTENTIONAL = [
   '信标', '命中', '地雷', '墙', '导弹', '导弹组X', '巡航', '抛射物', '机动掩体',
   '榴弹', '牵引X', '火箭', '烟幕弹', '电子对抗', '自行地雷', '设置物',
   '路障', '智能榴弹', '低价值',
+  // The two tags the Supplementary Rules 1.04 add (3.1, 3.2), which the
+  // bundle cannot have: English keys, as Automatic Action is.
+  'Breakable', 'Transformation',
 ].sort();
 const surprises = appended.slice().sort().filter((k) => !INTENTIONAL.includes(k));
 check('no override key silently appended a new entry', surprises, []);
@@ -297,11 +300,12 @@ check('a printed bullet does not block a name match', rankFn('•Omni-direction 
 // number has no order to get wrong.
 check('no rendered pool is filtered without being ranked',
   (ref.match(/\.filter\(\((\w+)\) => match[A-Z]\w*\(\1, q\)\)(?!\.length)/g) ?? []).length, 0);
-// 19 since the Rules tab's badge learned to count the DICE as well. Pinned to a
-// number rather than "> 0" so the two assertions work as a pair: adding a pool
-// without ranking its RENDER still trips the one above.
+// 19 since the Rules tab's badge learned to count the DICE as well, 20 since it
+// counts the Season Rules (2026-09-30). Pinned to a number rather than "> 0" so
+// the two assertions work as a pair: adding a pool without ranking its RENDER
+// still trips the one above.
 check('while the badge counts stay plain filters',
-  (ref.match(/\.filter\(\((\w+)\) => match[A-Z]\w*\(\1, q\)\)\.length/g) ?? []).length, 19);
+  (ref.match(/\.filter\(\((\w+)\) => match[A-Z]\w*\(\1, q\)\)\.length/g) ?? []).length, 20);
 check('and they all go through found()', (ref.match(/= found\(/g) ?? []).length >= 20, true);
 
 console.log(`\n${pass} passed, ${fail} failed`);

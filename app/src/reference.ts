@@ -11,8 +11,8 @@ import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
 import { iconSvg } from './dice';
 import { linkIcon } from './icons';
-import { cardDetail, cardRow, esc, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, mechanicBody, mechBlocks, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
-import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSecondary, matchStance, matchStatus, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSecondary, nmStatus, norm } from './refsearch';
+import { cardDetail, cardRow, changelogEntry, changelogIndex, currentSeason, esc, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, mechanicBody, mechBlocks, ruleDetail, seasonAbout, seasonCard, seasonDetail, seasonEntry, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
+import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSeason, matchSecondary, matchStance, matchStatus, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSeason, nmSecondary, nmStatus, norm, rank } from './refsearch';
 import { installDiagnostics } from './diagnostics';
 import { boxPicker, compareGrid, exclusiveToggle, isExclusiveTo, sharedCount } from './boxcompare';
 import type { ReportCategory } from './report';
@@ -518,7 +518,8 @@ function tabCounts(q: string): Record<Tab, number> {
       data.mechanics.filter((m) => matchMechanic(m, q)).length +
       dieEntries().filter((d) => matchDie(d, q)).length +
       Object.entries(data.dice?.offsetRules ?? {}).filter(([k, v]) => !q || norm(`${k} ${v}`).includes(q)).length +
-      STATUSES.filter((d) => matchStatus(d, q)).length,
+      STATUSES.filter((d) => matchStatus(d, q)).length +
+      (currentSeason()?.rules ?? []).filter((r) => matchSeason(r, q)).length,
   };
 }
 
@@ -638,17 +639,26 @@ function renderEverywhere(el: HTMLElement, q: string): void {
   }
 
   const mechs = found(data.mechanics, q, matchMechanic, nmMechanic);
+  const season = currentSeason();
+  const seasonHits = season ? found(season.rules, q, matchSeason, nmSeason) : [];
   const playBits =
     data.play.phases.filter((x) => matchPhase(x, q)).length +
     data.play.timings.filter((x) => matchTiming(x, q)).length +
     data.play.stances.filter((x) => matchStance(x, q)).length +
     STATUSES.filter((d) => matchStatus(d, q)).length;
-  if (mechs.length + playBits) {
-    // Mechanics are the chips worth naming; phases, timings, stances and
-    // tokens count toward the total and live behind the group's Rules link.
+  if (mechs.length + seasonHits.length + playBits) {
+    // Mechanics and Season Rules are the chips worth naming; phases, timings,
+    // stances and tokens count toward the total and live behind the group's
+    // Rules link. A Season Rule's chip says it is optional.
+    // The two pools merge by how well each name answers the search, so
+    // "stabilize" puts the Season Rule of that name above the entries that
+    // only mention it; the sort is stable, so each pool keeps its own order.
     groups.push({
-      t: 'rules', total: mechs.length + playBits,
-      rows: mechs.slice(0, CAP).map((m) => chip('data-goto="rules"', m.name, m.ref ?? 'rules')),
+      t: 'rules', total: mechs.length + seasonHits.length + playBits,
+      rows: [
+        ...mechs.map((m) => ({ r: rank(m.name, q), html: chip('data-goto="rules"', m.name, m.ref ?? 'rules') })),
+        ...seasonHits.map((s) => ({ r: rank(s.name, q), html: chip(`data-season="${esc(s.id)}"`, s.name, `${season!.label} · optional`) })),
+      ].sort((a, b) => a.r - b.r).slice(0, CAP).map((x) => x.html),
     });
   }
 
@@ -1055,6 +1065,15 @@ function render(): void {
           .join('')}</div>`
       : '';
 
+    // The Season Rules (OTTO, 2026-09-30): the publisher's trial rules, kept
+    // apart from everything above as their own section, opening on the banner
+    // that says they are optional. A search that finds one shows the banner too.
+    const season = currentSeason();
+    const seasonList = season ? found(season.rules, q, matchSeason, nmSeason) : [];
+    const seasonHtml = season && seasonList.length
+      ? `<p class="ref-count season-count">Season Rules</p>` + seasonAbout(season) + seasonList.map((r) => seasonCard(r, season)).join('')
+      : '';
+
     const sections = [
       { id: 'cards', label: 'Cards', n: helpList.length, html: helpHtml },
       { id: 'phases', label: 'Phases', n: phases.length, html: phaseHtml },
@@ -1063,24 +1082,41 @@ function render(): void {
       { id: 'dice', label: 'Dice', n: dice.length + matchedRules.length, html: diceHtml },
       { id: 'tokens', label: 'Tokens', n: tokenList.length, html: tokenHtml },
       { id: 'mechanics', label: 'Mechanics', n: filtered.length, html: mechanicHtml },
+      { id: 'season', label: 'Season', n: seasonList.length, html: seasonHtml },
     ];
     const total = sections.reduce((sum, x) => sum + x.n, 0);
     const chosen = sections.find((x) => x.id === rulesSection && x.n);
+    // The Season chip wears the Season's blue, so it never reads as one more
+    // part of the main rules, and stands first after All, as in the master
+    // changelog (OTTO, 2026-09-30); its section still comes last on the page.
+    const chips = [...sections.filter((x) => x.id === 'season'), ...sections.filter((x) => x.id !== 'season')];
     const bar = `<div class="ref-facets ref-facets-faction">
       <button class="ref-facet${chosen ? '' : ' active'}" data-rules="">All <span class="fc-n">${total}</span></button>
-      ${sections
+      ${chips
         .map(
           (x) =>
-            `<button class="ref-facet${chosen?.id === x.id ? ' active' : ''}${x.n ? '' : ' empty'}" data-rules="${x.id}"${
+            `<button class="ref-facet${chosen?.id === x.id ? ' active' : ''}${x.id === 'season' ? ' season' : ''}${x.n ? '' : ' empty'}" data-rules="${x.id}"${
               x.n ? '' : ' disabled'
             }>${esc(x.label)} <span class="fc-n">${x.n}</span></button>`,
         )
         .join('')}
     </div>`;
 
+    // The master changelog's way in, above the quick reference cards (OTTO,
+    // 2026-09-30): on the whole tab and on Cards, and not while a search is
+    // narrowing the tab to what it matched. The Season Rules' bar sits under it.
+    const clEntry = !q && (!chosen || chosen.id === 'cards') ? changelogEntry() + seasonEntry() : '';
     el.innerHTML = total
-      ? bar + (chosen ? chosen.html : sections.map((x) => x.html).join(''))
+      ? bar + clEntry + (chosen ? chosen.html : sections.map((x) => x.html).join(''))
       : bar + '<p class="ref-count">No matches</p>';
+    // On a screen too narrow for every chip the row scrolls sideways, and a
+    // chosen chip past its edge (Season, the last) left the reader unable to
+    // see what the tab was narrowed to. The row alone scrolls, never the page.
+    const row = el.querySelector<HTMLElement>('.ref-facets');
+    const on = row?.querySelector<HTMLElement>('.ref-facet.active');
+    if (row && on && row.scrollWidth > row.clientWidth) {
+      row.scrollLeft = on.offsetLeft - row.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
+    }
     el.querySelectorAll<HTMLButtonElement>('[data-rules]').forEach((b) =>
       b.addEventListener('click', () => {
         rulesSection = b.dataset.rules || undefined;
@@ -1213,10 +1249,14 @@ function unlockRefPage(): void {
   window.scrollTo(0, refLockedAt);
 }
 
+// `changelog` is the master changelog, keyed by revision; `rule` a Rules entry,
+// which only that sheet opens; `season` a Season Rule, by its id. `log`: opened
+// from the master changelog, so the view's own Changelog is shown open.
 interface DetailView {
-  kind: 'card' | 'keyword' | 'box' | 'faction' | 'compare';
+  kind: 'card' | 'keyword' | 'box' | 'faction' | 'compare' | 'changelog' | 'rule' | 'season';
   key: string;
   scroll?: number;
+  log?: boolean;
 }
 
 let navStack: DetailView[] = [];
@@ -1232,6 +1272,9 @@ function viewHtml(v: DetailView): string | null {
   if (v.kind === 'box') return boxDetail(v.key);
   if (v.kind === 'faction') return factionDetail(v.key);
   if (v.kind === 'compare') return compareDetail(v.key);
+  if (v.kind === 'changelog') return changelogIndex(v.key);
+  if (v.kind === 'rule') return ruleDetail(v.key);
+  if (v.kind === 'season') return seasonDetail(v.key);
   return keywordDetail(v.key);
 }
 
@@ -1271,7 +1314,9 @@ function shownFor(v: DetailView | undefined): Record<string, string> {
   if (v.kind === 'card') return flatten(data.byId.get(v.key));
   if (v.kind === 'keyword') return flatten(data.keyword(v.key));
   if (v.kind === 'box') return flatten(data.boxes.find((b) => b.key === v.key));
-  if (v.kind === 'compare') return {};
+  if (v.kind === 'compare' || v.kind === 'changelog') return {};
+  if (v.kind === 'rule') return flatten(data.mechanics.find((m) => m.id === v.key));
+  if (v.kind === 'season') return flatten(data.seasons.flatMap((s) => s.rules).find((r) => r.id === v.key));
   return flatten(data.factions.find((f) => f.key === v.key));
 }
 
@@ -1291,13 +1336,22 @@ function viewLabel(v: DetailView): string {
   }
   if (v.kind === 'faction') return data.factions.find((x) => x.key === v.key)?.name ?? v.key;
   if (v.kind === 'compare') return 'Compare boxes';
+  if (v.kind === 'changelog') {
+    const label = data.changelog?.versions?.find((x) => x.id === v.key)?.label ?? v.key;
+    return `What changed in ${label}`;
+  }
+  if (v.kind === 'rule') return data.mechanics.find((m) => m.id === v.key)?.name ?? v.key;
+  if (v.kind === 'season') {
+    const name = data.seasons.flatMap((s) => s.rules).find((r) => r.id === v.key)?.name ?? v.key;
+    return `${name} (Season Rule)`;
+  }
   const def = data.keyword(v.key);
   return def?.en?.name?.replace(/^[•·\s]+/, '') || v.key;
 }
 
-function navigateDetail(kind: DetailView['kind'], rawKey: string): void {
+function navigateDetail(kind: DetailView['kind'], rawKey: string, opts: { log?: boolean } = {}): void {
   const key = kind === 'keyword' ? data.keyword(rawKey)?.key ?? rawKey : rawKey;
-  const v: DetailView = { kind, key };
+  const v: DetailView = { kind, key, ...(opts.log ? { log: true } : {}) };
   const html = viewHtml(v);
   if (html === null) return;
 
@@ -1312,6 +1366,77 @@ function navigateDetail(kind: DetailView['kind'], rawKey: string): void {
   }
   navStack.push(v);
   paintDetail(html, 0);
+  if (v.log) revealLog();
+}
+
+// The master changelog's search and kind chips (Popup B of the design study),
+// applied in place to the rows the sheet drew: typing never redraws the sheet,
+// so the search keeps its focus, and Back from an item finds the list filtered
+// as it was left. A new revision, or the sheet opened afresh, starts clear.
+let clFilter: { kind: string; q: string } = { kind: 'all', q: '' };
+
+function applyChangelogFilter(root: HTMLElement): void {
+  const list = root.querySelector<HTMLElement>('.cl-list');
+  if (!list) return;
+  const input = root.querySelector<HTMLInputElement>('#cl-q');
+  if (input && input.value !== clFilter.q) input.value = clFilter.q;
+  root.querySelectorAll<HTMLElement>('[data-clkind]').forEach((b) => b.classList.toggle('active', b.dataset.clkind === clFilter.kind));
+  const q = norm(clFilter.q.trim());
+  let shown = 0;
+  list.querySelectorAll<HTMLElement>('li[data-clk]:not(.cl-note)').forEach((li) => {
+    const on = (clFilter.kind === 'all' || li.dataset.clk === clFilter.kind) && (!q || norm(li.dataset.cln ?? '').includes(q));
+    li.hidden = !on;
+    if (on) shown++;
+  });
+  // The Season Rules' note shows with their rows and not under a search, and is
+  // never counted as a match.
+  list.querySelectorAll<HTMLElement>('li.cl-note').forEach((li) => {
+    li.hidden = !!q || !(clFilter.kind === 'all' || li.dataset.clk === clFilter.kind);
+  });
+  const none = root.querySelector<HTMLElement>('.cl-none');
+  if (none) none.hidden = shown > 0;
+}
+
+// The master changelog's revision menu (refcards.ts changelogIndex), our own
+// list where a native select's was the system's: it opens under the revision's
+// pill, closes on a pick, on a click anywhere else and on Escape (which then
+// leaves the sheet open), and the arrow keys walk it.
+function versionMenu(): { btn: HTMLButtonElement; menu: HTMLElement } | null {
+  const root = document.getElementById('ref-detail-content');
+  const btn = root?.querySelector<HTMLButtonElement>('.cl-ver-btn');
+  const menu = root?.querySelector<HTMLElement>('.cl-ver-menu');
+  return btn && menu ? { btn, menu } : null;
+}
+
+function openVersionMenu(open: boolean): void {
+  const m = versionMenu();
+  if (!m) return;
+  m.menu.hidden = !open;
+  m.btn.setAttribute('aria-expanded', String(open));
+  if (open) m.menu.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+}
+
+// Whether a menu was open to close; `focus` hands the focus back to its pill.
+function closeVersionMenu(focus = false): boolean {
+  const m = versionMenu();
+  if (!m || m.menu.hidden) return false;
+  openVersionMenu(false);
+  if (focus) m.btn.focus();
+  return true;
+}
+
+// A card or keyword opened from the master changelog shows its own Changelog,
+// open and scrolled to; a Rules entry's is already open, at the top of its
+// Advanced. Only on the way in: Back restores the scroll the reader left.
+function revealLog(): void {
+  const content = document.getElementById('ref-detail-content');
+  const log = content?.querySelector<HTMLDetailsElement>('details.ref-log, details.mech-adv');
+  if (!log) return;
+  log.open = true;
+  holdDetailHeight(content!);
+  const scroller = sheetScroller();
+  const top = log.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+  scroller.scrollTop = Math.max(0, top - 56);
 }
 
 function backDetail(): void {
@@ -1421,6 +1546,9 @@ function paintDetail(html: string, scrollTop: number): void {
     if (t) t.hidden = true;
   }
   fillPortraits(content, false);
+  // The master changelog's filter goes on before the scroll comes back, which
+  // was measured on the filtered list.
+  if (content.querySelector('.cl-list')) applyChangelogFilter(content);
   sheet().hidden = false;
   lockRefPage();
   sheetScroller().scrollTop = scrollTop;
@@ -1524,6 +1652,72 @@ async function init(): Promise<void> {
     if (dtab) {
       const root = document.getElementById('ref-detail-content');
       if (root) showDetailTab(root, dtab.dataset.dtab!);
+      return;
+    }
+    // The master changelog's revision menu: the pill opens and closes it, a
+    // revision in it switches the list in place, its filter cleared and its
+    // scroll at the top, and any other click closes it on the way through.
+    const verBtn = t.closest<HTMLElement>('.cl-ver-btn');
+    if (verBtn) {
+      ev.preventDefault();
+      openVersionMenu(verBtn.getAttribute('aria-expanded') !== 'true');
+      return;
+    }
+    const verOpt = t.closest<HTMLElement>('[data-clver]');
+    if (verOpt) {
+      ev.preventDefault();
+      const top = navStack[navStack.length - 1];
+      if (top?.kind === 'changelog' && verOpt.dataset.clver !== top.key) {
+        clFilter = { kind: 'all', q: '' };
+        top.key = verOpt.dataset.clver!;
+        const html = viewHtml(top);
+        if (html !== null) paintDetail(html, 0);
+      } else openVersionMenu(false);
+      versionMenu()?.btn.focus();
+      return;
+    }
+    closeVersionMenu();
+    // The master changelog (OTTO, 2026-09-30): a revision chip, or the bar in
+    // the Rules tab, opens that revision's list, and on the open sheet switches
+    // it in place; a row opens its card, keyword or Rules entry with its own
+    // Changelog showing, Back returning to the list.
+    const clv = t.closest<HTMLElement>('[data-clv]');
+    if (clv) {
+      ev.preventDefault();
+      clFilter = { kind: 'all', q: '' };
+      navigateDetail('changelog', clv.dataset.clv!);
+      return;
+    }
+    const clkind = t.closest<HTMLElement>('[data-clkind]');
+    if (clkind) {
+      ev.preventDefault();
+      clFilter.kind = clkind.dataset.clkind!;
+      const root = document.getElementById('ref-detail-content');
+      if (root) applyChangelogFilter(root);
+      return;
+    }
+    const logItem = t.closest<HTMLElement>('[data-logcard], [data-logkw], [data-logrule], [data-logseason]');
+    if (logItem) {
+      ev.preventDefault();
+      const d = logItem.dataset;
+      if (d.logcard) navigateDetail('card', d.logcard, { log: true });
+      else if (d.logkw) navigateDetail('keyword', d.logkw, { log: true });
+      else if (d.logrule) navigateDetail('rule', d.logrule, { log: true });
+      else if (d.logseason) navigateDetail('season', d.logseason);
+      return;
+    }
+    // A Season Rule, from the callout on the Rules entry it changes or from a
+    // search; and from a Season Rule, the Rules entries it names.
+    const seasonLink = t.closest<HTMLElement>('[data-season]');
+    if (seasonLink) {
+      ev.preventDefault();
+      navigateDetail('season', seasonLink.dataset.season!);
+      return;
+    }
+    const ruleSheet = t.closest<HTMLElement>('[data-rulesheet]');
+    if (ruleSheet) {
+      ev.preventDefault();
+      navigateDetail('rule', ruleSheet.dataset.rulesheet!);
       return;
     }
     const kw = t.closest<HTMLElement>('[data-kw]');
@@ -1631,6 +1825,14 @@ async function init(): Promise<void> {
       }
     }
   });
+  // The master changelog's search, filtering in place as it is typed.
+  document.addEventListener('input', (ev) => {
+    const el = ev.target as HTMLElement;
+    if (el.id !== 'cl-q') return;
+    clFilter.q = (el as HTMLInputElement).value;
+    const root = document.getElementById('ref-detail-content');
+    if (root) applyChangelogFilter(root);
+  });
   document.getElementById('ref-detail-back')!.addEventListener('click', backDetail);
   document.getElementById('ref-detail-close')!.addEventListener('click', closeDetail);
 
@@ -1644,7 +1846,9 @@ async function init(): Promise<void> {
       // What is open decides it; failing that, the tab does. Rules never open a
       // sheet at all, so the tab is the only signal there -- which is exactly
       // the case that had no way to be reported before.
-      category: open ? (open.kind as ReportCategory) : (TAB_CATEGORY[tab] ?? 'other'),
+      category: open
+        ? (open.kind === 'rule' || open.kind === 'season' ? 'rules' : open.kind === 'changelog' || open.kind === 'compare' ? 'other' : (open.kind as ReportCategory))
+        : (TAB_CATEGORY[tab] ?? 'other'),
       looking: { tab, search: query.trim() },
       shown: shownFor(open),
     });
@@ -1660,7 +1864,30 @@ async function init(): Promise<void> {
     if (ev.target === ev.currentTarget) closeDetail();
   });
   document.addEventListener('keydown', (ev) => {
+    // An open revision menu takes Escape and the arrows first; the sheet
+    // stays open under it.
+    const m = versionMenu();
+    if (m && !m.menu.hidden) {
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        closeVersionMenu(true);
+        return;
+      }
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        const opts = [...m.menu.querySelectorAll<HTMLElement>('[data-clver]')];
+        const at = opts.indexOf(document.activeElement as HTMLElement);
+        const next = ev.key === 'ArrowDown' ? (at + 1) % opts.length : (at - 1 + opts.length) % opts.length;
+        opts[next]?.focus();
+        return;
+      }
+    }
     if (ev.key === 'Escape') closeDetail();
+  });
+  // Tabbing out of the revision menu closes it, as a click elsewhere does.
+  document.addEventListener('focusin', (ev) => {
+    const m = versionMenu();
+    if (m && !m.menu.hidden && !(ev.target as HTMLElement).closest('.cl-ver')) openVersionMenu(false);
   });
 
   render();

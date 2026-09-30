@@ -1,0 +1,1972 @@
+{
+ "_about": "How each card has changed across the publisher's list revisions, in the app's card and Action ids. Built by Project-Documents/PartsLists/tools/make_changelog.py: GoF from the championship 1.02 list (what its cards print) to 1.021; PD, RDL and UN from 1.02 to 1.04; and, under 1.02, the printed stats the card images show that the lists have since changed (OTTO: the images are the 1.0 stats). The Reference shows it in a card's Changelog section (refcards.ts), and tests/changelog.test.mjs checks that every number here ends where the card now stands. `rules` holds the Rules entries' changes, by mechanics.json id, shown at the top of an entry's Advanced section; `keywords` the glossary's, by keyword key, shown under the keyword's text.",
+ "versions": [
+  {
+   "id": "1.02",
+   "label": "1.02",
+   "source": "The printed card, against the 1.02 lists",
+   "note": "The publisher's parts lists as first issued to players."
+  },
+  {
+   "id": "1.021",
+   "label": "GoF 1.021",
+   "source": "GoF parts list 1.021",
+   "note": "A GoF-only revision: the faction repriced and several cards redesigned."
+  },
+  {
+   "id": "1.04",
+   "label": "1.04",
+   "source": "{faction} parts list 1.04",
+   "note": "Received 2026-09-30: points across PD, RDL and UN, Direct Fire on two UN Backpacks, two RDL cards dropped; the FAQ and the Supplementary Rules 1.04."
+  }
+ ],
+ "cards": {
+  "004": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 39,
+    "to": 36
+   }
+  ],
+  "009": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 30,
+    "to": 39
+   }
+  ],
+  "010": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 48,
+    "to": 51
+   }
+  ],
+  "017": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 47,
+    "to": 59
+   }
+  ],
+  "018": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 60,
+    "to": 63
+   }
+  ],
+  "022": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 42,
+    "to": 45
+   }
+  ],
+  "023": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 54,
+    "to": 51
+   }
+  ],
+  "027": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 33,
+    "to": 42
+   }
+  ],
+  "032": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 51,
+    "to": 48
+   }
+  ],
+  "033": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 51,
+    "to": 48
+   }
+  ],
+  "034": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 50,
+    "to": 47
+   }
+  ],
+  "036": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 39,
+    "to": 33
+   }
+  ],
+  "037": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 39,
+    "to": 33
+   }
+  ],
+  "040": [
+   {
+    "v": "1.02",
+    "field": "parray",
+    "from": 0,
+    "to": 1,
+    "note": "The 2019 printing has no Parry box."
+   }
+  ],
+  "045": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 56,
+    "to": 53
+   }
+  ],
+  "050": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 69,
+    "to": 66
+   }
+  ],
+  "051": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 63,
+    "to": 57
+   }
+  ],
+  "052": [
+   {
+    "v": "1.02",
+    "field": "parray",
+    "from": 1,
+    "to": 0
+   }
+  ],
+  "058": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 45,
+    "to": 42
+   }
+  ],
+  "062": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 42,
+    "to": 60
+   }
+  ],
+  "063": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 45,
+    "to": 63
+   }
+  ],
+  "078": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 42,
+    "to": 39
+   }
+  ],
+  "079": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 33,
+    "to": 39
+   }
+  ],
+  "082": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 21,
+    "to": 27
+   }
+  ],
+  "084": [
+   {
+    "v": "1.04",
+    "action": "084_A",
+    "field": "text",
+    "gains": [
+     "Direct Fire"
+    ]
+   }
+  ],
+  "085": [
+   {
+    "v": "1.04",
+    "action": "085_A",
+    "field": "text",
+    "gains": [
+     "Direct Fire"
+    ]
+   }
+  ],
+  "088": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 48,
+    "to": 42
+   }
+  ],
+  "090": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 49,
+    "to": 45
+   }
+  ],
+  "092": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 54,
+    "to": 45
+   }
+  ],
+  "096": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 81,
+    "to": 78
+   }
+  ],
+  "097": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 72,
+    "to": 63
+   }
+  ],
+  "098": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 60,
+    "to": 51
+   }
+  ],
+  "100": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 39,
+    "to": 33
+   }
+  ],
+  "107": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 48,
+    "to": 45
+   }
+  ],
+  "109": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 54,
+    "to": 48
+   }
+  ],
+  "111": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 42,
+    "to": 39
+   }
+  ],
+  "113": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 42,
+    "to": 39
+   }
+  ],
+  "122": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 60,
+    "to": 54
+   }
+  ],
+  "124": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 60,
+    "to": 54
+   }
+  ],
+  "126": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 21,
+    "to": 30
+   }
+  ],
+  "131": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 36,
+    "to": 30
+   }
+  ],
+  "133": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 36,
+    "to": 30
+   }
+  ],
+  "135": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 45,
+    "to": 39
+   }
+  ],
+  "137": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 45,
+    "to": 39
+   }
+  ],
+  "139": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 48,
+    "to": 42
+   }
+  ],
+  "145": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 81,
+    "to": 75
+   }
+  ],
+  "146": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 66,
+    "to": 63
+   }
+  ],
+  "148": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 69,
+    "to": 66
+   }
+  ],
+  "162": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 12,
+    "to": 18
+   }
+  ],
+  "164": [
+   {
+    "v": "1.02",
+    "field": "move",
+    "from": 8,
+    "to": 9
+   }
+  ],
+  "165": [
+   {
+    "v": "1.02",
+    "field": "move",
+    "from": 8,
+    "to": 9
+   }
+  ],
+  "166": [
+   {
+    "v": "1.02",
+    "field": "move",
+    "from": 8,
+    "to": 9
+   }
+  ],
+  "172": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 76,
+    "to": 105
+   },
+   {
+    "v": "1.021",
+    "action": "172_A",
+    "kind": "action-renamed",
+    "from": "N4 Data Link",
+    "to": "Designated Defense"
+   },
+   {
+    "v": "1.021",
+    "action": "172_A",
+    "field": "text",
+    "gains": [
+     "This Mech may Designate part to resolve damage"
+    ],
+    "loses": [
+     "Command Generation 4"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "172_B",
+    "kind": "action-renamed",
+    "from": "Melee Synergy",
+    "to": "Swarm Tactics"
+   },
+   {
+    "v": "1.021",
+    "action": "172_B",
+    "field": "text",
+    "gains": [
+     "After this Mech issues a Command to a GoF Medium Drone, may remove this Command Token and continue issuing a Command to another Ally Drone"
+    ],
+    "loses": [
+     "Melee Actions by this Unit gain Command Coordination 1"
+    ]
+   }
+  ],
+  "173": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 85,
+    "to": 80
+   },
+   {
+    "v": "1.021",
+    "action": "173_B",
+    "kind": "action-renamed",
+    "from": "Fire Control Planning",
+    "to": "FCS Control"
+   }
+  ],
+  "174": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 91,
+    "to": 80
+   }
+  ],
+  "175": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 97,
+    "to": 85
+   },
+   {
+    "v": "1.021",
+    "action": "175_A",
+    "kind": "action-renamed",
+    "from": "A2 Data Link",
+    "to": "A2K Data Link"
+   },
+   {
+    "v": "1.021",
+    "action": "175_A",
+    "field": "text",
+    "gains": [
+     "This Mech may perform one Command Coordination after Maneuver"
+    ],
+    "loses": [
+     "When recieving Command from this Mech, the Ally Drone may perform Automatic Actions instead of Command Actions"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "175_B",
+    "field": "text",
+    "gains": [
+     "When this part is hit, may remove all Attack Dice with a blank face, {Lightning} and {Eye} before Reroll"
+    ],
+    "loses": [
+     "When this part is hit, may spend 1 Command Token, gains KC Armor for this attack"
+    ]
+   }
+  ],
+  "176": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 94,
+    "to": 85
+   },
+   {
+    "v": "1.021",
+    "action": "176_A",
+    "field": "text",
+    "gains": [
+     "This Mech's Command Coordination may issue up to 2 Commands"
+    ],
+    "loses": [
+     "When receiving Command from this Mech, the Ally Drone may move 1 grid before performing Actions"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "176_B",
+    "field": "text",
+    "gains": [
+     "When this part is hit, may remove all Attack Dice with a blank face, {Lightning} and {Eye} before Reroll"
+    ],
+    "loses": [
+     "When this part is hit, may spend 1 Command Token, gains KC Armor for this attack"
+    ]
+   }
+  ],
+  "179": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 37,
+    "to": 42
+   },
+   {
+    "v": "1.021",
+    "action": "179_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "180": [
+   {
+    "v": "1.021",
+    "kind": "renamed",
+    "from": "PL29 Stealth Chassis",
+    "to": "PL29 All-terrain Chassis"
+   },
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 61,
+    "to": 70
+   },
+   {
+    "v": "1.021",
+    "action": "180_A",
+    "field": "range",
+    "from": "3",
+    "to": "4"
+   },
+   {
+    "v": "1.021",
+    "action": "180_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "180_B",
+    "kind": "action-renamed",
+    "from": "Stealth Movement",
+    "to": "Jump"
+   },
+   {
+    "v": "1.021",
+    "action": "180_B",
+    "field": "timing",
+    "from": "Passive",
+    "to": "Move"
+   },
+   {
+    "v": "1.021",
+    "action": "180_B",
+    "field": "length",
+    "from": null,
+    "to": "S"
+   },
+   {
+    "v": "1.021",
+    "action": "180_B",
+    "field": "range",
+    "from": null,
+    "to": "2"
+   },
+   {
+    "v": "1.021",
+    "action": "180_B",
+    "field": "text",
+    "gains": [
+     "Airborne Movement",
+     "Command Coordination"
+    ],
+    "loses": [
+     "All Move Actions and Maneuver of this Part have Silence"
+    ]
+   }
+  ],
+  "181": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 90,
+    "to": 80
+   },
+   {
+    "v": "1.021",
+    "action": "181_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "182": [
+   {
+    "v": "1.021",
+    "action": "182_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "182_B",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "247": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 81,
+    "to": 78
+   }
+  ],
+  "250": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 39,
+    "to": 33
+   }
+  ],
+  "252": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 50,
+    "to": 47
+   }
+  ],
+  "254": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 63,
+    "to": 54
+   }
+  ],
+  "255": [
+   {
+    "v": "1.02",
+    "field": "parray",
+    "from": 1,
+    "to": 0
+   }
+  ],
+  "256": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 21,
+    "to": 30
+   }
+  ],
+  "257": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 21,
+    "to": 30
+   }
+  ],
+  "284": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 57,
+    "to": 51
+   }
+  ],
+  "503": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 60,
+    "to": 51
+   }
+  ],
+  "504": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 60,
+    "to": 54
+   }
+  ],
+  "508": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 57,
+    "to": 54
+   }
+  ],
+  "510": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 57,
+    "to": 54
+   }
+  ],
+  "533": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 18,
+    "to": 26
+   }
+  ],
+  "535": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 36,
+    "to": 30
+   }
+  ],
+  "538": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 60,
+    "to": 42
+   }
+  ],
+  "540": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 69,
+    "to": 57
+   }
+  ],
+  "558": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 67,
+    "to": 62
+   }
+  ],
+  "LPA-23-2": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 24,
+    "to": 18
+   }
+  ],
+  "LPA-OPAL": [
+   {
+    "v": "1.04",
+    "kind": "added",
+    "list": "UN"
+   }
+  ],
+  "LPA-TOURMALINE": [
+   {
+    "v": "1.04",
+    "kind": "added",
+    "list": "UN"
+   }
+  ],
+  "MHKX-L": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 56,
+    "to": 51
+   }
+  ],
+  "MHKX-R": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 56,
+    "to": 51
+   }
+  ],
+  "P7A3-SK": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 85,
+    "to": 80
+   }
+  ],
+  "PLK400-SK": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 90,
+    "to": 75
+   }
+  ],
+  "PRDR-101": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 90,
+    "to": 84
+   }
+  ],
+  "PRDR-102": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 99,
+    "to": 93
+   }
+  ],
+  "PRDR-103": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 105,
+    "to": 99
+   }
+  ],
+  "PRDR-104": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 114,
+    "to": 108
+   }
+  ],
+  "PRDR-105": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 90,
+    "to": 82
+   }
+  ],
+  "PRDR-201": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 48,
+    "to": 42
+   }
+  ],
+  "PRDR-203": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 42,
+    "to": 36
+   }
+  ],
+  "PRDR-204": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 42,
+    "to": 36
+   }
+  ],
+  "ZHAM-001A": [
+   {
+    "v": "1.021",
+    "action": "ZHAM-001A_A",
+    "field": "range",
+    "from": "6",
+    "to": "8"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHAM-001A_A",
+    "field": "text",
+    "loses": [
+     "Cruising"
+    ]
+   }
+  ],
+  "ZHAM-002": [
+   {
+    "v": "1.021",
+    "action": "ZHAM-002_A",
+    "field": "range",
+    "from": "2",
+    "to": "4"
+   }
+  ],
+  "ZHAM-003": [
+   {
+    "v": "1.021",
+    "action": "ZHAM-003_A",
+    "field": "text",
+    "gains": [
+     "If there is no target within Range, this Unit will not be removed"
+    ]
+   }
+  ],
+  "ZHDR-101": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 36,
+    "to": 42
+   },
+   {
+    "v": "1.021",
+    "field": "armor",
+    "from": 5,
+    "to": 1
+   },
+   {
+    "v": "1.021",
+    "field": "structure",
+    "from": 3,
+    "to": 4
+   },
+   {
+    "v": "1.021",
+    "kind": "low-value-lost"
+   },
+   {
+    "v": "1.021",
+    "kind": "action-added",
+    "action": "ZHDR-101_B",
+    "name": "SIngle Shot"
+   }
+  ],
+  "ZHDR-102": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 24,
+    "to": 48
+   },
+   {
+    "v": "1.021",
+    "field": "armor",
+    "from": 4,
+    "to": 1
+   },
+   {
+    "v": "1.021",
+    "kind": "low-value-lost"
+   },
+   {
+    "v": "1.021",
+    "field": "structure",
+    "from": 0,
+    "to": 4
+   },
+   {
+    "v": "1.021",
+    "action": "ZHDR-102_A",
+    "kind": "action-renamed",
+    "from": "Full-auto",
+    "to": "Single Shot"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHDR-102_A",
+    "field": "dice",
+    "from": "2Y1R",
+    "to": "3R"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHDR-102_A",
+    "field": "text",
+    "loses": [
+     "Intercept 1"
+    ]
+   }
+  ],
+  "ZHDR-103": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 24,
+    "to": 48
+   },
+   {
+    "v": "1.021",
+    "field": "armor",
+    "from": 4,
+    "to": 1
+   },
+   {
+    "v": "1.021",
+    "kind": "low-value-lost"
+   },
+   {
+    "v": "1.021",
+    "field": "structure",
+    "from": 0,
+    "to": 4
+   },
+   {
+    "v": "1.021",
+    "action": "ZHDR-103_A",
+    "field": "text",
+    "gains": [
+     "[On hit], target gains 1 Hindered Token"
+    ]
+   }
+  ],
+  "ZHDR-104": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 24,
+    "to": 48
+   },
+   {
+    "v": "1.021",
+    "field": "armor",
+    "from": 4,
+    "to": 1
+   },
+   {
+    "v": "1.021",
+    "kind": "low-value-lost"
+   },
+   {
+    "v": "1.021",
+    "field": "structure",
+    "from": 0,
+    "to": 4
+   }
+  ],
+  "ZHDR-106": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 72,
+    "to": 70
+   }
+  ],
+  "ZHDR-107": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 60,
+    "to": 70
+   }
+  ],
+  "ZHDR-201": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 40,
+    "to": 51
+   },
+   {
+    "v": "1.021",
+    "field": "move",
+    "from": 5,
+    "to": 4
+   },
+   {
+    "v": "1.021",
+    "action": "ZHDR-201_B",
+    "field": "range",
+    "from": "6",
+    "to": "2"
+   }
+  ],
+  "ZHDR-202": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 36,
+    "to": 48
+   },
+   {
+    "v": "1.021",
+    "field": "move",
+    "from": 5,
+    "to": 4
+   }
+  ],
+  "ZHDR-203": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 36,
+    "to": 48
+   },
+   {
+    "v": "1.021",
+    "field": "move",
+    "from": 5,
+    "to": 4
+   }
+  ],
+  "ZHDR-301": [
+   {
+    "v": "1.021",
+    "action": "ZHDR-301_B",
+    "kind": "action-renamed",
+    "from": "Dense Armor Hand",
+    "to": "Dense Armor Shield"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHDR-301_B",
+    "field": "text",
+    "gains": [
+     "When this part is hit, may remove all Attack Dice with a blank face, {Lightning} and {Eye} before Reroll"
+    ],
+    "loses": [
+     "When this Unit is attacked, may use {Defense} to offset {Heavy Hit}"
+    ]
+   }
+  ],
+  "ZHDR-302": [
+   {
+    "v": "1.021",
+    "action": "ZHDR-302_A",
+    "field": "text",
+    "gains": [
+     "Suppression"
+    ],
+    "loses": [
+     "[On Hit] target gains 1 Immobilized Token"
+    ]
+   }
+  ],
+  "ZHDR-304": [
+   {
+    "v": "1.021",
+    "action": "ZHDR-304_B",
+    "field": "text",
+    "changed": [
+     [
+      "When performing a Command Movement, may consume 1 additional Command Token and -2 Movement to drag 1 adjacent Ally Mech or Ally Drone",
+      "When performing a Command Movement, may consume 1 additional Command Token and -1 Movement to drag 1 adjacent Ally Unit"
+     ]
+    ]
+   }
+  ],
+  "ZHLA-101": [
+   {
+    "v": "1.021",
+    "action": "ZHLA-101_B",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "ZHLA-102": [
+   {
+    "v": "1.021",
+    "action": "ZHLA-102_A",
+    "field": "range",
+    "from": "3",
+    "to": "4"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHLA-102_A",
+    "field": "text",
+    "changed": [
+     [
+      "Command Coordination 1",
+      "Command Coordination"
+     ]
+    ]
+   },
+   {
+    "v": "1.021",
+    "kind": "action-removed",
+    "name": "Command Coordination"
+   }
+  ],
+  "ZHLA-201": [
+   {
+    "v": "1.021",
+    "action": "ZHLA-201_A",
+    "field": "text",
+    "changed": [
+     [
+      "Command Coordination 1",
+      "Command Coordination"
+     ]
+    ]
+   },
+   {
+    "v": "1.021",
+    "kind": "action-removed",
+    "name": "Command Coordination"
+   }
+  ],
+  "ZHLA-201-T": [
+   {
+    "v": "1.021",
+    "kind": "action-removed",
+    "name": "Command Coordination"
+   }
+  ],
+  "ZHLA-202": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 65,
+    "to": 59
+   }
+  ],
+  "ZHLA-301": [
+   {
+    "v": "1.021",
+    "action": "ZHLA-301_B",
+    "kind": "action-renamed",
+    "from": "Defense Reaction",
+    "to": "Dense Armor"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHLA-301_B",
+    "field": "text",
+    "gains": [
+     "When this part is hit, may remove all Attack Dice with a blank face, {Lightning} and {Eye} before Reroll"
+    ],
+    "loses": [
+     "If Penetration occurs against any Part of this Mech, it may immediately change to Defensive Stance"
+    ]
+   }
+  ],
+  "ZHLA-302": [
+   {
+    "v": "1.021",
+    "kind": "renamed",
+    "from": "MR870 Shotgun",
+    "to": "MR870 Shotgun (L)"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHLA-302_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "ZHLA-302_B",
+    "kind": "action-renamed",
+    "from": "Power Shot",
+    "to": "Single Shot"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHLA-302_B",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "ZHLA-302-T": [
+   {
+    "v": "1.021",
+    "kind": "renamed",
+    "from": "MR870 Shotgun (D)",
+    "to": "MR870 Shotgun (L)(D)"
+   }
+  ],
+  "ZHLA-304": [
+   {
+    "v": "1.021",
+    "action": "ZHLA-304_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "ZHLA-304_B",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "ZHRA-101": [
+   {
+    "v": "1.021",
+    "action": "ZHRA-101_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-101_B",
+    "kind": "action-renamed",
+    "from": "Power Shot",
+    "to": "Single Shot"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-101_B",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "ZHRA-102": [
+   {
+    "v": "1.021",
+    "action": "ZHRA-102_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-102_B",
+    "kind": "action-renamed",
+    "from": "Power Shot",
+    "to": "Single Shot"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-102_B",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "ZHRA-103": [
+   {
+    "v": "1.021",
+    "action": "ZHRA-103_A",
+    "field": "range",
+    "from": "Melee",
+    "to": "2"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-103_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-103_B",
+    "field": "range",
+    "from": "Melee",
+    "to": "2"
+   }
+  ],
+  "ZHRA-201": [
+   {
+    "v": "1.021",
+    "action": "ZHRA-201_A",
+    "field": "text",
+    "changed": [
+     [
+      "Command Coordination 1",
+      "Command Coordination"
+     ]
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-201_B",
+    "kind": "action-renamed",
+    "from": "Power Shot",
+    "to": "Enhanced Single Shot"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-201_B",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "ZHRA-201-T": [
+   {
+    "v": "1.021",
+    "kind": "action-removed",
+    "name": "Command Coordination"
+   }
+  ],
+  "ZHRA-202": [
+   {
+    "v": "1.021",
+    "action": "ZHRA-202_A",
+    "field": "length",
+    "from": "M",
+    "to": "S"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-202_A",
+    "field": "dice",
+    "from": "1Y2R",
+    "to": "2R"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-202_A",
+    "field": "range",
+    "from": "12",
+    "to": "8"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-202_A",
+    "field": "text",
+    "gains": [
+     "[Two-Handed] Range +2",
+     "[On hit], target gains 1 Target Tracer Token"
+    ],
+    "loses": [
+     "Silence"
+    ],
+    "changed": [
+     [
+      "Command Coordination 1",
+      "Command Coordination"
+     ]
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-202_B",
+    "kind": "action-renamed",
+    "from": "Power Shot",
+    "to": "Enhanced Single Shot"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-202_B",
+    "field": "length",
+    "from": "L",
+    "to": "S"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-202_B",
+    "field": "dice",
+    "from": "4R",
+    "to": "3R"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-202_B",
+    "field": "range",
+    "from": "12",
+    "to": "8"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-202_B",
+    "field": "text",
+    "gains": [
+     "[Two-Handed] Range +2",
+     "Mutilation",
+     "Command Coordination"
+    ],
+    "loses": [
+     "[Two-Handed] Gains Mutilation"
+    ]
+   }
+  ],
+  "ZHRA-202-T": [
+   {
+    "v": "1.021",
+    "kind": "action-removed",
+    "name": "Command Coordination"
+   }
+  ],
+  "ZHRA-301": [
+   {
+    "v": "1.021",
+    "field": "parray",
+    "from": 1,
+    "to": 0
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-301_A",
+    "field": "range",
+    "from": "Melee",
+    "to": "2"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-301_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-301_B",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "ZHRA-303": [
+   {
+    "v": "1.021",
+    "action": "ZHRA-303_A",
+    "field": "range",
+    "from": "Melee",
+    "to": "2"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-303_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-303_B",
+    "field": "dice",
+    "from": "4Y3R",
+    "to": "5Y2R"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-303_B",
+    "field": "range",
+    "from": "Melee",
+    "to": "2"
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-303_B",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "ZHRA-304": [
+   {
+    "v": "1.021",
+    "action": "ZHRA-304_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   },
+   {
+    "v": "1.021",
+    "action": "ZHRA-304_B",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "ZPA-38": [
+   {
+    "v": "1.021",
+    "field": "trait",
+    "gains": [
+     "When this Mech gains Action Opportunity, may consume 1 Link to generate a Command Token"
+    ],
+    "loses": [
+     "When performing Electronic Counter Rolls, may consume 1 Link to exchange {Eye} for {Lightning}"
+    ]
+   }
+  ],
+  "ZPA-40": [
+   {
+    "v": "1.021",
+    "field": "trait",
+    "changed": [
+     [
+      "[Offensive Stance] When this Mech Destroys enemy Parts with Melee Actions, restore 1 Link",
+      "When this Mech Destroys enemy Parts with Melee Actions, restore 1 Link"
+     ]
+    ]
+   }
+  ],
+  "ZYBP-101": [
+   {
+    "v": "1.021",
+    "kind": "renamed",
+    "from": "DLSP Swarm Control Backpack",
+    "to": "DLSP-1 Nest Guardian Swarm Control Pack"
+   },
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 33,
+    "to": 30
+   },
+   {
+    "v": "1.021",
+    "action": "ZYBP-101_A",
+    "field": "range",
+    "from": "6",
+    "to": "8"
+   },
+   {
+    "v": "1.021",
+    "kind": "action-removed",
+    "name": "Command Coordination"
+   }
+  ],
+  "ZYBP-102": [
+   {
+    "v": "1.021",
+    "action": "ZYBP-102_A",
+    "field": "text",
+    "gains": [
+     "Command Generation +1"
+    ],
+    "loses": [
+     "When this mech ends it's Action Opportunity, Command Coordination 1"
+    ]
+   }
+  ],
+  "ZYBP-202": [
+   {
+    "v": "1.021",
+    "kind": "renamed",
+    "from": "ECP9 \"Whistle\" Drone Command System",
+    "to": "ECP9 \"Eagle Whistle\" Drone Command System"
+   },
+   {
+    "v": "1.021",
+    "kind": "action-removed",
+    "name": "Command Coordination"
+   }
+  ],
+  "ZYBP-301": [
+   {
+    "v": "1.021",
+    "action": "ZYBP-301_A",
+    "field": "range",
+    "from": "3",
+    "to": "2"
+   },
+   {
+    "v": "1.021",
+    "action": "ZYBP-301_A",
+    "field": "text",
+    "gains": [
+     "Command Coordination"
+    ]
+   }
+  ],
+  "ZYBP-302": [
+   {
+    "v": "1.021",
+    "field": "score",
+    "from": 39,
+    "to": 30
+   }
+  ],
+  "ZYDR-108": [
+   {
+    "v": "1.021",
+    "kind": "action-removed",
+    "name": "Single Shot"
+   }
+  ]
+ },
+ "rules": {
+  "mines": [
+   {
+    "v": "1.04",
+    "source": "FAQ M22",
+    "tags": [
+     "REVERSED"
+    ],
+    "text": "Reversed: a Mine's blast no longer catches the Flying or Aerial units in its Grid. FAQ V1.03 said it did."
+   },
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.3",
+    "tags": [
+     "CHANGED"
+    ],
+    "text": "A Mine is now a small Ground Unit whose Grid counts as empty. Mines one Action places no longer set each other off, a Mine stands clear of terrain, Interception cannot target it, and it contests no Control Zone."
+   }
+  ],
+  "command_tokens": [
+   {
+    "v": "1.04",
+    "source": "FAQ C8, C9",
+    "tags": [
+     "CHANGED"
+    ],
+    "text": "An attacking Action's Command Coordination now comes once the attack has resolved, before the defender's own effects such as Target Tracing, and a Riposte that ends the attacker's Action Opportunity skips it."
+   }
+  ],
+  "surplus_damage": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 4.2, 4.3",
+    "tags": [
+     "CLARIFIED"
+    ],
+    "text": "Spelled out: Cleaving's and Scatter-shot's Surplus hits a different Part, so a Part Die showing the first Part is rerolled, and ANY cannot pick it."
+   }
+  ],
+  "tactics_cards": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.11",
+    "tags": [
+     "CHANGED"
+    ],
+    "text": "A squad's Tactics Cards are now hidden information, like the Beacons in a Beacon Pack: the other player sees each one only when it is played."
+   }
+  ],
+  "low_value_unit": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.2, 1.3, 4.1",
+    "tags": [
+     "CHANGED"
+    ],
+    "text": "A Deployable, such as a Barricade or a Mine, cannot interact with Control Zones, so one in a Zone no longer denies it. Cannot carry Hexagon Tokens is now printed as part of the tag, as FAQ J3 and M23 already ruled."
+   }
+  ],
+  "maneuver": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.8",
+    "tags": [
+     "CLARIFIED"
+    ],
+    "text": "A full circle on the spot is a legal Maneuver: it ends facing the same way, but the unit is no longer Stationary, even with no Stationary effect to lose. A Drone's Movement command may turn a full circle too."
+   }
+  ],
+  "detonation": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.1.3, 1.4.2",
+    "tags": [
+     "CHANGED"
+    ],
+    "text": "The Containers are Neutral Units now: a blast on all Units destroys every Container in Range, and a single-target one may leave them, so a PK3 with only a Container in Range stays."
+   }
+  ]
+ },
+ "keywords": {
+  "致密装甲": [
+   {
+    "v": "1.021",
+    "source": "GoF parts list 1.021",
+    "tags": [
+     "CHANGED"
+    ],
+    "text": "Changed from \"{Defense} may offset {Heavy Hit}\" to removing every Attack Die showing a blank face, {Lightning} or {Eye} before any Reroll."
+   },
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 3.7",
+    "tags": [
+     "RETIRED"
+    ],
+    "text": "No longer a keyword: each Part that had it prints it as its own Passive Action named Dense Armor, which works only when that Part is hit. The two Armored Cores lose the keyword chip."
+   }
+  ],
+  "冲锋X": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 3.8",
+    "tags": [
+     "NAME",
+     "CHANGED"
+    ],
+    "text": "Also named Assault X. The move is up to X Grids and any unit may make it, and a destroyed Chassis stops only a Mech's move, not the Action: the old English read as if the Action needed a Chassis."
+   }
+  ],
+  "顺劈": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 4.2",
+    "tags": [
+     "CLARIFIED"
+    ],
+    "text": "Spelled out: the Surplus hits a different Part, so a Part Die showing the first Part is rerolled, and ANY cannot pick it."
+   }
+  ],
+  "霰射": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 4.3",
+    "tags": [
+     "CLARIFIED"
+    ],
+    "text": "Spelled out: the Surplus hits a different Part, so a Part Die showing the first Part is rerolled, and ANY cannot pick it."
+   }
+  ],
+  "路障": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.2",
+    "tags": [
+     "CHANGED"
+    ],
+    "text": "Now the one Deployable category for the Turtle Shell, the AS3 walls and the Containers, each with a Height like Terrain. The Barricade keyword it replaces made the Turtle Shell 3-inch Terrain only while one of its allies was the target."
+   }
+  ],
+  "机动掩体": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.2",
+    "tags": [
+     "CHANGED"
+    ],
+    "text": "The Turtle Shell is now 2-inch terrain for every unit: cover for whoever is behind it, and no block on line of sight. It had counted as 3-inch Terrain, and only while one of its allies was the target."
+   }
+  ],
+  "墙": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.2",
+    "tags": [
+     "CLARIFIED"
+    ],
+    "text": "The AS3 walls are now Barricades, 3 inches high: they block line of sight and give Terrain Protection as before."
+   }
+  ],
+  "设置物": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.1.2, 1.2, 1.3",
+    "tags": [
+     "CHANGED"
+    ],
+    "text": "A Deployable with no model is a Ground Unit, and no Deployable can capture Task Targets or interact with Control Zones: one standing in a Zone no longer contests it."
+   }
+  ],
+  "地雷": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 1.3",
+    "tags": [
+     "CHANGED"
+    ],
+    "text": "A Mine is now a small Ground Unit whose Grid counts as empty. It stands clear of terrain, Interception cannot target it, and Mines one Action places no longer set each other off."
+   }
+  ],
+  "Breakable": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 3.1",
+    "tags": [
+     "NEW"
+    ],
+    "text": "A new tag, carried by the two Containers."
+   }
+  ],
+  "Transformation": [
+   {
+    "v": "1.04",
+    "source": "Supplementary Rules 1.04, 3.2",
+    "tags": [
+     "NEW"
+    ],
+    "text": "A new tag and keyword for the Parts that change form, saying which Tokens move to the new card."
+   }
+  ]
+ }
+}

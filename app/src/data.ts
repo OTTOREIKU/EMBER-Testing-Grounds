@@ -180,6 +180,37 @@ export interface MechanicDef {
   text: string;
 }
 
+// A Season Rule (Supplementary Rules, section 8). The publisher runs these as a
+// trial beside the main rules, never as part of them, so the Reference shows
+// each one apart and marked optional (OTTO, 2026-09-30: "We definitely want to
+// make sure users realize that some changes are optional"). `main` and `season`
+// are the two values side by side under `what`; `rule` is the Rules entry it
+// changes, which carries a callout to it; `see` are entries worth reading with it.
+export interface SeasonRule {
+  id: string;
+  name: string;
+  kind: 'action' | 'rule';
+  ref: string;
+  basic: string;
+  what: string;
+  main: string;
+  season: string;
+  points: string[];
+  rule?: string;
+  see?: string[];
+  match?: string[];
+}
+
+// One season's rules, from data/mechanics.json `seasons`: `id` is the revision
+// they came with, `about` what is said before them wherever they are listed.
+export interface SeasonDef {
+  id: string;
+  label: string;
+  ref: string;
+  about: string;
+  rules: SeasonRule[];
+}
+
 export interface MissionFamily {
   id: string;
   name: string;
@@ -462,6 +493,8 @@ export interface GameData {
   keyword(nameOrKey: string): KeywordDef | undefined;
   mechanics: MechanicDef[];
   mechanicsFor(...text: (string | undefined)[]): MechanicDef[];
+  // The Season Rules, oldest season first (mechanics.json `seasons`).
+  seasons: SeasonDef[];
   actionTranslation(actionId: string): { english: string | null; confidence: string; note?: string } | undefined;
   // The same thing for a card's OWN text, for the handful whose description.en
   // is a copy of the Chinese rather than a translation of it.
@@ -480,6 +513,53 @@ export interface GameData {
   extraTicks: ExtraTickGrant[];
   overload: OverloadGrant[];
   factions: FactionDef[];
+  // How each card has changed across the publisher's list revisions, for the
+  // Reference's Changelog section (data/changelog.json).
+  changelog: ChangelogData;
+}
+
+// ONE change to one card between two of the publisher's list revisions
+// (data/changelog.json, built by Project-Documents/PartsLists/tools/
+// make_changelog.py from the list diffs). A number moves `from` -> `to`; a
+// text change lists the lines the card gained, lost and reworded; `kind` names
+// the rest (a rename, an Action added or removed, a card left off a list).
+export interface ChangeEntry {
+  v: string;
+  field?: string;
+  action?: string;
+  kind?: string;
+  from?: string | number | null;
+  to?: string | number | null;
+  gains?: string[];
+  loses?: string[];
+  changed?: [string, string][];
+  name?: string;
+  list?: string;
+  note?: string;
+}
+
+// One hand-written line on a Rules entry or a glossary keyword. `tags` are the
+// short keys the master changelog shows beside its name (CHANGED, CLARIFIED,
+// REVERSED, RETIRED, OPTIONAL, NEW, NAME).
+export interface RuleChange {
+  v: string;
+  source: string;
+  text: string;
+  tags?: string[];
+}
+
+export interface ChangelogData {
+  // `source` says what the revision's card rows come from, beside its chip;
+  // "{faction}" stands for the card's faction.
+  versions: { id: string; label: string; source?: string; note?: string }[];
+  cards: Record<string, ChangeEntry[]>;
+  // A Rules entry's changes, by mechanics.json id: one plain sentence each and
+  // where it comes from (a FAQ entry, the Supplement), shown at the top of the
+  // entry's Advanced section.
+  rules: Record<string, RuleChange[]>;
+  // The same for a glossary keyword, by its key (the Chinese name), shown in a
+  // closed Changelog bar under the keyword's text.
+  keywords: Record<string, RuleChange[]>;
 }
 
 interface KeywordOverrides {
@@ -562,7 +642,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, diceRef, xlate, names, missions, environments, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards] = await Promise.all([
+  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, diceRef, xlate, names, missions, environments, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards, changelog] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     // Optional, and empty until a map is authored and committed: a missing or
@@ -582,8 +662,8 @@ export async function loadData(): Promise<GameData> {
       .then((r) => (r.ok ? (r.json() as Promise<QrIds>) : { cards: {} }))
       .catch(() => ({ cards: {} }) as QrIds),
     fetch(dataUrl('mechanics.json'))
-      .then((r) => (r.ok ? (r.json() as Promise<{ mechanics: MechanicDef[] }>) : { mechanics: [] }))
-      .catch(() => ({ mechanics: [] as MechanicDef[] })),
+      .then((r) => (r.ok ? (r.json() as Promise<{ mechanics: MechanicDef[]; seasons?: SeasonDef[] }>) : { mechanics: [] }))
+      .catch(() => ({ mechanics: [] as MechanicDef[] })) as Promise<{ mechanics: MechanicDef[]; seasons?: SeasonDef[] }>,
     fetch(dataUrl('dice.json'))
       .then((r) => (r.ok ? (r.json() as Promise<DiceReference>) : null))
       .catch(() => null),
@@ -635,6 +715,10 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('cards_extra.json'))
       .then((r) => (r.ok ? (r.json() as Promise<{ cards?: Card[] }>) : { cards: [] }))
       .catch(() => ({ cards: [] as Card[] })),
+    // Optional like the others: without it a card simply shows no Changelog.
+    fetch(dataUrl('changelog.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<Partial<ChangelogData>>) : ({} as Partial<ChangelogData>)))
+      .catch(() => ({}) as Partial<ChangelogData>),
   ]);
 
   // Cards the community bundle does not have. cards.json is regenerated from
@@ -753,6 +837,7 @@ export async function loadData(): Promise<GameData> {
     keyword,
     mechanics,
     mechanicsFor,
+    seasons: mech.seasons ?? [],
     actionTranslation,
     cardTranslation,
     missions: { families: missions.families ?? [], cards: missions.cards ?? [] },
@@ -775,6 +860,7 @@ export async function loadData(): Promise<GameData> {
     extraTicks: common.extraTicks ?? [],
     overload: common.overload ?? [],
     factions: factionData.factions ?? [],
+    changelog: { versions: changelog.versions ?? [], cards: changelog.cards ?? {}, rules: changelog.rules ?? {}, keywords: changelog.keywords ?? {} },
   };
 }
 
@@ -1208,15 +1294,15 @@ export function unitSize(c: Card): 1 | 2 | 3 {
   return 1;
 }
 
-// The three deployable barricades. The Rules Supplement (1.1.3, via FAQ A3/E6/
-// M13/M14) classes them "Neutral Unit - Deployables - Barricade": they stand on
-// the ground, block movement, RECEIVE Protection like any unit, and can neither
-// move, be moved, nor be Crushed. They no longer GIVE Unit Protection: 4.5.3
-// grants that to Large Units only and unitSize() reads these as size 1. The
-// printed "counts as 3-inch terrain" bullet on the AS3 walls is what ought to
-// pay them, and nothing models it yet — see PHASE6-PLAN D-9. Beacons are ground
-// Deployables too (isBeacon below). Everything else projectile-shaped is Aerial
-// (missiles, grenades, mines).
+// The three deployable barricades. The Supplementary Rules 1.04 (1.2) make
+// "Barricade" the one Deployable category for them and the two Containers: they
+// stand on the ground, block movement, RECEIVE Protection like any unit, and
+// can neither move, be moved, nor be Crushed (all three cards print that). They
+// give no Unit Protection (4.5.3 grants it to Large Units only, and unitSize()
+// reads these as size 1); they block sight and give Terrain Protection by their
+// Height instead, the AS3 walls 3 inches and the Turtle Shell 2 (rules.ts
+// barricadeHeight). Beacons are ground Deployables too (isBeacon below).
+// Everything else projectile-shaped is Aerial (missiles, grenades, mines).
 export const BARRICADE_CARDS = new Set(['PDAM-003', 'PDAM-004', '158']);
 
 export function isBarricade(c: Card): boolean {

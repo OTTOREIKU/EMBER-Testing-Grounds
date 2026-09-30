@@ -185,7 +185,8 @@ check('no paragraph of the full text is a wall',
 // The full text and the sources draw behind Advanced, through the one body
 // renderer that the Rules tab and a card's mechanic panel share.
 check('the full text and sources render behind Advanced',
-  /<details class="mech-adv"[\s\S]*?<summary>Advanced<\/summary>[\s\S]*?ruleBlocks\(m\.text\)[\s\S]*?esc\(m\.ref\)/.test(refSrc), true);
+  // The summary may carry an "Updated" tag (the Rules changelog, 2026-09-30).
+  /<details class="mech-adv"[\s\S]*?<summary>Advanced[\s\S]*?<\/summary>[\s\S]*?ruleBlocks\(m\.text\)[\s\S]*?esc\(m\.ref\)/.test(refSrc), true);
 check('the Rules tab and the card panels share that renderer',
   [/<div class="card-body">\$\{mechanicBody\(m, q\)\}<\/div>/.test(refSrc), /<div class="ref-mech-b">\$\{mechanicBody\(m\)\}<\/div>/.test(refSrc)],
   [true, true]);

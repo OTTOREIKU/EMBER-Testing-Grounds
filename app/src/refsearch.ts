@@ -4,7 +4,7 @@
 // than on the reference for the same word. The page-only pools (boxes,
 // factions, battlefield, the dice) stay on the reference, which is the only
 // page that lists them.
-import { cardName, type KeywordDef, type MechanicDef, type MissionCard, type PhaseDef, type SecondaryTask, type StanceDef, type TimingDef } from './data';
+import { cardName, type KeywordDef, type MechanicDef, type MissionCard, type PhaseDef, type SeasonRule, type SecondaryTask, type StanceDef, type TimingDef } from './data';
 import type { Card, StatusDef } from './types';
 
 export const norm = (s: string) => s.toLowerCase();
@@ -51,6 +51,7 @@ export const nmCard = (c: Card) => cardName(c);
 export const nmMission = (m: MissionCard) => m.name;
 export const nmSecondary = (s: SecondaryTask) => s.name;
 export const nmMechanic = (m: MechanicDef) => m.name;
+export const nmSeason = (r: SeasonRule) => r.name;
 export const nmPlay = (x: { name: string }) => x.name;
 export const nmStatus = (d: StatusDef) => d.label;
 
@@ -80,6 +81,9 @@ export const matchMechanic = (m: MechanicDef, q: string): boolean =>
 // entry opens its Advanced text, so the match the search found is on screen.
 export const matchMechanicBasic = (m: MechanicDef, q: string): boolean =>
   !q || norm(`${m.name} ${m.basic ?? ''} ${(m.points ?? []).join(' ')}`).includes(q);
+// A Season Rule answers "season" and "optional" too, since that is what it is.
+export const matchSeason = (r: SeasonRule, q: string): boolean =>
+  !q || norm(`${r.name} season optional ${r.basic} ${r.what} ${r.main} ${r.season} ${r.points.join(' ')} ${(r.match ?? []).join(' ')} ${r.ref}`).includes(q);
 export const matchPhase = (x: PhaseDef, q: string): boolean =>
   !q || norm(`${x.name} ${x.who ?? ''} ${x.can.join(' ')} ${x.cannot.join(' ')}`).includes(q);
 export const matchTiming = (x: TimingDef, q: string): boolean =>

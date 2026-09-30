@@ -43,6 +43,15 @@ check('no mechanics entry describes the UI', mechBad, []);
 // rule nobody can look up, and both are the thing this file exists to stop.
 check('every mechanics entry cites a source', mechanics.filter((e) => !e.ref).map((e) => e.id), []);
 
+// The Season Rules (mechanics.json `seasons`) are drawn on the Rules tab too.
+const seasons = Array.isArray(mRaw) ? [] : mRaw.seasons ?? [];
+const seasonBad = seasons.flatMap((s) => [
+  ...offenders(s.about).map((w) => `${s.id} about: "${w}"`),
+  ...s.rules.flatMap((r) => offenders([r.basic, r.what, r.main, r.season, ...r.points].join(' ')).map((w) => `${r.id}: "${w}"`)),
+]);
+check('the Season Rules were read, and none describes the UI', [seasons.length > 0, seasonBad], [true, []]);
+check('every Season and Season Rule cites a source', seasons.flatMap((s) => [s.ref, ...s.rules.map((r) => r.ref)]).filter((x) => !x).length, 0);
+
 // ---------- play.json ----------
 const play = json('../../data/play.json');
 const playLines = [
