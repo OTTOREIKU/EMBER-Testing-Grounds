@@ -1,8 +1,74 @@
 {
-  "_comment": "Stat values that the generated cards.json gets wrong. Two sources, both better than the community database: values marked as read off a printed card scan in assets/cards/en/, and values taken from the publisher's championship-legal English parts lists (v1.02). Where the two disagree the parts list wins — it is the company's current data, while some scans are older printings (040's scan is watermarked Ver.2019 Crowdfunding). Points can ONLY come from the parts list: the printed card leaves the points box deliberately blank, and rulebook 6.1 says the online list wins. Where the publisher has issued more than one revision the NEWEST wins: GoF is on v1.021, which repriced the faction and redesigned card 180; the other factions are still on v1.02.",
+  "_comment": "Stat values that the generated cards.json gets wrong. Two sources, both better than the community database: values marked as read off a printed card scan in assets/cards/en/, and values taken from the publisher's championship-legal English parts lists (v1.02). Where the two disagree the parts list wins — it is the company's current data, while some scans are older printings (040's scan is watermarked Ver.2019 Crowdfunding). Points can ONLY come from the parts list: the printed card leaves the points box deliberately blank, and rulebook 6.1 says the online list wins. Where the publisher has issued more than one revision the NEWEST wins: GoF is on v1.021, which repriced the faction and redesigned card 180 (1.04 reissues GoF unchanged); PD, RDL and UN are on 1.04 since 2026-09-30 (points; UN also Direct Fire on 084_A and 085_A); Collab 1.04 is unchanged from v1.02. Each 1.04 entry carries a _source naming the value it replaced, and data/changelog.json records the history for the Reference.",
   "_scope": "Only stats confirmed wrong against a scan are listed. No systematic sweep of every card has been done, so absence from this file does not mean a stat is correct.",
   "_shape": "cards maps a card id to the stat fields to overwrite.",
   "cards": {
+    "084": { "description": { "en": "· Direct Fire: This action requires visual to the landing point or the target." }, "_source": "publisher UN parts list 1.04: the card back gains the Direct Fire reminder with the Action's new keyword (see action_overrides 084_A/085_A)" },
+    "085": { "description": { "en": "· Direct Fire: This action requires visual to the landing point or the target." }, "_source": "publisher UN parts list 1.04: the card back gains the Direct Fire reminder with the Action's new keyword (see action_overrides 084_A/085_A)" },
+    "092": { "score": 45, "_source": "publisher UN parts list 1.04 (was 54 on 1.02)" },
+    "096": { "score": 78, "_source": "publisher UN parts list 1.04 (was 81 on 1.02)" },
+    "097": { "score": 63, "_source": "publisher UN parts list 1.04 (was 72 on 1.02)" },
+    "098": { "score": 51, "_source": "publisher UN parts list 1.04 (was 60 on 1.02)" },
+    "247": { "score": 78, "_source": "publisher UN parts list 1.04 (was 81 on 1.02)" },
+    "100": { "score": 33, "_source": "publisher UN parts list 1.04 (was 39 on 1.02)" },
+    "250": { "score": 33, "_source": "publisher UN parts list 1.04 (was 39 on 1.02)" },
+    "107": { "score": 45, "_source": "publisher UN parts list 1.04 (was 48 on 1.02)" },
+    "109": { "score": 48, "_source": "publisher UN parts list 1.04 (was 54 on 1.02)" },
+    "111": { "score": 39, "_source": "publisher UN parts list 1.04 (was 42 on 1.02)" },
+    "113": { "score": 39, "_source": "publisher UN parts list 1.04 (was 42 on 1.02)" },
+    "122": { "score": 54, "_source": "publisher UN parts list 1.04 (was 60 on 1.02)" },
+    "124": { "score": 54, "_source": "publisher UN parts list 1.04 (was 60 on 1.02)" },
+    "126": { "score": 30, "_source": "publisher UN parts list 1.04 (was 21 on 1.02)" },
+    "131": { "score": 30, "_source": "publisher UN parts list 1.04 (was 36 on 1.02)" },
+    "133": { "score": 30, "_source": "publisher UN parts list 1.04 (was 36 on 1.02)" },
+    "135": { "score": 39, "_source": "publisher UN parts list 1.04 (was 45 on 1.02)" },
+    "137": { "score": 39, "_source": "publisher UN parts list 1.04 (was 45 on 1.02)" },
+    "139": { "score": 42, "_source": "publisher UN parts list 1.04 (was 48 on 1.02)" },
+    "145": { "score": 75, "_source": "publisher UN parts list 1.04 (was 81 on 1.02)" },
+    "146": { "score": 63, "_source": "publisher UN parts list 1.04 (was 66 on 1.02)" },
+    "148": { "score": 66, "_source": "publisher UN parts list 1.04 (was 69 on 1.02)" },
+    "256": { "score": 30, "_source": "publisher UN parts list 1.04 (was 21 on 1.02)" },
+    "257": { "score": 30, "_source": "publisher UN parts list 1.04 (was 21 on 1.02)" },
+    "540": { "score": 57, "_source": "publisher UN parts list 1.04 (was 69 on 1.02)" },
+    "082": { "score": 27, "_source": "publisher UN parts list 1.04 (was 21 on 1.02)" },
+    "088": { "score": 42, "_source": "publisher UN parts list 1.04 (was 48 on 1.02)" },
+    "090": { "score": 45, "_source": "publisher UN parts list 1.04 (was 49 on 1.02)" },
+    "538": { "score": 42, "_source": "publisher UN parts list 1.04 (was 60 on 1.02)" },
+    "162": { "score": 18, "_source": "publisher UN parts list 1.04 (was 12 on 1.02)" },
+    "LPA-23-2": { "score": 18, "_source": "publisher UN parts list 1.04 (was 24 on 1.02)" },
+    "PRDR-101": { "score": 84, "_source": "publisher PD parts list 1.04 (was 90 on 1.02)" },
+    "PRDR-102": { "score": 93, "_source": "publisher PD parts list 1.04 (was 99 on 1.02)" },
+    "PRDR-103": { "score": 99, "_source": "publisher PD parts list 1.04 (was 105 on 1.02)" },
+    "PRDR-104": { "score": 108, "_source": "publisher PD parts list 1.04 (was 114 on 1.02)" },
+    "PRDR-105": { "score": 82, "_source": "publisher PD parts list 1.04 (was 90 on 1.02)" },
+    "PRDR-201": { "score": 42, "_source": "publisher PD parts list 1.04 (was 48 on 1.02)" },
+    "PRDR-203": { "score": 36, "_source": "publisher PD parts list 1.04 (was 42 on 1.02)" },
+    "PRDR-204": { "score": 36, "_source": "publisher PD parts list 1.04 (was 42 on 1.02)" },
+    "017": { "score": 59, "_source": "publisher RDL parts list 1.04 (was 47 on 1.02)" },
+    "018": { "score": 63, "_source": "publisher RDL parts list 1.04 (was 60 on 1.02)" },
+    "504": { "score": 54, "_source": "publisher RDL parts list 1.04 (was 60 on 1.02)" },
+    "533": { "score": 26, "_source": "publisher RDL parts list 1.04 (was 18 on 1.02)" },
+    "558": { "score": 62, "_source": "publisher RDL parts list 1.04 (was 67 on 1.02)" },
+    "022": { "score": 45, "_source": "publisher RDL parts list 1.04 (was 42 on 1.02)" },
+    "027": { "score": 42, "_source": "publisher RDL parts list 1.04 (was 33 on 1.02)" },
+    "033": { "score": 48, "_source": "publisher RDL parts list 1.04 (was 51 on 1.02)" },
+    "034": { "score": 47, "_source": "publisher RDL parts list 1.04 (was 50 on 1.02)" },
+    "036": { "score": 33, "_source": "publisher RDL parts list 1.04 (was 39 on 1.02)" },
+    "037": { "score": 33, "_source": "publisher RDL parts list 1.04 (was 39 on 1.02)" },
+    "045": { "score": 53, "_source": "publisher RDL parts list 1.04 (was 56 on 1.02)" },
+    "050": { "score": 66, "_source": "publisher RDL parts list 1.04 (was 69 on 1.02)" },
+    "051": { "score": 57, "_source": "publisher RDL parts list 1.04 (was 63 on 1.02)" },
+    "058": { "score": 42, "_source": "publisher RDL parts list 1.04 (was 45 on 1.02)" },
+    "062": { "score": 60, "_source": "publisher RDL parts list 1.04 (was 42 on 1.02)" },
+    "063": { "score": 63, "_source": "publisher RDL parts list 1.04 (was 45 on 1.02)" },
+    "252": { "score": 47, "_source": "publisher RDL parts list 1.04 (was 50 on 1.02)" },
+    "254": { "score": 54, "_source": "publisher RDL parts list 1.04 (was 63 on 1.02)" },
+    "508": { "score": 54, "_source": "publisher RDL parts list 1.04 (was 57 on 1.02)" },
+    "510": { "score": 54, "_source": "publisher RDL parts list 1.04 (was 57 on 1.02)" },
+    "535": { "score": 30, "_source": "publisher RDL parts list 1.04 (was 36 on 1.02)" },
+    "004": { "score": 36, "_source": "publisher RDL parts list 1.04 (was 39 on 1.02)" },
+    "009": { "score": 39, "_source": "publisher RDL parts list 1.04 (was 30 on 1.02)" },
+    "010": { "score": 51, "_source": "publisher RDL parts list 1.04 (was 48 on 1.02)" },
     "ZHDR-204": { "moveAsFlight": true, "flyingOrElevated": "flying" },
     "ZHDR-205": { "moveAsFlight": true, "flyingOrElevated": "flying" },
     "ZHDR-206": { "moveAsFlight": true, "flyingOrElevated": "flying" },
@@ -66,6 +132,7 @@
       ]
     },
     "116": {
+      "parray": 0,
       "keywords": [
         {
           "key": "空手",
@@ -156,9 +223,13 @@
       }
     },
     "078": {
+      "score": 39,
+      "_source": "publisher RDL parts list 1.04 (was 42 on 1.02)",
       "stance": "defensive"
     },
     "079": {
+      "score": 39,
+      "_source": "publisher RDL parts list 1.04 (was 33 on 1.02)",
       "stance": "defensive"
     },
     "159": {
@@ -201,7 +272,8 @@
       "dodge": 0
     },
     "503": {
-      "score": 60
+      "score": 51,
+      "_source": "publisher RDL parts list 1.04 (was 60 on 1.02)"
     },
     "040": {
       "parray": 1
@@ -220,10 +292,22 @@
     },
     "175": {
       "score": 85,
+      "keywords": [
+        {
+          "key": "指令生成X",
+          "en": "Command Generation X"
+        }
+      ],
       "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
     },
     "176": {
       "score": 85,
+      "keywords": [
+        {
+          "key": "指令生成X",
+          "en": "Command Generation X"
+        }
+      ],
       "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
     },
     "179": {
@@ -679,6 +763,8 @@
       "parray": 0
     },
     "023": {
+      "score": 51,
+      "_source": "publisher RDL parts list 1.04 (was 54 on 1.02)",
       "keywords": [
         { "key": "震撼", "en": "Concussion" },
         { "key": "频闪武器", "en": "Pulse Weapon" }
@@ -696,6 +782,8 @@
       ]
     },
     "284": {
+      "score": 51,
+      "_source": "publisher RDL parts list 1.04 (was 57 on 1.02)",
       "keywords": [
         { "key": "拦截X", "en": "Intercept X" },
         { "key": "双手", "en": "Two-Handed" },
@@ -704,6 +792,8 @@
       ]
     },
     "032": {
+      "score": 48,
+      "_source": "publisher RDL parts list 1.04 (was 51 on 1.02)",
       "keywords": [
         { "key": "静止", "en": "Stationary" },
         { "key": "穿甲X", "en": "Armor Piercing X" },
@@ -719,7 +809,7 @@
     "ZYDR-108": "SU1 \"Nest Guardian Swarm\". The card-level Omni-direction Firing chip went with its Single Shot (GoF 1.021; see action_overrides ZYDR-108_A). GoF 1.021 prints \"Arial 5 | Small\" and the card \"HIGH ALTITUDE\": a round-base Aerial Unit, as SU2 already was. Mechanics audit Phase 4 (I7).",
     "ZHDR-101":"N11 Vanguard I \"Scutum\". The 1.021 regunning gave the shield drone a gun the community bundle never had: Action B Single Shot, Firing, Auto, 3Y1R, Range 3, Omni-direction Firing and Melee Firing (list row ZHDR-101). Supplying a NEW action needs this file's wholesale `actions` replacement, so the array carries the final _A too - including its list English, which cannot live in action_overrides because applyStats runs after applyActionFixes and would discard it. The _A content is otherwise the bundle's own, zh and jp included; _B is English-only because no 1.021 Chinese exists to copy.",
     "ZHDR-102": "N12 Vanguard II \"Crossbow\". The 1.021 regunning removed Interception 1 from its action (see action_overrides ZHDR-102_A, which drops the load-bearing inline keyword); this entry removes the CARD-level 拦截X chip that would otherwise keep advertising a rule the drone no longer has. The other two keywords are kept, with the stray bullet the bundle put in front of Omni-direction Firing dropped.",
-    "116": "S100 Shield + R6SS SMG (D), the RIGHT-hand discard face. Same gap as 118/120 and found the same way: the UN 1.02 list gives row 116 the Freehand keyword and our card had an empty array, so a Mech that Disarmed this shield offered no free hand. Unlike the Fairy pair this card is RELEASED (UN_CORE). Its action text comes through action_overrides 116_A rather than here, the action already existing.",
+    "116": "S100 Shield + R6SS SMG (D), the RIGHT-hand discard face. Same gap as 118/120 and found the same way: the UN 1.02 list gives row 116 the Freehand keyword and our card had an empty array, so a Mech that Disarmed this shield offered no free hand. Unlike the Fairy pair this card is RELEASED (UN_CORE). Its action text comes through action_overrides 116_A rather than here, the action already existing. Parry: the community bundle gave this face Parry 2, but the UN list's row for it (S100 Shield + R6SS SMG (D), the R face; 1.02 and 1.04 alike) prints none, and so does the printed card: found by the printed-card sweep, 2026-09-30. Set to 0. The (L)(D) face's row does print Parry 2, which S100+R6SS-L-T keeps.",
     "118": "MDXS \"Fairy\" System + R6 SMG (L) (D). The bundle gave the two Fairy discard faces NO actions and NO keywords at all, where the publisher's Part Data UN 1.02 EN rows 118 and 120 print the Thruster passive and the Freehand keyword on both. That was a LIVE bug, not a display one: disarm rewrites the equipped card id to the discard face, flightGrant() counts Thruster halves off the equipped cards, and the pair needs two - so a Mech whose Fairy arm was Disarmed lost flight the publisher says it keeps. The action text is copied verbatim from the FRONT face 117_B, which the list's own row 118 matches word for word (typo included, \"it's\"), so the zh is the printed sibling text rather than a translation. jp is omitted on purpose: the bundle's 119_B jp fields are corrupted (they hold the gun action's text), so nothing unverified is carried over. These entries are the first use of applyStats supplying `actions` - action_overrides.json cannot do this, being keyed by an action id that must already exist.",
     "120": "MDXS \"Fairy\" System + R6 SMG (R) (D). Mirror of 118: text from front face 119_B, referencing the (L) arm.",
     "181": "PLK400 \"Centaur\" High-mobility Chassis. THE PDF SUPERSEDES THE SCAN - OTTO's ruling, 2026-08-24: the card scans in our data are old and the publisher's 1.02x parts lists are the current information, so where they disagree the list wins and a clause the list does not carry does not belong. Our reminder line said Push X moves the target \"in straight line in the direction this unit is facing, then this unit performs the same movement\", and the Chinese agreed (然后本单位执行同样的移动), so the two were consistent with each other and with nothing else: NEITHER the rulebook glossary NOR the publisher's GoF 1.021 Extra Info for this exact row has any follow-up move by the attacker. The engine never implemented one either - offerShove moves only the victim - so the app was already right and the card text was the thing lying. Replaced with the list's block verbatim, which also supplies the Command Coordination reminder we were missing. The Chinese is assembled from our own glossary's zh values for the four keywords, not translated by hand; note that the glossary's 推动X already read 沿任意直线方向 with -1链接值 and no follow-up, agreeing with the list all along.",
@@ -737,12 +827,14 @@
     "074": "GM-35 Anti-Armor Mine. Recorded as electronic -1; the card prints \"--\" in the Electronic box, meaning no value. Every other card printing \"--\" (154, 155, 267, 268, PDAM-003/004/005) is recorded as 0, so -1 is a misparse of the dash. It matters because electronicValue() sums this field, so -1 actively subtracts 1, and the reference page renders it as \"E-1\".",
     "158": "DBP \"Turtle Shell\" Barricade. Same \"--\" misparse as 074. Mechanics audit Phase 3 (2026-09-25): a \"--\" is not a 0. Rulebook 4.11.2 (3): a Unit whose Electronic Value is \"-\" cannot be the Responder of a Counter-roll, while a 0 can (and always loses). Storing the dash as 0 erased that, so `electronicDash: true` now carries it beside the 0 on every card printing \"--\": 074, 158 and the seven the 074 note names (154, 155, 267, 268, PDAM-003/004/005; PDAM-005's scan shows the dash). ZHAM-004 and PDAM-007 print no Electronic box at all and are left as 0 (ruling F20: every unit card printing \"--\").",
     "ZHAM-002": "M60 \"Boomerang\" Missile. The card prints only two stat boxes, an orange Electronic 1 and a grey Armor 3, with no blue Dodge box at all; the database records armor 0 and dodge 6. Box colours were confirmed by sampling pixels, not by eye: the orange box spans x540-594 and the grey x618-666, and no blue pixels appear anywhere in the stat row. On this same GOF template ZHAM-003 prints orange/blue/grey for electronic/dodge/armor and ZHAM-004 prints blue/grey for dodge/armor, so a lone grey box after the orange one is Armor. Confirmed by a second reader against the card: 1 electronic, 3 grey, no Dodge icon present.",
-    "503": "RT-16B \"Avalanche\" Assault Core. We had 48. Both the community parts sheet and the publisher's championship list say 60, and points are never printed on a card, so there was never a scan that could settle it. This closes a long-standing open question. Source: championship-legal EN parts list v1.02 (publisher).",
+    "503": "RT-16B \"Avalanche\" Assault Core. We had 48. Both the community parts sheet and the publisher's championship list say 60, and points are never printed on a card, so there was never a scan that could settle it. This closes a long-standing open question. Source: championship-legal EN parts list v1.02 (publisher). 1.04 (2026-09-30) lowers it to 51.",
     "040": "SPHX-3 Supporting Arm. We had Parry 0. The publisher list gives Armor 4 AND Parry 1; our scan shows only the Armor 4 box and is watermarked \"Ver.2019 Crowdfunding\", so it predates the current data. Source: championship-legal EN parts list v1.02 (publisher).",
     "023": "Type 55 Shield + CC-6 Cleaver. The bundle gave this HANDHELD face the Freehand keyword its Discard Card (024) carries, so the arm supported a [Two-Handed] Action and took a Black Box while still holding its equipment. The printed card shows HANDHELD alone and RDL 1.02 row 23 lists Handheld; row 24 is the Freehand one. Mechanics audit Phase 7 (OTTO ruled R5, P7A 3). The same for 025, 282 and 284, and their (D) faces 026, 283 and 285.",
     "025": "AC-32 Automatic Rifle. Handheld, not Freehand: the card and RDL 1.02 row 25; Freehand is row 26's, the Discard Card. With both tags it supported its own [Two-Handed] +2 Range (P7A 3, R5).",
     "282": "L-330 SMMG + Type 77B Bulwark. Handheld, not Freehand: the card and RDL 1.02 row 282; row 283 is the Freehand face (P7A 3, R5).",
     "284": "L-330 SMMG + CC-85 Rock Saw. Handheld, not Freehand: the card and RDL 1.02 row 284; row 285 is the Freehand face (P7A 3, R5).",
-    "032": "R-20 Shoulder-Mounted Railgun (L). The bundle's footer carried Direct Fire, Silence and Freehand, which no English source prints: RDL 1.02 (Armaments, QR 32, FXLA-103) lists Freehand and the Single Shot, with a back text explaining Armor Piercing X alone; both front scans and the back scan (numbered 032) agree, and the publisher API record for main_id 32 lists Armor/Structure and Freehand. Its mirror 033's set is taken, so the Reference stops drawing Direct Fire and Silence chips on it and stops listing it among the cards that print Silence. No rule read the footer: Silence and sight are read off the Actions. Mechanics audit Phase 7 (P7C 10; the 2026-09-28 list ruling)."
+    "032": "R-20 Shoulder-Mounted Railgun (L). The bundle's footer carried Direct Fire, Silence and Freehand, which no English source prints: RDL 1.02 (Armaments, QR 32, FXLA-103) lists Freehand and the Single Shot, with a back text explaining Armor Piercing X alone; both front scans and the back scan (numbered 032) agree, and the publisher API record for main_id 32 lists Armor/Structure and Freehand. Its mirror 033's set is taken, so the Reference stops drawing Direct Fire and Silence chips on it and stops listing it among the cards that print Silence. No rule read the footer: Silence and sight are read off the Actions. Mechanics audit Phase 7 (P7C 10; the 2026-09-28 list ruling).",
+    "175": "P28 core. The bundle gives the card a Dense Armor keyword chip beside Command Generation X. Supplementary Rules 1.04 (3.7) removed Dense Armor as a keyword: the Parts that had it carry it as a passive Action, which this card does (175_B, worded by action_overrides). So the chip goes and Command Generation X stays.",
+    "176": "P24 core. The bundle gives the card a Dense Armor keyword chip beside Command Generation X. Supplementary Rules 1.04 (3.7) removed Dense Armor as a keyword: the Parts that had it carry it as a passive Action, which this card does (176_B, worded by action_overrides). So the chip goes and Command Generation X stays."
   }
 }

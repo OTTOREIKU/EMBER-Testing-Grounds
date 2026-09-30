@@ -987,6 +987,60 @@
    ],
    "score": 99,
    "_box_note": "No box: a tournament prize."
+  },
+  {
+   "id": "LPA-OPAL",
+   "_source": "Publisher Part Data UN 1.04 EN list, UN Pilot EN sheet, row 18, new in 1.04 (printed in red): English name Opal, Points 18, LV 4, Faction UN, Institute Redpoint Technology, Subordinate UNS Mercury Fighter Squadron 101 \"Scylla\", Swift 4, Melee 5, Projectile 7, Firing 3, Move 8, Tactical 4, Trait Bondage with the description below. Added 2026-09-30.",
+   "_id_note": "OUR id, not the publisher's. The UN 1.04 list leaves this pilot's Serial and QR columns empty, and the publisher's card API has no record of it yet (main_id 360 to 399 scanned 2026-09-30). When a serial appears, change this id and the matching PILOT_ constant in units.ts together.",
+   "name": {
+    "en": "Opal"
+   },
+   "score": 18,
+   "LV": 4,
+   "faction": "UN",
+   "swift": 4,
+   "melee": 5,
+   "projectile": 7,
+   "firing": 3,
+   "moving": 8,
+   "tactic": 4,
+   "trait": "Bondage",
+   "traitNameEn": "Bondage",
+   "traitDescription": {
+    "en": "· When this unit performs a Projectile Action during Projectile Timing, if the action does not have Volley, it will be considered as having Volley 2."
+   },
+   "_trait_note": "Wired in units.ts volleyFor (PILOT_OPAL), which every launch reader asks. `trait` holds the English name because the list gives no Chinese one; the trait block needs it to show the trait at all.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent: no product ships this pilot yet. The pilot card carries its faction.",
+   "_art_note": "No scan and no portrait: the Reference and the builders draw the placeholder (OTTO, 2026-09-30).",
+   "category": "pilot",
+   "keywords": []
+  },
+  {
+   "id": "LPA-TOURMALINE",
+   "_source": "Publisher Part Data UN 1.04 EN list, UN Pilot EN sheet, row 19, new in 1.04 (printed in red): English name Tourmaline, Points 21, LV 4, Faction UN, Institute Redpoint Technology, Subordinate UNS Mercury Fighter Squadron 101 \"Scylla\", Swift 6, Melee 4, Projectile 5, Firing 2, Move 3, Tactical 3, Trait Shadow with the description below. Added 2026-09-30.",
+   "_id_note": "OUR id, not the publisher's. The UN 1.04 list leaves this pilot's Serial and QR columns empty, and the publisher's card API has no record of it yet (main_id 360 to 399 scanned 2026-09-30). When a serial appears, change this id and the matching PILOT_ constant in units.ts together.",
+   "name": {
+    "en": "Tourmaline"
+   },
+   "score": 21,
+   "LV": 4,
+   "faction": "UN",
+   "swift": 6,
+   "melee": 4,
+   "projectile": 5,
+   "firing": 2,
+   "moving": 3,
+   "tactic": 3,
+   "trait": "Shadow",
+   "traitNameEn": "Shadow",
+   "traitDescription": {
+    "en": "· [Stationary] When performing a Firing Action, target's Terrain Protection and Unit Protection are not applied."
+   },
+   "_trait_note": "Wired in units.ts ignoresProtection (PILOT_TOURMALINE), the one question all five protection readers ask. Stationary is the running Opportunity's: no Movement yet. `trait` holds the English name, as for Opal.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent: no product ships this pilot yet. The pilot card carries its faction.",
+   "_art_note": "No scan and no portrait: the Reference and the builders draw the placeholder (OTTO, 2026-09-30).",
+   "category": "pilot",
+   "keywords": []
   }
  ]
 }

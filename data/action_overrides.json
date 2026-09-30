@@ -1,6 +1,14 @@
 {
   "_comment": "Per-action corrections, keyed by action id (the card id plus its A/B slot, which is exactly how the publisher's sheets label them). Source for every entry below is the publisher's championship-legal English parts lists (v1.02). Those come from the game company, so they outrank both the community database that generated cards.json and an older card scan. Ranges of 0 on a Firing or Projectile action are the community data simply not recording a range at all.",
   "actions": {
+    "084_A": {
+      "description": { "en": "· Direct Fire\n· Deploy 1 DBP \"Turtle Shell\" Barricade." },
+      "_note": "UN parts list 1.04 (2026-09-30) and Supplementary Rules 1.04, 7.3/7.4: Direct Fire added to the Action. needsSightToLanding reads it from this text, so the Deploy now needs sight to its landing Grid."
+    },
+    "085_A": {
+      "description": { "en": "· Direct Fire\n· Deploy 1 AMDS210 \"Delphinium\" Automatic Defense System." },
+      "_note": "UN parts list 1.04 (2026-09-30) and Supplementary Rules 1.04, 7.3/7.4: Direct Fire added to the Action. needsSightToLanding reads it from this text, so the Deploy now needs sight to its landing Grid."
+    },
     "ZHDR-201_A": {
       "range": 0,
       "_note": "Mechanics audit Phase 5, F6: the publisher lists print this Melee Action's range as \"--\" (Melee), which reaches the Adjacent Grids, diagonals included (4.2.2). Range 1 put a diagonal enemy out of reach; 0 is how the engine writes \"--\"."
