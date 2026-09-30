@@ -1,3 +1,4 @@
+import { barcodeSvg } from './barcode';
 import './reference.css';
 import './ui.css';
 import { actionIconUrl, battlefieldCardUrl, boxCoverUrl, cardName, environmentImageUrl, HELP_CARDS, helpCardUrl, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type EnvironmentCard, type FactionDef, type GameData, type KeywordDef } from './data';
@@ -171,7 +172,7 @@ function boxDetail(key: string): string | null {
   const list = groups
     .map(
       (g) => `<h3 class="ref-sub">${esc(g.label)} <span class="fc-n">${g.hit.length}</span></h3>
-      <ul class="box-parts">${g.hit
+      <ul class="box-parts ui-list">${g.hit
         .map(
           (i) => {
             // Three shapes of row. A discard face is a child of the row above
@@ -653,7 +654,7 @@ function renderEverywhere(el: HTMLElement, q: string): void {
 
   const total = groups.reduce((s, g) => s + g.total, 0);
   el.innerHTML = groups.length
-    ? `<p class="ref-count">${total} match${total === 1 ? '' : 'es'} everywhere · tap an item to open it, a group or a tab to narrow</p>` +
+    ? `<p class="ref-count">${total} match${total === 1 ? '' : 'es'} everywhere<small>tap an item to open it, a group or a tab to narrow</small></p>` +
       groups
         .map(
           (g) => `<div class="ref-group">
@@ -749,7 +750,7 @@ function render(): void {
         )
         .join('') +
       (secs.length
-        ? `<p class="ref-count">${secs.length} secondary task${secs.length === 1 ? '' : 's'} · each player picks 1 and reveals it</p>` +
+        ? `<p class="ref-count">${secs.length} secondary task${secs.length === 1 ? '' : 's'}<small>each player picks 1 and reveals it</small></p>` +
           secs
             .map(
               (s) => `<article class="card">
@@ -1379,7 +1380,24 @@ function holdDetailHeight(root: HTMLElement): void {
 
 function paintDetail(html: string, scrollTop: number): void {
   const content = document.getElementById('ref-detail-content')!;
+  // The box cover survives a repaint of the same sheet (the Exclusive tick,
+  // the compare pickers): a fresh <img> for the same picture starts at no
+  // height and loads again, so the cover shrank to nothing and grew back on
+  // every tick (OTTO, 2026-09-29). The loaded element is kept instead.
+  const oldCover = content.querySelector('.box-cover');
+  const oldSrc = oldCover?.querySelector('img')?.src;
   content.innerHTML = html;
+  const cover = content.querySelector('.box-cover');
+  if (oldCover && cover && oldSrc && cover.querySelector('img')?.src === oldSrc) cover.replaceWith(oldCover);
+  // The sheet's head as the pad's unit header (STYLE-GUIDE, the Reference
+  // round): the meta line the renderers write under the name becomes the
+  // kicker above it, and our barcode, seeded by the name, goes under it.
+  const h2 = content.querySelector('h2');
+  if (h2) {
+    const meta = h2.nextElementSibling;
+    if (meta?.matches('p.ref-meta')) { meta.classList.replace('ref-meta', 'ref-kick'); h2.before(meta); }
+    h2.insertAdjacentHTML('afterend', barcodeSvg(h2.textContent ?? '', 'ref-code'));
+  }
   content.querySelectorAll<HTMLElement>('[data-img]').forEach((slot) => {
     // Two slots hold the same scan now: the thumbnail on the Card tab and the
     // full one on the Photo tab. They take different classes because
@@ -1643,3 +1661,7 @@ async function init(): Promise<void> {
 init().catch((e) => {
   body().innerHTML = `<p class="ref-count">Failed to load: ${esc(String(e))}</p>`;
 });
+
+// The wordmark's barcode, seeded by the page's name; the same generator the
+// landing page and the pad use (never the publisher's own code).
+document.getElementById('ref-code')?.insertAdjacentHTML('afterbegin', barcodeSvg('EMBER Reference', 'ref-code'));
