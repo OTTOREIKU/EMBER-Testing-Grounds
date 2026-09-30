@@ -69,7 +69,7 @@ import { configureNotices, explainOnHold, notify, redrawNotice, speakInPlace, ty
 import { boxHands, normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, vipFallen } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from '../src/tactics';
-import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop, volleyFor } from '../src/units';
+import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, jumpsToTarget,explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop, volleyFor } from '../src/units';
 import { gameResult } from '../src/tasks';
 import { isSilentAction, actionSilenceDenier, auraReach, auraEffectsOf, auraActionOf, auraCanReach, auraReachable, inAuraReach, aurasAtRoll, type AuraAtRoll, actionRange, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf, discardSlots, commonActionStop, commonPartKey } from '../src/units';
 import { canManeuver, canPerform, costOf, lengthOf, LENGTH_NAME, markAction, markExtra, markManeuver, spendAction, spendManeuver, tickBarState, timingOf } from '../src/ticks';
@@ -77,6 +77,8 @@ import { actionIdleWhy, cardFitsSquad, extrasFor, factionProblems, squadPoints, 
 import { tickBar, type CapsuleShort } from '../src/glyphs';
 import { newOpportunity, newScriptState, PHASES, SCALES, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS, tokenFaces } from '../src/types';
 import type { Card, CardAction, DieColor, GameState, ImportedSquad, MechLoadout, Opportunity, PartSlot, PartState, Side, Stance, Token } from '../src/types';
+import { syncSeason, tableSeason } from '../src/season';
+import { handCommand, handCount, handIds, saltFor } from '../src/tactichand';
 
 const root = document.getElementById('pad-root')!;
 const api = new EmberApi();
@@ -1059,8 +1061,8 @@ async function importFromFile(file: File): Promise<void> {
   // holds; a duplicate would be refused whole (FAQ P2).
   if (squad.tactics?.length) {
     const seat = solo ? squadSide : mySeat();
-    const merged = [...new Set([...(table.tactics?.[seat] ?? []), ...squad.tactics])];
-    send({ kind: 'setTactics', seat, cards: merged });
+    const merged = [...new Set([...handOf(seat), ...squad.tactics])];
+    sendHand(seat, merged);
   }
   // NEVER swallow unknownIds. A squad built in the community builder can name a
   // Part we do not ship; dropping those in silence hands a player a squad
@@ -2312,7 +2314,11 @@ function barHtml(): string {
       <b style="color:${sideColour(me)}">${vp[me]}</b><span>:</span><b style="color:${sideColour(them)}">${vp[them]}</b>
     </button>`;
   }
-  const roundLabel = `<b>R${r.n}<i>/${roundLimit()}</i></b><small>// ${esc(PHASES[r.phase] ?? '')}</small>`;
+  // A table on the Season Rules says so beside the phase, in the Season's blue,
+  // so a Stabilize System costing 2 Ticks is never a surprise.
+  const season = data ? tableSeason(data, table) : undefined;
+  const roundLabel = `<b>R${r.n}<i>/${roundLimit()}</i></b><small>// ${esc(PHASES[r.phase] ?? '')}${
+    season ? `<span class="pad-bar-season" title="${esc(season.label)} rules: optional, not the main rules"> · ${esc(season.label)}</span>` : ''}</small>`;
   // In a room the chip is the Continue of a two-player agreement, and says
   // where the agreement stands; solo it simply turns the phase.
   const guided = guidedOn(table);
@@ -3215,6 +3221,7 @@ function setupPanel(): string {
       <button class="pad-chip${wantsGuided() || guidedOn(table) ? '' : ' on'}" data-act="set-mode" data-mode="free"${guidedOn(table) ? ' disabled' : ''}>Freeform</button>
       <button class="pad-chip${wantsGuided() || guidedOn(table) ? ' on' : ''}" data-act="set-mode" data-mode="guided"${guidedOn(table) ? ' disabled' : ''}>Guided</button>
     </div>
+    ${rulesRow()}
     <p class="pad-label pad-sec">Dice</p>
     <div class="pad-chips">
       <button class="pad-chip${table.tableDice ? ' on' : ''}" data-act="set-dice" data-dice="table" aria-pressed="${!!table.tableDice}">Table rolls</button>
@@ -3228,6 +3235,24 @@ function setupPanel(): string {
     </div>
     ${overrideHtml()}
   </div>`;
+}
+
+// The rules the table plays by (OTTO, 2026-09-30: "a settings for enabling or
+// disabling. In PAD this would be another button in the setup of the game"):
+// the main rules, or a season of the publisher's Season Rules, which are
+// optional and never part of the main rules, so the Season chip says so in the
+// Season's blue and names what it changes. The HOST's, fixed once the game is
+// under way (the engine refuses it after; greyIf shows why).
+function rulesRow(): string {
+  const on = tableSeason(data!, table);
+  const chip = (id: string, label: string, cls = ''): string => {
+    const picked = (table.season ?? '') === id;
+    return `<button class="pad-chip${cls}${picked ? ' on' : ''}" data-act="set-season" data-season="${esc(id)}" aria-pressed="${picked}"${
+      picked ? '' : greyIf({ kind: 'configureTable', seat: mySeat(), season: id || null })}>${esc(label)}</button>`;
+  };
+  return `<p class="pad-label pad-sec">Rules</p>
+    <div class="pad-chips">${chip('', 'Main rules')}${[...(data!.seasons ?? [])].reverse().map((s) => chip(s.id, s.label, ' season')).join('')}</div>
+    ${on ? `<p class="pad-note pad-season-note"><b>${esc(on.label)}, optional:</b> ${on.rules.map((r) => esc(r.basic)).join(' ')}</p>` : ''}`;
 }
 
 // A running Guided game, corrected or left behind. Both are the HOST's: a
@@ -3825,10 +3850,18 @@ async function continueDetonation(): Promise<void> {
   // Unit Type taken first is named rather than applied.
   const barOf = (x: Token) => (damaging ? detonationBar(table.tokens, proj, a, units, x, { tableJudges: true }) : '');
   const first = damaging && scope !== 'all' ? detonationPriority(a) : null;
+  // The order the table keeps by hand (Supplementary Rules 1.04, 1.9): a
+  // Pholcus's blast before the Mines its jump sets off, and two squads' Mines
+  // in turn from this round's First Player. The pad cannot see which went off
+  // together, so it says the rule rather than keeping the order.
+  const order = !damaging ? ''
+    : jumpsToTarget(a) ? ' It jumps into that unit\'s Grid first: a Mine there goes off after this blast, and one this blast destroys does not (Supplementary Rules 1.04, 1.9).'
+    : proj.mine ? ` If both squads' Mines went off together, ${sideName(table.round.firstPlayer)} resolves one first as this round's First Player, then the squads take turns (Supplementary Rules 1.04, 1.9).`
+    : '';
   const pick = await choiceDialog({
     title: `${name} · ${proj.label}`,
     body: damaging
-      ? scope === 'all' ? `Every unit ${reach}, allies too, takes a separate attack (4.7.6). Name each one.` : `One target ${reach}.${first ? ` ${first} first, if one is in Range (4.7.5).` : ''}`
+      ? scope === 'all' ? `Every unit ${reach}, allies too, takes a separate attack (4.7.6). Name each one.${order}` : `One target ${reach}.${first ? ` ${first} first, if one is in Range (4.7.5).` : ''}${order}`
       : effectStatus ? `Each unit ${reach} the card affects gains the Token.` : `${detonationText(a) || 'See the card.'} Apply it on the table.`,
     choices: [
       ...units.map((x) => {
@@ -3969,7 +4002,7 @@ async function recordMatch(): Promise<string | null> {
         for (const { card } of tokenCards(data!, t)) push(card.id);
       }
     }
-    for (const id of table.tactics?.[side] ?? []) if (data!.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
+    for (const id of handOf(side)) if (data!.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
     return out.slice(0, 80);
   };
   try {
@@ -4004,8 +4037,21 @@ function tacticCtx(): TacticCtx {
   return { maxLink: (t) => (data ? pilotCard(data, t)?.LV ?? 0 : 0), cruising: (t) => (data ? cruising(data, t) : false) };
 }
 
+// The hand this phone can see (src/tactichand.ts): the whole of a plain one; of
+// a sealed one across a room, only this phone's own cards (1.11).
 function handOf(side: Side): string[] {
-  return table.tactics?.[side] ?? [];
+  return handIds(table, side, roomKey());
+}
+
+// The room a sealed hand is kept for; none at an Offline Game, where the
+// screen is the secrecy and the hand stays plain.
+function roomKey(): string | null {
+  return solo ? null : view.room?.id ?? null;
+}
+
+// Sets a seat's hand: sealed in a room, plain offline.
+function sendHand(seat: Side, ids: string[]): boolean {
+  return send(handCommand(seat, ids, roomKey()));
 }
 
 function playedThisRound(side: Side): boolean {
@@ -4052,7 +4098,7 @@ function openTacticPicker(side: Side): void {
       const held = (['s1', 's2'] as const).reduce((n, s) => n + handOf(s).filter((id) => id === c.id).length, 0);
       return Math.max(0, copiesOf(d, shelf, c) - held);
     },
-    actions: [{ label: 'Add to hand', run: (card) => { send({ kind: 'setTactics', seat: side, cards: [...handOf(side), card.id] }); render(); } }],
+    actions: [{ label: 'Add to hand', run: (card) => { sendHand(side, [...handOf(side), card.id]); render(); } }],
   });
 }
 
@@ -4107,7 +4153,9 @@ async function playTactic(side: Side, cardId: string): Promise<void> {
       choice = pick;
     }
   }
-  if (!send({ kind: 'playTactic', seat: side, uid: t.uid, cardId, pick: choice })) return;
+  // A sealed card is shown with the salt that proves it (1.11).
+  const salt = saltFor(table, side, cardId, roomKey());
+  if (!send({ kind: 'playTactic', seat: side, uid: t.uid, cardId, pick: choice, ...(salt ? { salt } : {}) })) return;
   toast(t.log?.at(-1)?.text ?? `${sideName(side)} plays ${spec.name}.`);
   if (spec.maneuver) {
     // The granted Maneuver is recorded (facing and the Opportunity's books)
@@ -4177,7 +4225,9 @@ function savedSquadPoints(sq: SavedSquad): number {
 // The shared reader: this copy used to add the Pilot a second time, since
 // tokenCards already lists it (audit Phase 6, G1).
 function sidePoints(s: Side): number {
-  return data ? squadPoints(data, table.tokens, s, table.tactics?.[s] ?? []) : 0;
+  // A sealed hand this phone cannot see still counts, at 30 a card (1.11).
+  const seen = handOf(s);
+  return data ? squadPoints(data, table.tokens, s, seen, handCount(table, s) - seen.length) : 0;
 }
 
 // What is wrong with a squad, in the squad panel's words: a mixed squad or
@@ -4924,6 +4974,9 @@ function render(): void {
   // The update notice follows the screen: re-placed after a door screen is
   // redrawn, taken away when a table opens (src/updates.ts).
   queueMicrotask(syncUpdateNotice);
+  // The table's Season Rules resize their Actions before anything is drawn
+  // (src/season.ts): Stabilize System costs 2 Action Ticks in Season 1.04.
+  if (data) syncSeason(data, table);
   if (data) noteDead();
   // The relay is the authority on where we are once signed in: a reconnect
   // that lands us back in a room must not leave the lobby showing.
@@ -5215,6 +5268,7 @@ function act(el: HTMLElement, ev: Event): void {
     case 'open-setup': panel = 'setup'; render(); return;
     case 'set-mode': send({ kind: 'configureTable', seat: mySeat(), guidedPlay: el.dataset.mode === 'guided' }); return;
     case 'set-dice': send({ kind: 'configureTable', seat: mySeat(), tableDice: el.dataset.dice === 'table' }); return;
+    case 'set-season': send({ kind: 'configureTable', seat: mySeat(), season: el.dataset.season || null }); return;
     case 'attack': {
       const t = unitOf(Number(el.dataset.uid));
       if (!t) return;
@@ -5954,7 +6008,7 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     case 'tactic-drop': {
       const side = el.dataset.side as Side;
-      send({ kind: 'setTactics', seat: side, cards: handOf(side).filter((id) => id !== el.dataset.id) });
+      sendHand(side, handOf(side).filter((id) => id !== el.dataset.id));
       return;
     }
     case 'tactic-play': void playTactic(el.dataset.side as Side, el.dataset.id!); return;
@@ -6019,8 +6073,8 @@ function act(el: HTMLElement, ev: Event): void {
         // The hand comes with the squad (5.4), merged the way a file import is.
         if (sq.tactics?.length) {
           const seat = solo ? squadSide : mySeat();
-          const merged = [...new Set([...(table.tactics?.[seat] ?? []), ...sq.tactics.filter((id) => data!.byId.get(id))])];
-          send({ kind: 'setTactics', seat, cards: merged });
+          const merged = [...new Set([...handOf(seat), ...sq.tactics.filter((id) => data!.byId.get(id))])];
+          sendHand(seat, merged);
         }
         error = null;
         panel = null;
@@ -6059,7 +6113,7 @@ function act(el: HTMLElement, ev: Event): void {
       const drones = units.filter((x) => x.kind === 'drone').map((x) => ({ cardId: x.cardId, backpack: x.droneBackpack }));
       if (!mechs.length && !drones.length) { refuse('Nothing on this side to save yet.'); return; }
       // The hand is part of the squad (5.4): saved with it, or it reloads cheaper.
-      const tactics = (table.tactics?.[seat] ?? []).filter((id) => !!data!.byId.get(id));
+      const tactics = handOf(seat).filter((id) => !!data!.byId.get(id));
       void promptDialog({
         title: 'Save this squad',
         body: `${mechs.length} mech${mechs.length === 1 ? '' : 's'}, ${drones.length} drone${drones.length === 1 ? '' : 's'}${tactics.length ? ` and ${tactics.length} Tactics Card${tactics.length === 1 ? '' : 's'}` : ''}. Reusing a name overwrites it.`,

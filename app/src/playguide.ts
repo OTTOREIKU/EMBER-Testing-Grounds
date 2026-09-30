@@ -15,6 +15,7 @@ import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity,
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { boxPlaceTurn, normaliseTasks, remoteAccessWhy, settleControl, type ScoreResult, type TaskState } from './tasks';
 import { gameEndsThisRound, previewScore, vipFallen, zoneCellsOf } from './scoring';
+import { handIds } from './tactichand';
 
 function phaseDone(text: string): string {
   return `<p class="pg-complete"><i>✓</i><span>${esc(text)}</span></p>`;
@@ -674,7 +675,8 @@ export class PlayGuide {
     const me = getLocalSeat();
     for (const side of ['s1', 's2'] as const) {
       if (me && side !== me) continue;
-      const held = s.tactics?.[side] ?? [];
+      // This device's own cards: a sealed hand's are kept here (tactichand.ts).
+      const held = handIds(s, side);
       if (!held.length) continue;
       const spent = (s.tacticsPlayed?.[side] ?? []).filter((e) => e.startsWith(`${s.round.n}:`));
       const seen = new Set<string>();

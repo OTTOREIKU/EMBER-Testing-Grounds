@@ -320,6 +320,13 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 
 .pad-chip:hover { background: var(--surface3); color: var(--text); }
 .pad-chip.on { background: var(--accent-lt); color: var(--accent); }
+/* A season of the publisher's Season Rules (setup's Rules row): optional and
+   never part of the main rules, so it wears the Season's blue, as it does on
+   the Reference. */
+.pad-chip.season { color: var(--blue); }
+.pad-chip.season.on { background: var(--blue-lt); color: var(--blue); }
+.pad-season-note b { color: var(--blue); }
+.pad-bar-season { color: var(--blue); }
 /* A chip that cannot be pressed now says so: faded, no hover, no pointer. */
 .pad-chip:disabled, .pad-chip[aria-disabled="true"] { opacity: 0.4; cursor: default; }
 .pad-chip:disabled:hover, .pad-chip[aria-disabled="true"]:hover { background: var(--surface2); color: var(--text2); }
@@ -1508,7 +1515,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 /* The Black Die as the target's own Parts. */
 .td-parts { display: flex; flex-direction: column; gap: 6px; }
 .td-partrow {
-  display: flex; align-items: baseline; gap: 8px; width: 100%; min-height: var(--tap, 44px); padding: 8px 12px;
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--tap, 44px); padding: 8px 12px;
   border: none; border-radius: var(--radius); background: var(--surface2); color: var(--text); font: inherit; text-align: left; cursor: pointer;
 }
 .td-partrow:hover { background: var(--surface3); }
@@ -1516,6 +1523,10 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .td-partrow span { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .td-partrow em { font-style: normal; font-size: 11px; color: var(--red); text-transform: capitalize; }
 .td-partrow.gone b, .td-partrow.gone span { opacity: 0.55; }
+/* The Part's own Black Die face, as the rules print it: the row reads as the
+   die a player is looking at on the table (OTTO, 2026-09-30). */
+.td-partrow .part-icon { flex: 0 0 28px; width: 28px; height: 28px; object-fit: contain; display: block; }
+.td-partrow.gone .part-icon { opacity: 0.55; }
 
 /* The counts as blocks that add up: 4 + 2 terrain = 6. */
 .td-counts.rows { flex-direction: column; gap: 8px; }

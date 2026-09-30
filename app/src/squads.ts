@@ -30,6 +30,7 @@ import { alertDialog, promptDialog } from './dialog';
 import { cleanName } from './safetext';
 import { inSmoke } from './rules';
 import { factionColour, ICON_EDIT, ICON_LOCK, linkIcon, squadColour } from './icons';
+import { handCount, handIds, handSealed } from './tactichand';
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -199,7 +200,9 @@ export class SquadTracker {
       // A Tactics Card is added to the Squad and counts against its point limit
       // (5.4.2), so the header has to reach past the board for them: they are
       // held in hand and never appear as a token.
-      const pts = squadPoints(this.data, this.state.tokens, side, this.state.tactics?.[side] ?? []);
+      // A sealed hand this device cannot see counts at 30 a card (1.11).
+      const seenHand = handIds(this.state, side);
+      const pts = squadPoints(this.data, this.state.tokens, side, seenHand, handCount(this.state, side) - seenHand.length);
       const activeScale = this.state.scale ?? 'standard';
       const sc = SCALES.find((x) => x.id === activeScale)!;
       const over = !sc.openEnded && pts > sc.points;
@@ -338,28 +341,34 @@ export class SquadTracker {
   }
 
   private tacticsBlock(side: Side): HTMLElement | null {
-    const held = this.state?.tactics?.[side] ?? [];
-    if (!held.length) return null;
+    const st0 = this.state;
+    const total = st0 ? handCount(st0, side) : 0;
+    if (!st0 || !total) return null;
+    // A sealed hand this device does not hold (the other seat's across a room;
+    // tactichand.ts) shows only the cards it has played, which are public, and
+    // a count for the rest.
+    const own = handIds(st0, side);
+    const sealedAway = handSealed(st0, side) && !own.length;
+    const held = sealedAway ? [...new Set((st0.tacticsPlayed?.[side] ?? []).map((e) => e.slice(e.indexOf(':') + 1)))] : own;
     const spent = this.playedThisRound(side);
     const box = document.createElement('div');
     box.className = 'sq-tactics';
     const head = document.createElement('p');
     head.className = 'sq-tac-head';
     head.textContent = spent.length
-      ? `Tactics (${held.length}) · 1 played this round`
-      : `Tactics (${held.length})`;
+      ? `Tactics (${total}) · 1 played this round`
+      : `Tactics (${total})`;
     box.appendChild(head);
     const counts = new Map<string, number>();
     for (const id of held) counts.set(id, (counts.get(id) ?? 0) + 1);
     const running = !!this.state && !!normaliseSetup(this.state.setup);
     // In a room only the local seat plays its own hand (audit Phase 6, H5), and
     // the other squad's is hidden until played (Supplementary Rules 1.04, 1.11):
-    // its rows are the cards it has used, and the rest are only a count. The
-    // names still travel with the shared state (secrecy.ts); this stops the
-    // panel printing them, which it did, disabled, until then.
+    // its rows are the cards it has used, and the rest are only a count. Across
+    // a room the names no longer travel at all: the hand is sealed.
     const seat = getLocalSeat();
     const notMine = !!seat && seat !== side;
-    let hidden = 0;
+    let hidden = sealedAway ? total - held.length : 0;
     for (const [id, n] of counts) {
       const card = this.data.byId.get(id);
       if (!card) continue;
@@ -504,7 +513,10 @@ export class SquadTracker {
   }
 
   private tacticPoints(side: Side): number {
-    return (this.state?.tactics?.[side] ?? []).reduce((s, id) => s + (this.data.byId.get(id)?.score ?? 0), 0);
+    if (!this.state) return 0;
+    // A sealed hand this device cannot see counts at 30 a card (1.11).
+    const seen = handIds(this.state, side);
+    return seen.reduce((s, id) => s + (this.data.byId.get(id)?.score ?? 0), 0) + (handCount(this.state, side) - seen.length) * 30;
   }
 
   private async rename(t: Token): Promise<void> {

@@ -881,6 +881,22 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
     position: absolute; top: 1px; right: 4px; margin-left: 0;
     font-size: 9px; line-height: 1; opacity: 0.9;
   }
+  /* A filter row takes the tab strip's shape (OTTO, 2026-09-30: "equally sized
+     and spaced ... instead of left aligned buttons rows"): equal buttons, three
+     to a row (All / Season / Cards, then Phases / Timings / Stances, then Dice /
+     Tokens / Mechanics), four when the row holds four or eight, and a short last
+     row stretched to meet both edges. The count is read off the row itself, so
+     every filter row on the page, the changelog's included, follows it. */
+  .ref-facets { --cols: 3; }
+  .ref-facets:has(> :nth-child(2):last-child) { --cols: 2; }
+  .ref-facets:has(> :nth-child(4):last-child),
+  .ref-facets:has(> :nth-child(8):last-child) { --cols: 4; }
+  .ref-facets > .ref-facet {
+    flex: 1 1 calc((100% - (var(--cols) - 1) * 6px) / var(--cols));
+    justify-content: center; min-width: 0; padding: 0 8px;
+  }
+  /* The Boxes tab's Compare is an action, not a filter: its own full row. */
+  .ref-facets > .inv-cmp-btn { flex: 1 1 100%; justify-content: center; }
 }
 
 /* Below 360px -- the older small phones -- the label alone is wider than its

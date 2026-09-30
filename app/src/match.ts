@@ -36,6 +36,8 @@ import { Panel } from './panel';
 import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
 import { boxNoteText, chargeAdjusted, dodgeEnhanceOf, grantAdjusted, SLOT_LABEL, stationaryAdjusted, twoHandedUse, loanedParts, explosionScope } from './units';
 import { gridsOf, PHASES, SCALES, statusCount } from './types';
+import { syncSeason } from './season';
+import { handCommand, handCount, handIds } from './tactichand';
 // FIRST, before anything else in this module runs. A net that is installed
 // after the thing it is meant to catch is not a net.
 installDiagnostics(window);
@@ -1238,12 +1240,18 @@ function mountSide(): void {
         // On-Hit Knockback that scored nothing does not trigger either.
         const kb = knockbackOf(action, data?.actionTranslation(action.id)?.english ?? undefined);
         const shoving = !!kb && !(kb.onHit && hits === 0) && attacker.kind !== 'projectile';
+        // A Projectile is spent by its blast, and so is a unit whose Detonation
+        // Action destroys it: the Unfolded Pholcus jumps and blows up (167; FAQ
+        // M18.6). It waited for Done, and closing the panel left it standing,
+        // owing a second blast and holding the Mines its jump set off
+        // (Supplementary Rules 1.04, 1.9).
+        const spent = attacker.kind === 'projectile' || action.type === 'Detonation';
         // An "all Units" blast keeps its Projectile until Done: this unit is
         // struck off its list instead (4.7.6, M21; audit Phase 5, A1).
-        const blasting = attacker.kind === 'projectile'
+        const blasting = spent
           && explosionScope(action, data?.actionTranslation(action.id)?.english ?? undefined) === 'all'
           && detonationHit(attacker.uid, defender.uid);
-        if (attacker.kind === 'projectile') { if (!blasting) send({ kind: 'despawn', seat: attacker.side, uid: attacker.uid, targetUid: attacker.uid }); }
+        if (spent) { if (!blasting) send({ kind: 'despawn', seat: attacker.side, uid: attacker.uid, targetUid: attacker.uid }); }
         else if (shoving) startShove(attacker.uid, action.id, defender.uid);
         // With no Forced Movement to wait for, a queued Black Box question is
         // asked now; with one, the shove flow flushes it when it settles (E19).
@@ -1527,8 +1535,10 @@ function sideSummary(side: Side): { mechs: number; drones: number; points: numbe
       else drones++;
     }
     // A Tactics Card is never on the board but is paid for out of the same
-    // budget, so the shared reader counts the hand too (audit Phase 6, G1).
-    points = squadPoints(data, state.tokens, side, state.tactics?.[side] ?? []);
+    // budget, so the shared reader counts the hand too (audit Phase 6, G1): a
+    // sealed one this page cannot see at 30 a card (1.11).
+    const seen = handIds(state, side, roomKey());
+    points = squadPoints(data, state.tokens, side, seen, handCount(state, side) - seen.length);
   }
   return { mechs, drones, points };
 }
@@ -1537,8 +1547,10 @@ function sideSummary(side: Side): { mechs: number; drones: number; points: numbe
 // here: the hand belongs to the SQUAD — built in freeplay, saved with it, and
 // it arrives with whatever list "Bring a squad" brings. This is only the
 // read-out, so a player can see what came with their squad and what it cost.
-// check() for playTactic reads the sender's hand, and the other client has to
-// have it, which is why the hand still travels as setTactics underneath.
+// In a room the hand travels SEALED (tactichand.ts; Supplementary Rules 1.04,
+// 1.11): one commitment per card, the cards and salts kept on this device, and
+// check() proves a played card against its commitment, so the other client
+// never holds the hand at all.
 //
 // Folded away by default. Plenty of squads never take one, and rows of
 // something you are not using are rows in the way of the units you are.
@@ -1546,7 +1558,7 @@ let tacticsOpen = false;
 
 function tacticsPicker(side: Side): string {
   if (!data) return '';
-  const held = state.tactics?.[side] ?? [];
+  const held = handIds(state, side, roomKey());
   if (!held.length) return '';
   const points = held.reduce((n, id) => n + (data?.byId.get(id)?.score ?? 0), 0);
   const summary = `${held.length} in hand · ${points}p`;
@@ -2487,7 +2499,7 @@ async function recordMatch(): Promise<string | null> {
         for (const { card } of tokenCards(data!, t)) push(card.id);
       }
     }
-    for (const id of state.tactics?.[side] ?? []) if (data!.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
+    for (const id of handIds(state, side, roomKey())) if (data!.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
     // The server caps a squad at 80 entries; no real list comes close.
     return out.slice(0, 80);
   };
@@ -2513,6 +2525,11 @@ async function recordMatch(): Promise<string | null> {
   }
 }
 
+// The room a sealed Tactics hand is kept under on this device (tactichand.ts).
+function roomKey(): string | null {
+  return relay.state.room?.id ?? null;
+}
+
 function hudCtx(): HudCtx {
   return {
     data: data!,
@@ -2521,6 +2538,8 @@ function hudCtx(): HudCtx {
     // as yours, which is exactly what walking both sides solo needs.
     seat: relay.state.seat,
     networked: !!relay.state.room,
+    // The room a sealed Tactics hand is kept for (tactichand.ts).
+    room: roomKey(),
     send,
     check: (cmd) => (data ? check(data, state, cmd) : { ok: false, why: 'Still loading.' }),
     rollHits,
@@ -2868,8 +2887,9 @@ function bringSquad(name: string, mechs: SavedSquad['mechs'], drones: SavedSquad
     // Merged through a Set: a second list carrying a card already held would
     // otherwise build a duplicate hand, which check() refuses whole (FAQ P2).
     if (tactics?.length) {
-      const merged = [...new Set([...(state.tactics?.[seat] ?? []), ...tactics])];
-      perform(data, state, { kind: 'setTactics', seat, cards: merged });
+      const merged = [...new Set([...handIds(state, seat, roomKey()), ...tactics])];
+      // Sealed in a room, so the other player never holds the cards (1.11).
+      perform(data, state, handCommand(seat, merged, roomKey()));
     }
     pickerOpen = false;
     relay.publishCheckpoint();
@@ -2883,6 +2903,9 @@ function render(): void {
   // The update notice follows the screen: re-placed in the lobby after every
   // paint, and gone once a room is joined (src/updates.ts).
   queueMicrotask(syncUpdateNotice);
+  // The room's Season Rules resize their Actions before anything is drawn, so
+  // a state received with a season on is costed right from its first frame.
+  if (data) syncSeason(data, state);
   // A closed combat window takes the published mirror down with it, whatever
   // way it closed — the sweep sees the helper idle and sends the null.
   sweepCombatView();
@@ -3320,7 +3343,7 @@ function wire(): void {
       const seat = mySeat();
       if (seat && t.side === seat
         && !state.tokens.some((x) => x.side === seat)
-        && (state.tactics?.[seat] ?? []).length) {
+        && handCount(state, seat)) {
         send({ kind: 'setTactics', seat, cards: [] });
       }
       relay.publishCheckpoint();

@@ -46,6 +46,8 @@ import {
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
+import { smokePerGroup, syncSeason } from './season';
+import { handCommand, handCount, handIds, saltFor, setHandRoom } from './tactichand';
 import { boxDropCellIn, boxDropCells, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot, mineSpot } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, crawlHolders, lockersOf, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
@@ -65,7 +67,7 @@ import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, Opportunity, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, cellsOf, DEFAULT_GRIDS, isLineUnit, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { interceptHeld, interceptPayer, allyRepairTargets, boxNoteText, electronicStrength, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, type AttackReaction, actionIdleWhy, type IdleWorld, resupplyHolders, selfRepairOptions, isCharged, discardSlots, actionPartWhy, chassisGone, commonActionStop, riposteMelees, ignoresProtection, volleyFor } from './units';
+import { interceptHeld, interceptPayer, allyRepairTargets, boxNoteText, electronicStrength, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, containerTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, blastTurn, blastsReady, jumpsToTarget, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, type AttackReaction, actionIdleWhy, type IdleWorld, resupplyHolders, selfRepairOptions, isCharged, discardSlots, actionPartWhy, chassisGone, commonActionStop, riposteMelees, ignoresProtection, volleyFor } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -90,6 +92,9 @@ async function init() {
     round: { n: 1, phase: 0, firstPlayer: 's1' },
     commandTokens: { s1: 0, s2: 0 },
   };
+  // The room a sealed Tactics hand is kept under on this device (tactichand.ts),
+  // set by the relay as a room is joined or left; none at a local table.
+  let handRoom: string | null = null;
   let selectedUid: number | null = null;
   let replayActive = false;
   // Blasts waiting for the combat panel (startBlastWhenFree).
@@ -230,7 +235,11 @@ async function init() {
         // NEW position (FAQ E19), which is why the drops queue until here.
         await resolveKnockback(attacker, defender, action, hits);
         drainBoxDrops();
-        if (attacker.kind === 'projectile') {
+        // A Projectile is spent by its blast, and so is a unit whose Detonation
+        // Action destroys it: the Unfolded Pholcus jumps and blows up (167; FAQ
+        // M18.6), and this board left it standing, holding the Mines its jump
+        // set off (Supplementary Rules 1.04, 1.9).
+        if (attacker.kind === 'projectile' || action.type === 'Detonation') {
           // An "all Units" blast keeps its Projectile until Done, and this unit
           // is struck off its list instead (A1).
           if (blast?.uid === attacker.uid && explosionScope(action, data.actionTranslation(action.id)?.english ?? undefined) === 'all') {
@@ -1253,9 +1262,31 @@ async function init() {
     },
     async onDestroyTerrain(id) {
       if (state.removedTerrain?.includes(id)) return;
+      // Targeting: a Container in the attack's reach and sight IS its target
+      // (Supplementary Rules 1.04, 1.1.3: a Neutral Unit), and Breakable (3.1)
+      // destroys it with no roll. The Action is spent as on any target (OTTO,
+      // 2026-09-30).
+      const pa = pendingAttack;
+      if (pa && pa.mode === 'attack' && !pendingIntercept) {
+        const attacker = state.tokens.find((x) => x.uid === pa.attackerUid);
+        const act = pa.action ?? (attacker ? findAction(attacker, pa.actionId) : undefined);
+        if (attacker && act && (act.type === 'Firing' || act.type === 'Melee')
+          && containerTargets(data, state.tokens, currentTerrain(), attacker, act, state.smoke ?? []).some((b) => b.id === id)) {
+          const guideDone = pa.done;
+          endTargeting(false);
+          perform(data, state, { kind: 'destroyTerrain', seat: attacker.side, uid: attacker.uid, pieces: [id] });
+          if (guideDone) guideDone(true);
+          else if (spendsAmmoWhenPerformed(act)) perform(data, state, { kind: 'spendAmmo', seat: attacker.side, uid: attacker.uid, actionId: act.id });
+          say('event', `${attacker.label} targets the Container at ${gridOfTerrain(id)}: Breakable, so it is destroyed with no roll (Supplementary Rules 1.04, 3.1).`);
+          board.renderTerrain(currentTerrain());
+          onChanged();
+          return;
+        }
+      }
       const ok = await confirmDialog({
         title: 'Destroy this terrain?',
-        body: 'Firing, Melee and Explosion remove destructible terrain directly, with no roll. A Large unit moving into it Crushes it the same way.',
+        body: `A Container is destroyed by an attack that targets it (Firing, Melee or an Explosion), with no roll, and a Large unit moving into one Crushes it. ${
+          strictNow(state) ? 'Removing one by hand, with no Action, is a house rule, for when both players agree.' : 'Removing one by hand skips the Action.'}`,
         confirmLabel: 'Destroy it',
         danger: true,
       });
@@ -1549,7 +1580,12 @@ async function init() {
             neutral.map((n) => gridOfTerrain(n.id)).join(' or ')
           } - which you destroy by clicking the piece (FAQ O9). Buildings and Defense walls never count (O10).`
           : '';
-        setHint(`${what}: click the target unit on the board.${reach}${fallback} Esc cancels and keeps the Tick.`);
+        // A Firing or Melee Action may target a Container in its reach instead
+        // (Supplementary Rules 1.04, 1.1.3, 3.1): destroyed with no roll.
+        const boxes = action.speed !== 'auto' && (action.type === 'Firing' || action.type === 'Melee')
+          ? containerTargets(data, state.tokens, currentTerrain(), t, used, state.smoke ?? []) : [];
+        const box = boxes.length ? ` Or click a Container in reach (${boxes.map((b) => gridOfTerrain(b.id)).join(', ')}): Breakable, destroyed with no roll.` : '';
+        setHint(`${what}: click the target unit on the board.${reach}${fallback}${box} Esc cancels and keeps the Tick.`);
       };
       // Shock Attack X (冲锋X): "Before performing this Action, may move X
       // grids." Granted by [Offensive Stance] on all three carriers, so the
@@ -1862,7 +1898,7 @@ async function init() {
         for (const { card } of tokenCards(data, t)) push(card.id);
       }
     }
-    for (const id of state.tactics?.[side] ?? []) {
+    for (const id of handIds(state, side, handRoom)) {
       if (data.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
     }
     // The server caps a squad at 80 entries; no real list comes close.
@@ -2524,15 +2560,21 @@ async function init() {
       return left === null || left > 0;
     },
     // The shared reader (audit Phase 6, G1).
-    squadPoints: () => ({
-      s1: squadPoints(data, state.tokens, 's1', state.tactics?.s1 ?? []),
-      s2: squadPoints(data, state.tokens, 's2', state.tactics?.s2 ?? []),
-    }),
+    // A sealed hand this table cannot see counts at 30 a card (1.11).
+    squadPoints: () => {
+      const pts = (side: Side): number => {
+        const seen = handIds(state, side, handRoom);
+        return squadPoints(data, state.tokens, side, seen, handCount(state, side) - seen.length);
+      };
+      return { s1: pts('s1'), s2: pts('s2') };
+    },
     // In a room the other squad's hand is hidden until played (Supplementary
     // Rules 1.04, 1.11), so its buttons carry no tick for a card it holds.
+    // Sealed, this device holds only its own cards anyway (tactichand.ts).
     heldTactics: () => {
       const me = getLocalSeat();
-      return { s1: !me || me === 's1' ? state.tactics?.s1 ?? [] : [], s2: !me || me === 's2' ? state.tactics?.s2 ?? [] : [] };
+      const mine = (side: Side): string[] => (!me || me === side ? handIds(state, side, handRoom) : []);
+      return { s1: mine('s1'), s2: mine('s2') };
     },
     // Through the command layer rather than by hand: a hand set locally is a
     // hand the other client never sees, and check() for playTactic reads the
@@ -2542,16 +2584,16 @@ async function init() {
     // panels are redrawn by hand: onChanged() for the squad card and its
     // points, roster.render() for the ×N on the buttons.
     onAddTactic: (card, side) => {
-      perform(data, state, { kind: 'setTactics', seat: side, cards: [...(state.tactics?.[side] ?? []), card.id] });
+      perform(data, state, handCommand(side, [...handIds(state, side, handRoom), card.id], handRoom));
       onChanged();
       roster.render();
     },
     onDropTactic: (card, side) => {
-      const held = [...(state.tactics?.[side] ?? [])];
+      const held = [...handIds(state, side, handRoom)];
       const i = held.lastIndexOf(card.id);
       if (i < 0) return;
       held.splice(i, 1);
-      perform(data, state, { kind: 'setTactics', seat: side, cards: held });
+      perform(data, state, handCommand(side, held, handRoom));
       onChanged();
       roster.render();
     },
@@ -4725,8 +4767,10 @@ async function init() {
       return;
     }
     const order: Side[] = state.round.firstPlayer === 's1' ? ['s1', 's2'] : ['s2', 's1'];
+    // One from each Connected group, or the table's Season count (season.ts).
+    const per = smokePerGroup(data, state);
     const owed = order
-      .map((side) => ({ side, ...dissipationFor(smoke, side) }))
+      .map((side) => ({ side, ...dissipationFor(smoke, side, per) }))
       .filter((d) => d.isolated.length || d.groups.length);
     if (!owed.length) {
       host.replaceChildren();
@@ -4745,7 +4789,7 @@ async function init() {
             `<li><b>${escapeHtml(squadLabel(d.side))}</b>: ${
               [
                 d.isolated.length ? `${d.isolated.length} isolated screen${d.isolated.length === 1 ? '' : 's'} removed` : '',
-                d.groups.length ? `1 from each of ${d.groups.length} connected group${d.groups.length === 1 ? '' : 's'}` : '',
+                d.groups.length ? `${per} from each of ${d.groups.length} connected group${d.groups.length === 1 ? '' : 's'}` : '',
               ]
                 .filter(Boolean)
                 .join(' · ')
@@ -4776,11 +4820,13 @@ async function init() {
     const doomed = new Set<SmokeScreen>();
     const queue: { side: Side; group: SmokeScreen[] }[] = [];
     let isolated = 0;
+    // A group rides the queue once per screen it owes: three under Season 1.04.
+    const per = smokePerGroup(data, state);
     for (const side of order) {
-      const d = dissipationFor(smoke, side);
+      const d = dissipationFor(smoke, side, per);
       for (const s of d.isolated) doomed.add(s);
       isolated += d.isolated.length;
-      for (const g of d.groups) queue.push({ side, group: g });
+      for (const g of d.groups) for (let i = 0; i < per; i++) queue.push({ side, group: g });
     }
     perform(data, state, { kind: 'dissipateSmoke', seat: state.round.firstPlayer });
     smokeChoices = queue;
@@ -4808,8 +4854,11 @@ async function init() {
       <p class="dim">${isolated ? `${isolated} isolated screen${isolated === 1 ? '' : 's'} came off already. ` : ''}Click one
         highlighted Smoke Screen to take it off this Connected group. Splitting the group costs nothing further this round.</p>
       <button id="smoke-auto" class="ah-cancel">Pick for me</button>`;
+    // Only the group's screens still standing: a group owing three picks has
+    // lost some of them already.
+    const standing = next.group.filter((g) => (state.smoke ?? []).some((x) => x.side === g.side && x.col === g.col && x.row === g.row));
     board.showSmokeTargets(
-      next.group.map((s) => ({ c: s.col, r: s.row, ok: true })),
+      standing.map((s) => ({ c: s.col, r: s.row, ok: true })),
       (c, r) => {
         perform(data, state, { kind: 'removeSmoke', seat: next.side, side: next.side, at: { col: c, row: r } });
         smokeChoices = smokeChoices!.slice(1);
@@ -4818,7 +4867,8 @@ async function init() {
       },
     );
     host.querySelector('#smoke-auto')!.addEventListener('click', () => {
-      perform(data, state, { kind: 'removeSmoke', seat: next.side, side: next.side, at: { col: next.group[0].col, row: next.group[0].row } });
+      const pick = standing[0] ?? next.group[0];
+      perform(data, state, { kind: 'removeSmoke', seat: next.side, side: next.side, at: { col: pick.col, row: pick.row } });
       smokeChoices = smokeChoices!.slice(1);
       onChanged();
       renderSmokeChoice(0);
@@ -5084,6 +5134,16 @@ async function init() {
             return;
           }
           logTo(proj, `${proj.label} flies into ${target.label}'s Grid, and nothing Intercepts it.`);
+        }
+        // An Unfolded Pholcus jumps into its target's Grid and blows up there
+        // (167; FAQ I19). A Ground Unit's landing: nothing Intercepts it, and a
+        // Mine it sets off there waits for its own blast (Supplementary Rules
+        // 1.04, 1.9).
+        if (jumpsToTarget(action) && !proj.jumpBlast
+          && perform(data, state, { kind: 'flyToTarget', seat: proj.side, uid: proj.uid, actionId: action.id, targetUid: target.uid }).ok) {
+          const held = minesOwed(data, state.tokens).filter((x) => x.heldBy === proj.uid).length;
+          logTo(proj, `${proj.label} jumps into ${target.label}'s Grid${held
+            ? ` and sets off ${held === 1 ? 'the Mine' : `${held} Mines`} there, which go off once its own blast is done (Supplementary Rules 1.04, 1.9)` : ''}.`);
         }
         burst.attacking = scope === 'all';
         attackHelper.start(proj, action, target, 'Explosion damage: no line of sight or facing check.', 0, '', true);
@@ -6639,7 +6699,9 @@ async function init() {
     // The pickers above are the interactive half; the effect itself is a
     // command, so a mirrored seat replays it from (card, target, pick) alone.
     // Its log line is written into the token by apply, and read back here.
-    const verdict = perform(data, state, { kind: 'playTactic', seat: side, uid: target.uid, cardId: id, pick: pick ?? undefined });
+    // A sealed card is shown with the salt that proves it (1.11).
+    const salt = saltFor(state, side, id, handRoom);
+    const verdict = perform(data, state, { kind: 'playTactic', seat: side, uid: target.uid, cardId: id, pick: pick ?? undefined, ...(salt ? { salt } : {}) });
     // A strict table refuses a card whole: it was never played, so it moves
     // nothing, and onRefused has put the reason in the line rather than the
     // unit's last log line (audit Phase 6, H4). A Teaching table applies it
@@ -7179,7 +7241,9 @@ async function init() {
   // or a hand-dragged token in the sandbox. Reading it off the board rather
   // than off a Movement is what covers all of those with one rule.
   function sweepMines(): void {
-    const owed = minesOwed(data, state.tokens);
+    // Not a Mine a jumping Pholcus set off: it waits for that blast (1.9), and
+    // is offered once the Pholcus has gone.
+    const owed = blastsReady(data, state.tokens);
     for (const key of [...mineSeen]) {
       if (!state.tokens.some((t) => t.uid === Number(key.split(':')[0]))) mineSeen.delete(key);
     }
@@ -7387,6 +7451,8 @@ async function init() {
   }
 
   function renderAll(): void {
+    // The table's Season Rules resize their Actions before anything is drawn.
+    syncSeason(data, state);
     applyBoardTheme();
     board.renderTerrain(currentTerrain(), editor.active);
     board.renderMarkers(state.markers ?? []);
@@ -7482,7 +7548,12 @@ async function init() {
     if (!heldBlasts.length || combatBusy() || launching || smokePlacing) return;
     const body = document.getElementById('combat-body');
     if (body?.firstElementChild && !body.querySelector('.combat-idle')) return;
-    const next = heldBlasts.shift()!;
+    // Simultaneous blasts from both squads resolve in turn from this round's
+    // First Player (Supplementary Rules 1.04, 1.9; units.ts blastTurn): the held
+    // blast of the squad on turn goes next, read off the board as it now stands.
+    const turn = blastTurn(data, state);
+    const at = turn ? heldBlasts.findIndex((b) => state.tokens.find((x) => x.uid === b.uid)?.side === turn) : -1;
+    const next = heldBlasts.splice(at >= 0 ? at : 0, 1)[0];
     const p = state.tokens.find((x) => x.uid === next.uid);
     if (p) startDetonation(p, next.actionId);
     else releaseHeldBlast();
@@ -8835,6 +8906,7 @@ async function init() {
     // Tactics are held in hand rather than placed, so clearing the board left
     // them behind and the next squad started holding the last one's cards.
     state.tactics = { s1: [], s2: [] };
+    delete state.tacticsSealed;
     state.tacticsPlayed = { s1: [], s2: [] };
     // Same trap, one layer down: the fielded roster outlives its units on
     // purpose, so taking the pieces off the table has to empty it by hand or
@@ -8992,6 +9064,8 @@ async function init() {
     onChange(view) {
       // Joining a room takes the update notice away (and leaving brings it back).
       syncUpdateNotice();
+      handRoom = view.room?.id ?? null;
+      setHandRoom(handRoom);
       // Drives the dial filter: with a seat set, the other squad's dials are
       // masked until they reveal.
       setLocalSeat(view.room ? view.seat : null);
@@ -9282,8 +9356,8 @@ async function init() {
     // with a second list that carries a card already held would otherwise be a
     // duplicate, and check() refuses a hand with one (FAQ P2).
     if (tactics?.length) {
-      const merged = [...new Set([...(state.tactics?.[side] ?? []), ...tactics])];
-      perform(data, state, { kind: 'setTactics', seat: side, cards: merged });
+      const merged = [...new Set([...handIds(state, side, handRoom), ...tactics])];
+      perform(data, state, handCommand(side, merged, handRoom));
     }
     onChanged();
     say('done', `Squad "${name}" joins ${squadLabel(side)}${deployingNow() ? ', and it deploys with everything else (3.1.4)' : ''}.`);
@@ -9373,7 +9447,7 @@ async function init() {
       .map((t) => ({ cardId: t.cardId, backpack: t.droneBackpack }));
     // The hand is part of the squad (5.4): bought from the same points, so a
     // save that dropped it would reload a squad cheaper than the one built.
-    const tactics = (state.tactics?.[side] ?? []).filter((id) => !!data.byId.get(id));
+    const tactics = handIds(state, side, handRoom).filter((id) => !!data.byId.get(id));
     const name = await promptDialog({
       title: 'Save this squad',
       body: `${mechs.length} mech${mechs.length === 1 ? '' : 's'}, ${drones.length} drone${
@@ -9444,7 +9518,8 @@ async function init() {
       const sc = SCALES.find((x) => x.id === (state.scale ?? 'standard'))!;
       // The shared reader, hand included: the Tactics Cards the import has just
       // set count against the same limit (audit Phase 6, G1, G6).
-      const sidePts = squadPoints(data, state.tokens, side, state.tactics?.[side] ?? []);
+      const seen = handIds(state, side, handRoom);
+      const sidePts = squadPoints(data, state.tokens, side, seen, handCount(state, side) - seen.length);
       if (!sc.openEnded && sidePts > sc.points) {
         say('warn', `${squadLabel(side)} was imported at ${sidePts} points, ${sidePts - sc.points} over the ${sc.name} limit of ${sc.points}.`);
       }

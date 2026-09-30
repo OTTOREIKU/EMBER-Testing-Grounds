@@ -1,14 +1,16 @@
 import { ammoAvailable, ammoHolder, ammoPay, checkAfter, liveIntercepts, rebootOwed, rebootWhy, clearDroneCommands, missionZones, readyCommands, seedCommandTokens, strictNow, taskDesignations, type Command, type CheckResult, swarmFor } from './commands';
-import { choiceDialog } from './dialog';
+import { choiceDialog, confirmDialog } from './dialog';
 import { askIssuer, askTowFacing, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, isMine, parseGridRef, secondaryImageUrl, squadLabel, unitSize, environmentLookup, environmentAllowance } from './data';
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { interceptHeld, allyRepairTargets, overwatchOf, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, blastScanState, mineStopIndex, chassisStop, bitPortOf, bitsToRecover, coordinationAfterManeuver, ownCards, electronicTargetWhy, scannable, controlledMoveActions, ewWinCommands, electronicAll, electronicAllTargets, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, interceptOwedAt, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, type ExtraActivation, type Resupply, actionIdleWhy, commonPartSlots, discardSlots, chassisGone, commonActionStop, commonPartKey, riposteMelees, ignoresProtection, volleyFor } from './units';
+import { interceptHeld, allyRepairTargets, overwatchOf, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, blastScanState, mineStopIndex, chassisStop, blastTurn, blastsReady, jumpsToTarget, bitPortOf, bitsToRecover, coordinationAfterManeuver, ownCards, electronicTargetWhy, scannable, controlledMoveActions, ewWinCommands, electronicAll, electronicAllTargets, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, containerTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, interceptOwedAt, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, type ExtraActivation, type Resupply, actionIdleWhy, commonPartSlots, discardSlots, chassisGone, commonActionStop, commonPartKey, riposteMelees, ignoresProtection, volleyFor } from './units';
 import { ElectronicHelper, type EwAct, type EwArg } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
+import { smokePerGroup, syncSeason } from './season';
+import { handIds, saltFor } from './tactichand';
 import { boxDropCellIn, boxDropCells, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSight, losNote, smokeBlocks, pathCost, breakAwayLinkDue, protectionFor, rangeBetween, reachableGrids, standingSpot, mineSpot, type LargeGrid } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, crawlHolders, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
@@ -51,6 +53,8 @@ export interface HudCtx {
   state: GameState;
   seat: Side | null;
   networked: boolean;
+  // The room's code: what a sealed Tactics hand is kept under (tactichand.ts).
+  room: string | null;
   send(cmd: Command): CheckResult;
   // Legality without paying for it. An Action that opens a tool is only
   // charged when the tool succeeds, so its cost has to be testable first.
@@ -127,9 +131,16 @@ export function glueAfter(data: GameData, state: GameState, cmd: Command): void 
   // than in this page's memory (audit Phase 4, G7).
   const sc = ensureScript(state);
   if (cmd.kind === 'dissipateSmoke') {
+    // Under Season 1.04 a group owes three screens, not one: the group rides
+    // the queue once per screen owed, and each pick is one of its own screens
+    // still standing (smokeOwedCells).
+    const per = smokePerGroup(data, state);
     const order: Side[] = state.round.firstPlayer === 's1' ? ['s1', 's2'] : ['s2', 's1'];
     const owed = order.flatMap((side) =>
-      dissipationFor(state.smoke ?? [], side).groups.map((g) => ({ side, cells: g.map((s) => ({ col: s.col, row: s.row })) })),
+      dissipationFor(state.smoke ?? [], side, per).groups.flatMap((g) => {
+        const cells = g.map((s) => ({ col: s.col, row: s.row }));
+        return Array.from({ length: per }, () => ({ side, cells }));
+      }),
     );
     sc.smokeOwed = owed.length ? owed : undefined;
   }
@@ -145,6 +156,15 @@ export function glueAfter(data: GameData, state: GameState, cmd: Command): void 
 // The Connected groups still owing a removal this End Phase (see glueAfter).
 function smokeOwedOf(state: GameState): { side: Side; cells: { col: number; row: number }[] }[] {
   return state.script?.smokeOwed ?? [];
+}
+
+// The screens of the next owed group still standing: under Season 1.04 one
+// group owes three picks, and a screen already taken is not offered again.
+function smokeOwedCells(state: GameState): { col: number; row: number }[] {
+  const next = smokeOwedOf(state)[0];
+  if (!next) return [];
+  const up = new Set((state.smoke ?? []).filter((x) => x.side === next.side).map((x) => `${x.col},${x.row}`));
+  return next.cells.filter((c) => up.has(`${c.col},${c.row}`));
 }
 
 // The terrain on the table. A SHIPPED AUTHORED map (E4) brings its own pieces;
@@ -1037,8 +1057,20 @@ function boardCallbacks(): BoardCallbacks {
     onDestroyTerrain(id) {
       const ctx = hudRef;
       if (!ctx) return;
-      ctx.send({ kind: 'destroyTerrain', seat: ctx.seat ?? 's1', uid: 0, pieces: [id] });
-      ctx.refresh();
+      // A Container is destroyed by an attack that targets it (Supplementary
+      // Rules 1.04, 3.1), and every attack's list of targets offers it. Taking a
+      // piece off by hand, with no Action, is a house rule on this strict page,
+      // so it asks first (OTTO, 2026-09-30).
+      void confirmDialog({
+        title: 'Remove this terrain by hand?',
+        body: 'A Container is destroyed by an attack that targets it: choose it from an attack\'s list of targets. Removing one by hand is a house rule, for when both players agree.',
+        confirmLabel: 'Remove it',
+        danger: true,
+      }).then((ok) => {
+        if (!ok) return;
+        ctx.send({ kind: 'destroyTerrain', seat: ctx.seat ?? 's1', uid: 0, pieces: [id] });
+        ctx.refresh();
+      });
     },
   };
 }
@@ -1155,7 +1187,7 @@ function renderBoard(ctx: HudCtx): void {
     );
   } else if (smokeOwedOf(s).length && mine(ctx, smokeOwedOf(s)[0].side)) {
     board.showSmokeTargets(
-      smokeOwedOf(s)[0].cells.map((x) => ({ c: x.col, r: x.row, ok: true })),
+      smokeOwedCells(s).map((x) => ({ c: x.col, r: x.row, ok: true })),
       (c, r) => removeOwedSmoke(ctx, { col: c, row: r }),
     );
   } else {
@@ -2690,22 +2722,44 @@ function queueInterceptsFor(ctx: HudCtx, launcher: Token, born: Token[]): void {
 // both seats owe the same Reveal. The owner answers with a click; the online
 // table is strict, so there is no house-rule way out (audit Phase 3, F2).
 
+// Only the blasts that may go now: a Mine a jumping Pholcus set off waits for
+// its blast (1.9), so the panel falls through to that Detonation instead.
 function mineTriggers(ctx: HudCtx): { trigger: MineTrigger; t: Token }[] {
-  return minesOwed(ctx.data, ctx.state.tokens)
+  return blastsReady(ctx.data, ctx.state.tokens)
     .map((trigger) => ({ trigger, t: ctx.state.tokens.find((x) => x.uid === trigger.uid) }))
     .filter((x): x is { trigger: MineTrigger; t: Token } => !!x.t && mine(ctx, x.t.side));
 }
 
 function minePanel(ctx: HudCtx): string {
-  const x = mineTriggers(ctx)[0];
-  if (!x) return '';
-  const caught = x.trigger.victims
+  const all = mineTriggers(ctx);
+  if (!all.length) return '';
+  // Simultaneous blasts from both squads go round-robin from this round's First
+  // Player (Supplementary Rules 1.04, 1.9; units.ts blastTurn): only the squad on
+  // turn resolves, and it picks which of its own, so each owed one has a button.
+  const turn = blastTurn(ctx.data, ctx.state);
+  const mineNow = all.filter((x) => !turn || x.t.side === turn);
+  if (!mineNow.length) {
+    return head('Waiting', 'Simultaneous damage',
+      `${esc(squadLabel(turn!))} resolves one of its own blasts first, ${ctx.state.blastLast ? 'as the squads take turns' : "as this round's First Player"}; then the squads alternate (Supplementary Rules 1.04, 1.9).`, false)
+      + `<div class="tp-body">${waiting(turn!, 'resolving a Detonation')}</div><div class="tp-foot"></div>`;
+  }
+  const x = mineNow[0];
+  const caught = (y: typeof x): string => y.trigger.victims
     .map((u) => ctx.state.tokens.find((o) => o.uid === u)?.label)
-    .filter((l): l is string => !!l);
-  return head('Your move', `${esc(x.t.label)} Detonates`,
+    .filter((l): l is string => !!l)
+    .join(', ') || 'nothing else';
+  const order = turn && mineTriggersAll(ctx) > mineNow.length
+    ? '<p class="tp-note">Both squads owe a blast: they resolve in turn, one at a time, from this round\'s First Player (Supplementary Rules 1.04, 1.9).</p>' : '';
+  return head('Your move', mineNow.length > 1 ? `${mineNow.length} Mines to Detonate` : `${esc(x.t.label)} Detonates`,
     `${esc(x.trigger.why)}, and a Ground Unit never Crushes a Mine - it sets it off. The Explosion catches every Ground Unit in that Grid, ally or not, but not the Flying or Aerial units above it. It causes no Reveal, and a Mech whose Chassis survives finishes its Movement (FAQ M6/M19/M22).`, true)
-    + `<div class="tp-body"><p class="tp-note">In the blast: ${esc(caught.join(', ') || 'nothing else')}</p></div>
-       <div class="tp-foot"><button class="bigbtn" data-minego="${x.t.uid}" data-mineact="${esc(x.trigger.actionId)}">Resolve the Detonation (4.7.6)</button></div>`;
+    + `<div class="tp-body">${order}${mineNow.length > 1 ? '<p class="tp-note">Choose which of your own resolves first (1.9).</p>' : ''}${
+      mineNow.map((y) => `<p class="tp-note">${esc(y.t.label)}: in the blast, ${esc(caught(y))}</p>`).join('')}</div>
+       <div class="tp-foot">${mineNow.map((y) => `<button class="bigbtn" data-minego="${y.t.uid}" data-mineact="${esc(y.trigger.actionId)}">Resolve ${mineNow.length > 1 ? esc(y.t.label) : 'the Detonation (4.7.6)'}</button>`).join('')}</div>`;
+}
+
+// Every owed blast on the table, both squads', for the note that they take turns.
+function mineTriggersAll(ctx: HudCtx): number {
+  return blastsReady(ctx.data, ctx.state.tokens).length;
 }
 
 // An Immediate Projectile still standing with no Interception owed at it: it
@@ -5288,6 +5342,15 @@ function attackPanel(ctx: HudCtx): string {
     ? `<p class="tp-note">No enemy Unit is inside Range ${a.range ?? 0}, so ${esc(by.label)} MAY attack Breakable Terrain instead, and only the nearest, which is
        ${neutral.map((n) => esc(terrainLabel(ctx, n.id))).join(' or ')} (FAQ O9).<br>Click the piece on the board to destroy it. Buildings and Defense walls are never valid targets (O10).</p>`
     : '';
+  // A Container is a Neutral Unit (Supplementary Rules 1.04, 1.1.3): a Firing or
+  // Melee Action may target one in its reach and sight, and Breakable (3.1)
+  // destroys it with no roll (OTTO, 2026-09-30). Not while a Highlighted enemy
+  // must be the target (6.2.1), nor for a pick the rules have already named.
+  const boxes = !autoLegal && !shock && m.only === undefined && !forced.length && (a.type === 'Firing' || a.type === 'Melee')
+    ? containerTargets(ctx.data, s.tokens, terrain, by, a, smoke) : [];
+  const boxRows = boxes.map((b) => `<button class="rowwide targrow" data-attackbox="${esc(b.id)}">
+      <span class="tgname">${esc(terrainLabel(ctx, b.id))}</span>
+      <span class="tgbits"><span>a Container: Breakable, destroyed with no roll (Supplementary Rules 1.04, 3.1)</span><span>${b.dist} Grid${b.dist === 1 ? '' : 's'} away</span></span></button>`).join('');
   // [Two-Handed] (FAQ A16): what the spare hand buys, and the switch to decline it.
   const handsRow = hands?.use
     ? `<button class="rowwide" data-act="twohanded">${m.twoHanded === 'declined'
@@ -5296,7 +5359,7 @@ function attackPanel(ctx: HudCtx): string {
     : '';
   return head('Your move', `${esc(a.name?.en || m.actionId)}: which target?`,
     `${esc(by.label)} · ${a.yellowDice ?? 0}Y ${a.redDice ?? 0}R.${stationary ? ` Stationary applies: Range ${a.range ?? 0}${(a.yellowDice ?? 0) !== (raw?.yellowDice ?? 0) ? `, ${a.yellowDice}Y` : ''}, so no Movement this Opportunity.` : ''}`, true)
-    + `<div class="tp-body">${handsRow}${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}${neutralNote}</div>
+    + `<div class="tp-body">${handsRow}${rows || (boxRows ? '' : '<p class="tp-note">No enemy unit is on the board.</p>')}${boxRows}${neutralNote}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Cancel</button></div>`;
 }
 
@@ -5904,11 +5967,14 @@ function smokePanel(ctx: HudCtx): string {
 function smokeChoicePanel(ctx: HudCtx): string {
   const owed = smokeOwedOf(ctx.state);
   const next = owed[0];
+  // Under Season 1.04 each group owes three picks, so the count is of picks.
+  const per = smokePerGroup(ctx.data, ctx.state);
+  const left = per > 1 ? `${owed.length} pick${owed.length === 1 ? '' : 's'} left (Season ${esc(ctx.state.season ?? '')}: ${per} from each group).` : `${owed.length} Connected group${owed.length === 1 ? '' : 's'} left.`;
   if (!mine(ctx, next.side)) {
-    return head('Waiting', `${esc(squadLabel(next.side))} thins its smoke`, `${owed.length} Connected group${owed.length === 1 ? '' : 's'} left.`, false)
+    return head('Waiting', `${esc(squadLabel(next.side))} thins its smoke`, left, false)
       + `<div class="tp-body">${waiting(next.side, 'choosing a Smoke Screen to remove')}</div><div class="tp-foot"></div>`;
   }
-  return head('Your move', 'Smoke dissipation', `Take one screen off this Connected group.<br>${owed.length} group${owed.length === 1 ? '' : 's'} left.`, true)
+  return head('Your move', 'Smoke dissipation', `Take one screen off this Connected group.<br>${left}`, true)
     + `<div class="tp-body">
         <p class="tp-note">Click one highlighted Smoke Screen on the board. Splitting the group costs nothing further this round (4.16).</p>
       </div>
@@ -6067,7 +6133,9 @@ function playTactic(ctx: HudCtx, pick: string | null): void {
   const t = m?.uid !== undefined ? ctx.state.tokens.find((x) => x.uid === m.uid) : undefined;
   tacticPlan = null;
   if (!m || !spec || !t) { ctx.refresh(); return; }
-  const v = ctx.send({ kind: 'playTactic', seat: m.side, uid: t.uid, cardId: m.cardId, pick: pick ?? undefined });
+  // A sealed card is shown with the salt that proves it (1.11; tactichand.ts).
+  const salt = saltFor(ctx.state, m.side, m.cardId, ctx.room);
+  const v = ctx.send({ kind: 'playTactic', seat: m.side, uid: t.uid, cardId: m.cardId, pick: pick ?? undefined, ...(salt ? { salt } : {}) });
   if (!v.ok) { ctx.refresh(); return; }
   // apply writes the card's own line into the unit's log, which is the only
   // place that knows what the effect worked out to.
@@ -6106,7 +6174,8 @@ function tacticsHtml(ctx: HudCtx): string {
   const sides: Side[] = ctx.seat ? [ctx.seat] : ['s1', 's2'];
   const rows: string[] = [];
   for (const side of sides) {
-    const held = s.tactics?.[side] ?? [];
+    // This device's own cards: a sealed hand's are kept here, never sent.
+    const held = handIds(s, side, ctx.room);
     if (!held.length) continue;
     const spent = (s.tacticsPlayed?.[side] ?? []).filter((e) => e.startsWith(`${s.round.n}:`));
     const seen = new Set<string>();
@@ -6385,16 +6454,18 @@ export function settleEndStep(ctx: HudCtx, seat: Side, step: string): void {
   // owes one from each Connected group; glueAfter turns that into the queue
   // the choice panel walks. Said out loud, because it changes the board.
   if (step === 'smoke') {
-    const was = (['s1', 's2'] as Side[]).map((side) => ({ side, ...dissipationFor(ctx.state.smoke ?? [], side) }));
+    const per = smokePerGroup(ctx.data, ctx.state);
+    const was = (['s1', 's2'] as Side[]).map((side) => ({ side, ...dissipationFor(ctx.state.smoke ?? [], side, per) }));
     const iso = was.reduce((n, d) => n + d.isolated.length, 0);
     const groups = was.reduce((n, d) => n + d.groups.length, 0);
+    const loses = per === 1 ? 'one' : String(per);
     // Once per End Phase (4.16): the command refuses a second, and a refusal
     // must not be reported as screens coming off (audit Phase 4, G7).
     const v = ctx.send({ kind: 'dissipateSmoke', seat });
     ctx.noteNow(!v.ok
       ? (v.why ?? 'The smoke has already dissipated this End Phase.')
       : iso || groups
-        ? `${iso} isolated Smoke Screen${iso === 1 ? '' : 's'} removed${groups ? `, and ${groups === 1 ? 'one Connected group loses one' : `each of ${groups} Connected groups loses one`}` : ''} (4.16).`
+        ? `${iso} ${per > 1 ? '' : 'isolated '}Smoke Screen${iso === 1 ? '' : 's'} removed${per > 1 ? `, every group of ${per} or fewer whole` : ''}${groups ? `, and ${groups === 1 ? `one Connected group loses ${loses}` : `each of ${groups} Connected groups loses ${loses}`}` : ''} (${per > 1 ? `Season ${ctx.state.season ?? ''}` : '4.16'}).`
         : 'Nothing to dissipate.', v.ok ? 'done' : 'refused');
   }
   // "Settle Task control" is the step that pays: the guide judges the board
@@ -6873,6 +6944,34 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="launchpickcancel"]', () => { launchPick = null; dropAction(); ctx.refresh(); });
+  // A Container named as the target (Supplementary Rules 1.04, 3.1): the
+  // Action is paid as for any target, and Breakable destroys the piece with no
+  // roll. Read again before paying, from the same adjusted Action the row was
+  // drawn with, so a board changed since costs nothing.
+  on('[data-attackbox]', (el) => {
+    const m = attackPick;
+    if (!m) return;
+    const s = ctx.state;
+    const by = s.tokens.find((x) => x.uid === m.uid);
+    const raw = by ? actionOn(ctx, by, m.actionId) : undefined;
+    const opp0 = ensureScript(s).opp;
+    const steadied = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
+    const granted = by && steadied ? grantAdjusted(steadied, by, opp0?.uid === by.uid ? opp0 : null) : steadied;
+    const a = by && granted ? handsFor(ctx, by, granted, m.twoHanded).action : granted;
+    const id = el.dataset.attackbox!;
+    if (!by || !a || !containerTargets(ctx.data, s.tokens, terrainOf(ctx), by, a, s.smoke ?? []).some((b) => b.id === id)) {
+      ctx.noteNow('That Container is no longer in this Action\'s reach and sight.');
+      ctx.refresh();
+      return;
+    }
+    attackPick = null;
+    const paid = commitAction(ctx);
+    if (!paid.ok) { if (paid.why) ctx.noteNow(paid.why); ctx.refresh(); return; }
+    if (ctx.send({ kind: 'destroyTerrain', seat: by.side, uid: by.uid, pieces: [id] }).ok) {
+      ctx.noteNow(`${by.label} targets ${terrainLabel(ctx, id)}, a Container: Breakable, so it is destroyed with no roll (Supplementary Rules 1.04, 3.1).`, 'done');
+    }
+    ctx.refresh();
+  });
   on('[data-attacktarget]', (el) => {
     if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const m = attackPick;
@@ -7422,6 +7521,16 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
         return;
       }
     }
+    // An Unfolded Pholcus jumps into its target's Grid and blows up there (167;
+    // FAQ I19). A Ground Unit's landing: nothing Intercepts it, and a Mine it
+    // sets off there waits for its own blast (Supplementary Rules 1.04, 1.9).
+    if (jumpsToTarget(a) && !proj.jumpBlast) {
+      const jumped = ctx.send({ kind: 'flyToTarget', seat: proj.side, uid: proj.uid, actionId: a.id, targetUid: target.uid });
+      if (!jumped.ok) { ctx.noteNow(jumped.why ?? `${proj.label} cannot jump there.`); ctx.refresh(); return; }
+      const held = minesOwed(ctx.data, ctx.state.tokens).filter((x) => x.heldBy === proj.uid).length;
+      ctx.noteNow(`${proj.label} jumps into ${target.label}'s Grid${held
+        ? ` and sets off ${held === 1 ? 'the Mine' : `${held} Mines`} there, which go off once its own blast is done (Supplementary Rules 1.04, 1.9)` : ''}.`, 'table');
+    }
     // And the Explosion waits while that Interception is owed: a second press
     // opened it with every attempt still to make (4.9; audit Phase 7, P7D 5).
     const owed = liveIntercepts(s).filter((x) => x.targetUid === proj.uid).length;
@@ -7504,8 +7613,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="smokeauto"]', () => {
-    const next = smokeOwedOf(s)[0];
-    if (next?.cells.length) removeOwedSmoke(ctx, next.cells[0]);
+    const left = smokeOwedCells(s);
+    if (left.length) removeOwedSmoke(ctx, left[0]);
   });
 
   // ---------- Interception (4.9) ----------

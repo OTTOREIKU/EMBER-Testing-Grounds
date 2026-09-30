@@ -17,6 +17,7 @@ import { asterBlockers, offerCoordination, runAster } from '../src/commandpick';
 import { alive, canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn, tiedChoices, type LoopPhase } from '../src/loop';
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript, idleWorldFor } from '../src/glue';
+import { smokePerGroup } from '../src/season';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
 import { allyRepairTargets, overwatchOf, firewatchOn, electronicStrength, interceptorsAgainst, bitPortOf, coordinationAfterManeuver, canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed, actionIdleWhy, commonPartSlots, chassisGone, commonPartKey, riposteMelees } from '../src/units';
 import { boxHands, normaliseTasks, remoteAccessWhy, terminalsInReach } from '../src/tasks';
@@ -1030,8 +1031,12 @@ function endHtml(api: GuideApi): string {
   const last = gameEndsThisRound(api.data, s);
   // The table's Smoke Screens dissipate in this phase too, and the pad has no
   // screens to count, so it says so rather than stay silent (audit Phase 4,
-  // G12). Once per End Phase (4.16).
-  const smoke = '<p class="pad-turn-note">Smoke Screens on the table dissipate now, once: every screen not Connected comes off, and each Connected group loses one, chosen by its owner, First Player first (4.16).</p>';
+  // G12). Once per End Phase (4.16). A Season the host turned on changes the
+  // count, and the note says which rule it is (Supplementary Rules 1.04, 8).
+  const per = smokePerGroup(api.data, s);
+  const smoke = per > 1
+    ? `<p class="pad-turn-note">Smoke Screens on the table dissipate now, once, by the Season ${api.esc(s.season ?? '')} rule: every screen not Connected comes off, a Connected group of ${per} or fewer comes off whole, and each larger group loses ${per}, chosen by its owner, First Player first.</p>`
+    : '<p class="pad-turn-note">Smoke Screens on the table dissipate now, once: every screen not Connected comes off, and each Connected group loses one, chosen by its owner, First Player first (4.16).</p>';
   return head(api, 'End Phase', `Round ${s.round.n}`, true) + rows + smoke
     + (all ? (last ? btn(api, 'g-endmatch', 'End the game', '', 'pad-chip on') : `<p class="pad-turn-note">Continue at the top to start Round ${s.round.n + 1}.</p>`) : '');
 }
