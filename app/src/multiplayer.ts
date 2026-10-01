@@ -1,3 +1,4 @@
+import { openAccount } from './account';
 import { ApiError, type Account, type EmberApi, type RegistrationInfo } from './api';
 import type { NetView } from './net';
 
@@ -148,22 +149,12 @@ export class MultiplayerDialog {
           <b>${esc(user.displayName || user.username)}</b>
           <span class="mp-tag">${esc(user.role)}</span>
         </div>
-        <p class="dim">Signed in. Your record is in the Match Centre.</p>
+        <p class="dim">Signed in. Your password, signing out and your account are under Account.</p>
         <div class="mp-actions">
-          <button class="mp-btn ghost" id="mp-signout">Sign out</button>
+          <button class="mp-btn ghost" id="mp-account">Account</button>
         </div>
       </div>
-      ${this.onlineHtml()}
-      <div class="mp-section">
-        <h4>Change password</h4>
-        ${this.field('mp-cur', 'Current password', 'password')}
-        ${this.field('mp-new', 'New password', 'password')}
-        <div class="mp-meter" id="mp-meter2" hidden><i></i><i></i><i></i><i></i><span></span></div>
-        <div class="mp-actions">
-          <button class="mp-btn" id="mp-change">Change password</button>
-        </div>
-        <p class="dim">Changing it signs you out everywhere else.</p>
-      </div>`;
+      ${this.onlineHtml()}`;
   }
 
   private signedOutHtml(): string {
@@ -257,8 +248,10 @@ export class MultiplayerDialog {
   }
 
   private wireSignedIn(): void {
-    this.dlg?.querySelector('#mp-signout')!.addEventListener('click', () => {
-      void this.attempt(async () => { await this.api.logout(); });
+    // The account itself is the shared screen's (account.ts): every page opens
+    // the same one. Once the session ends there, this popup shows its sign-in.
+    this.dlg?.querySelector('#mp-account')!.addEventListener('click', () => {
+      openAccount({ api: this.api, onGone: () => this.render() });
     });
 
     const net = this.net;
@@ -268,22 +261,6 @@ export class MultiplayerDialog {
       this.dlg?.querySelector('#mp-resend')?.addEventListener('click', () => net.resend());
       this.dlg?.querySelector('#mp-squad')?.addEventListener('click', () => net.bringSquad());
     }
-
-    const cur = this.input('mp-cur');
-    const next = this.input('mp-new');
-    next?.addEventListener('input', () => this.updateMeter(next.value, 'mp-meter2'));
-
-    this.dlg?.querySelector('#mp-change')!.addEventListener('click', () => {
-      if (!cur?.value || !next?.value) {
-        this.notice = { kind: 'error', text: 'Fill in both password boxes.' };
-        this.render();
-        return;
-      }
-      void this.attempt(
-        async () => { await this.api.changePassword(cur.value, next.value); },
-        'Password changed. Any other device you were signed in on has been signed out.',
-      );
-    });
   }
 
   private wireSignedOut(): void {

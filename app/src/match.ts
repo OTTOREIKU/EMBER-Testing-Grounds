@@ -1,3 +1,4 @@
+import { openAccount } from './account';
 import { ApiError, EmberApi, type Account, type AdminInvite, type RegistrationInfo, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type SquadEntry, type StatsSummary } from './api';
 import { bindCollection } from './collection';
 import { bindLibrary, onLibrary } from './library';
@@ -180,7 +181,6 @@ function recoverDialSecret(): void {
     if (t && t.side === seat) t.timing = d.timing;
   }
 }
-let acctOpen = false;
 let pickerOpen = false;
 let loginErr: string | null = null;
 // The server's registration mode, read once at startup. The sign-in copy and
@@ -256,7 +256,6 @@ function hudUp(): boolean {
   return !!data && ((running() && !!relay.state.room) || (!!devSeat && running()));
 }
 
-let acctNote: { ok: boolean; text: string } | null = null;
 let busy = false;
 let copied = false;
 // Set when the door is joining a table only to shut it down.
@@ -2944,7 +2943,7 @@ function render(): void {
         <button class="btn ghost" id="mc-leave" style="margin-top:6px">Leave the table</button>
       </div></div>`
     : '';
-  veilhost.innerHTML = `${acctOpen ? acctHtml() : ''}${pickerOpen ? pickerHtml() : ''}${
+  veilhost.innerHTML = `${pickerOpen ? pickerHtml() : ''}${
     squadOpen ? squadHtml() : ''}${pauseVeil}`;
   if (hud) {
     const stage = bodyhost.querySelector('.mc-stage.hudmode');
@@ -2971,29 +2970,6 @@ function render(): void {
   }
   wire();
   applyListFilters();
-}
-
-function acctHtml(): string {
-  if (!account) return '';
-  const r = record?.record;
-  return `<div class="mc-veil" id="mc-veil">
-    <div class="acct">
-      <button class="x" id="mc-acct-x">✕</button>
-      <h3>${esc(account.username)}</h3>
-      <div class="role">${esc(account.role)}${account.displayName ? ` · ${esc(account.displayName)}` : ''}</div>
-      ${r ? `<p class="hint">${r.played} played · ${r.won}W ${r.drawn}D ${r.lost}L. The full record is in <b>Stats</b>.</p>` : ''}
-      <div class="sect">Change password</div>
-      <label class="f" for="mc-cur">Current password</label>
-      <input class="f" id="mc-cur" type="password" autocomplete="current-password" />
-      <label class="f" for="mc-new">New password</label>
-      <input class="f" id="mc-new" type="password" autocomplete="new-password" />
-      ${acctNote ? `<div class="${acctNote.ok ? 'mc-ok' : 'mc-err'}">${esc(acctNote.text)}</div>` : ''}
-      <div class="row2">
-        <button class="btn" id="mc-change"${busy ? ' disabled' : ''}>Change password</button>
-        <button class="btn danger" id="mc-out">Sign out</button>
-      </div>
-    </div>
-  </div>`;
 }
 
 async function attempt(fn: () => Promise<void>, showErr: (m: string) => void): Promise<void> {
@@ -3041,14 +3017,21 @@ function copyCode(): void {
 
 function wire(): void {
   const $ = (id: string) => document.getElementById(id);
+  // The account is the shared screen's (account.ts): the tabletop and the pad
+  // open the same one. A session ended there leaves the table, as signing out
+  // here always did.
   $('mc-acct')?.addEventListener('click', () => {
     if (!account) return;
-    acctOpen = true;
-    acctNote = null;
-    render();
-    if (!record) void api.myRecord().then((r) => { record = r; render(); }).catch(() => {});
+    openAccount({
+      api,
+      onGone: () => {
+        relay.leave();
+        account = null;
+        record = null;
+        render();
+      },
+    });
   });
-  $('mc-acct-x')?.addEventListener('click', () => { acctOpen = false; render(); });
   root.querySelectorAll<HTMLElement>('[data-squad]').forEach((r) =>
     r.addEventListener('click', () => { squadOpen = r.dataset.squad!; render(); }),
   );
@@ -3058,9 +3041,6 @@ function wire(): void {
   $('mc-squad-x')?.addEventListener('click', shutSquad);
   $('mc-squadveil')?.addEventListener('pointerdown', (ev) => {
     if ((ev.target as HTMLElement).id === 'mc-squadveil') shutSquad();
-  });
-  $('mc-veil')?.addEventListener('pointerdown', (ev) => {
-    if ((ev.target as HTMLElement).id === 'mc-veil') { acctOpen = false; render(); }
   });
   $('mc-picker-x')?.addEventListener('click', () => { pickerOpen = false; render(); });
   $('mc-veil2')?.addEventListener('pointerdown', (ev) => {
@@ -3370,26 +3350,6 @@ function wire(): void {
       });
   });
 
-  $('mc-change')?.addEventListener('click', () => {
-    const cur = ($('mc-cur') as HTMLInputElement | null)?.value ?? '';
-    const next = ($('mc-new') as HTMLInputElement | null)?.value ?? '';
-    acctNote = null;
-    void attempt(async () => {
-      await api.changePassword(cur, next);
-      acctNote = { ok: true, text: 'Password changed. Other sessions are signed out.' };
-    }, (m) => { acctNote = { ok: false, text: m }; });
-  });
-  $('mc-out')?.addEventListener('click', () => {
-    void attempt(async () => {
-      // The table is left only once the server has ended the session: a
-      // sign-out that fails keeps the player signed in and at their table.
-      await api.logout();
-      relay.leave();
-      account = null;
-      record = null;
-      acctOpen = false;
-    }, (m) => { acctNote = { ok: false, text: m }; });
-  });
 }
 
 // The table's aggregates, fetched once the Stats view is actually asked for —

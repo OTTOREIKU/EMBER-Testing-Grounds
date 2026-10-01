@@ -53,6 +53,7 @@ import { importSquadFile } from '../src/importer';
 import { barcodeSvg } from '../src/barcode';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset, type MechPreset } from '../src/presets';
 import { deleteSquad, isBuiltInSquad, loadSquads, saveSquad, type SavedSquad } from '../src/squadstore';
+import { openAccount } from '../src/account';
 import { bindLibrary, onLibrary } from '../src/library';
 import { hiddenBuiltIns, restoreBuiltIns } from '../src/builtins';
 import { actionBlock, cardRow, fillPortraits, keywordCard, kwLabel, linkKeywords, rulesSections, rulesTab, sheetHtml as refSheetHtml, sheetLabel as refSheetLabel, traitBlock, useCardData } from '../src/refcards';
@@ -648,7 +649,7 @@ function lobbyHtml(): string {
     </div>
     ${lobbyLists()}
     <div class="pad-foot">
-      <button class="pad-btn" data-act="signout">Sign out</button>
+      <button class="pad-btn" data-act="account">Account</button>
     </div>`;
 }
 
@@ -3729,7 +3730,7 @@ function morePanel(): string {
         : `<button class="pad-btn" data-act="solo-leave">Leave the game</button>
            <button class="pad-btn danger" data-act="solo-end">Delete this game</button>`}
       ${account
-        ? `<button class="pad-btn" data-act="signout">Sign out</button>
+        ? `<button class="pad-btn" data-act="account">Account</button>
            <p class="pad-note">Signed in as ${esc(account.username)}${room ? ` · seat ${me === 's1' ? '1' : '2'}` : ''}</p>`
         : `<button class="pad-btn" data-act="solo-to-signin">Sign in</button>
            <p class="pad-note">Not signed in</p>`}
@@ -5167,15 +5168,20 @@ function act(el: HTMLElement, ev: Event): void {
         screen = 'lobby';
       });
       return;
-    case 'signout':
-      void run(async () => {
-        // The table is left only once the server has ended the session: a
-        // sign-out that fails keeps the player signed in and at their table.
-        await api.logout();
-        relay.leave();
-        solo = false;
-        account = null;
-        screen = 'signin';
+    case 'account':
+      // The account is the shared screen's (src/account.ts): the board and the
+      // Match Centre open the same one. A session ended there leaves the
+      // table, as signing out here always did, and only once the server has
+      // ended it: a sign-out that fails keeps the player signed in and seated.
+      openAccount({
+        api,
+        onGone: () => {
+          relay.leave();
+          solo = false;
+          account = null;
+          screen = 'signin';
+          render();
+        },
       });
       return;
     case 'host': error = null; resetTable(); setupPending = true; relay.host(); render(); return;
