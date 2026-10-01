@@ -454,7 +454,14 @@ ok('a cached copy still paints without waiting for the network',
 // already known to be wrong are dropped outright so the very next load is right.
 ok('paths whose files were replaced are purged on activate',
   /const REPLACED = \[/.test(sw) && /await dropReplaced\(\);/.test(sw));
-ok('and the battlefield cards are named there', /'\/assets\/battlefield\/'/.test(sw));
+// An entry comes out again a release or so after it went in (the battlefield
+// cards, purged from 2026-09-01, came out on 2026-10-01), so what is pinned is
+// the shape of an entry and not which ones are there. An empty list is fine.
+ok('and each entry there is one folder of the asset tree', (() => {
+  const list = sw.match(/const REPLACED = \[([^\]]*)\]/);
+  const entries = list ? [...list[1].matchAll(/'([^']*)'/g)].map((x) => x[1]) : null;
+  return !!entries && entries.every((p) => /^\/assets\/[\w-]+\/$/.test(p));
+})());
 // The purge must not take the whole cache with it: 39MB over a phone connection
 // is not a bug fix.
 ok('the purge is by path, not a cache wipe',

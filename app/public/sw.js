@@ -12,7 +12,10 @@ const KEEP = [ASSET_CACHE, RUNTIME_CACHE];
 //
 // Add a prefix here when an image is CORRECTED rather than added, and it can be
 // removed again a release later once the caches have turned over.
-const REPLACED = ['/assets/battlefield/', '/assets/dice/'];
+//
+//   /assets/dice/  the Black Die's Part icons, replaced 2026-09-30. Leave it
+//                  in until at least the end of October 2026.
+const REPLACED = ['/assets/dice/'];
 
 async function dropReplaced() {
   const cache = await caches.open(ASSET_CACHE);
