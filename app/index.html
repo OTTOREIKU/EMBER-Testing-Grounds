@@ -2,9 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <!-- Scripts run only from this site (plus the inline base line below, by its hash), so markup that
-       slips into the page through a name or a log line can never execute. -->
-  <meta http-equiv="Content-Security-Policy" content="script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <!-- What this page may load, and from where. Scripts run only from this site, so markup that
+       slips into the page through a name or a log line can never execute. Everything else comes from this
+       site too: styles (and inline style attributes), images (and the generated data: ones), and requests,
+       which may also go to the API. The two :3002 entries are a developer's local API and reach nothing on
+       the live site, where a page served over https cannot call plain http. No frames, no plugins. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.embertg.online wss://api.embertg.online http://*:3002 ws://*:3002; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f1216" />
   <title>EMBER Testing Grounds</title>
