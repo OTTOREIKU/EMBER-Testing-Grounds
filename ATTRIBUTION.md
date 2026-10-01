@@ -28,6 +28,14 @@ pilot portrait and part illustrations come from **Queti's own card pages** at
 artwork, reproduced here under the same non-commercial terms as everything else on this page, and
 resized to match the rest of the set.
 
+## The token pictures
+
+The Reference shows the game's physical tokens so a player can match the piece in their hand.
+Those pictures in `assets/tokens/print/` are Queti's token art. The Smoke Screen card, the
+Victory Point token and the Numeric Identifier tokens are cut from the illustrations in Queti's
+rulebook (sections 2.5.5 and 4.16), at the size they are printed there. They remain Queti's
+copyright, on the same terms as the rest of the artwork on this page.
+
 ## The mission and battlefield cards
 
 The Main Task, Secondary Task and Battlefield card scans in `assets/missions/`,
