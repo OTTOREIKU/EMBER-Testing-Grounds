@@ -1,0 +1,93 @@
+/* The account screen (account.ts): one for the tabletop, the Match Centre and
+ * the pad. It travels with the module, so every page that opens it draws it
+ * the same. The frame is the house dialog (.dlg-back / .dlg-panel) and the
+ * close is .dlg-close; everything here follows ui.css - flat sections told
+ * apart by background, colour as tokens, no edges.
+ *
+ * The sections are the Multiplayer popup's (.mp-section), which this screen
+ * replaced for everything to do with the account. */
+
+.acc-back .dlg-panel {
+  position: relative; width: 420px; max-height: 88vh;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 18px 18px 16px;
+}
+/* Inside the panel, as on a sheet: the panel scrolls, and a control hung
+   outside its corner would be clipped. */
+.acc-back .dlg-close { top: 10px; right: 10px; }
+
+.acc-title {
+  margin: 2px 48px 0 0;
+  font: 600 10.5px var(--mono); letter-spacing: 0.26em; text-transform: uppercase; color: var(--accent);
+}
+.acc-who { display: flex; align-items: center; gap: 8px; font-size: 16px; min-width: 0; }
+.acc-who b { min-width: 0; overflow-wrap: anywhere; }
+.acc-tag {
+  flex: 0 0 auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
+  background: var(--surface3); color: var(--text2); padding: 2px 7px; border-radius: 999px;
+}
+.acc-line { margin: -4px 0 0; font: 11.5px var(--mono); color: var(--text2); font-variant-numeric: tabular-nums; }
+
+.acc-notice {
+  margin: 0; padding: 8px 10px; border-radius: var(--radius);
+  font-size: 12px; line-height: 1.45;
+}
+.acc-notice.error { background: var(--red-lt); color: var(--red); }
+.acc-notice.ok { background: var(--green-lt); color: var(--green); }
+
+.acc-sect { background: var(--surface2); border-radius: var(--radius); padding: 12px 13px; }
+.acc-sect h4 {
+  margin: 0 0 8px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.7px; color: var(--text2); font-weight: 700;
+}
+.acc-note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--text2); }
+.acc-field + .acc-note, .acc-meter + .acc-note { margin-top: 8px; }
+
+.acc-field { display: block; margin-bottom: 8px; }
+.acc-note + .acc-field { margin-top: 10px; }
+.acc-field span {
+  display: block; font-size: 11px; color: var(--text2);
+  margin-bottom: 3px; letter-spacing: 0.2px;
+}
+/* A field sits on a --surface2 section, which is what .dlg-input uses at rest,
+   so it stays one step lighter always and focus is an inset accent ring. */
+.acc-field .dlg-input {
+  margin-top: 0; font-size: 13px; padding: 8px 10px;
+  background: var(--surface3);
+}
+.acc-field .dlg-input:focus { background: var(--surface3); box-shadow: inset 0 0 0 1px var(--accent); }
+
+.acc-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+.acc-btn {
+  border: none; background: var(--accent-lt); color: var(--accent); font-weight: 600;
+  border-radius: var(--radius); padding: 8px 14px; cursor: pointer; font-size: 12.5px;
+  font-family: var(--font); white-space: nowrap;
+  transition: background 0.12s, color 0.12s, opacity 0.12s;
+}
+.acc-btn:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+.acc-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.acc-btn:disabled { opacity: 0.4; cursor: default; }
+.acc-btn.ghost { background: var(--surface3); color: var(--text2); }
+.acc-btn.ghost:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
+.acc-btn.danger { background: var(--red-lt); color: var(--red); }
+.acc-btn.danger:hover:not(:disabled) { background: var(--red); color: var(--on-accent); }
+
+/* Four segments that fill as the score climbs, as on the create-account form. */
+.acc-meter { display: flex; align-items: center; gap: 3px; margin: -1px 0 0; }
+.acc-meter i { flex: 1; height: 3px; border-radius: 2px; background: var(--surface3); }
+.acc-meter span { flex: 0 0 auto; margin-left: 6px; font-size: 10.5px; color: var(--text2); }
+.acc-meter[data-score="1"] i:nth-child(-n + 1),
+.acc-meter[data-score="2"] i:nth-child(-n + 2) { background: var(--red); }
+.acc-meter[data-score="3"] i:nth-child(-n + 3) { background: var(--accent); }
+.acc-meter[data-score="4"] i { background: var(--green); }
+
+/* On a phone the screen takes the width, the buttons are thumb-sized, and a
+   field is 16px so the browser does not zoom into it. */
+@media (max-width: 520px), (pointer: coarse) {
+  .acc-back { padding: 12px; }
+  .acc-back .dlg-panel { width: 100%; max-height: 92vh; }
+  .acc-field .dlg-input { font-size: 16px; padding: 10px 12px; }
+  .acc-btn { min-height: 44px; padding: 10px 16px; font-size: 14px; }
+  .acc-actions { justify-content: stretch; }
+  .acc-actions .acc-btn { flex: 1 1 auto; }
+}

@@ -53,6 +53,11 @@ function bodyHtml(o: BaseOpts): string {
 // Prototype Blink target list and the Taurus teleported into whichever unit
 // happened to sort last. A dialog with nothing marked closes and resolves null,
 // which every caller already treats as "no choice made".
+//
+// Exported as openDialog for a screen that is more than a question (the
+// account screen): it gets the same frame, Escape and backdrop as every
+// dialog here, and supplies its own markup.
+export { open as openDialog };
 function open(inner: string, wire: (panel: HTMLElement, close: () => void) => void, bail?: () => void, cls = ''): void {
   const back = document.createElement('div');
   back.className = `dlg-back${cls ? ` ${cls}` : ''}`;

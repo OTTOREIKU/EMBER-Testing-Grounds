@@ -244,10 +244,22 @@ export class EmberApi {
     return this.adopt(r);
   }
 
+  // Signs out here. The token itself stays good on any other device that
+  // holds it, until it expires or logoutEverywhere ends them all.
   async logout(): Promise<void> {
+    await this.endSession('/auth/logout');
+  }
+
+  // Ends every session the account has, this one included, and its open game
+  // connections.
+  async logoutEverywhere(): Promise<void> {
+    await this.endSession('/auth/logout-all');
+  }
+
+  private async endSession(path: string): Promise<void> {
     for (const fn of this.leaving) await fn();
     try {
-      await this.call('/auth/logout', { method: 'POST' });
+      await this.call(path, { method: 'POST' });
     } catch {
       // The session cookie is httpOnly, so only the server can end it. A
       // sign-out that never arrived used to be shown as done while the cookie
@@ -260,6 +272,17 @@ export class EmberApi {
       }
       if (still) throw new ApiError('The server did not sign you out, so you are still signed in. Try again.');
     }
+    this.forgetHere();
+  }
+
+  // Removes the account and everything the server keeps for it. Nothing is
+  // sent up first, unlike a sign-out: what this device holds goes with it.
+  async deleteAccount(password: string): Promise<void> {
+    await this.call('/auth/delete-account', { method: 'POST', body: { password } });
+    this.forgetHere();
+  }
+
+  private forgetHere(): void {
     this.account = null;
     this.csrf = null;
     for (const fn of this.left) fn();
