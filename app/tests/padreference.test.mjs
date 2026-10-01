@@ -69,8 +69,16 @@ check('and name themselves for the Back button the same way',
 const pad = src('../pad/pad.ts');
 check('the pad imports the Rules tab and the sheets, and its sheet behaviours',
   [/rulesSections, rulesTab, sheetHtml as refSheetHtml, sheetLabel as refSheetLabel/.test(pad),
-    /import \{ applyChangelogFilter, decorateSheetHead, holdDetailHeight, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, showDetailTab, type SheetKind, type SheetNav \} from '\.\.\/src\/refsheet';/.test(pad)],
+    /import \{ applyChangelogFilter, decorateSheetHead, drawsAdvanced, holdDetailHeight, noteSheetLeft, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, showDetailTab, type SheetKind, type SheetNav \} from '\.\.\/src\/refsheet';/.test(pad)],
   [true, true]);
+// A Rules entry's sheet (OTTO, 2026-10-01): Advanced closed on a plain link,
+// open from the master changelog, and as the reader left it on Back. The rule
+// is refsheet.ts's; each page only asks it, at the same two moments.
+check('its Rules sheets open and come back as the Reference\'s do',
+  [/return refSheetHtml\(v\.kind, v\.key, \{ advanced: drawsAdvanced\(v\) \}\);/.test(pad),
+    /if \(top\) \{\n\s*top\.scroll = detailScroller\(\)\?\.scrollTop \?\? 0;\n\s*noteSheetLeft\(top\);\n\s*\}\n\s*\}\n\s*looks\.push\(v\);/.test(pad),
+    /refSheetHtml\(v\.kind, v\.key\);/.test(pad)],
+  [true, true, false]);
 check('its Rules scope IS the Reference\'s tab, and it keeps no Rules tiles of its own',
   [/if \(find\.scope === 'rules'\) return rulesTab\(q, find\.rules\);/.test(pad), /linkKeywords\(m\.text\)/.test(pad), /tile\(`\$\{x\.name\} timing`/.test(pad)],
   [true, false, false]);
@@ -95,7 +103,7 @@ check('the Season chip names its season in its own attribute', /data-act="set-se
 // ---------- and so does the Reference ----------
 const ref = src('../src/reference.ts');
 check('the Reference draws its tab and sheets from the same place',
-  [/el\.innerHTML = rulesTab\(q, rulesSection\);/.test(ref), /return sheetHtml\(v\.kind, v\.key\);/.test(ref), /if \(runSheetClick\(ev, sheetNav\)\) return;/.test(ref)],
+  [/el\.innerHTML = rulesTab\(q, rulesSection\);/.test(ref), /return sheetHtml\(v\.kind, v\.key, \{ advanced: drawsAdvanced\(v\) \}\);/.test(ref), /if \(runSheetClick\(ev, sheetNav\)\) return;/.test(ref)],
   [true, true, true]);
 
 console.log(`\n${pass} passed, ${fail} failed`);

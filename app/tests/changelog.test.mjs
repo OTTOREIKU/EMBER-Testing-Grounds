@@ -24,7 +24,7 @@ installDom();
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 const entry = new URL('./_changelog.entry.ts', import.meta.url);
 const out = new URL('./_changelog.bundle.mjs', import.meta.url);
-writeFileSync(entry, "export { loadData } from '../src/data';\nexport * as R from '../src/refcards';\n");
+writeFileSync(entry, "export { loadData } from '../src/data';\nexport * as R from '../src/refcards';\nexport * as S from '../src/refsheet';\n");
 await build({
   entryPoints: [fileURLToPath(entry)], outfile: fileURLToPath(out),
   bundle: true, format: 'esm', platform: 'browser', logLevel: 'silent',
@@ -213,8 +213,52 @@ check('a price-only row shows the price, a row with more shows its keys',
   [true, true]);
 check('the way in names the newest revision and its count',
   /<button class="cl-entry" data-clv="1\.04">[\s\S]*What changed in 1\.04[\s\S]*74 cards · 11 keywords · 9 rules · 2 optional Season Rules[\s\S]*<span class="ui-badge">96<\/span>/.test(M.R.changelogEntry()), true);
-check('a Rules entry opens as a sheet with its Advanced open, the changelog first',
-  /<details class="mech-adv" open>[\s\S]*?<div class="mech-adv-b"><div class="mech-log">/.test(M.R.ruleDetail('mines')), true);
+// A Rules entry as a sheet (OTTO, 2026-10-01): "When opening a mechanic link,
+// example is clicking on Ammo and Charge under the tokens, I noticed that the
+// advanced section always opens up automatically. Can we make it so when
+// clicking on them the section's advanced area is closed? ... the exception to
+// this is when clicking on a changelog link that takes you to a mechanic since
+// the changelog for mechanics is stored in the advanced section."
+const advOf = (html) => (/<details class="mech-adv" open>/.test(html ?? '') ? 'open' : /<details class="mech-adv">/.test(html ?? '') ? 'closed' : 'none');
+check('a link to a Rules entry opens its sheet with Advanced closed',
+  [advOf(M.R.ruleDetail('mines')), advOf(M.R.sheetHtml('rule', 'ammo_and_charge')), advOf(M.R.sheetHtml('rule', 'smoke_screen', {}))],
+  ['closed', 'closed', 'closed']);
+check('closed, it still says there is a change inside',
+  /<details class="mech-adv"><summary>Advanced <span class="mech-adv-new">Updated 1\.04<\/span><\/summary>/.test(M.R.ruleDetail('mines')), true);
+check('the master changelog opens it with Advanced open, the changelog first',
+  [advOf(M.R.sheetHtml('rule', 'mines', { advanced: true })),
+    /<details class="mech-adv" open>[\s\S]*?<div class="mech-adv-b"><div class="mech-log">/.test(M.R.ruleDetail('mines', true))],
+  ['open', true]);
+check('every Rules entry a sheet can open has an Advanced to keep closed',
+  data.mechanics.filter((m) => advOf(M.R.ruleDetail(m.id)) !== 'closed' || advOf(M.R.ruleDetail(m.id, true)) !== 'open').map((m) => m.id), []);
+// Which of the two a page draws is decided in one place for both pages.
+check('a link draws it closed, the changelog open, and a sheet come back to as the reader left it',
+  [M.S.drawsAdvanced({}), M.S.drawsAdvanced({ log: true }), M.S.drawsAdvanced({ advanced: true }), M.S.drawsAdvanced({ log: true, advanced: false })],
+  [false, true, true, false]);
+{
+  // What the reader left is read off the sheet as another is about to cover it.
+  const real = document.querySelector;
+  const asked = [];
+  let fold = { open: true };
+  document.querySelector = (sel) => { asked.push(sel); return fold; };
+  const opened = { kind: 'rule' };
+  M.S.noteSheetLeft(opened);
+  fold = { open: false };
+  const shut = { kind: 'rule', log: true };
+  M.S.noteSheetLeft(shut);
+  fold = null;
+  const none = { kind: 'rule' };
+  M.S.noteSheetLeft(none);
+  fold = { open: true };
+  const card = { kind: 'card', log: true };
+  M.S.noteSheetLeft(card);
+  document.querySelector = real;
+  check('a Rules sheet being covered keeps how its own Advanced stood, opened by hand or closed after the changelog opened it',
+    [opened.advanced, M.S.drawsAdvanced(opened), shut.advanced, M.S.drawsAdvanced(shut), none.advanced],
+    [true, true, false, false, false]);
+  check('it reads the sheet\'s own Advanced, never one folded under a card\'s Action, and no other kind of sheet keeps one',
+    [[...new Set(asked)], 'advanced' in card], [['#ref-detail-content .ref-rule > details.mech-adv'], false]);
+}
 // THE REFERENCE IS THREE FILES: its Rules tab and the sheet's behaviours moved
 // into refcards.ts and refsheet.ts so the pad shows and does the same
 // (OTTO, 2026-09-30). These pins are about what the Reference renders and
@@ -227,6 +271,15 @@ check('a row opens its thing with its Changelog showing, and Back returns to the
   [/if \(d\.logcard\) nav\.open\('card', d\.logcard, \{ log: true \}\);/.test(refSrc), /if \(v\.log\) revealLog\(\);/.test(refSrc),
     /kind: 'card' \| 'keyword' \| 'box' \| 'faction' \| 'compare' \| 'changelog' \| 'rule' \| 'season';/.test(refSrc),
     /else if \(d\.logseason\) nav\.open\('season', d\.logseason\);/.test(refSrc)], [true, true, true, true]);
+check('only a changelog row asks for a Rules entry\'s changelog: a plain link to the entry does not',
+  [/else if \(d\.logrule\) nav\.open\('rule', d\.logrule, \{ log: true \}\);/.test(refSrc),
+    /nav\.open\('rule', ruleSheet\.dataset\.rulesheet!\);/.test(refSrc), /nav\.open\('rule', [^)]*rulesheet[^)]*log/.test(refSrc)],
+  [true, true, false]);
+check('the Reference draws a Rules sheet by that one rule, and notes the fold on a sheet before another covers it',
+  [/return sheetHtml\(v\.kind, v\.key, \{ advanced: drawsAdvanced\(v\) \}\);/.test(refSrc),
+    /if \(top\) \{\n\s*top\.scroll = sheetScroller\(\)\.scrollTop;\n\s*noteSheetLeft\(top\);\n\s*\}\n\s*\}\n\s*navStack\.push\(v\);\n\s*paintDetail\(html, 0\);/.test(refSrc),
+    /mechanicBody\(m, '', true\)/.test(refSrc)],
+  [true, true, false]);
 check('Back finds the list filtered as it was left: the filter goes on before the scroll comes back',
   /if \(content\.querySelector\('\.cl-list'\)\) applyChangelogFilter\(content\);\n\s*sheet\(\)\.hidden = false;\n\s*lockRefPage\(\);\n\s*sheetScroller\(\)\.scrollTop = scrollTop;/.test(refSrc), true);
 check('the kinds and the search filter in place, and a new revision starts clear',

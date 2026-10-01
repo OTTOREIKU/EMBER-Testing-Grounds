@@ -389,8 +389,8 @@ export function mechBlocks(...text: (string | undefined)[]): string {
 // a player needs most) and, behind Advanced, the full breakdown with its FAQ
 // rulings and sources. An entry without a basic view draws its text as before.
 // `q` is the Rules search: when only the Advanced text answers it, Advanced
-// starts open so the match is on screen. `open`: always open, for the sheet the
-// master changelog opens an entry in.
+// starts open so the match is on screen. `open`: open whatever the search, for
+// a sheet that shows what is inside it (ruleDetail).
 export function mechanicBody(m: MechanicDef, q = '', open = false): string {
   if (!m.basic) return ruleBlocks(m.text);
   const points = (m.points ?? []).map((p) => `<li>${linkKeywords(p)}</li>`).join('');
@@ -650,12 +650,20 @@ export function changelogIndex(v: string): string | null {
     <p class="cl-none" hidden>Nothing in ${esc(now.label)} matches that.</p>`;
 }
 
-// A Rules entry as a sheet, which only the master changelog opens: the entry as
-// the Rules tab draws it, its Advanced open so its changelog is on screen.
-export function ruleDetail(id: string): string | null {
+// A Rules entry as a sheet: the entry as the Rules tab draws it, its Advanced
+// closed as it is there. A link to an entry (a token's, a Season Rule's) is a
+// way to its short view, and the sheet used to open with Advanced already open
+// under it (OTTO, 2026-10-01: "the advanced section always opens up
+// automatically ... make it so when clicking on them the section's advanced
+// area is closed"). `advanced`: open, for the two cases that are about what is
+// inside it. A row of the master changelog leads to the entry's changelog, the
+// first thing in Advanced (his exception: "it makes sense to open up to
+// advanced section to show the changelog part"); and Back draws the sheet as
+// the reader left it. Each page says which through refsheet.ts drawsAdvanced.
+export function ruleDetail(id: string, advanced = false): string | null {
   const m = data.mechanics.find((x) => x.id === id);
   if (!m) return null;
-  return `<h2>${esc(m.name)}</h2><p class="ref-meta">Rules · Mechanics</p><div class="card-body ref-rule">${mechanicBody(m, '', true)}</div>`;
+  return `<h2>${esc(m.name)}</h2><p class="ref-meta">Rules · Mechanics</p><div class="card-body ref-rule">${mechanicBody(m, '', advanced)}</div>`;
 }
 
 // ---------- the Season Rules (OTTO, 2026-09-30) ----------
@@ -1976,14 +1984,15 @@ export function rulesTab(q: string, section?: string, opts: { entries?: boolean 
 // By kind, for the Reference's detail sheet and the pad's alike (OTTO,
 // 2026-09-30): a card, a keyword, the master changelog of a revision, a Rules
 // entry, a Season Rule. A page with sheets of its own (the Reference's boxes,
-// factions and comparisons) answers those first.
-export function sheetHtml(kind: string, key: string): string | null {
+// factions and comparisons) answers those first. `advanced`: a Rules entry's
+// Advanced drawn open (ruleDetail); the other sheets have none of their own.
+export function sheetHtml(kind: string, key: string, opts: { advanced?: boolean } = {}): string | null {
   if (kind === 'card') {
     const c = data.byId.get(key);
     return c ? cardDetail(c) : null;
   }
   if (kind === 'changelog') return changelogIndex(key);
-  if (kind === 'rule') return ruleDetail(key);
+  if (kind === 'rule') return ruleDetail(key, opts.advanced);
   if (kind === 'season') return seasonDetail(key);
   if (kind === 'keyword') return keywordDetail(key);
   return null;

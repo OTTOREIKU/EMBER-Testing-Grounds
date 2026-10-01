@@ -15,7 +15,7 @@ import { cardRow, currentSeason, dieEntries, esc, fillPortraits, keywordCard, kw
 import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSeason, matchSecondary, matchStance, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSeason, nmSecondary, norm, rank } from './refsearch';
 import { installDiagnostics } from './diagnostics';
 import { boxPicker, compareGrid, exclusiveToggle, isExclusiveTo, sharedCount } from './boxcompare';
-import { applyChangelogFilter, decorateSheetHead, holdDetailHeight, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, showDetailTab, type SheetNav } from './refsheet';
+import { applyChangelogFilter, decorateSheetHead, drawsAdvanced, holdDetailHeight, noteSheetLeft, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, showDetailTab, type SheetNav } from './refsheet';
 import type { ReportCategory } from './report';
 import { openReferenceReport } from './reportui';
 // FIRST, before anything else in this module runs. A net that is installed
@@ -894,14 +894,16 @@ function unlockRefPage(): void {
   window.scrollTo(0, refLockedAt);
 }
 
-// `changelog` is the master changelog, keyed by revision; `rule` a Rules entry,
-// which only that sheet opens; `season` a Season Rule, by its id. `log`: opened
-// from the master changelog, so the view's own Changelog is shown open.
+// `changelog` is the master changelog, keyed by revision; `rule` a Rules entry;
+// `season` a Season Rule, by its id. `log`: opened from the master changelog, so
+// the view's own Changelog is shown open. `advanced`: how the reader left a
+// Rules entry's Advanced, once the sheet has been covered (refsheet.ts).
 interface DetailView {
   kind: 'card' | 'keyword' | 'box' | 'faction' | 'compare' | 'changelog' | 'rule' | 'season';
   key: string;
   scroll?: number;
   log?: boolean;
+  advanced?: boolean;
 }
 
 let navStack: DetailView[] = [];
@@ -914,7 +916,7 @@ function viewHtml(v: DetailView): string | null {
   if (v.kind === 'box') return boxDetail(v.key);
   if (v.kind === 'faction') return factionDetail(v.key);
   if (v.kind === 'compare') return compareDetail(v.key);
-  return sheetHtml(v.kind, v.key);
+  return sheetHtml(v.kind, v.key, { advanced: drawsAdvanced(v) });
 }
 
 // Redraws whatever sheet is open, in place: the exclusive tick and the compare
@@ -990,7 +992,10 @@ function navigateDetail(kind: DetailView['kind'], rawKey: string, opts: { log?: 
     if (top && top.kind === kind && top.key === key) return;
     const under = navStack[navStack.length - 2];
     if (under && under.kind === kind && under.key === key) return backDetail();
-    if (top) top.scroll = sheetScroller().scrollTop;
+    if (top) {
+      top.scroll = sheetScroller().scrollTop;
+      noteSheetLeft(top);
+    }
   }
   navStack.push(v);
   paintDetail(html, 0);

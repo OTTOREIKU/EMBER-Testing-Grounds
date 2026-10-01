@@ -82,9 +82,31 @@ export function closeVersionMenu(focus = false): boolean {
   return true;
 }
 
+// A Rules entry's Advanced, as a sheet draws it (refcards.ts ruleDetail). A link
+// to an entry opens it closed. The master changelog opens it open, because the
+// entry's changelog is the first thing inside (`log`). And once a sheet has been
+// covered by another, it is drawn again as the reader left it (`advanced`), or
+// Back would restore a scroll measured with the fold open onto a sheet drawn
+// with it closed. Both pages keep these two on the views in their own stacks.
+export interface SheetFold { log?: boolean; advanced?: boolean }
+
+export const drawsAdvanced = (v: SheetFold): boolean => v.advanced ?? !!v.log;
+
+// Whether the Rules entry in the open sheet has its Advanced open. Its own, and
+// not one inside a rule folded under a card's Action.
+export function ruleAdvancedOpen(): boolean {
+  return !!document.querySelector<HTMLDetailsElement>('#ref-detail-content .ref-rule > details.mech-adv')?.open;
+}
+
+// A page calls this on the sheet it is about to cover with another.
+export function noteSheetLeft(v: { kind: string } & SheetFold): void {
+  if (v.kind === 'rule') v.advanced = ruleAdvancedOpen();
+}
+
 // A card or keyword opened from the master changelog shows its own Changelog,
-// open and scrolled to; a Rules entry's is already open, at the top of its
-// Advanced. Only on the way in: Back restores the scroll the reader left.
+// open and scrolled to; a Rules entry's is at the top of its Advanced, which
+// its sheet drew open for it. Only on the way in: Back restores the scroll the
+// reader left.
 export function revealLog(): void {
   const content = document.getElementById('ref-detail-content');
   const log = content?.querySelector<HTMLDetailsElement>('details.ref-log, details.mech-adv');

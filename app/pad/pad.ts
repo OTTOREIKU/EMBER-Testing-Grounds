@@ -57,7 +57,7 @@ import { openAccount } from '../src/account';
 import { bindLibrary, onLibrary } from '../src/library';
 import { hiddenBuiltIns, restoreBuiltIns } from '../src/builtins';
 import { actionBlock, cardRow, fillPortraits, keywordCard, kwLabel, linkKeywords, rulesSections, rulesTab, sheetHtml as refSheetHtml, sheetLabel as refSheetLabel, traitBlock, useCardData } from '../src/refcards';
-import { applyChangelogFilter, decorateSheetHead, holdDetailHeight, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, showDetailTab, type SheetKind, type SheetNav } from '../src/refsheet';
+import { applyChangelogFilter, decorateSheetHead, drawsAdvanced, holdDetailHeight, noteSheetLeft, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, showDetailTab, type SheetKind, type SheetNav } from '../src/refsheet';
 import { found, matchCard, matchKeyword, matchMission, matchSecondary, nmCard, nmKeyword, nmMission, nmSecondary, norm } from '../src/refsearch';
 import { mountCardImage, mountCardImageCopy, warmAllImagesWhenIdle } from '../src/images';
 import { runFirstVisitPreload } from '../src/preload';
@@ -4725,7 +4725,9 @@ function paintFind(): void {
 // the reference's too: a keyword opened from a card goes BACK to that card.
 
 // `log`: opened from the master changelog, so its own Changelog shows open.
-type Look = { kind: SheetKind; key: string; tab?: string; scroll?: number; log?: boolean };
+// `advanced`: how the reader left a Rules entry's Advanced, once the sheet has
+// been covered (refsheet.ts), exactly as the Reference keeps it.
+type Look = { kind: SheetKind; key: string; tab?: string; scroll?: number; log?: boolean; advanced?: boolean };
 let looks: Look[] = [];
 
 const detail = () => document.getElementById('ref-detail');
@@ -4735,7 +4737,7 @@ const detailScroller = () => detail()?.querySelector('.ref-detail-inner') as HTM
 // a keyword, the master changelog, a Rules entry, a Season Rule.
 function lookHtml(v: Look): string | null {
   if (!data) return null;
-  return refSheetHtml(v.kind, v.key);
+  return refSheetHtml(v.kind, v.key, { advanced: drawsAdvanced(v) });
 }
 
 function lookLabel(v: Look): string {
@@ -4770,7 +4772,10 @@ function openLook(kind: Look['kind'], rawKey: string, opts: { log?: boolean } = 
     if (top && top.kind === kind && top.key === key) return;
     const under = looks[looks.length - 2];
     if (under && under.kind === kind && under.key === key) return backLook();
-    if (top) top.scroll = detailScroller()?.scrollTop ?? 0;
+    if (top) {
+      top.scroll = detailScroller()?.scrollTop ?? 0;
+      noteSheetLeft(top);
+    }
   }
   looks.push(v);
   if (kind === 'card' || kind === 'keyword') remember({ kind, key });
