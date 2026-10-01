@@ -46,6 +46,8 @@ const server = {
   logoutDown: false,         // only the sign-out request is lost
   getDelay: 0,
   puts: [],                  // every PUT, as [uid, what]
+  endedEverywhere: [],       // uids whose every session was ended
+  deleted: [],               // uids whose account was deleted
 };
 const empty = () => ({ units: [], squads: [], hidden: [], updatedAt: 0 });
 server.library[1] = empty();
@@ -64,6 +66,14 @@ globalThis.fetch = async (url, init = {}) => {
   if (path === '/auth/login') { const u = server.users[body.username]; server.session = u.id; return reply(200, { user: u, csrfToken: 'csrf' }); }
   if (path === '/auth/logout') { server.session = null; return reply(200, { ok: true }); }
   if (!me) return reply(401, { error: 'Sign in to do that.' });
+  if (path === '/auth/logout-all') { server.endedEverywhere.push(me); server.session = null; return reply(200, { ok: true }); }
+  if (path === '/auth/delete-account') {
+    if (body.password !== 'right') return reply(401, { error: 'Your password is not correct.' });
+    server.deleted.push(me);
+    delete server.library[me]; delete server.inventory[me];
+    server.session = null;
+    return reply(200, { ok: true });
+  }
   if (path === '/library/me' && method === 'GET') { await tick(server.getDelay); return reply(200, server.library[me]); }
   if (path === '/library/me' && method === 'PUT') {
     server.puts.push([me, 'library', body.squads.map((s) => s.name).sort()]);
@@ -173,6 +183,39 @@ server.down = false;
 await api.logout();
 check('once the network is back, it is sent and the sign-out completes',
   [server.library[2].squads.map((s) => s.name).includes('Unsent on the bus'), api.user, squads()], [true, null, []]);
+
+// ---------- signing out everywhere, and deleting the account ----------
+await api.login('bob', 'x');
+await tick(60);
+save('Saved before leaving');
+await tick(60);
+await api.logoutEverywhere();
+check('signing out everywhere asks the server to end every session',
+  [server.endedEverywhere, api.user, server.session], [[2], null, null]);
+check('and clears this device the same way a sign-out does, after sending what was unsent',
+  [squads(), server.library[2].squads.map((s) => s.name).includes('Saved before leaving')], [[], true]);
+
+await api.login('alice', 'x');
+await tick(60);
+check('her builds are back before the delete', squads(), ['Alice list']);
+said = null;
+try { await api.deleteAccount('wrong'); } catch (e) { said = e.message; }
+check('a wrong password deletes nothing and says so',
+  [said, server.deleted, api.user?.username, squads()], ['Your password is not correct.', [], 'alice', ['Alice list']]);
+server.puts.length = 0;
+await api.deleteAccount('right');
+check('the right one deletes the account and signs this device out',
+  [server.deleted, api.user, server.session], [[1], null, null]);
+check('the device forgets the builds without sending them anywhere first', [squads(), boxes(), server.puts], [[], [], []]);
+
+// ---------- one account screen ----------
+const page = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
+const [padSrc, matchSrc, mpSrc] = ['../pad/pad.ts', '../src/match.ts', '../src/multiplayer.ts'].map(page);
+check('the pad, the Match Centre and the tabletop all open the one account screen',
+  [padSrc, matchSrc, mpSrc].map((t) => /openAccount\(\{/.test(t)), [true, true, true]);
+check('and none keeps a sign-out or a password change of its own',
+  [padSrc, matchSrc, mpSrc].map((t) => /api\.logout\(|changePassword\(|data-act="signout"|id="mc-out"|id="mp-signout"|id="mc-change"|id="mp-change"/.test(t)),
+  [false, false, false]);
 
 // ---------- the pad's hidden dials ----------
 const board = {

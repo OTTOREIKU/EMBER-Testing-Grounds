@@ -83,6 +83,15 @@ for (const p of PAGES) {
   check(`${p}: no plugins, no <base> retargeting, no form posting elsewhere`,
     [pol['object-src']?.join(' '), pol['base-uri']?.join(' '), pol['form-action']?.join(' ')], ["'none'", "'self'", "'self'"]);
   check(`${p}: the policy is read before any script`, html.indexOf('Content-Security-Policy') < html.indexOf('<script'), true);
+  // Everything else a page loads is named too (security audit W5, 2026-10-01):
+  // without these, markup that did slip in could still frame another site,
+  // pull an image from anywhere to carry data out, or call any server.
+  check(`${p}: anything not named comes from the site alone, and nothing may be framed`,
+    [pol['default-src']?.join(' '), pol['frame-src']?.join(' ')], ["'self'", "'none'"]);
+  check(`${p}: images are the site's own or generated, styles the site's own or inline`,
+    [pol['img-src']?.join(' '), pol['style-src']?.join(' ')], ["'self' data:", "'self' 'unsafe-inline'"]);
+  check(`${p}: requests go to the site and its API, and to a developer's local API`,
+    pol['connect-src']?.join(' '), "'self' https://api.embertg.online wss://api.embertg.online http://*:3002 ws://*:3002");
 }
 // The policy would break a page that leaned on inline handlers or eval, so the
 // sources are held to never using them.
