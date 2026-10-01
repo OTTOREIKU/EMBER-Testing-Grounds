@@ -399,7 +399,9 @@ export const SHAPE_NOTE: Record<TokenShape, string> = {
   hexagon: 'Hexagon Token. A unit may bear only one, so taking a new one removes the old (2.5.3).',
   triangle: 'Triangle Token. In the physical game this sits on the Part Card, not the unit.',
   round: 'Round Token. In the physical game this sits on the Part Card, not the unit.',
-  state: 'Not a token. This is a State the unit is in (2.5.4).',
+  // No section number: 2.5.4 is the Stance Tokens, and each State is defined
+  // where its rule is (Optical Camouflage 4.12.2, Smoke 4.16).
+  state: 'Not a token. This is a State the unit is in.',
 };
 
 export function hexagonIds(): Set<string> {

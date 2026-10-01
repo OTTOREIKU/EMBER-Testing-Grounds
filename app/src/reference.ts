@@ -5,14 +5,14 @@ import { actionIconUrl, battlefieldCardUrl, boxCoverUrl, cardName, environmentIm
 import { mountCardImage, mountCardImageCopy, preloadCardImages, warmAllImagesWhenIdle, watchImageFallbacks } from './images';
 import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
-import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef, type TerrainMap } from './types';
+import { SHAPE_NOTE, TIMINGS, type Card, type StatusDef, type TerrainMap } from './types';
 import { registerOffline } from './offline';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
 import { iconSvg } from './dice';
 import { linkIcon } from './icons';
-import { cardRow, currentSeason, dieEntries, esc, fillPortraits, keywordCard, kwLabel, linkKeywords, matchDie, mechBlocks, rulesTab, sheetHtml, sheetLabel, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
-import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSeason, matchSecondary, matchStance, matchStatus, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSeason, nmSecondary, nmStatus, norm, rank } from './refsearch';
+import { cardRow, currentSeason, dieEntries, esc, fillPortraits, keywordCard, kwLabel, linkKeywords, matchDie, matchTokenEntry, mechBlocks, rulesTab, sheetHtml, sheetLabel, SLOT_LABEL, SPEED_MARK, tokenEntries, useCardData } from './refcards';
+import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSeason, matchSecondary, matchStance, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSeason, nmSecondary, norm, rank } from './refsearch';
 import { installDiagnostics } from './diagnostics';
 import { boxPicker, compareGrid, exclusiveToggle, isExclusiveTo, sharedCount } from './boxcompare';
 import { applyChangelogFilter, decorateSheetHead, holdDetailHeight, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, showDetailTab, type SheetNav } from './refsheet';
@@ -448,7 +448,7 @@ function tabCounts(q: string): Record<Tab, number> {
       data.mechanics.filter((m) => matchMechanic(m, q)).length +
       dieEntries().filter((d) => matchDie(d, q)).length +
       Object.entries(data.dice?.offsetRules ?? {}).filter(([k, v]) => !q || norm(`${k} ${v}`).includes(q)).length +
-      STATUSES.filter((d) => matchStatus(d, q)).length +
+      tokenEntries().filter((e) => matchTokenEntry(e, q)).length +
       (currentSeason()?.rules ?? []).filter((r) => matchSeason(r, q)).length,
   };
 }
@@ -575,7 +575,7 @@ function renderEverywhere(el: HTMLElement, q: string): void {
     data.play.phases.filter((x) => matchPhase(x, q)).length +
     data.play.timings.filter((x) => matchTiming(x, q)).length +
     data.play.stances.filter((x) => matchStance(x, q)).length +
-    STATUSES.filter((d) => matchStatus(d, q)).length;
+    tokenEntries().filter((e) => matchTokenEntry(e, q)).length;
   if (mechs.length + seasonHits.length + playBits) {
     // Mechanics and Season Rules are the chips worth naming; phases, timings,
     // stances and tokens count toward the total and live behind the group's

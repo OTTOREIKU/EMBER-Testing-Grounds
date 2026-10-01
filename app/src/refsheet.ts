@@ -234,6 +234,17 @@ export function runSheetClick(ev: MouseEvent, nav: SheetNav): boolean {
     nav.open('season', seasonLink.dataset.season!);
     return true;
   }
+  // The token index (refcards.ts tokenSection): a picture moves the page to
+  // that token's entry. Nothing opens, so it is answered here and goes nowhere.
+  const jump = t.closest<HTMLElement>('[data-tokjump]');
+  if (jump) {
+    ev.preventDefault();
+    const id = (jump.dataset.tokjump ?? '').replace(/[^\w-]/g, '');
+    // At once, with no glide: chrome never slides (ui.css rule 4), and a
+    // smooth scroll inside the pad's own scrolling panel can be dropped.
+    document.querySelector<HTMLElement>(`[data-tok="${id}"]`)?.scrollIntoView({ block: 'center' });
+    return true;
+  }
   const ruleSheet = t.closest<HTMLElement>('[data-rulesheet]');
   if (ruleSheet) {
     ev.preventDefault();

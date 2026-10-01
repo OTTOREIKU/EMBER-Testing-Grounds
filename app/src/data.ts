@@ -184,6 +184,56 @@ export interface MechanicDef {
   text: string;
 }
 
+// The physical tokens, for the Reference's Rules tab (data/tokens.json; OTTO,
+// 2026-10-01: "include them in the reference app so players can see what they
+// look like when they are playing on an actual table"). Reference only: the
+// board, the Match Centre and the pad's play screens draw tokens their own way
+// and read none of this.
+//
+// A token the engine also tracks names its StatusDef (types.ts STATUSES) and
+// takes its name, its text and its pictures from there, so each rule is
+// written once. Two statuses that are the two faces of one piece (a Command
+// Token ready, and spent) are one entry naming both.
+export interface TokenFace {
+  // A file in assets/tokens/print, without its extension.
+  art: string;
+  // What that face means: "Available", "Consumed". Empty when there is one.
+  label: string;
+}
+
+export interface TokenFamily {
+  id: string;
+  name: string;
+  // The rulebook section that defines the family, bare: "2.5.1".
+  ref?: string;
+  text: string;
+  // Where a piece of this family sits, said on each of its tokens.
+  note?: string;
+}
+
+export interface TableToken {
+  id: string;
+  family: string;
+  name?: string;
+  status?: string | string[];
+  // The outline drawn when no picture is held, and how large a held one is.
+  shape?: string;
+  // What the outline says under it. "No picture yet" unless the piece itself
+  // does not exist in print (Hindered).
+  caption?: string;
+  faces?: TokenFace[];
+  text?: string;
+  note?: string;
+  ref?: string;
+  // Mechanics entries to read with it (mechanics.json ids).
+  see?: string[];
+}
+
+export interface TokenData {
+  families: TokenFamily[];
+  tokens: TableToken[];
+}
+
 // A Season Rule (Supplementary Rules, section 8). The publisher runs these as a
 // trial beside the main rules, never as part of them, so the Reference shows
 // each one apart and marked optional (OTTO, 2026-09-30: "We definitely want to
@@ -524,6 +574,8 @@ export interface GameData {
   // How each card has changed across the publisher's list revisions, for the
   // Reference's Changelog section (data/changelog.json).
   changelog: ChangelogData;
+  // Every physical token, for the Reference (data/tokens.json).
+  tableTokens: TokenData;
 }
 
 // ONE change to one card between two of the publisher's list revisions
@@ -650,7 +702,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, diceRef, xlate, names, missions, environments, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards, changelog] = await Promise.all([
+  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, diceRef, xlate, names, missions, environments, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards, changelog, tokenData] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     // Optional, and empty until a map is authored and committed: a missing or
@@ -727,6 +779,11 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('changelog.json'))
       .then((r) => (r.ok ? (r.json() as Promise<Partial<ChangelogData>>) : ({} as Partial<ChangelogData>)))
       .catch(() => ({}) as Partial<ChangelogData>),
+    // Optional too: without it the Reference lists the tokens the engine
+    // tracks and nothing else.
+    fetch(dataUrl('tokens.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<Partial<TokenData>>) : ({} as Partial<TokenData>)))
+      .catch(() => ({}) as Partial<TokenData>),
   ]);
 
   // Cards the community bundle does not have. cards.json is regenerated from
@@ -869,6 +926,11 @@ export async function loadData(): Promise<GameData> {
     overload: common.overload ?? [],
     factions: factionData.factions ?? [],
     changelog: { versions: changelog.versions ?? [], cards: changelog.cards ?? {}, rules: changelog.rules ?? {}, keywords: changelog.keywords ?? {} },
+    // Only well-formed entries survive, as the board maps do above.
+    tableTokens: {
+      families: (tokenData.families ?? []).filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string'),
+      tokens: (tokenData.tokens ?? []).filter((t) => t && typeof t.id === 'string' && typeof t.family === 'string'),
+    },
   };
 }
 

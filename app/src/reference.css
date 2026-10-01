@@ -730,15 +730,15 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 }
 .season-vs-new span { color: var(--blue); }
 .season-vs-main b, .season-vs-new b { font-size: 12.5px; font-weight: 600; line-height: 1.35; color: var(--text); }
-.season-sees { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
-.season-see, .season-callout {
+.season-sees, .rule-sees { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.season-see, .rule-see, .season-callout {
   display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px;
   padding: 6px 8px 6px 12px; border: none; border-radius: var(--radius);
   font: 500 12.5px/1.45 var(--font); text-align: left; cursor: pointer; transition: background 0.12s;
 }
-.season-see { background: var(--surface2); color: var(--text); }
-.season-see:hover, .season-see:focus-visible { background: var(--surface3); outline: none; }
-.season-see > span:first-child, .season-callout-t { flex: 1; min-width: 0; }
+.season-see, .rule-see { background: var(--surface2); color: var(--text); }
+.season-see:hover, .season-see:focus-visible, .rule-see:hover, .rule-see:focus-visible { background: var(--surface3); outline: none; }
+.season-see > span:first-child, .rule-see > span:first-child, .season-callout-t { flex: 1; min-width: 0; }
 .season-callout { margin: 8px 0 10px; padding: 8px 8px 9px 12px; background: var(--blue-lt); color: var(--text2); }
 .season-callout:hover, .season-callout:focus-visible { background: var(--blue-md); outline: none; }
 /* The kicker on its own line over the sentence, as a changelog row's chip. */
@@ -927,6 +927,8 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
   .ref-count { grid-column: 1 / -1; margin-bottom: 0; }
   .ref-facets { grid-column: 1 / -1; }
   .tm-strip { grid-column: 1 / -1; margin-bottom: 0; }
+  .tok-index, .tok-fam, .tok-wide { grid-column: 1 / -1; margin-bottom: 0; }
+  .tok-fam { margin-top: 8px; }
   /* The everywhere groups stack full-width: letting them fall into the card
      grid put three towers side by side with dead space between them. */
   .ref-group { grid-column: 1 / -1; }
@@ -1069,14 +1071,50 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 /* The captions are gone: four printed cards name themselves, and the titles
    and notes said less than the images they sat under. */
 
-/* ---------- token reference ---------- */
+/* ---------- tokens on the table (OTTO, 2026-10-01) ---------- */
+/* Every physical piece, drawn large enough to match against the one in the
+   hand, each face over its name. The pieces are cut to their own outline, so
+   no plate sits behind them. The black "consumed" faces are close to the page's
+   own colour, so every picture carries a hairline: a drop-shadow, which traces
+   the cut-out where an outline would box it. */
+.tok-card { scroll-margin-top: 150px; }
 .tok-card .card-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.tok-art { display: inline-flex; align-items: center; gap: 4px; }
-/* The printed tokens are the header art now, so they carry the gap themselves
-   rather than a left margin that only made sense beside the drawn badge. Round
-   and Hexagon pieces are cut to their own outline, so no plate behind them. */
-.tok-print { height: 34px; width: auto; vertical-align: middle; }
+.tok-faces { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; margin-bottom: 11px; }
+.tok-face { margin: 0; display: grid; justify-items: center; gap: 5px; }
+.tok-face figcaption { font: 500 10.5px var(--mono); color: var(--text3); }
+.tok-print { height: 60px; width: auto; display: block; filter: drop-shadow(0 0 1px var(--text3)); }
+/* By the piece's shape (data/tokens.json): a rectangle is shorter than a round
+   token of the same presence, and the First Player Token is the large one. */
+.tok-card[data-shape="rect"] .tok-print { height: 44px; }
+.tok-card[data-shape="plate"] .tok-print { height: 72px; }
+.tok-outline { display: block; color: var(--text3); }
 .tok-badge { display: block; }
+/* The way in by eye: one small picture per token, and a tap moves the page to
+   that token's entry (refsheet.ts). Flat buttons on the ladder (ui.css rule 1). */
+.tok-index { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.tok-jump {
+  display: grid; place-items: center; height: 46px; min-width: 46px; padding: 5px;
+  border: none; border-radius: var(--radius); background: var(--surface); cursor: pointer;
+  transition: background 0.12s;
+}
+.tok-jump:hover, .tok-jump:focus-visible { background: var(--surface2); outline: none; }
+.tok-jump img { height: 34px; width: auto; display: block; filter: drop-shadow(0 0 1px var(--text3)); }
+/* A family's own line over its tokens: what the shape means, said once. */
+.tok-fam { margin: 14px 0 8px; }
+.tok-fam-name {
+  margin: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 15.5px; font-weight: 600; line-height: 1.3;
+}
+.tok-fam-text { margin: 4px 0 0; max-width: 70ch; font-size: 13px; line-height: 1.55; color: var(--text2); }
+/* The Rules entries a token points at, pinned to the foot of its card with the
+   source under them. Cards in a row are the same height and their text is not,
+   so left to follow the text the buttons stood at a different height on every
+   card (OTTO, 2026-10-01). The source tag gives up its own auto margin here,
+   or the two would share the spare room between them. */
+.tok-card .rule-sees { margin-top: auto; padding-top: 10px; }
+.tok-card .rule-sees + .card-foot { margin-top: 0; }
+/* The Stance token on its own Stances card, beside the name it marks. */
+.stance-print { height: 26px; width: auto; margin-right: 8px; vertical-align: -7px; filter: drop-shadow(0 0 1px var(--text3)); }
 /* The decay chips these tinted are gone: beside a photograph of the printed
    token, a chip reading "Yellow" labelled what the picture already showed. The
    duration is still written out in the card body, where it reads as the rule it

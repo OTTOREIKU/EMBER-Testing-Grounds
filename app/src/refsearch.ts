@@ -5,7 +5,7 @@
 // factions, battlefield, the dice) stay on the reference, which is the only
 // page that lists them.
 import { cardName, type KeywordDef, type MechanicDef, type MissionCard, type PhaseDef, type SeasonRule, type SecondaryTask, type StanceDef, type TimingDef } from './data';
-import type { Card, StatusDef } from './types';
+import type { Card } from './types';
 
 export const norm = (s: string) => s.toLowerCase();
 
@@ -53,7 +53,6 @@ export const nmSecondary = (s: SecondaryTask) => s.name;
 export const nmMechanic = (m: MechanicDef) => m.name;
 export const nmSeason = (r: SeasonRule) => r.name;
 export const nmPlay = (x: { name: string }) => x.name;
-export const nmStatus = (d: StatusDef) => d.label;
 
 // ---------- one predicate per pool, shared by the tab lists AND the badges ----------
 //
@@ -90,5 +89,3 @@ export const matchTiming = (x: TimingDef, q: string): boolean =>
   !q || norm(`${x.name} timing ${x.text}`).includes(q);
 export const matchStance = (x: StanceDef, q: string): boolean =>
   !q || norm(`${x.name} ${x.short} stance ${x.effect} ${x.good} ${x.cost}`).includes(q);
-export const matchStatus = (d: StatusDef, q: string): boolean =>
-  !q || norm(`${d.label} ${d.icon} ${d.shape} ${d.note} ${d.decay ?? ''} token`).includes(q);

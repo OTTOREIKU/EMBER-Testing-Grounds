@@ -14,12 +14,12 @@
 // are synchronous string builders called during a render; a module-level await
 // here would make every importer async. Each page calls useCardData() once,
 // after its own loadData() resolves and before it draws anything.
-import { FACTION_LABEL, HELP_CARDS, TOKEN_PRINT, actionIconUrl, cardName, helpCardUrl, mechPartUrl, portraitUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenPrintUrl, traitName, zeroCostReason, type BoxDef, type ChangeEntry, type GameData, type KeywordDef, type MechanicDef, type RuleChange, type SeasonDef, type SeasonRule } from './data';
+import { FACTION_LABEL, HELP_CARDS, TOKEN_PRINT, actionIconUrl, cardName, helpCardUrl, mechPartUrl, portraitUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenPrintUrl, traitName, zeroCostReason, type BoxDef, type ChangeEntry, type GameData, type KeywordDef, type MechanicDef, type RuleChange, type SeasonDef, type SeasonRule, type TableToken, type TokenFace, type TokenFamily } from './data';
 import { LENGTH_NAME, TICK_COST, costLabel, lengthOf, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule, type CapsuleShort } from './glyphs';
 import { linkIcon } from './icons';
 import { printsWide } from './images';
-import { found, matchMechanic, matchMechanicBasic, matchPhase, matchSeason, matchStance, matchStatus, matchTiming, nmMechanic, nmPlay, nmSeason, nmStatus, norm } from './refsearch';
+import { found, matchMechanic, matchMechanicBasic, matchPhase, matchSeason, matchStance, matchTiming, nmMechanic, nmPlay, nmSeason, norm } from './refsearch';
 import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type CardAction, type StatusDef } from './types';
 import { iconSvg } from './dice';
 
@@ -1563,6 +1563,177 @@ export const matchDie = (die: DieEntry, q: string): boolean =>
       <text x="${w / 2}" y="17" text-anchor="middle" font-size="9" font-weight="700" fill="#0f1216">${esc(def.icon)}</text></svg>`;
   };
 
+// ---------- the tokens on the table (OTTO, 2026-10-01) ----------
+//
+// Every physical piece in the box, so a player holding one can find what it is:
+// grouped by where it sits (the rulebook's own families, 2.5.1 to 2.5.5), both
+// faces shown and named, at a size that can be matched against the piece. The
+// list is data/tokens.json; a token the engine also tracks is joined to its
+// StatusDef here, which is where its name, its text and its pictures come from.
+
+// One token as the section draws it.
+export interface TokenEntry {
+  id: string;
+  family: TokenFamily;
+  name: string;
+  faces: TokenFace[];
+  shape: string;
+  statuses: StatusDef[];
+  texts: string[];
+  note: string;
+  caption: string;
+  ref?: string;
+  see: MechanicDef[];
+}
+
+const FACE_COLOUR = /-(yellow|red|green)$/;
+
+// The printed faces of a token the engine tracks. One red on both faces shows
+// only its red face (ruling I9), and a face is named by its colour, which is
+// how long it lasts (2.5.3).
+function statusFaces(d: StatusDef | undefined): TokenFace[] {
+  if (!d) return [];
+  const print = (TOKEN_PRINT[d.id] ?? []).filter((n) => d.decay !== 'red' || n.endsWith('-red'));
+  return print.map((art) => {
+    const colour = FACE_COLOUR.exec(art)?.[1];
+    const label = print.length > 1 && colour
+      ? colour[0].toUpperCase() + colour.slice(1)
+      : d.shape === 'triangle' || d.decay === 'red' ? 'Both faces' : '';
+    return { art, label };
+  });
+}
+
+// Every token in the order the section lists them: the file's families, and
+// inside each the file's order. A StatusDef the file does not name still
+// appears, in its shape's family, so a token added to the engine can never go
+// missing from the Reference.
+export function tokenEntries(): TokenEntry[] {
+  const families = data.tableTokens?.families ?? [];
+  const listed = data.tableTokens?.tokens ?? [];
+  const familyOf = (id: string): TokenFamily =>
+    families.find((f) => f.id === id) ?? { id, name: 'Other tokens', text: '' };
+  const named = new Set<string>();
+  const out: TokenEntry[] = [];
+  const push = (t: TableToken): void => {
+    const ids = t.status === undefined ? [] : Array.isArray(t.status) ? t.status : [t.status];
+    const statuses = ids.map((id) => STATUSES.find((s) => s.id === id)).filter((s): s is StatusDef => !!s);
+    // It names a status the engine no longer has: nothing is left to say.
+    if (ids.length && !statuses.length) return;
+    statuses.forEach((s) => named.add(s.id));
+    const first = statuses[0];
+    const family = familyOf(t.family);
+    const lasts = first?.decay ? DURATION[first.decay].text : '';
+    out.push({
+      id: t.id,
+      family,
+      name: t.name ?? first?.label ?? t.id,
+      faces: t.faces ?? statusFaces(first),
+      shape: t.shape ?? first?.shape ?? 'round',
+      statuses,
+      texts: [...(t.text ? [t.text] : []), ...statuses.map((s) => s.note)],
+      note: [t.note ?? family.note ?? (first ? SHAPE_NOTE[first.shape] : ''), lasts].filter(Boolean).join(' '),
+      caption: t.caption ?? 'No picture yet',
+      ref: t.ref,
+      see: (t.see ?? []).map((id) => data.mechanics.find((m) => m.id === id)).filter((m): m is MechanicDef => !!m),
+    });
+  };
+  listed.forEach(push);
+  for (const s of STATUSES) if (!named.has(s.id)) push({ id: s.id, family: s.shape, status: s.id });
+  const rank = (e: TokenEntry): number => {
+    const i = families.findIndex((f) => f.id === e.family.id);
+    return i < 0 ? families.length : i;
+  };
+  return out.map((e, i) => ({ e, i })).sort((a, b) => rank(a.e) - rank(b.e) || a.i - b.i).map((x) => x.e);
+}
+
+// Everything a reader might type at a token: its name, its family, its rule,
+// what its faces are called, and the plain word.
+export const matchTokenEntry = (e: TokenEntry, q: string): boolean =>
+  !q || norm(`${e.name} ${e.family.name} ${e.texts.join(' ')} ${e.note} ${e.faces.map((f) => f.label).join(' ')} ${
+    e.statuses.map((s) => `${s.label} ${s.icon} ${s.shape} ${s.decay ?? ''}`).join(' ')} ${e.shape} token`).includes(q);
+const nmTokenEntry = (e: TokenEntry) => e.name;
+
+// A piece nobody holds a picture of, as a dashed outline of its own shape.
+function tokenOutline(shape: string): string {
+  const stroke = 'fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 4"';
+  const body = shape === 'triangle'
+    ? `<polygon points="31,5 58,56 4,56" ${stroke}/>`
+    : shape === 'hexagon'
+      ? `<polygon points="17,5 45,5 59,31 45,57 17,57 3,31" ${stroke}/>`
+      : shape === 'pentagon'
+        ? `<polygon points="31,4 59,24 48,57 14,57 3,24" ${stroke}/>`
+        : shape === 'round'
+          ? `<circle cx="31" cy="31" r="27" ${stroke}/>`
+          : `<rect x="4" y="4" width="54" height="54" rx="6" ${stroke}/>`;
+  return `<svg class="tok-outline" viewBox="0 0 62 62" width="60" height="60" role="img" aria-label="No picture">${body}</svg>`;
+}
+
+function tokenFacesHtml(e: TokenEntry): string {
+  if (e.faces.length) {
+    return e.faces
+      .map((f) => `<figure class="tok-face">
+          <img class="tok-print" src="${esc(tokenPrintUrl(f.art))}" alt="${esc(f.label ? `${e.name}, ${f.label}` : e.name)}" decoding="async">
+          ${f.label ? `<figcaption>${esc(f.label)}</figcaption>` : ''}
+        </figure>`)
+      .join('');
+  }
+  // A State has no piece at all (Optical Camouflage, In smoke), so it keeps the
+  // drawn badge. Anything else is a real piece we hold no picture of.
+  const state = e.statuses.find((s) => s.shape === 'state');
+  if (state) return `<figure class="tok-face">${tokenSvg(state)}</figure>`;
+  return `<figure class="tok-face">${tokenOutline(e.shape)}<figcaption>${esc(e.caption)}</figcaption></figure>`;
+}
+
+// One token: its faces, its name, its rule, where it sits and for how long,
+// then the Rules entries to read with it and the source. The last two are
+// pinned to the foot of the card (reference.css), so across a row of cards
+// whose text runs to different lengths the buttons sit on one line (OTTO,
+// 2026-10-01: "right now they are all staggered").
+//
+// No shape or colour chips beside the name. Next to the printed token they
+// labelled what the picture already shows, and did it worse: "square" and
+// "Yellow" beside a photograph of a square yellow Fragile token is noise that
+// reads as extra rules. `state` stays, because it is the one shape value that
+// is not a shape: Camouflage and In smoke are States with no printed piece at
+// all, so the chip is the only thing saying which kind of thing this is.
+function tokenCard(e: TokenEntry): string {
+  const sees = e.see
+    .map((m) => `<button class="rule-see" data-rulesheet="${esc(m.id)}"><span>${esc(m.name)}</span><span class="ui-go" aria-hidden="true">›</span></button>`)
+    .join('');
+  // More than two faces (the four Stance tokens) takes the whole row on a wide
+  // page, where it would otherwise stand alone beside an empty cell.
+  return `<article class="card tok-card${e.faces.length > 2 ? ' tok-wide' : ''}" data-tok="${esc(e.id)}" data-shape="${esc(e.shape)}">
+    <div class="tok-faces">${tokenFacesHtml(e)}</div>
+    <div class="card-title">${esc(e.name)}${e.statuses.some((s) => s.shape === 'state') ? ' <span class="tag mono">state</span>' : ''}</div>
+    <div class="card-body">
+      ${e.texts.map((t) => `<p>${linkKeywords(t)}</p>`).join('')}
+      ${e.note ? `<p class="ref-note">${esc(e.note)}</p>` : ''}
+    </div>
+    ${sees ? `<div class="rule-sees">${sees}</div>` : ''}
+    ${e.ref ? `<div class="card-foot"><span class="tag mono">${esc(e.ref)}</span></div>` : ''}
+  </article>`;
+}
+
+// The section. With no search it opens on a strip of small pictures, the way
+// in by eye, then each family under one line saying what its shape means. A
+// search lists what it found in the search's own order, with no groups.
+function tokenSection(list: TokenEntry[], q: string): string {
+  const head = `<p class="ref-count">Tokens on the table</p>`;
+  if (q) return head + list.map(tokenCard).join('');
+  const index = `<div class="tok-index">${list
+    .filter((e) => e.faces.length)
+    .map((e) => `<button class="tok-jump" data-tokjump="${esc(e.id)}" title="${esc(e.name)}"><img src="${esc(tokenPrintUrl(e.faces[0].art))}" alt="${esc(e.name)}" decoding="async"></button>`)
+    .join('')}</div>`;
+  const families: TokenFamily[] = [];
+  for (const e of list) if (!families.some((f) => f.id === e.family.id)) families.push(e.family);
+  return head + index + families
+    .map((f) => `<div class="tok-fam">
+        <p class="tok-fam-name">${esc(f.name)}${f.ref ? ` <span class="tag mono">${esc(f.ref)}</span>` : ''}</p>
+        ${f.text ? `<p class="tok-fam-text">${linkKeywords(f.text)}</p>` : ''}
+      </div>` + list.filter((e) => e.family.id === f.id).map(tokenCard).join(''))
+    .join('');
+}
+
 // Each tile a section draws, for a page that lists them one by one.
 const tilesOf = (html: string): string[] => html.match(/<article[\s\S]*?<\/article>/g) ?? [];
 
@@ -1634,8 +1805,9 @@ export function rulesSections(q: string): RulesSection[] {
     ? `<p class="ref-count">Stances</p>` +
       stances
         .map(
-          (x) => `<article class="card">
-            <div class="card-title">${esc(x.name)} <span class="tag mono">${esc(x.short)}</span></div>
+          // The Stance token that marks it on the Mech's base (2.5.4).
+          (x) => `<article class="card stance-card">
+            <div class="card-title"><img class="stance-print" src="${esc(stancePrintUrl(x.id))}" alt="">${esc(x.name)} <span class="tag mono">${esc(x.short)}</span></div>
             <div class="card-body">
               <p>${linkKeywords(x.effect)}</p>
               <p class="play-can"><b>Use it when</b> ${linkKeywords(x.good)}</p>
@@ -1703,53 +1875,8 @@ export function rulesSections(q: string): RulesSection[] {
       + offsetHtml
     : '';
 
-  const tokenList = found(STATUSES, q, matchStatus, nmStatus);
-  const tokenHtml = tokenList.length
-    ? `<p class="ref-count">Tokens and states</p>` +
-      tokenList
-        .map((d) => {
-          const dur = d.decay ? DURATION[d.decay] : null;
-          // The printed token, when we have it. The drawn badge below is our
-          // own shorthand and was only ever a stand-in: showing both put a
-          // made-up icon next to the real one and taught the wrong shape.
-          // Camouflage and In smoke keep the badge, and should — they are
-          // States (2.5.4), not tokens, and there is no printed piece to show.
-          // A token red on both faces shows only its red face (ruling I9).
-          const print = (TOKEN_PRINT[d.id] ?? []).filter((n) => d.decay !== 'red' || n.endsWith('-red'));
-          return `<article class="card tok-card">
-            <div class="card-title">
-              <span class="tok-art">${
-                print.length
-                  ? print.map((n) => `<img class="tok-print" src="${tokenPrintUrl(n)}" alt="">`).join('')
-                  : tokenSvg(d) + (d.decay === 'yellow' ? tokenSvg(d, true) : '')
-              }</span>
-              ${esc(d.label)}
-              ${
-                // THE SHAPE AND COLOUR CHIPS ARE GONE. Beside the printed
-                // token they were labelling what the picture already shows,
-                // and doing it worse: "square" and "Yellow" next to a
-                // photograph of a square yellow Fragile token is noise that
-                // reads as extra rules.
-                //
-                // `state` STAYS, because it is the one shape value that is
-                // not a shape: Camouflage and In smoke are States (2.5.4)
-                // with no printed piece at all, so the chip is the only thing
-                // saying which kind of thing this is.
-                //
-                // Nothing is lost with the other two: the body below still
-                // carries SHAPE_NOTE and the duration in prose, where they
-                // read as the rules they are.
-                d.shape === 'state' ? `<span class="tag mono">${esc(d.shape)}</span>` : ''
-              }
-            </div>
-            <div class="card-body">
-              <p>${linkKeywords(d.note)}</p>
-              <p class="ref-note">${esc(SHAPE_NOTE[d.shape])}${dur ? ` ${esc(dur.text)}` : ''}</p>
-            </div>
-          </article>`;
-        })
-        .join('')
-    : '';
+  const tokenList = found(tokenEntries(), q, matchTokenEntry, nmTokenEntry);
+  const tokenHtml = tokenList.length ? tokenSection(tokenList, q) : '';
 
   const mechanicHtml = filtered.length
     ? `<p class="ref-count">${filtered.length} mechanic${filtered.length === 1 ? '' : 's'}</p>` +
