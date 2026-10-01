@@ -34,8 +34,10 @@ function clean(v: unknown, depth: number): unknown {
   if (Array.isArray(v)) return v.map((x) => clean(x, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [k, x] of Object.entries(v)) {
-    if (k === '__proto__') continue;
-    out[stripTags(k)] = clean(x, depth + 1);
+    // Checked as it will be WRITTEN: '<__proto__>' is that key once stripped.
+    const key = stripTags(k);
+    if (key === '__proto__') continue;
+    out[key] = clean(x, depth + 1);
   }
   return out;
 }
@@ -43,6 +45,11 @@ function clean(v: unknown, depth: number): unknown {
 const ENTITY: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
 // Text into HTML, between tags or inside a quoted attribute.
+//
+// THE one escaping rule. Every page module keeps a local `esc` with this exact
+// behaviour rather than importing it, because twenty test files load those
+// modules with their imports stripped; safetext.test finds every one of them
+// by name and holds its output to this function's, so they cannot drift.
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ENTITY[c]!);
 }

@@ -5,7 +5,7 @@ import { expandGlyphs } from './glyphs';
 import { printsWide } from './images';
 
 const esc = (s: string): string =>
-  s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 // Grouping for the picker's list, shared so the mech builder, the drone list and
 // the Load picker cannot drift into different orders.

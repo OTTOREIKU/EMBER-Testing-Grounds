@@ -32,7 +32,7 @@ import { inSmoke } from './rules';
 import { factionColour, ICON_EDIT, ICON_LOCK, linkIcon, squadColour } from './icons';
 import { handCount, handIds, handSealed } from './tactichand';
 
-const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 const DOUBLE_CLICK_MS = 500;
 

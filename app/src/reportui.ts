@@ -31,7 +31,7 @@ const KINDS: { id: ReportKind; label: string }[] = [
 const EDITIONS = ['Not sure', 'English printing', 'Chinese printing'];
 
 const esc = (s: string): string =>
-  s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 // FREEZING THE PAGE BEHIND THE DIALOG.
 //

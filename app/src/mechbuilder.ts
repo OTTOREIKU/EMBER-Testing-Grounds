@@ -30,7 +30,7 @@ export const BUILD_SLOTS: BuildSlot[] = [
 ];
 
 function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
 // The cards a slot may take before a page narrows them to its collection:

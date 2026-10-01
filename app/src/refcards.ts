@@ -86,7 +86,7 @@ export const SPEED_MARK: Record<string, { glyph: string; title: string; label: s
   passive: { glyph: '∞', title: 'Passive', label: 'Passive' },
 };
 
-export const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 // Several `en` fields in the card data still hold the Chinese text, so an `en`
 // value is not proof of English. Anything that would print card text has to

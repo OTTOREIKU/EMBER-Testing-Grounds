@@ -61,7 +61,7 @@ const SLOT_ORDER = ['Torso', 'Chassis', 'L.Arm', 'R.Arm', 'Pack', 'Drone', 'Proj
 // quote closed the attribute early. Everything from the data is escaped, and
 // the quote has to be escaped too, not just the three characters text needs.
 export const esc = (s: string): string =>
-  s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 export function boxName(b: BoxInfo | undefined, key: string): string {
   return b?.name.en || b?.name.zh || key;

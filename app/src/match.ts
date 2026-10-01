@@ -50,7 +50,7 @@ installDiagnostics(window);
 // choice travels as the same commands the board uses. Part 3 is the HUD.
 
 function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // The board this page holds and mirrors. Empty until squads arrive, but real:
@@ -1775,6 +1775,27 @@ function squadCards(sq: LeaderSquad): SquadEntry[] {
       || cardLabel(a.id).localeCompare(cardLabel(b.id)));
 }
 
+// What a recorded game says about itself comes back from the server, where
+// any account may have put it, so the panel prints only what this page knows:
+// a card it holds (statRows), a faction with a label, a Main Task by its
+// card's name. The server's own word for a squad of no single faction is the
+// one row kept as it stands.
+const NO_FACTION = 'unknown';
+
+function factionTag(faction: string | null): string {
+  const label = faction ? FACTION_LABEL[faction] : undefined;
+  return label ? `${esc(label)} · ` : '';
+}
+
+function knownFactions(all: FactionStat[]): FactionStat[] {
+  return all.filter((f) => f.faction === NO_FACTION || !!FACTION_LABEL[f.faction]);
+}
+
+function recordedMission(id: string | null): string {
+  if (!id) return 'Free battle';
+  return data?.missions.cards.find((m) => m.id === id)?.name ?? 'Main Task';
+}
+
 // A squad has no name, so it is called by its pilots — the part of a list
 // anyone reading it would say out loud.
 function squadName(sq: LeaderSquad): string {
@@ -1793,7 +1814,7 @@ function squadRows(rows: LeaderSquad[]): string {
     return `<div class="statrow pick" data-squad="${esc(r.key)}">
       <span class="sl-rank">${i + 1}</span>
       <span class="sl-name">${esc(squadName(r))}
-        <em class="sl-sub">${r.faction ? esc(FACTION_LABEL[r.faction] ?? r.faction) + ' · ' : ''}${cards.length} card${cards.length === 1 ? '' : 's'}</em></span>
+        <em class="sl-sub">${factionTag(r.faction)}${cards.length} card${cards.length === 1 ? '' : 's'}</em></span>
       <span class="sl-bar"><i style="width:${Math.max(4, Math.round((r.played / top) * 100))}%"></i></span>
       <span class="sl-n">${r.played}</span><span class="sl-w">${rate}%</span>
     </div>`;
@@ -1829,7 +1850,7 @@ function squadHtml(): string {
     <div class="acct squadpop" data-tip-side="right">
       <button class="x" id="mc-squad-x">✕</button>
       <h3>${esc(squadName(sq))}</h3>
-      <div class="role">${sq.faction ? esc(FACTION_LABEL[sq.faction] ?? sq.faction) + ' · ' : ''}${cards.length} card${cards.length === 1 ? '' : 's'}</div>
+      <div class="role">${factionTag(sq.faction)}${cards.length} card${cards.length === 1 ? '' : 's'}</div>
       <div class="rec">
         <div><b>${sq.played}</b><span>played</span></div>
         <div><b>${sq.won}</b><span>won</span></div>
@@ -1892,7 +1913,7 @@ function statsHtml(): string {
         <div class="scrollbox">
           ${recent.length
             ? `<div class="statlist">${recent.map((g) => `<div class="statrow">
-                <span class="sl-name">${esc(g.mission || 'Free battle')}</span>
+                <span class="sl-name">${esc(recordedMission(g.mission))}</span>
                 <span class="sl-date">${esc(shortDate(g.played_at))}</span>
                 <span class="sl-n">${Number(g.vp)} VP</span>
                 <span class="sl-res ${esc(String(g.result))}">${esc(String(g.result))}</span>
@@ -1912,8 +1933,8 @@ function statsHtml(): string {
             </div>
             <div class="sect">Factions</div>
             <div class="scrollbox">
-              ${t.factions.length
-                ? `<div class="statlist">${t.factions.map((f) => {
+              ${knownFactions(t.factions).length
+                ? `<div class="statlist">${knownFactions(t.factions).map((f) => {
                     const share = t.summary.games ? Math.round((f.played / t.summary.games) * 100) : 0;
                     return `<div class="statrow">
                       <span class="sl-name">${esc(FACTION_LABEL[f.faction] ?? f.faction)}</span>
@@ -2043,7 +2064,7 @@ function adminHtml(): string {
   const chip = (id: CodeFilter, label: string, title: string): string =>
     `<button class="chipf${codeFilter === id ? ' on' : ''}" data-codefilter="${id}" title="${esc(title)}">${esc(label)}</button>`;
   const searchable = (...parts: (string | null)[]): string =>
-    esc(parts.filter(Boolean).join(' ').toLowerCase());
+    parts.filter(Boolean).join(' ').toLowerCase();
   return `<div class="mc-col wide">
     <h1 class="mc-h">Admin</h1>
     ${adminErr ? `<div class="mc-err">${esc(adminErr)}</div>` : ''}
@@ -2076,7 +2097,7 @@ function adminHtml(): string {
           ${a
             ? a.invites.length
               ? `<div class="statlist" id="mc-codelist">${a.invites.map((i) => `<div class="statrow"
-                  data-status="${esc(String(i.status))}" data-q="${searchable(i.code, i.label, i.used_by)}">
+                  data-status="${esc(String(i.status))}" data-q="${esc(searchable(i.code, i.label, i.used_by))}">
                   <code class="sl-code">${esc(i.code)}</code>
                   <span class="sl-name">${esc(i.label || '—')}${i.used_by ? ` → ${esc(i.used_by)}` : ''}</span>
                   <span class="sl-status ${esc(String(i.status))}" title="Minted ${esc(shortDate(i.created_at))}">${esc(String(i.status))}</span>
@@ -2098,7 +2119,7 @@ function adminHtml(): string {
         <div class="scrollbox">
           ${a
             ? `<div class="statlist" id="mc-userlist">${a.users.map((u) => `<div class="statrow"
-                data-q="${searchable(u.username, u.display_name, u.joined_with)}">
+                data-q="${esc(searchable(u.username, u.display_name, u.joined_with))}">
                 <span class="sl-name">${esc(u.username)}${
                   u.role !== 'player' ? ` <b class="sl-role">${esc(u.role)}</b>` : ''
                 }${u.is_active ? '' : ' <b class="sl-role off">disabled</b>'}</span>

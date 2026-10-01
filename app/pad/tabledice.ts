@@ -19,7 +19,7 @@ const COLOUR_NAME: Record<string, string> = { yellow: 'Yellow', red: 'Red', whit
 const DIE_PART: Record<string, string> = { torso: 'torso', chasis: 'chassis', leftHand: 'leftArm', rightHand: 'rightArm', backpack: 'backpack' };
 
 const esc = (s: string): string =>
-  s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 // A die prints some faces more than once (four of a Red die's eight are the
 // same Heavy Hit). A player is asked what the die SHOWS, so each look is

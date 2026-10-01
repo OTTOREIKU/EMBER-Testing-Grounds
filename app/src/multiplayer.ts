@@ -20,7 +20,7 @@ export interface NetControls {
 // and deal with occasionally rather than something that watches you play.
 
 function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 const SCORE_WORD = ['very weak', 'weak', 'fair', 'strong', 'very strong'] as const;

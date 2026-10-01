@@ -62,8 +62,12 @@ check('the escape helpers are all found (one per page module, plus the shared on
 const probe = `<img src="x" onerror='y'>&amp;`;
 for (const h of found) {
   const out = h.fn(probe);
-  check(`${h.where}: no bracket or double quote survives, and & is escaped first`,
-    [/[<>"]/.test(out), out.includes('&amp;amp;')], [false, true]);
+  check(`${h.where}: no bracket or quote of either kind survives, and & is escaped first`,
+    [/[<>"']/.test(out), out.includes('&amp;amp;')], [false, true]);
+  // One rule, however many copies (security audit W6, 2026-10-01): fifteen of
+  // these let a single quote through, which only held because no attribute in
+  // the app is single-quoted. Each now answers exactly as the shared one does.
+  check(`${h.where}: it escapes exactly as the shared helper does`, out, T.escapeHtml(probe));
 }
 
 // ---------- the policy in every page ----------

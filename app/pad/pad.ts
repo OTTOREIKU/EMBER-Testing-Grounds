@@ -543,7 +543,7 @@ async function recheckSession(): Promise<void> {
 }
 
 function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
 // ---------- the screens before a table ----------
@@ -575,7 +575,7 @@ function signinHtml(): string {
       </label>
       <label class="pad-field">
         <span class="pad-label">Password</span>
-        <input class="pad-input" id="pad-pass" type="password" value="${esc(form.pass)}" autocomplete="current-password" />
+        <input class="pad-input" id="pad-pass" type="password" autocomplete="current-password" />
       </label>
       <button class="pad-btn primary" data-act="signin"${busy ? ' disabled' : ''}>${busy ? 'Signing in…' : 'Sign in'}</button>
       <button class="pad-link" data-act="to-register">I need an account</button>
@@ -606,7 +606,7 @@ function registerHtml(): string {
       </label>
       <label class="pad-field">
         <span class="pad-label">Password</span>
-        <input class="pad-input" id="pad-rpass" type="password" value="${esc(form.rpass)}" autocomplete="new-password" />
+        <input class="pad-input" id="pad-rpass" type="password" autocomplete="new-password" />
       </label>
       ${inviteNeeded ? `<label class="pad-field">
         <span class="pad-label">Invite code</span>
@@ -5032,6 +5032,13 @@ function render(): void {
     painted.clear();
     looks = [];
     root.innerHTML = screen === 'signin' ? signinHtml() : screen === 'register' ? registerHtml() : screen === 'collection' ? collectionHtml() : lobbyHtml();
+    // A typed password goes back on as the field's VALUE, never as an
+    // attribute in the markup above: written there it sat in the page's HTML
+    // for anything that reads the DOM (security audit W7, 2026-10-01).
+    for (const [id, typed] of [['pad-pass', form.pass], ['pad-rpass', form.rpass]] as const) {
+      const box = document.getElementById(id) as HTMLInputElement | null;
+      if (box) box.value = typed;
+    }
     return;
   }
 
