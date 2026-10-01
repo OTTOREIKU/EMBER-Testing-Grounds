@@ -58,13 +58,17 @@ interface QrIds {
 
 export const BASE_FACTIONS = ['RDL', 'UN', 'GOF'] as const;
 
-export const FACTION_LABEL: Record<string, string> = {
+// Looked up with ids that come from outside (a recorded game's faction, read
+// back from the server), so it holds its own five keys and nothing inherited:
+// on a plain object 'constructor' or 'toString' would find a function, and the
+// page that went on to print it would throw.
+export const FACTION_LABEL: Record<string, string> = Object.assign(Object.create(null) as Record<string, string>, {
   RDL: 'RDL',
   UN: 'UN',
   GOF: 'GoF',
   PD: 'PD',
   COLLABORATION: 'Collab',
-};
+});
 
 function normaliseBoxes(cards: Card[]): void {
   for (const c of cards) {

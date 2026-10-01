@@ -6996,7 +6996,13 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       return black.length || white.length ? { deployZones: { black, white } } : {};
     })(),
     removedTerrain: (s as { removedTerrain?: string[] }).removedTerrain ?? [],
-    scale: (s as { scale?: GameState['scale'] }).scale ?? 'standard',
+    // One of the three scales the setup offers (types.ts SCALES), and below, a
+    // Main Task's id and nothing else (lower-case words joined by hyphens, as
+    // missions.json names them). Both travel between players and are sent with
+    // a finished game's record, and the tabletop looks the scale up expecting
+    // to find it, so anything that is not one is dropped here (security audit
+    // W7, 2026-10-01). The command that sets them holds them to the same rules.
+    scale: ((v: unknown): GameState['scale'] => (v === 'skirmish' || v === 'large' ? v : 'standard'))((s as { scale?: unknown }).scale),
     ...((s as { noBoard?: boolean }).noBoard ? { noBoard: true } : {}),
     ...((s as { tableDice?: boolean }).tableDice ? { tableDice: true } : {}),
     ...((s as { guidedPlay?: boolean }).guidedPlay ? { guidedPlay: true } : {}),
@@ -7013,7 +7019,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       .map((k) => [k, typeof names?.[k] === 'string' ? cleanName(names[k] as string) : ''])
       .filter(([, v]) => v)) as GameState['sideNames'],
     ready: (s as { ready?: GameState['ready'] }).ready ?? {},
-    mission: (s as { mission?: string | null }).mission ?? null,
+    mission: ((v: unknown): string | null => (typeof v === 'string' && v.length <= 64 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v) ? v : null))((s as { mission?: unknown }).mission),
     tasks: (s as { tasks?: unknown }).tasks ? normaliseTasks((s as { tasks?: unknown }).tasks) : null,
     scenario: (s as { scenario?: string | null }).scenario ?? null,
     setup: normaliseSetup((s as { setup?: unknown }).setup),

@@ -183,10 +183,87 @@ function leaks(e, seen = new Set()) {
   return false;
 }
 
+// ---------- the attribute rule (security audit W6, 2026-10-01) ----------
+// The names above catch a label or a log line anywhere. Inside an ATTRIBUTE
+// the bar is higher, because the wire cleaner (safetext.ts cleanStrings) takes
+// out brackets and leaves quotes: any string read off a value that arrived
+// from a peer, a file or the server could close the attribute it is printed
+// into, whatever it is called. So such a string is printed into an attribute
+// only through the escaper, at the place it is printed.
+//
+// Judged by what is PRINTED: both branches of a conditional, both sides of a
+// fallback or a join, a call's arguments. A value that is only compared
+// (`state.map === m.id ? ' sel' : ''`) prints nothing of itself.
+const WIRE = /^(GameState|Token|ScriptState|RoundState|LogEntry|Marker|SmokeGroup|MineState|SavedSquad|MechPreset|MechLoadout|NetRoom|NetView|RolledDie|Account|AdminUser|AdminInvite|LeaderPlayer|LeaderSquad|MyRecord|CardStat|FactionStat|StatsSummary|SquadEntry|GameReport|Collection|HeldCard)$/;
+const WIRE_FILE = /\/src\/commands\.ts$/;
+function wireOwner(n) {
+  const sym = checker.getSymbolAtLocation(n.name);
+  for (const d of sym?.declarations ?? []) {
+    let owner = d.parent;
+    while (owner && !ts.isInterfaceDeclaration(owner) && !ts.isTypeAliasDeclaration(owner)) owner = owner.parent;
+    const name = owner?.name?.text ?? '';
+    if (WIRE.test(name) || WIRE_FILE.test(d.getSourceFile().fileName.replace(/\\/g, '/'))) return name || 'Command';
+  }
+  return null;
+}
+function printedRaw(e, seen = new Set()) {
+  e = strip(e);
+  if (!e || seen.has(e)) return [];
+  seen.add(e);
+  if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) || ts.isNumericLiteral(e)) return [];
+  if (ts.isConditionalExpression(e)) return [...printedRaw(e.whenTrue, seen), ...printedRaw(e.whenFalse, seen)];
+  if (ts.isBinaryExpression(e)) {
+    const k = e.operatorToken.kind;
+    if ([ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.PlusToken].includes(k)) return [...printedRaw(e.left, seen), ...printedRaw(e.right, seen)];
+    return k === ts.SyntaxKind.AmpersandAmpersandToken ? printedRaw(e.right, seen) : [];
+  }
+  if (ts.isTemplateExpression(e)) return e.templateSpans.flatMap((s) => printedRaw(s.expression, seen));
+  if (ts.isCallExpression(e)) {
+    const name = calleeName(e);
+    if (name && ESC.test(name)) return [];
+    if (safeType(checker.getTypeAtLocation(e))) return [];
+    const recv = ts.isPropertyAccessExpression(e.expression) ? printedRaw(e.expression.expression, seen) : [];
+    return [...recv, ...e.arguments.flatMap((a) => (ts.isFunctionLike(a) ? [] : printedRaw(a, seen)))];
+  }
+  if (safeType(checker.getTypeAtLocation(e))) return [];
+  if (ts.isIdentifier(e)) {
+    const d = declOf(e);
+    return d && ts.isVariableDeclaration(d) && d.initializer && (d.parent.flags & ts.NodeFlags.Const) ? printedRaw(d.initializer, seen) : [];
+  }
+  if (ts.isPropertyAccessExpression(e)) {
+    const owner = wireOwner(e);
+    return owner ? [`${owner}.${e.name.text}`] : [];
+  }
+  return ts.isElementAccessExpression(e) ? printedRaw(e.expression, seen) : [];
+}
+// Whether the text before an interpolation leaves it inside a quoted
+// attribute value of the tag it sits in.
+function insideAttribute(before) {
+  const lt = before.lastIndexOf('<');
+  if (lt < before.lastIndexOf('>')) return false;
+  let quote = null;
+  for (const m of before.slice(lt).matchAll(/([\w:-]+)\s*=\s*(["'])|(["'])/g)) {
+    if (quote) { if (!m[1] && m[3] === quote) quote = null; }
+    else if (m[1]) quote = m[2];
+  }
+  return !!quote;
+}
+const attrFound = [];
+let attrSpans = 0;
+
 const found = [];
 function visit(sf, node) {
   if (ts.isTemplateExpression(node) && isHtmlTemplate(node)) {
     for (const span of node.templateSpans) if (leaks(span.expression)) found.push([sf, span.expression]);
+    let before = node.head.text;
+    for (const span of node.templateSpans) {
+      if (insideAttribute(before)) {
+        attrSpans++;
+        const raw = [...new Set(printedRaw(span.expression))];
+        if (raw.length) attrFound.push([sf, span.expression, raw]);
+      }
+      before += `\u0000${span.literal.text}`;
+    }
   }
   if (ts.isBinaryExpression(node) && [ts.SyntaxKind.EqualsToken, ts.SyntaxKind.PlusEqualsToken].includes(node.operatorToken.kind)
     && ts.isPropertyAccessExpression(node.left) && /^(innerHTML|outerHTML)$/.test(node.left.name.text) && leaks(node.right)) found.push([sf, node.right]);
@@ -203,6 +280,44 @@ for (const sf of program.getSourceFiles()) {
 check('the whole client was read', files > 70, true);
 const where = found.map(([sf, e]) => `${path.relative(APP, sf.fileName).replace(/\\/g, '/')}:${sf.getLineAndCharacterOfPosition(e.getStart(sf)).line + 1} ${e.getText(sf).replace(/\s+/g, ' ').slice(0, 90)}`);
 check('no label, squad name, log line, reason, note or username reaches markup unescaped', where, []);
+
+const attrWhere = attrFound.map(([sf, e, raw]) => `${path.relative(APP, sf.fileName).replace(/\\/g, '/')}:${sf.getLineAndCharacterOfPosition(e.getStart(sf)).line + 1} ${e.getText(sf).replace(/\s+/g, ' ').slice(0, 70)} <- ${raw.join(', ')}`);
+check('the attributes were read too', attrSpans > 900, true);
+check('no string off the game state, a command, a saved build or a server record is printed into an attribute unescaped', attrWhere, []);
+
+// A typed password is never written into markup (security audit W7): as a
+// value="" attribute it sat in the page's HTML, where anything that reads the
+// DOM finds it. A password box is drawn empty, and a page that redraws puts
+// the typed text back as the field's value PROPERTY (pad.ts render).
+{
+  const boxes = [];
+  const helped = [];
+  for (const sf of program.getSourceFiles()) {
+    const f = sf.fileName.replace(/\\/g, '/');
+    if (f.includes('/node_modules/') || f.endsWith('.d.ts') || !/\/app\/(src|pad)\//.test(f)) continue;
+    const rel = path.relative(APP, sf.fileName).replace(/\\/g, '/');
+    const lineOf = (at) => sf.getLineAndCharacterOfPosition(at).line + 1;
+    for (const m of sf.text.matchAll(/<input\b[^>]*>/g)) {
+      if (/type="password"/.test(m[0])) boxes.push({ at: `${rel}:${lineOf(m.index)}`, value: /\bvalue\s*=/.test(m[0]) });
+    }
+    // A box built by a helper that takes the type as text (multiplayer.ts
+    // field): nothing may be passed after 'password', where extra attributes go.
+    const walk = (node) => {
+      if (ts.isCallExpression(node)) {
+        const at = node.arguments.findIndex((a) => ts.isStringLiteral(a) && a.text === 'password');
+        if (at >= 0 && /field$/i.test(calleeName(node) ?? '')) helped.push({ at: `${rel}:${lineOf(node.getStart(sf))}`, extra: node.arguments.length > at + 1 });
+      }
+      ts.forEachChild(node, walk);
+    };
+    walk(sf);
+  }
+  check('every password box in the apps was found', [boxes.length >= 4, helped.length >= 2], [true, true]);
+  check('none of them carries what was typed in its markup',
+    [...boxes.filter((b) => b.value), ...helped.filter((h) => h.extra)].map((x) => x.at), []);
+  const pad = program.getSourceFiles().find((sf) => sf.fileName.replace(/\\/g, '/').endsWith('/app/pad/pad.ts')).text;
+  check('the pad puts a typed password back as the value of the field, after it is drawn',
+    /root\.innerHTML = screen === 'signin'[\s\S]{0,700}\['pad-pass', form\.pass\], \['pad-rpass', form\.rpass\][\s\S]{0,200}box\.value = typed/.test(pad), true);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

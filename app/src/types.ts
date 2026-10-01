@@ -174,7 +174,11 @@ export type Facing = 0 | 1 | 2 | 3;
 // and 'red', which migrateState maps on load.
 export type Side = 's1' | 's2';
 
-export const LEGACY_SIDE: Record<string, Side> = { blue: 's1', red: 's2' };
+// Looked up with every string and key of a board from outside, so it holds its
+// own two keys and nothing inherited: on a plain object 'constructor' or
+// 'toString' found a function, which then stood in the state as a name, a map
+// id or a Side.
+export const LEGACY_SIDE: Record<string, Side> = Object.assign(Object.create(null) as Record<string, Side>, { blue: 's1', red: 's2' } as const);
 
 export function asSide(v: unknown, fallback: Side = 's1'): Side {
   if (v === 's1' || v === 's2') return v;

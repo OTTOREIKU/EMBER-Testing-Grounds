@@ -1070,6 +1070,14 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // storage. Only the sizes we ship are accepted.
       if (cmd.grids !== undefined && cmd.grids !== 12 && cmd.grids !== 16 && cmd.grids !== 18) return no('That is not a board size.');
       if (cmd.scale !== undefined && !['skirmish', 'standard', 'large'].includes(cmd.scale as string)) return no('That is not a battle scale.');
+      // A Main Task is named by its card's id (lower-case words joined by
+      // hyphens) or cleared with null, and by nothing else: the loader holds a
+      // saved board to the same shape, and it is sent on with a finished
+      // game's record.
+      if (cmd.mission !== undefined && cmd.mission !== null
+        && !(typeof cmd.mission === 'string' && cmd.mission.length <= 64 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(cmd.mission))) {
+        return no('That is not a Main Task.');
+      }
       if (cmd.roundLimit !== undefined && (!Number.isInteger(cmd.roundLimit) || cmd.roundLimit < 1 || cmd.roundLimit > 12)) return no('That is not a game length.');
       // Two locks with two clocks, and the difference is FAQ P1's setup order.
       // The MAP is agreed first and freezes the moment it is locked in —

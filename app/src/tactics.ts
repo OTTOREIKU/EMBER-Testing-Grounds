@@ -180,8 +180,10 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
   },
 };
 
+// Its own six cards and nothing inherited: the id arrives from the other side,
+// and 'constructor' would otherwise find a function and pass for a card.
 export function tacticSpec(id: string): TacticSpec | null {
-  return TACTIC_SPECS[id] ?? null;
+  return Object.prototype.hasOwnProperty.call(TACTIC_SPECS, id) ? TACTIC_SPECS[id] : null;
 }
 
 export function tacticTargets(spec: TacticSpec, s: GameState, side: Side, ctx: TacticCtx): Token[] {

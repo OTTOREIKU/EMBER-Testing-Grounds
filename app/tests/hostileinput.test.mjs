@@ -3,9 +3,9 @@
 // is stored: the angle brackets come out of every string, and the fields the
 // pages print are held to their types. The escaping where text is drawn is
 // pinned by htmlsinks.test.mjs; this is the other half, run on the real engine.
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
+import { build, transform } from 'esbuild';
 import { installDom } from './_combatdrive.mjs';
 
 let pass = 0, fail = 0;
@@ -21,9 +21,11 @@ const entry = new URL('./_hostile.entry.ts', import.meta.url);
 const out = new URL('./_hostile.bundle.mjs', import.meta.url);
 writeFileSync(entry, [
   "export { applyRemote } from '../src/commands';",
-  "export { loadData } from '../src/data';",
-  "export { newScriptState } from '../src/types';",
+  "export { FACTION_LABEL, loadData } from '../src/data';",
+  "export { newScriptState, SCALES } from '../src/types';",
   "export { migrateState, makeMechToken, makeDroneToken } from '../src/units';",
+  "export { tacticSpec } from '../src/tactics';",
+  "export { cleanStrings, escapeHtml } from '../src/safetext';",
 ].join('\n') + '\n');
 await build({
   entryPoints: [fileURLToPath(entry)], outfile: fileURLToPath(out),
@@ -44,6 +46,7 @@ const hostile = {
   v: 3, map: '', nextUid: '9<',
   round: { n: '<b>2</b>', phase: 'x', firstPlayer: 's1" onmouseover="x' },
   roundLimit: '5" autofocus',
+  scale: 'huge" onmouseover="x', mission: 'control-flank-attack" autofocus x="',
   commandTokens: { s1: '1<', s2: 2 },
   sideNames: { s1: `${XSS}Reds`, s2: 7 },
   markers: [{ kind: '<x>', col: '1', row: 2 }, { kind: 'box', col: 3, row: 4 }],
@@ -78,6 +81,92 @@ check('the round, the limit, the tokens and the next uid are numbers',
 check('markers and smoke keep only well-formed entries',
   [m.markers, m.smoke], [[{ kind: 'box', col: 3, row: 4 }], [{ col: 2, row: 2, side: 's2' }]]);
 check('nothing anywhere in it still holds a bracket', /[<>]/.test(JSON.stringify(m)), false);
+check('a scale outside the three is the standard one, and a Main Task that is not an id is none',
+  [m.scale, m.mission], ['standard', null]);
+{
+  const loaded = (extra) => M.migrateState({ v: 3, map: '', tokens: [], ...extra }, data);
+  const scales = M.SCALES.map((s) => s.id);
+  const missions = data.missions.cards.map((c) => c.id);
+  check('every scale the setup offers survives a load', scales.map((id) => loaded({ scale: id }).scale), scales);
+  check('and so does every Main Task the data ships', missions.map((id) => loaded({ mission: id }).mission), missions);
+  check('a Main Task that is not text, or runs on past any id, is none',
+    [loaded({ mission: { evil: true } }).mission, loaded({ mission: 'a'.repeat(65) }).mission],
+    [null, null]);
+}
+
+// ---------- the words every object inherits ----------
+// 'constructor', 'toString' and the rest are found on any plain object, so a
+// lookup table keyed by text from outside answered them with a function. The
+// loader's old side names did it to every string in a board; the faction
+// labels did it to a recorded game's faction; the Tactics Cards to a played id.
+{
+  const WORDS = ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'];
+  const board = (word) => M.migrateState({
+    v: 3, map: word, tokens: [
+      { uid: 1, side: word, kind: 'drone', cardId: '160', label: word, col: 1, row: 1, statuses: [word] },
+    ], round: { n: 1, phase: 0, firstPlayer: word }, sideNames: { s1: word }, mission: word, [word]: 1,
+  }, data);
+  const seen = WORDS.map((w) => { const b = board(w); return [typeof b.map, b.tokens[0]?.label, b.tokens[0]?.side, b.round.firstPlayer, b.sideNames.s1]; });
+  check('a board holding one keeps it as the text it is, and never as a side',
+    seen, WORDS.map((w) => ['string', w, 's1', 's1', w]));
+  check('no function is left anywhere in such a board', WORDS.map((w) => {
+    let fn = false;
+    JSON.stringify(board(w), (_k, v) => { if (typeof v === 'function') fn = true; return v; });
+    return fn;
+  }), WORDS.map(() => false));
+  check('a faction label is found among its own five and nothing inherited',
+    [...WORDS, 'RDL'].map((k) => typeof M.FACTION_LABEL[k]), [...WORDS.map(() => 'undefined'), 'string']);
+  check('a Tactics Card is found among its own six',
+    [...WORDS.map((k) => M.tacticSpec(k) === null), M.tacticSpec('274')?.id], [...WORDS.map(() => true), '274']);
+  // A key that is only __proto__ once its brackets are out is dropped with the rest.
+  const cleaned = M.cleanStrings(JSON.parse('{"a":1,"<__proto__>":{"evil":true},"__proto__":{"evil":true}}'));
+  check('a key that would become the prototype is dropped, however it is spelled',
+    [Object.keys(cleaned), cleaned.evil, Object.getPrototypeOf(cleaned) === Object.prototype], [['a'], undefined, true]);
+}
+
+// ---------- what a finished game's record may carry ----------
+// The API holds a recorded game to these shapes (ember-api, src/routes/games.ts).
+// It has no card data of its own, so the two are pinned together here: a card,
+// faction, Main Task or scale that stopped fitting would be refused on record.
+{
+  const API = {
+    card: /^[A-Za-z0-9][A-Za-z0-9+-]{0,23}$/,
+    faction: /^[A-Z][A-Z0-9_]{0,23}$/,
+    mission: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    scale: /^(?:skirmish|standard|large)$/,
+  };
+  const factions = [...new Set(data.cards.map((c) => data.factionOf(c)).filter(Boolean))];
+  check('every card id fits the shape the API records', [...data.byId.keys()].filter((id) => !API.card.test(id)), []);
+  check('every faction does', [factions.length > 2, factions.filter((f) => !API.faction.test(f))], [true, []]);
+  check('every Main Task does', data.missions.cards.map((c) => c.id).filter((id) => id.length > 64 || !API.mission.test(id)), []);
+  check('every scale does', M.SCALES.map((s) => s.id).filter((id) => !API.scale.test(id)), []);
+}
+
+// ---------- a recorded game, read back in the Stats panel ----------
+// Any account may have recorded it, so the panel prints a faction only by its
+// label and a Main Task only by its card's name. The three helpers are the
+// Match Centre's own, lifted out of the page and run here.
+{
+  const page = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
+  const from = page.indexOf("const NO_FACTION = 'unknown';");
+  const to = page.indexOf('// A squad has no name, so it is called by its pilots', from);
+  const js = (await transform(page.slice(from, to), { loader: 'ts' })).code;
+  const stats = new Function('FACTION_LABEL', 'esc', 'data',
+    `${js}\nreturn { factionTag, knownFactions, recordedMission };`)(M.FACTION_LABEL, M.escapeHtml, data);
+  const rows = ['RDL', 'constructor', 'unknown', '<b>x</b>', '__proto__', 'GOF', 'toString', 'ANYTHING'].map((faction) => ({ faction, played: 1, wins: 0 }));
+  check('the faction list keeps the factions the page knows and the no-single-faction row',
+    [from > 0 && to > from, stats.knownFactions(rows).map((f) => f.faction)], [true, ['RDL', 'unknown', 'GOF']]);
+  check("a squad's faction is printed by its label, or not at all",
+    ['GOF', 'constructor', '__proto__', '<img>', 'ANYTHING', null].map((f) => stats.factionTag(f)), ['GoF \u00b7 ', '', '', '', '', '']);
+  const real = data.missions.cards[0];
+  check('a recorded Main Task is named by its card, and an unknown one is not printed',
+    [real.id, 'constructor', '<b>x</b>', null, ''].map((id) => stats.recordedMission(id)),
+    [real.name, 'Main Task', 'Main Task', 'Free battle', 'Free battle']);
+  check('the panel uses them for every faction and Main Task it prints',
+    [/knownFactions\(t\.factions\)\.map/.test(page), /esc\(recordedMission\(g\.mission\)\)/.test(page),
+      (page.match(/factionTag\((?:r|sq)\.faction\)/g) ?? []).length, /\?\? (?:r|sq)\.faction/.test(page), /g\.mission \|\|/.test(page)],
+    [true, true, 2, false, false]);
+}
 
 // ---------- commands from the other side ----------
 function table() {
@@ -104,6 +193,20 @@ function table() {
   const s = { v: 3, map: '', tokens: [], nextUid: 1, round: { n: 1, phase: 0, firstPlayer: 's1' }, commandTokens: { s1: 0, s2: 0 } };
   const v = M.applyRemote(data, s, { kind: 'importSquad', seat: 's2', name: '<script>alert(1)</script>Blues', mechs: [], drones: [{ cardId: '160' }] });
   check('a squad list names its squad without brackets', [v.ok, s.sideNames?.s2], [true, 'scriptalert(1)/scriptBlues']);
+}
+{
+  // The table's setup, sent by the other side.
+  const s = { v: 3, map: '', tokens: [], nextUid: 1, round: { n: 1, phase: 0, firstPlayer: 's1' }, commandTokens: { s1: 0, s2: 0 } };
+  const real = data.missions.cards[0].id;
+  const bad = M.applyRemote(data, s, { kind: 'configureTable', seat: 's1', mission: 'x" onmouseover="y' });
+  const typed = M.applyRemote(data, s, { kind: 'configureTable', seat: 's1', mission: { evil: true } });
+  check('a Main Task that is not an id is refused', [bad.ok, typed.ok, s.mission], [false, false, undefined]);
+  const good = M.applyRemote(data, s, { kind: 'configureTable', seat: 's1', mission: real });
+  check('a real one is taken', [good.ok, s.mission], [true, real]);
+  const cleared = M.applyRemote(data, s, { kind: 'configureTable', seat: 's1', mission: null });
+  check('and null clears it', [cleared.ok, s.mission], [true, null]);
+  const scale = M.applyRemote(data, s, { kind: 'configureTable', seat: 's1', scale: 'huge' });
+  check('a scale outside the three is refused', [scale.ok, s.scale], [false, undefined]);
 }
 {
   const { s, mech } = table();
