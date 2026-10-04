@@ -2,29 +2,31 @@ import { ammoAvailable, ammoHolder, ammoPay, checkAfter, liveIntercepts, rebootO
 import { choiceDialog, confirmDialog } from './dialog';
 import { askIssuer, askTowFacing, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
-import { actionIconUrl, cardName, isAerial, isMine, parseGridRef, secondaryImageUrl, squadLabel, unitSize, environmentLookup, environmentAllowance } from './data';
+import { actionIconUrl, cardName, parseGridRef, secondaryImageUrl, squadLabel, environmentLookup, environmentAllowance } from './data';
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { interceptHeld, allyRepairTargets, overwatchOf, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, blastScanState, mineStopIndex, chassisStop, blastTurn, blastsReady, jumpsToTarget, bitPortOf, bitsToRecover, coordinationAfterManeuver, ownCards, electronicTargetWhy, scannable, controlledMoveActions, ewWinCommands, electronicAll, electronicAllTargets, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, containerTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, interceptOwedAt, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, type ExtraActivation, type Resupply, actionIdleWhy, commonPartSlots, discardSlots, chassisGone, commonActionStop, commonPartKey, riposteMelees, ignoresProtection, volleyFor } from './units';
+import { interceptHeld, allyRepairTargets, overwatchOf, explosionCamo, detonationBar, immediatesOwed, blastScanState, chassisStop, blastTurn, blastsReady, bitPortOf, bitsToRecover, coordinationAfterManeuver, controlledMoveActions, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, overloadPackOn, cruising, transformOffer, opportunityBonusOn, ripostePart, martyrdomOwed, targetTracingOn, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, isGroundUnit, stealthValue, manifestationRange, manifestTargets, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, containerTargets, blinkTargets, camoBrokenBy, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptOwedAt, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, type ExtraActivation, type Resupply, discardSlots, chassisGone, riposteMelees } from './units';
 import { ElectronicHelper, type EwAct, type EwArg } from './combat';
+import { contestAct as sendContestAct, counterResponder as contestResponder } from './contest';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
 import { smokePerGroup, syncSeason } from './season';
 import { handIds, saltFor } from './tactichand';
-import { boxDropCellIn, boxDropCells, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSight, losNote, smokeBlocks, pathCost, breakAwayLinkDue, protectionFor, rangeBetween, reachableGrids, standingSpot, mineSpot, type LargeGrid } from './rules';
-import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, crawlHolders, obstructSurcharge, tetherCap, tetherNote } from './melee';
+import { boxDropCellIn, boxDropCells, inContact, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSight, losNote, smokeBlocks, pathCost, rangeBetween, reachableGrids, standingSpot, mineSpot, type LargeGrid } from './rules';
+import { breakAwayNote, canBeForceMoved, crawlHolders, tetherNote } from './melee';
 import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
-import { ensureScript, enterPhase, glueAfter as glueCore, idleWorldFor, makeInit, opportunity } from './glue';
+import { ensureScript, enterPhase, glueAfter as glueCore, makeInit, opportunity } from './glue';
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, ScriptState, Side, Stance, TerrainPiece, Timing, Token, ExtraTick, Opportunity } from './types';
 import { isLineUnit, statusCount, gridsOf, newOpportunity, newScriptState, PHASES, removableTokens, STATUSES, TIMINGS, zonesOf } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
-import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneLockPhase, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, tiedChoices, type InitLookup, type LoopPhase } from './loop';
-import { actionIdOf, actionPipCount, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
-import { boxHands, boxPlaceTurn, deployGrids, deployOpenGrids, gameResult, normaliseTasks, remoteAccessWhy, TERMINAL_EV, TERMINAL_UID, terminalsInReach, terminalStandIn, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
+import { actionPhaseComplete, activationOrder, alive, canAct, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, tiedChoices, type InitLookup, type LoopPhase } from './loop';
+import { actionIdOf, actionPipCount, canAttackMode, canManeuver, canOverload, costLabel, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
+import { boxHands, boxPlaceTurn, deployGrids, deployOpenGrids, gameResult, normaliseTasks, TERMINAL_UID, terminalsInReach, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, zoneCellsOf } from './scoring';
 import type { NoticeKind } from './notices';
-import { firewatchOn, highlightTargets, targetStatusGrant, targetStatusTargets, linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, isRwsAction, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
+import { firewatchOn, targetStatusGrant, targetStatusTargets, linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
+import * as turn from './turn';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -103,6 +105,10 @@ export interface HudCtx {
   // or to why it did not — a failure here never stops the table closing.
   recordMatch(): Promise<string | null>;
   refresh(): void;
+  // A game against the computer (match.ts startSolo): there is nothing to
+  // record and nobody to agree an Undo with, and the game is this page's own
+  // to play again or to leave.
+  solo?: { again(): void; leave(): void };
 }
 
 function esc(s: string): string {
@@ -160,21 +166,9 @@ function smokeOwedOf(state: GameState): { side: Side; cells: { col: number; row:
 
 // The screens of the next owed group still standing: under Season 1.04 one
 // group owes three picks, and a screen already taken is not offered again.
+// Read in turn.ts, where a seat with no panel reads it too.
 function smokeOwedCells(state: GameState): { col: number; row: number }[] {
-  const next = smokeOwedOf(state)[0];
-  if (!next) return [];
-  const up = new Set((state.smoke ?? []).filter((x) => x.side === next.side).map((x) => `${x.col},${x.row}`));
-  return next.cells.filter((c) => up.has(`${c.col},${c.row}`));
-}
-
-// The terrain on the table. A SHIPPED AUTHORED map (E4) brings its own pieces;
-// a terrain-only layout is looked up by id as before. One place, because three
-// call sites read this and a disagreement between them would draw one board and
-// shoot through another.
-function mapPieces(data: GameData, map: string): TerrainPiece[] {
-  // Optional-chained: test fixtures build partial GameData objects, and a
-  // missing boardMaps must read as "no authored maps", never throw.
-  return data.boardMaps?.find((m) => m.id === map)?.pieces ?? data.terrain.layouts[map] ?? [];
+  return turn.smokeOwedCells(state);
 }
 
 // ---------- zones & deployment geometry ----------
@@ -201,51 +195,11 @@ export function objectiveCells(data: GameData, s: GameState): { c: number; r: nu
   return out;
 }
 
-// The board cells a side may deploy into, from its edge and the mission's
-// printed deployment shape (2x12 strips when no mission says otherwise).
-// The reading is the engine's (tasks.ts deployGrids), so what this board lights
-// is what the deployUnit check accepts. An authored map's own Deployment Zones
-// win over the printed shape: without them a 16 or 18 Grid board would deploy
-// into A1-L12, putting the White zone in the middle of the table.
-export function deployCellsFor(data: GameData, s: GameState, side: Side): Set<string> {
-  const su = normaliseSetup(s.setup);
-  const out = new Set<string>();
-  if (!su) return out;
-  for (const k of deployGrids(data.zoneData, s, su.edge[side]) ?? []) {
-    const [zc, zr] = k.split(',').map(Number);
-    for (let dc = 0; dc < 3; dc++) for (let dr = 0; dr < 3; dr++) out.add(`${zc * 3 + dc},${zr * 3 + dr}`);
-  }
-  return out;
-}
-
-// The middle of a squad's Deployment Zone, in cells. Used to point a unit at
-// the enemy as it lands, so nothing has to be turned by hand before confirming.
-function zoneCentre(cells: Set<string>): { col: number; row: number } | null {
-  if (!cells.size) return null;
-  let c = 0;
-  let r = 0;
-  for (const k of cells) {
-    const [cc, rr] = k.split(',').map(Number);
-    c += cc;
-    r += rr;
-  }
-  return { col: c / cells.size, row: r / cells.size };
-}
-
-// Which way a unit faces as it deploys: at the other squad's zone. Whichever
-// axis the two zones are further apart on wins, so it works for the corner
-// deployments as well as the strips along opposite edges. Falls back to facing
-// the far side of the board if the enemy zone is unknown.
-export function deployFacing(data: GameData, s: GameState, side: Side, at?: { col: number; row: number }): Facing {
-  const mine = at ?? zoneCentre(deployCellsFor(data, s, side));
-  const theirs = zoneCentre(deployCellsFor(data, s, side === 's1' ? 's2' : 's1'));
-  const from = mine ?? { col: 17.5, row: 17.5 };
-  const to = theirs ?? { col: 17.5, row: 35 - (from.row) };
-  const dc = to.col - from.col;
-  const dr = to.row - from.row;
-  if (Math.abs(dr) >= Math.abs(dc)) return (dr >= 0 ? 2 : 0) as Facing;
-  return (dc >= 0 ? 1 : 3) as Facing;
-}
+// Where a squad deploys and which way a unit lands facing are read in turn.ts
+// (deployCellsFor, zoneCentre, deployFacing), which the seat seam asks too.
+export const deployCellsFor = turn.deployCellsFor;
+const zoneCentre = turn.zoneCentre;
+export const deployFacing = turn.deployFacing;
 
 // ---------- module UI state ----------
 
@@ -316,6 +270,9 @@ let movePlan: {
 // Whose card the Details tab is showing, when the player has asked for one
 // rather than taking the active unit's.
 let inspectUid: number | null = null;
+// The Line of Sight control is on: the board shows what the unit whose card is
+// open can see (turn.ts sightOf), or failing one the unit whose turn it is.
+let sightOn = false;
 // A card asking the board to show what an Action reaches. Held rather than
 // drawn once, because every refresh clears the highlight layer.
 let rangeOverlay: { uid: number; kind: 'move' | 'range'; n: number } | null = null;
@@ -415,8 +372,7 @@ let animatingUid: number | null = null;
 // same way. The path law lives in the UI on both pages — the engine's
 // maneuver trusts the move it is handed.
 function terrainOf(ctx: HudCtx) {
-  const gone = new Set(ctx.state.removedTerrain ?? []);
-  return mapPieces(ctx.data, ctx.state.map).filter((p) => !gone.has(p.id));
+  return turn.terrainOf(ctx.data, ctx.state);
 }
 
 // `steps` is how far this particular Movement reaches — a Maneuver uses the
@@ -427,17 +383,9 @@ function terrainOf(ctx: HudCtx) {
 // put a Mech into Flying Movement for this move only, and the highlight has to
 // answer to the plan or the toggle would change nothing on the board.
 function reachableFor(ctx: HudCtx, t: Token, steps = maneuverRange(ctx.data, t), asFlight?: boolean, actionId?: string) {
-  // Same derivation as the freeplay board: a square-base flyer (moveAsFlight)
-  // crosses terrain even though it is not Aerial. Reading only `aerial` here
-  // grounded the Ravens on this page while the guide let them fly.
-  const flying = asFlight ?? (!!ctx.data.byId.get(t.cardId)?.moveAsFlight || !!t.aerial || envFlightFrom(ctx.data, ctx.state, t));
-  // The overlay and the route read ONE set of MoveOpts. They were built twice,
-  // and a rule added to one only painted Grids the confirm step refused, or
-  // left dark Grids it took: Obstruct's "or 1 Link" was on the route alone, so
-  // a Mech in a Panzer lock saw nothing lit it could reach (LPA-20; audit
-  // Phase 7, P7D 6). The leash, the Abyss, the Firefly, a Crawl's hold and the
-  // straight line all ride the same opts.
-  return reachableGrids(t, steps, terrainOf(ctx), ctx.state.tokens, flying, moveOptsFor(ctx, t, flying, actionId));
+  // Read in turn.ts, where the overlay, the route and the seat seam all take a
+  // Movement's reach from ONE set of MoveOpts.
+  return turn.reachableFor(ctx.data, ctx.state, t, steps, asFlight, actionId);
 }
 
 function canReach(ctx: HudCtx, t: Token, col: number, row: number): boolean {
@@ -447,78 +395,30 @@ function canReach(ctx: HudCtx, t: Token, col: number, row: number): boolean {
 }
 
 function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean, actionId?: string) {
-  const terrain = terrainOf(ctx);
-  const env = envMoveRules(ctx.data, ctx.state, t, flying || !!t.aerial);
-  const away = flying || t.aerial ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain);
-  // A Crawl never leaves a Grid in which the Mech is Melee Locked, flown or
-  // walked (6.1; ruled R2, audit Phase 7, P7B 14), as main.ts moveOpts.
-  const home = crawlHolders(ctx.data, t, actionId ? actionOn(ctx, t, actionId) : null, ctx.state.tokens, terrain).length ? largeGridOf(t) : null;
-  const stay = home ? (c: number, r: number): boolean => c === home.c && r === home.r : undefined;
-  const tethered = tetherCap(t, ctx.state.tokens);
-  const leash = tethered && stay ? (c: number, r: number): boolean => tethered(c, r) && stay(c, r) : tethered ?? stay;
-  return {
-    exitCost: away && env.exitCost ? (c: number, r: number) => away(c, r) + env.exitCost!(c, r) : away ?? env.exitCost,
-    crushable: (c: number, r: number) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
-    allowed: leash && env.allowed ? (c: number, r: number) => leash(c, r) && env.allowed!(c, r) : leash ?? env.allowed,
-    stop: env.stop,
-    landing: env.landing,
-    phaseThrough: phasesThroughUnits(ctx.data, ctx.state.tokens, t),
-    straightBonus: straightLineBonus(actionId ? actionOn(ctx, t, actionId) : null),
-    // Obstruct's "or 1 Link" (LPA-20; audit Phase 4, D2), as main.ts moveOpts.
-    linkPay: away
-      ? { budget: breakAwayLinkBudget(t, nonHumanoidCost(actionId ? actionOn(ctx, t, actionId) ?? null : null)), payable: obstructSurcharge(ctx.data, t, ctx.state.tokens, terrain) }
-      : undefined,
-  };
+  return turn.moveOptsFor(ctx.data, ctx.state, t, flying, actionId);
 }
 
 // A Maneuver by default. A Movement Action passes its own Range instead: the
 // chassis `move` is the Maneuver Value (1–2 Grids) and has nothing to do with a
 // Sprint-style Action's printed range, which is usually 4.
 function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; attackAfter?: { actionId: string; refund?: { uid: number; slot: string; choice?: string } }; actionId?: string; free?: boolean; granted?: boolean; resume?: boolean; maneuver?: boolean; airborne?: boolean; controller?: { uid: number; side: Side } } = {}): void {
-  // IMMOBILIZED (6.3.2), asked before the planner opens. This board had NO
-  // enforcement of the movement ban at all - the token simply moved - so this
-  // and the command gate behind it are the whole of the rule online.
-  const stopped = immobilizedStop(t, opts.actionId ? actionOn(ctx, t, opts.actionId) : null);
-  if (stopped) {
-    ctx.noteNow(stopped);
+  // Whether this unit may make the Movement at all, how far it reaches and
+  // whether it is flown are read in turn.ts (moveStart), where a seat with no
+  // planner reads them too: Immobilized, Non-humanoid X, the Range, a destroyed
+  // Chassis that may only turn (FAQ E4), and flight from a Part or from
+  // Anti-Gravity. A refusal is said before a route is drawn.
+  const start = turn.moveStart(ctx.data, ctx.state, t, opts);
+  if (!start.ok) {
+    ctx.noteNow(start.why);
     return;
   }
-  // NON-HUMANOID X, asked here for the same reason: the command behind this
-  // will refuse it anyway, but a player should be told before drawing a route
-  // rather than after committing to one.
-  const shortLink = nonHumanoidStop(t, opts.actionId ? actionOn(ctx, t, opts.actionId) : null);
-  if (shortLink) {
-    ctx.noteNow(shortLink);
-    return;
-  }
-  const steps = opts.range || maneuverRange(ctx.data, t);
-  // FAQ E4: a Mech whose Chassis is destroyed cannot move, but its Maneuver
-  // may still turn it. The planner refused to open at Range 0, and Q and E only
-  // turn inside a plan, so the turn was out of reach here (audit Phase 4, E4).
-  // It opens at 0, and the commit sends the pivot as the Maneuver it is. A
-  // Repaired Chassis moves as normal (ruled R5; audit Phase 7, P7B 12).
-  const pivotOnly = steps <= 0 && !opts.actionId && !opts.range && chassisGone(t);
-  if (steps <= 0 && !pivotOnly) {
-    ctx.noteNow(`${t.label} has no Movement Range on its card.`);
-    return;
-  }
-  // Flight from a Part, on the same reading the freeplay board uses. A Fairy
-  // pair flies every move; an Ojs200 offers it on the Maneuver and may be
-  // declined, so it starts walking and the panel carries the switch. An
-  // Airborne Movement Action outranks all of it: that Jump simply IS Flying.
-  const base = !!ctx.data.byId.get(t.cardId)?.moveAsFlight;
-  const grant = base ? 'none' : flightGrant(ctx.data, t, loanedParts(ctx.data, ctx.state.tokens, t));
-  // Anti-Gravity: a Ground Unit whose Movement originates in that Grid flies
-  // it, with no choice in it - so the Ojs200's walk/fly switch is pinned off.
-  const envFly = envFlightFrom(ctx.data, ctx.state, t);
-  const optional = !opts.airborne && grant === 'maneuver' && !!opts.maneuver && !envFly;
   movePlan = {
     uid: t.uid,
     side: t.side,
     actionId: opts.actionId,
-    steps,
-    flying: base || !!opts.airborne || grant === 'always' || envFly,
-    flightOptional: optional,
+    steps: start.steps,
+    flying: start.flying,
+    flightOptional: start.flightOptional,
     path: [{ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }],
     marks: [1],
     preview: null,
@@ -566,7 +466,7 @@ function previewMove(ctx: HudCtx, c: number, r: number): void {
   if (!m || !board) return;
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
   if (!t) return;
-  const cand = extendPath(m.path, { c, r }, t, m.steps, terrainOf(ctx), ctx.state.tokens, m.flying, moveOptsFor(ctx, t, m.flying, m.actionId));
+  const cand = turn.extendRoute(ctx.data, ctx.state, t, m.path, { c, r }, m.steps, m.flying, m.actionId);
   m.preview = cand;
   board.showMovePath(cand ?? m.path, m.side, !cand);
   ctx.refresh();
@@ -660,53 +560,39 @@ function commitMove(ctx: HudCtx): void {
   if (!m || !board) return;
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
   if (!t) return;
+  // What the plan comes to is read in turn.ts (moveOrder), where a seat with
+  // no planner reads it too: a turn on the spot, or the route's stops, the Mine
+  // that cuts it short and the Range that stop keeps back, the Link an Obstruct
+  // lock is owed, the Crush it ends in, and the command that makes the move.
+  // What stays here is the page's: the walk, the sends, and what follows them.
+  const order = turn.moveOrder(ctx.data, ctx.state, t, m);
+  if (order.kind === 'idle') return;
   // Turning on the spot is a Movement in its own right and costs no Range, so a
   // Maneuver that only pivots is a finished Maneuver.
-  if (m.path.length < 2) {
-    if (!m.turned) return;
+  if (order.kind === 'pivot') {
     movePlan = null;
     board.clearMovePath();
     board.clearHighlights();
     // The Red Shoes may spend its move on a pivot like any Maneuver.
     if (m.controller) {
-      const v = ctx.send({ kind: 'controlledMove', seat: m.controller.side, uid: m.controller.uid, targetUid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, actionId: m.actionId });
+      const v = ctx.send(order.command);
       ctx.noteNow(v.ok ? `${t.label} is turned on the spot (The Red Shoes).` : v.why ?? 'The move was refused.', v.ok ? 'done' : 'refused');
       ctx.refresh();
       return;
     }
     commitAction(ctx);
-    const full = m.facing === t.facing && Math.abs(m.spin) >= 4;
-    const turned = ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, free: m.free, granted: m.granted, actionId: m.actionId, ...(full ? { spun: true } : {}) }).ok;
-    if (turned) ctx.noteNow(full
+    const turned = ctx.send(order.command).ok;
+    if (turned) ctx.noteNow(order.full
       ? `${t.label} turns a full circle on the spot. It faces the same way, and it has made a Movement, so it is no longer Stationary (Supplementary Rules 1.04, 1.8).`
       : `${t.label} turns on the spot. A pivot spends no Movement Range, but it is Movement.`, 'done');
     if (m.attackAfter) resumeShockAttack(ctx, t.uid, m.attackAfter);
     ctx.refresh();
     return;
   }
-  // A Mine in a Grid the route enters stops the walk there (ruling I16): the
-  // Mine owes its blast, and the Range left is kept for a Go on once it is
-  // resolved (audit Phase 5, C1). Never a flight, which enters only its landing.
-  // A controlled route stops there too, and The Red Shoes' one Movement ends in
-  // the Mine's Grid: the rest is lost, so nothing is kept (ruled R5; audit
-  // Phase 7, P7D 7). It used to pass through.
-  const cut = mineStopIndex(ctx.data, ctx.state.tokens, t, m.path, m.flying);
-  const halt = cut > 0 && !m.controller
-    ? Math.max(0, m.steps - pathCost(m.path.slice(0, cut + 1), m.flying || !!t.aerial, moveOptsFor(ctx, t, m.flying, m.actionId)))
-    : undefined;
-  if (cut > 0) m.path = m.path.slice(0, cut + 1);
-  const terrain = terrainOf(ctx);
-  const stops: { col: number; row: number }[] = [];
-  let from = { col: t.col, row: t.row };
-  for (const g of m.path) {
-    const spot =
-      standingSpot(g.c, g.r, t.size, m.flying || t.aerial, terrain, ctx.state.tokens, t.uid, from)
-      ?? snapPlacement(g.c * 3 + 1, g.r * 3 + 1, t.size as 1 | 2 | 3, gridsOf(ctx.state));
-    if (!spot) continue;
-    stops.push(spot);
-    from = spot;
-  }
-  const last = stops[stops.length - 1];
+  // A Mine in a Grid the route enters stops the walk there (ruling I16), so
+  // the route walked is the one moveOrder cut: everything below reads it.
+  const { cut, halt, stops, last, facing, goal, linkDue, victims, crushes } = order;
+  m.path = order.path;
   // The going on takes back what its stop held (C1).
   const carry = m.resume && haltCarry?.uid === t.uid ? haltCarry : null;
   if (carry) haltCarry = null;
@@ -715,16 +601,7 @@ function commitMove(ctx: HudCtx): void {
   if (halt !== undefined) haltCarry = { uid: t.uid, after: m.attackAfter ?? carry?.after, shoveId: m.shoveActionId ?? carry?.shoveId };
   const free = m.free;
   const granted = m.granted;
-  const facing = m.turned ? m.facing : undefined;
-  const goal = m.path[m.path.length - 1];
   const drag = m.drag;
-  // What the route owes in Link for an Obstruct surcharge its Range could not
-  // cover (LPA-20; audit Phase 4, D2), read before anything moves.
-  const linkDue = breakAwayLinkDue(m.path, m.steps, m.flying || !!t.aerial, moveOptsFor(ctx, t, m.flying, m.actionId)) || undefined;
-  // Ending in an occupied Grid is a Crush, and everything in there has to give
-  // way before the crusher lands (4.3.6). The Movement ends there either way.
-  const victims = crushTargets(t, goal.c, goal.r, terrain, ctx.state.tokens);
-  const crushes = !!victims && (victims.units.length > 0 || victims.terrain.length > 0);
   movePlan = null;
   board.clearMovePath();
   board.clearHighlights();
@@ -740,7 +617,7 @@ function commitMove(ctx: HudCtx): void {
     const ctl = m.controller;
     const aerialStart = t.aerial ? { ...t } : null;
     board.animateMove(t.uid, stops, () => {
-      const v = ctx.send({ kind: 'controlledMove', seat: ctl.side, uid: ctl.uid, targetUid: t.uid, to: last, via: stops, facing, actionId: m.actionId });
+      const v = ctx.send(order.command!);
       if (!v.ok) ctx.noteNow(v.why ?? 'The move was refused.');
       else {
         ctx.noteNow(cut > 0
@@ -748,8 +625,7 @@ function commitMove(ctx: HudCtx): void {
           : `${t.label} moves under The Red Shoes' control.`, cut > 0 ? 'table' : 'done');
         // Its own Movement still triggers Interception by the side it is
         // moving against (4.9).
-        const moved = aerialStart ? ctx.state.tokens.find((x) => x.uid === t.uid) : undefined;
-        const owed = aerialStart && moved ? interceptsOwed(ctx.data, ctx.state.tokens, ctx.state.smoke ?? [], aerialStart, [moved]) : [];
+        const owed = turn.interceptsAfterMove(ctx.data, ctx.state, aerialStart, t.uid);
         if (owed.length) ctx.send({ kind: 'queueIntercepts', seat: ctl.side, items: owed });
       }
       ctx.refresh();
@@ -796,18 +672,14 @@ function commitMove(ctx: HudCtx): void {
   const aerialStart = t.aerial ? { ...t } : null;
   board.animateMove(t.uid, stops, () => {
     // The route travels with the move so the other player watches the same walk.
-    const moveOk = ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, granted, via: stops, facing, actionId: m.actionId, flying: m.flying || undefined, breakAwayLink: linkDue,
-      ...(halt !== undefined ? { halt } : {}), ...(m.resume ? { resume: true } : {}) }).ok;
+    const moveOk = ctx.send(order.command!).ok;
     if (moveOk && halt !== undefined) {
       ctx.noteNow(`A Mine stops ${t.label} in its Grid. Resolve its blast, then Go on with the ${halt} Grid${halt === 1 ? '' : 's'} left (M19).`, 'table');
     }
     if (drag) towDraggedAlly(ctx, t, walked, drag);
-    if (aerialStart) {
-      const moved = ctx.state.tokens.find((x) => x.uid === t.uid);
-      const owed = moved ? interceptsOwed(ctx.data, ctx.state.tokens, ctx.state.smoke ?? [], aerialStart, [moved]) : [];
-      if (owed.length) {
-        if (ctx.send({ kind: 'queueIntercepts', seat: t.side, items: owed }).ok) ctx.noteNow(`${t.label} is an Aerial Unit, so its Movement triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed (4.9).`, 'done');
-      }
+    const owed = turn.interceptsAfterMove(ctx.data, ctx.state, aerialStart, t.uid);
+    if (owed.length) {
+      if (ctx.send({ kind: 'queueIntercepts', seat: t.side, items: owed }).ok) ctx.noteNow(`${t.label} is an Aerial Unit, so its Movement triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed (4.9).`, 'done');
     }
     // A Black Box in a Grid the route passed through may be picked up, which is
     // read off the whole route rather than the destination (5.3.1). Auto Mine
@@ -844,7 +716,7 @@ function dropAsManeuver(ctx: HudCtx, t: Token, at: { col: number; row: number })
   startMovePlan(ctx, t, { label: 'Maneuver', maneuver: true });
   const m = movePlan;
   if (!m || m.uid !== t.uid) { ctx.refresh(); return; }
-  const route = extendPath(m.path, goal, t, m.steps, terrainOf(ctx), ctx.state.tokens, m.flying, moveOptsFor(ctx, t, m.flying, m.actionId));
+  const route = turn.extendRoute(ctx.data, ctx.state, t, m.path, goal, m.steps, m.flying, m.actionId);
   if (!route || route.length < 2) {
     movePlan = null;
     ctx.noteNow(`${t.label} has no route to that Grid within its Maneuver.`);
@@ -896,7 +768,7 @@ function rangeText(a: Token, b: Token): string {
 // The terrain as it stands now, with anything destroyed taken out of it.
 function terrainNow(ctx: HudCtx) {
   const gone = new Set(ctx.state.removedTerrain ?? []);
-  return mapPieces(ctx.data, ctx.state.map).filter((piece) => !gone.has(piece.id));
+  return turn.mapPieces(ctx.data, ctx.state.map).filter((piece) => !gone.has(piece.id));
 }
 
 function boardCallbacks(): BoardCallbacks {
@@ -1214,7 +1086,7 @@ function renderBoard(ctx: HudCtx): void {
     else if (placing === null) board.clearGhost();
   }
   const gone = new Set(s.removedTerrain ?? []);
-  board.renderTerrain(mapPieces(ctx.data, s.map).filter((p) => !gone.has(p.id)));
+  board.renderTerrain(turn.mapPieces(ctx.data, s.map).filter((p) => !gone.has(p.id)));
   // The Zones toggle is a local preference — a clean board to look at, not a
   // rule change — so it only suppresses the overlay and never crosses the wire.
   const showZones = ctx.zonesOn;
@@ -1289,6 +1161,15 @@ function renderBoard(ctx: HudCtx): void {
   board.renderSmoke(s.smoke ?? []);
   board.renderMarkers(s.markers ?? []);
   board.setSelected(ensureScript(s).opp?.uid ?? null);
+  // What one unit can see, with the Line of Sight control on: the unit whose
+  // card is open, or the one whose turn it is.
+  const eyes = sightOn ? s.tokens.find((x) => x.uid === (inspectUid ?? ensureScript(s).opp?.uid) && x.deployed !== false) : undefined;
+  board.showSight(eyes ? turn.sightOf(ctx.data, s, eyes) : null);
+  const lb = document.getElementById('btn-los');
+  if (lb) {
+    lb.classList.toggle('on', sightOn);
+    lb.setAttribute('aria-pressed', sightOn ? 'true' : 'false');
+  }
 }
 
 // ---------- the turn panel: one question at a time ----------
@@ -1398,7 +1279,7 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
     const edge = mine(ctx, fp)
       ? `<div class="btnrow"><button class="rowbtn" data-edge="white">Take the White Deployment Zone</button><button class="rowbtn" data-edge="black">Take the Black Deployment Zone</button></div>`
       : waiting(fp, 'picking a table edge');
-    return head(mine(ctx, fp) ? 'Your move' : 'Setup', `${esc(squadLabel(fp))} picks an edge`, 'The other side takes the opposite edge (3.1.2). The Secondary Tasks come next (3.1.3).', mine(ctx, fp))
+    return head(mine(ctx, fp) ? 'Your move' : 'Setup', `${esc(squadLabel(fp))} picks an edge`, s.noSecondary ? 'The other side takes the opposite edge (3.1.2). The Tasks are settled next (3.1.3).' : 'The other side takes the opposite edge (3.1.2). The Secondary Tasks come next (3.1.3).', mine(ctx, fp))
       + `<div class="tp-body">${edge}</div><div class="tp-foot"></div>`;
   }
   if (su.stage === 'tasks') {
@@ -1407,7 +1288,9 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
     // alternately from the First Player (5.2.1; ruling I23).
     const fp = s.round.firstPlayer;
     const taskState = normaliseTasks(s.tasks);
-    const both = !!taskState.secondary.s1 && !!taskState.secondary.s2;
+    // A game set up without Secondary Tasks goes straight to what the Main
+    // Task names (commands.ts finishTasks holds the same line).
+    const both = !!s.noSecondary || (!!taskState.secondary.s1 && !!taskState.secondary.s2);
     if (!both) {
       const meNow = !taskState.secondary[fp] ? mine(ctx, fp) : mine(ctx, fp === 's1' ? 's2' : 's1');
       return head(meNow ? 'Your move' : 'Setup', 'Choose Secondary Tasks',
@@ -1418,8 +1301,10 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
     if (owed.length) return designatePanel(ctx, owed);
     const turn = s.noBoard ? null : boxPlaceTurn(taskState, fp);
     if (turn) return boxPlacePanel(ctx, turn);
-    return head('Setup', 'The Tasks are set', 'Both Secondaries revealed, every target named, every Black Box down.', true)
-      + `<div class="tp-body">${secondaryRows(ctx, fp)}</div>
+    return head('Setup', 'The Tasks are set', s.noSecondary
+      ? 'This game has no Secondary Tasks. Every target is named and every Black Box is down.'
+      : 'Both Secondaries revealed, every target named, every Black Box down.', true)
+      + `<div class="tp-body">${s.noSecondary ? '' : secondaryRows(ctx, fp)}</div>
         <div class="tp-foot"><button class="bigbtn" data-act="tasksdone">Continue to deployment</button></div>`;
   }
   // Tasks come before deployment (3.1.3 then 3.1.4), the same way the freeplay
@@ -1431,7 +1316,7 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
   // so every `pending !== null` below read a TaskState and was always true. The
   // Confirm button and its note then showed with nothing placed.
   const taskState = normaliseTasks(s.tasks);
-  if (!taskState.secondary.s1 || !taskState.secondary.s2) {
+  if (!s.noSecondary && (!taskState.secondary.s1 || !taskState.secondary.s2)) {
     return head('Setup', 'Secondary Tasks', 'Both are picked before anything deploys, so each side knows what the other is playing for (3.1.3).', !taskState.secondary[ctx.seat ?? 's1'])
       + `<div class="tp-body">${secondaryRows(ctx)}</div><div class="tp-foot"></div>`;
   }
@@ -1583,12 +1468,6 @@ function tickPool(o: Opportunity): string {
 }
 
 function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
-  // The same list the freeplay guide builds, from the same function: it is
-  // where a destroyed Part, Shutdown, Melee Lock, Fire Control Interference,
-  // Immobilised and an empty magazine all take an Action away. Asking only the
-  // Tick engine, as this panel used to, let every one of those through.
-  const guided = guidedActions(ctx.data, t, { tokens: ctx.state.tokens, terrain: terrainOf(ctx) });
-  const onExtra = onExtraOpportunity(ctx.state, o.uid);
   // 4.1: a Mech chooses its Stance each Action Opportunity, before the choice
   // to Maneuver — and the choice USED to be a lock that refused every Action
   // until a Stance was pressed. That got in the way of the thing a player
@@ -1596,94 +1475,14 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // So the dial stays live and the first Move or Action closes it, in
   // commands.ts lockStance(). The panel only has to say which state it is in.
   const stanceSet = t.kind === 'mech' && !!o.stanceLocked;
-  // What may bend the Starting Action rule, read the way check() reads it
-  // (units.ts startOpts): an ally's Flexible Timing aura, Misty's Feint, CQC.
-  // Keyed by PART, not by Action: two Carrier Tarantulas lending the same
-  // Backpack lend two distinct Parts, and each may be used once (FAQ O7).
-  const blockedBy = new Map<string, string | undefined>();
-  for (const g of guided) if (!g.available) blockedBy.set(g.partKey, g.reason);
-  // The board as units.ts actionIdleWhy reads it: an Action with nothing to do
-  // (every Part Charged, nothing spent in reach, nobody to switch...) is
-  // greyed with the reason, the same reading the other pages grey by, where
-  // the panel it opened used to say so after the press (notices, 2026-09-29).
-  const idleWorld = idleWorldFor(ctx.data, ctx.state, terrainOf(ctx));
-  const ammoOf = new Map<string, number | undefined>();
-  for (const g of guided) ammoOf.set(g.partKey, g.ammoLeft);
-  const lentBy = new Map<string, string>();
-  for (const g of guided) if (g.lentBy) lentBy.set(g.partKey, g.lentBy.label);
-  // Remote Access has no row in a mission with no Terminal, as on the guide
-  // and the pad, and says why when none is left to access (ruling I26; audit
-  // Phase 6, E3).
-  const items = normaliseTasks(ctx.state.tasks).items;
-  const hasTerminals = items.some((i) => i.kind === 'terminal');
-  const ra = t.kind === 'mech' && hasTerminals ? ctx.data.commonActions.find((a) => a.id === 'COMMON_REMOTE_ACCESS') : undefined;
-  const raWhy = ra ? remoteAccessWhy(items, t, ra.range ?? 4, ctx.state.noBoard ? null : zoneCellsOf(ctx.data, ctx.state)) : null;
-  if (raWhy) blockedBy.set('COMMON_REMOTE_ACCESS', raWhy);
-  // Common Actions belong to Mechs (6.1); a Drone plays only what its card prints.
-  // A Passive is not a choice — it applies itself when its situation arises, so
-  // offering it as a button only invited a press that did nothing but print
-  // "follow the Action text on the card". They are listed further down the
-  // Details tab, where they read as the standing rules they are.
-  const isPassive = (a: CardAction): boolean => a.type === 'Passive' || a.speed === 'passive';
-  // The Part rides along: two R-20 Railguns, one per arm, print the same Action
-  // and used to list as two identical rows with nothing to tell them apart.
-  // A Punch/Kick or Crawl is keyed to the first of its Parts still free, so a
-  // second one by another Part is its own Action (ruled R3; audit Phase 7,
-  // P7B 9); every other Common Action keeps its own id.
-  const acts: { a: CardAction; key: string; slot?: PartSlot | 'pilot' | 'main'; cardId?: string }[] = [
-    ...guided.filter((g) => !isPassive(g.action))
-      .map((g) => ({ a: g.action, key: g.partKey, slot: g.slot, cardId: g.card.id })),
-    ...(t.kind === 'mech' ? ctx.data.commonActions.filter((a) => !isPassive(a) && (a.id !== 'COMMON_REMOTE_ACCESS' || hasTerminals)).map((a) => ({ a, key: commonPartKey(ctx.data, t, a, o.performed) })) : []),
-  ];
   // RWS (遥控武器): a Mech activated in the Command Phase was sent a Command
   // for its autocannon, and that is the whole of what it may do here.
   const rwsOnly = t.kind === 'mech' && PHASES[ctx.state.round.phase] === 'Command';
-  const seen = new Set<string>();
-  const rows = acts
-    .filter(({ a }) => !rwsOnly || isRwsAction(a))
-    .filter(({ key }) => (seen.has(key) ? false : (seen.add(key), true)))
-    .map(({ a, key, slot, cardId }) => {
-      // Priced in this Stance: ZHRA-102_A is Short in Offensive (Phase 2, D2).
-      const priced = t.kind === 'mech' ? stanceShaped(a, t.stance) : a;
-      const len = lengthOf(priced);
-      // Ticks are a Mech's economy. A Drone's Action costs its activation
-      // instead — one Action or one Movement, never both — and asking
-      // canPerform about one only ever came back "this is not an Action a Mech
-      // performs with Ticks", which blocked every Drone Action there is. A
-      // Mech's own Passives are length-less too, which is why this asks the
-      // unit rather than the Action.
-      const ticks: TickVerdict = t.kind !== 'mech' || rwsOnly
-        ? canActivate(o)
-        : len ? canPerform(o, priced, key, startOpts(ctx.data, ctx.state.tokens, t, a)) : { ok: true };
-      // The board's reason comes first: being out of ammo is a truer answer
-      // than "not enough Ticks" when both are true.
-      const stopped = blockedBy.get(key);
-      // An Extra Action Opportunity cannot hand out another one, or two
-      // Coordinating Mechs would keep granting each other Opportunities for the
-      // rest of the Round. The card carries the suppression itself.
-      const chained = onExtra && extraActivationOf(a)?.suppressGrants
-        ? 'This is already an Extra Action Opportunity, and it cannot grant another one.'
-        : undefined;
-      // The icon lock: with a Command a Drone performs Command-icon Actions,
-      // in the Automatic Phase its Automatic ones — same rule check() enforces.
-      // droneLockPhase: a Coordination's activation takes the Command
-      // Phase's lock in the middle of the Action Phase (F1).
-      const lockPh = droneLockPhase(ctx.state);
-      const phased = t.kind === 'drone' && lockPh
-        ? droneActionWhy(lockPh, a, { autoActions: riderOnDrone(ctx.data, ctx.state.tokens, t).autoActions })
-        : null;
-      // A Part that can initiate it (3.4.3): a Common Action with every Part it
-      // lists destroyed, or any Part but the Torso in Cruise Mode, was offered
-      // here with no gate at all (audit Phase 2, B5).
-      const partWhy = t.kind === 'mech' ? actionPartWhy(ctx.data, t, a) : null;
-      // Shutdown, and for the Crawl Immobilized, as check() refuses them: a
-      // Common row was drawn live under the Reboot line (audit Phase 7, P7B 7).
-      const commonStop = t.kind === 'mech' && !slot ? commonActionStop(t, a) : null;
-      const idle = actionIdleWhy(ctx.data, t, a, idleWorld);
-      const v: TickVerdict = chained ? { ok: false, why: chained } : stopped ? { ok: false, why: stopped }
-        : commonStop ? { ok: false, why: commonStop }
-        : partWhy ? { ok: false, why: partWhy } : idle ? { ok: false, why: idle } : phased ? { ok: false, why: phased } : ticks;
-      const cost = costOf(priced);
+  // WHICH Actions may be performed now, and why not, is read in turn.ts
+  // (actionRows): the list the seat seam reads too, so a row drawn live here
+  // is an Action every other reader of the turn is offered.
+  const rows = turn.actionRows(ctx.data, ctx.state, t, o)
+    .map(({ a, key, slot, cardId, len, cost, v, lender, ammoLeft }) => {
       const kind = (a.type ?? '').toLowerCase();
       const pool = `${a.yellowDice ?? 0},${a.redDice ?? 0}`;
       // What it costs, in the Ticks it actually spends, the way the guide
@@ -1692,7 +1491,6 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // in the card data. Those show their type rather than a price they do
       // not have, the way the guide leaves them off its Tick list entirely.
       const price = rwsOnly ? 'RWS' : v.extra ? 'XTR' : cost ? `${cost.maneuver ? 'M' : ''}${'●'.repeat(cost.action)}` : (a.type ?? '—');
-      const lender = lentBy.get(key);
       const tip = `${lender ? `Load on ${lender} - ` : ''}${len ? LENGTH_NAME[len] : a.type ?? ''}${cost ? `: ${costLabel(cost)}` : ''}`;
       // Blocked Actions stay on the list, greyed, and say why in the notice
       // line: on a mouse hover or a long press. A press does nothing (OTTO's
@@ -1708,31 +1506,15 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       return `<button class="actrow k-${kind}${v.ok ? '' : ' warn'}" data-doact="${esc(key)}" data-pool="${pool}" data-an="${esc(a.name?.en || a.id)}"${
         cardId ? ` data-tip-card="${esc(cardId)}"` : ''
       }${v.ok ? ` title="${esc(tip)}"` : ` aria-disabled="true" data-why="${esc(v.why ?? '')}"`}>
-        <span class="dotk"></span><span class="an">${esc((a.name?.en || a.id).slice(0, 26))}${lender ? ' (Load)' : ''}${ammoOf.get(key) !== undefined ? ` ×${ammoOf.get(key)}` : ''}</span>${
+        <span class="dotk"></span><span class="an">${esc((a.name?.en || a.id).slice(0, 26))}${lender ? ' (Load)' : ''}${ammoLeft !== undefined ? ` ×${ammoLeft}` : ''}</span>${
         where ? `<span class="aw">${esc(where)}</span>` : ''
       }<span class="ac">${price}</span>
       </button>`;
     })
     .join('');
-  // A Drone's move is barred by the same one-thing-per-activation rule as its
-  // Actions, so it needs that reason rather than the Mech one about Tick order.
-  // And Movement is the COMMAND Phase's choice (3.2.2 ②): in the Automatic
-  // Phase a Drone performs its Automatic Actions only (3.5), so the row locks.
-  const dronePh = PHASES[ctx.state.round.phase];
-  const droneMoveBlock = t.kind === 'drone' && isLoopPhase(dronePh) ? droneMoveWhy(dronePh) : null;
-  // 4.1.1: a Mech in Shutdown Stance cannot Maneuver or perform any Action
-  // other than Reboot. The engine refuses it too; this is the row's reason.
-  const man0 = t.kind === 'mech'
-    ? (t.stance === 'shutdown'
-      ? { ok: false as const, why: 'A Mech in Shutdown Stance cannot Maneuver or act until it Reboots (4.1.1).' }
-      : rwsOnly
-        ? { ok: false as const, why: 'A Mech commanded through RWS fires that Part and does not move (遥控武器); it Maneuvers in its own Action Opportunity.' }
-        : canManeuver(o))
-    : droneMoveBlock ? { ok: false as const, why: droneMoveBlock } : canActivate(o);
-  // Immobilized: no Maneuver, not even a turn (6.3.2). The row was live and
-  // the planner refused it after the press (audit Phase 7, P7B 7).
-  const pinned = man0.ok ? immobilizedStop(t, null) : null;
-  const man = pinned ? { ok: false as const, why: pinned } : man0;
+  // Whether it may Maneuver, or a Drone move: turn.ts maneuverVerdict, the
+  // same reading (Shutdown, RWS, the Automatic Phase's lock, Immobilized).
+  const man = turn.maneuverVerdict(ctx.state, t, o);
   // Ticks are a Mech's Action Opportunity (3.4). A Drone or Projectile gets an
   // activation instead — one Action, no price printed on any of them — so the
   // pool is left off the way the freeplay guide leaves it off its phase panels.
@@ -2042,7 +1824,10 @@ function resultPanel(ctx: HudCtx, vp: { s1: number; s2: number }): string {
   const rows = (['s1', 's2'] as Side[])
     .map((side) => `<div class="dialrow"><span class="nm ${side}">${esc(squadLabel(side))}</span><span class="pickchip${winner === side ? ' set' : ''}">${vp[side]} VP</span></div>`)
     .join('');
-  const foot = recorded
+  const foot = ctx.solo
+    ? `<button class="bigbtn" data-act="soloagain">Play again</button>
+       <button class="bigbtn ghost2" data-act="sololeave" style="margin-top:6px">Back to the board</button>`
+    : recorded
     ? '<p class="tp-note">Saved to both accounts.</p><button class="bigbtn ghost2" data-act="endmatch">Close the table</button>'
     : `<p class="tp-note">${esc(recordNote ?? 'Keep it on your record, or just close the table.')}</p>
        <button class="bigbtn" data-act="record"${recording ? ' disabled' : ''}>${recording ? 'Recording…' : 'Record this match'}</button>
@@ -2265,6 +2050,8 @@ function undoChrome(ctx: HudCtx): string {
   // party to it: they cannot ask, and nobody has to answer them. send() refuses
   // the request anyway — this is so it is never put in front of them.
   if (!ctx.networked || !ctx.seat) return '';
+  // Against the computer too: its seat answers an ask, and agrees (the AI
+  // plan's M9.4; owed.ts rollbackOwed).
   const sc = ensureScript(ctx.state);
   const trig = `<button class="undo-trig${undoOpen ? ' on' : ''}" data-act="undomenu" title="Walk the table back…" aria-label="Walk the table back">↩</button>`;
   if (!undoOpen || sc.rollback) return trig;
@@ -2305,7 +2092,7 @@ function undoChrome(ctx: HudCtx): string {
     : `${first ? unitRow(first, true) : ''}
        ${rest.length ? `<div class="undo-h">Recent actions</div>${rest.map((p) => unitRow(p, false)).join('')}` : ''}
        ${phaseRows ? `<div class="undo-h">Phase starts</div>${phaseRows}` : ''}
-       <p class="undo-note">Both players have to agree: the other side answers before anything moves.</p>`;
+       <p class="undo-note">${ctx.solo ? 'The computer answers, and agrees, before anything moves.' : 'Both players have to agree: the other side answers before anything moves.'}</p>`;
   return `${trig}<div class="undo-pop">${body}</div>`;
 }
 
@@ -2421,6 +2208,12 @@ export function animateRemoteMove(
   });
 }
 
+// Whether a unit is still being walked across this board. A computer seat
+// waits for the walk to end before it does anything more (solo.ts).
+export function walking(): boolean {
+  return animatingUid !== null;
+}
+
 // ---------- launching a Projectile (rulebook 4.7) ----------
 //
 // The unit card picks the Action and the Projectile; all that is left is where
@@ -2455,17 +2248,9 @@ export function startLaunchPlan(uid: number, actionId: string, cardId: string, l
   const a = t ? actionOn(ctx, t, actionId) : undefined;
   if (!t || !a) return;
   // Volley X caps the shots per Action and each one spends an Ammo Token, so
-  // the real cap is whichever runs out first. Off ammoHolder, not off `t`: a
-  // launcher lent by a Carrier Tarantula keeps its magazine on the Drone (FAQ
-  // O3/O16), and reading the Mech found undefined and offered the full Volley.
-  // And ammoAvailable, not one magazine: an empty Pod still fires out of an
-  // Ammunition Pack carrying 086_B (audit Phase 2, C6).
-  const ammo = ammoAvailable(ctx.data, ctx.state, t, actionId);
-  // volleyFor: Opal's Projectile Actions at Projectile Timing count as
-  // Volley 2 (UN parts list 1.04), which the printed Volley cannot say.
-  const o = ensureScript(ctx.state).opp;
-  const volley = volleyFor(ctx.data, t, a, o?.uid === t.uid ? o : null);
-  const shots = Math.min(volley, ammo === undefined ? volley : ammo);
+  // the real cap is whichever runs out first: turn.ts launchShots, the count a
+  // seat with no plan reads too.
+  const shots = turn.launchShots(ctx.data, ctx.state, t, a, actionId);
   if (shots <= 0) {
     ctx.noteNow(`${a.name?.en || actionId} has no Ammo Tokens left, so it cannot be performed (4.13).`);
     // Same as the branch that sent us here: no tool, no payment.
@@ -2492,25 +2277,7 @@ function landingCandidates(ctx: HudCtx): { c: number; r: number; ok: boolean }[]
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
   const a = t ? actionOn(ctx, t, m.actionId) : undefined;
   if (!t || !a) return [];
-  const sight = needsSightToLanding(a);
-  // Mirrors landingCandidates in main.ts, including this line: XPA-62's +2 has
-  // to be read here too or the two boards paint different Grids.
-  const range = projectileReach(ctx.data, t, a, oppFor(ctx, t.uid));
-  const terrain = terrainOf(ctx);
-  const from = { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
-  const out: { c: number; r: number; ok: boolean }[] = [];
-  for (let c = 0; c < boardGrids(); c++) {
-    for (let r = 0; r < boardGrids(); r++) {
-      if (Math.abs(c - from.c) + Math.abs(r - from.r) > range) continue;
-      if (sight) {
-        const probe = { ...t, col: c * 3 + 1, row: r * 3 + 1, size: 1 as const };
-        if (losBetween(t, probe, terrain, ctx.state.tokens) === 'blocked') continue;
-        if (!standingSpot(c, r, 1, false, terrain, ctx.state.tokens, t.uid)) continue;
-      }
-      out.push({ c, r, ok: true });
-    }
-  }
-  return out;
+  return turn.landingGrids(ctx.data, ctx.state, t, a);
 }
 
 function placeLaunched(ctx: HudCtx, c: number, r: number): void {
@@ -2524,29 +2291,16 @@ function placeLaunched(ctx: HudCtx, c: number, r: number): void {
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
   const card = ctx.data.byId.get(m.cardId);
   if (!t || !card) return;
-  // Sized off the card rather than a probe token: minting one here would burn a
-  // uid the launch command then cannot reproduce on the other seat. A 1x3 line
-  // stands across the facing picked in the panel.
-  const line = isLineUnit({ cardId: card.id });
-  const face = line ? (m.facing ?? t.facing) : t.facing;
-  const spot = line
-    ? lineSpot(c, r, face, terrainOf(ctx), ctx.state.tokens)
-    // A Mine keeps clear of terrain and may share its Grid with a unit (1.3).
-    : isMine(card)
-      ? mineSpot(c, r, terrainOf(ctx), { col: t.col, row: t.row })
-      : standingSpot(c, r, unitSize(card), isAerial(card), terrainOf(ctx), ctx.state.tokens, undefined, { col: t.col, row: t.row });
-  if (!spot) {
-    ctx.noteNow(line
-      ? `${m.label} is a 1x3 line: facing ${['North', 'East', 'South', 'West'][face]} it needs a clear ${face % 2 ? 'column' : 'row'} of that Grid, and none is. Pick another Grid or another facing.`
-      : `There is no room in that Grid for ${m.label}. 4.7.2 needs the Projectile's base entirely inside the Landing Point.`);
+  // Where it stands in that Grid (a 1x3 line across the facing picked in the
+  // panel, a Mine clear of terrain) and the command that launches it there are
+  // read in turn.ts launchShot, the command a seat with no panel sends too.
+  const placed = turn.launchShot(ctx.data, ctx.state, t, m.actionId, card, { c, r }, m.label, m.facing);
+  if (!placed.ok) {
+    ctx.noteNow(placed.why);
     ctx.refresh();
     return;
   }
-  const shot: Command = {
-    kind: 'launch', seat: t.side, uid: t.uid,
-    actionId: m.actionId, cardId: m.cardId,
-    to: { col: spot.col, row: spot.row }, facing: face,
-  };
+  const shot: Command = placed.cmd;
   // A refused launch must not have cost anything, so the Ticks are only paid
   // once this one is going through. The first Projectile down is the Action;
   // the rest of a Volley ride on the same Ticks and commitAction is a no-op.
@@ -2600,10 +2354,7 @@ function finishLaunchPlan(ctx: HudCtx): void {
     .map((uid) => ctx.state.tokens.find((x) => x.uid === uid))
     .filter((x): x is Token => !!x);
   // Only a LAUNCHED projectile triggers Interception (FAQ M20).
-  const act = owner
-    ? tokenCards(ctx.data, owner).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === m.actionId)
-    : undefined;
-  if (owner && born.length && (!act || projectileDelivery(act) === 'launch')) queueInterceptsFor(ctx, owner, born);
+  if (owner && born.length && turn.launchTriggersInterception(ctx.data, owner, m.actionId)) queueInterceptsFor(ctx, owner, born);
   // 4.7.4, the Immediate type: it detonates as it lands (audit Phase 4, G8),
   // after any Interception it triggered (4.9). Mirrors main.ts
   // detonateOnLanding; a volley's others go off from their own cards.
@@ -2681,14 +2432,7 @@ export function startInterceptPick(uid: number, actionId: string): void {
 }
 
 function actionOn(ctx: HudCtx, t: Token, actionId: string): CardAction | undefined {
-  // The id may arrive as a part key when a Tarantula is lending the Part.
-  const id = actionIdOf(actionId);
-  // A Common Action last: every Mech has them and no card prints them. Without
-  // it the Scan could never be found, so no Counter-roll window drew for one
-  // and its win granted Fire Control Interference (audit Phase 3, A1).
-  return ownCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === id)
-    ?? loanedParts(ctx.data, ctx.state.tokens, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === id)
-    ?? (ctx.data.commonActions ?? []).find((a) => a.id === id) as CardAction | undefined;
+  return turn.actionOf(ctx.data, ctx.state, t, actionId);
 }
 
 // Mirrors noteInterception in main.ts, which is the reference implementation.
@@ -2697,17 +2441,9 @@ function actionOn(ctx: HudCtx, t: Token, actionId: string): CardAction | undefin
 // takes the whole volley, since the debt is owed once the launch is finished
 // rather than once per Projectile put down.
 function queueInterceptsFor(ctx: HudCtx, launcher: Token, born: Token[]): void {
-  const s = ctx.state;
-  // Every Unit this Launch placed, whatever its flag: "Regardless of whether
-  // the Projectile is an Aerial Unit, during Launching the Projectile is
-  // considered an Aerial Unit at the Grid it was Launched from and at the
-  // Landing Point" (4.7.2), and a Drone a Projectile Action places is Launched
-  // the same way. Keeping only the Aerial ones dropped every Beacon once Phase
-  // 4 made them ground units (audit Phase 5, B1). The caller asks only for a
-  // Launch: a Deploy or a Lay triggers nothing.
-  const fresh = born.filter((p) => p.parentUid === launcher.uid);
-  if (!fresh.length || !s.script) return;
-  const owed = interceptsOwed(ctx.data, s.tokens, s.smoke ?? [], launcher, fresh);
+  // Every Unit this Launch placed, whatever its flag (4.7.2): read in turn.ts
+  // interceptsAfterLaunch, where a seat with no panel reads what its launch owes.
+  const owed = turn.interceptsAfterLaunch(ctx.data, ctx.state, launcher, born);
   if (!owed.length) return;
   const defender: Side = launcher.side === 's1' ? 's2' : 's1';
   if (ctx.send({ kind: 'queueIntercepts', seat: launcher.side, items: owed }).ok) ctx.noteNow(`The launch triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed to ${squadLabel(defender)} (4.9).`, 'done');
@@ -3204,8 +2940,8 @@ function owedItems(ctx: HudCtx): { uid: number; actionId: string; targetUid: num
 }
 
 function interceptSide(ctx: HudCtx): Side | null {
-  const first = owedItems(ctx)[0];
-  return ctx.state.tokens.find((t) => t.uid === first?.uid)?.side ?? null;
+  ensureScript(ctx.state);
+  return turn.interceptSide(ctx.state);
 }
 
 // Whoever is acting: normally the unit holding the Action Opportunity, but for
@@ -3318,26 +3054,19 @@ export function startElectronicPick(uid: number, actionId: string): void {
 function ewPanel(ctx: HudCtx): string {
   const s = ctx.state;
   const m = ewPick!;
-  const by = s.tokens.find((x) => x.uid === m.uid);
-  const a = by ? actionOn(ctx, by, m.actionId) : undefined;
-  if (!by || !a) return head('Electronic Warfare', 'That unit is gone', '', true)
+  // WHO it may be opened against is read in turn.ts (electronicReading): the
+  // effective reach, both pools as they will be rolled, a Repeater's lent
+  // position, and for an Automatic Action the nearest enemy. A seat with no
+  // panel reads the same list, so a row drawn live here is one it is offered.
+  const read = turn.electronicReading(ctx.data, s, m.uid, m.actionId);
+  if (!read) return head('Electronic Warfare', 'That unit is gone', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="ewcancel">Close</button></div>';
-  // The EFFECTIVE reach: FPA-06 Amplify adds a Grid to an Electronic Attack,
-  // and the command judges the same number.
-  const reach = actionRange(ctx.data, s.tokens, by, a);
-  // The unit PERFORMING the Electronic Attack counts the Loads it is borrowing
-  // (FAQ O5/O6); the target, rolling passively, counts only its own Parts. Both
-  // numbers on this screen are the pool that will be ROLLED, so they carry the
-  // EW Suppression aura too (ZHDR-202_B / PDTR-202_B) - showing the printed
-  // stat here and a smaller pool one panel later reads as a bug.
-  const ev = electronicStrength(ctx.data, s.tokens, by, 'initiator', a);
-  const evPrinted = electronicValue(ctx.data, by, loanedParts(ctx.data, s.tokens, by));
-  const scan = isScanAction(a);
+  const { by, a, reach, ev, evPrinted, scan, relay } = read;
   // An Action on every enemy in Range (Scream, the Scan Battlefield) picks
   // nobody: one Counter-roll per target, in turn, the engine queueing the rest
   // (audit Phase 3, D2 and A4). The Match Centre offered only the nearest.
-  if (electronicAll(a)) {
-    const all = electronicAllTargets(ctx.data, s.tokens, by, a);
+  if (read.all) {
+    const all = read.all;
     return head('Your move', `${esc(a.name?.en || m.actionId)}: every enemy in Range`,
       `${esc(by.label)} · Electronic Value ${ev}, Range ${reach}. One Electronic Counter-roll against each, in turn.`, true)
       + `<div class="tp-body">${all.length
@@ -3346,42 +3075,13 @@ function ewPanel(ctx: HudCtx): string {
        <div class="tp-foot">${all.length ? `<button class="bigbtn" data-ewtarget="${all[0].uid}">Roll against ${all.length === 1 ? esc(all[0].label) : `all ${all.length}`}</button>` : ''}
        <button class="bigbtn ghost2" data-act="ewcancel" style="margin-top:6px">${all.length ? 'Cancel' : 'Close'}</button></div>`;
   }
-  // An allied Repeater lends its position to the shot (FAQ O19), so the Range
-  // shown is the best of the attacker's own and every Repeater covering it. An
-  // Electronic Attack's only: a Scan measures from the scanner (A5, F9).
-  const origins = scan ? [by] : electronicOrigins(ctx.data, s.tokens, by);
-  const relay = origins.slice(1);
-  const enemies = s.tokens
-    // Electronic Value "-" cannot be a Responder at all (4.11.2), so those are
-    // not offered rather than offered and then refused at the command. Nor
-    // is a unit the card does not name ("Mech/Drone", "Drone/Projectile"), or
-    // one a Scan could change nothing on (audit Phase 3, D5, A1).
-    .filter((t) => t.side !== by.side && t.deployed !== false && alive(t) && !electronicDash(ctx.data, t)
-      && !electronicTargetWhy(a, t) && (!scan || scannable(t)))
-    .map((t) => {
-      const own = gridsApart(by, t);
-      const best = origins.reduce((n, from) => Math.min(n, gridsApart(from, t)), own);
-      const via = best < own ? origins.find((from) => gridsApart(from, t) === best) : undefined;
-      return { t, d: best, via };
-    });
-  // An AUTOMATIC Electronic Attack targets the nearest enemy in range, ties
-  // chosen by the controller (3.5.2) — an aimed one picks freely.
-  const nearest = a.speed === 'auto'
-    ? enemies.filter((e) => e.d <= reach).reduce((n, e) => Math.min(n, e.d), Infinity)
-    : Infinity;
-  const rows = enemies
-    .map(({ t, d, via }) => {
-      const theirs = electronicStrength(ctx.data, s.tokens, t, 'responder');
-      const far = d > reach;
-      const skipped = !far && a.speed === 'auto' && d > nearest;
+  const rows = read.rows
+    .map(({ t, d, via, theirs, far, skipped, why }) => {
       const bits = [
         far ? `⚠ Range ${d}, beyond this Action's Range ${reach}` : `Range ${d}${via && via.uid !== by.uid ? ` via ${via.label}` : ''}`,
         skipped ? '✕ not the nearest enemy (3.5.2)' : '',
         `Electronic Value ${theirs}`,
       ].filter(Boolean);
-      const why = far
-        ? `${t.label} is at Range ${d}, beyond this Action's Range ${reach}.`
-        : skipped ? 'An Automatic Action targets the NEAREST enemy in range (3.5.2).' : '';
       return `<button class="rowwide targrow${far || skipped ? ' warn' : ''}" data-ewtarget="${t.uid}"${why ? ` aria-disabled="true" data-why="${esc(why)}"` : ''}>
         <span class="tgname">${esc(t.label)}</span>
         <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;
@@ -3413,157 +3113,21 @@ let ewHelper: ElectronicHelper | null = null;
 function seatOf(ctx: HudCtx): Side { return ctx.seat ?? ensureScript(ctx.state).turn ?? 's1'; }
 
 // The record's Responder: a unit, or for a Remote Access the Terminal's
-// stand-in, placed where its token stands (ruling I25).
+// stand-in, placed where its token stands (ruling I25). Read in contest.ts.
 function counterResponder(ctx: HudCtx, c: CounterRoll, init: Token | undefined): Token | undefined {
-  if (c.terminal === undefined) return ctx.state.tokens.find((x) => x.uid === c.responderUid);
-  const item = normaliseTasks(ctx.state.tasks).items.find((i) => i.id === c.terminal);
-  if (!item || !init) return undefined;
-  const name = zonesOf(ctx.data.zoneData.zones, ctx.state).find((z) => z.id === item.zone)?.name ?? item.zone;
-  return terminalStandIn(item, init.side, name);
+  return contestResponder(ctx.data, ctx.state, c, init);
 }
 
 // Every press the window can make, answered in one place. Each is a question
-// one of the two seats owns, so it travels as a command.
+// one of the two seats owns, so it travels as a command. The sender is
+// contest.ts contestAct, which a computer seat's Counter-roll goes through
+// too: this hands it the page's own send, dice and notice line.
 function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
-  const s = ctx.state;
-  const c = ensureScript(s).counter;
-  if (!c) return;
-  const init = s.tokens.find((x) => x.uid === c.initiatorUid);
-  const resp = counterResponder(ctx, c, init);
-  if (!init || !resp) { ctx.send({ kind: 'clearCounterRoll', seat: seatOf(ctx) }); ctx.refresh(); return; }
-  // The Terminal's hand is the opponent's to roll, as a table command: no
-  // unit on the board is it, and it never Focuses (ruling I25).
-  if (act === 'roll' && arg?.uid === TERMINAL_UID && c.terminal !== undefined) {
-    void ctx.rollHits(TERMINAL_EV, `rolls ${TERMINAL_EV} for the ${resp.label}`).then((res) => {
-      const v = ctx.send({ kind: 'rollTerminal', seat: seatOf(ctx), faces: res.dice.map((d) => d.face) });
-      if (!v.ok && v.why) ctx.noteNow(v.why);
-      ctx.refresh();
-    }).catch(() => {
-      ctx.noteNow('The server did not answer the roll. Press it again.', 'system');
-      ctx.refresh();
-    });
-    return;
-  }
-  const unit = arg?.uid !== undefined ? s.tokens.find((x) => x.uid === arg.uid) : undefined;
-  if (act === 'roll' && unit) {
-    // electronicStrength, not electronicValue: the Initiator's Tarantula Loads
-    // (FAQ O5) and the EW Suppression aura of ZHDR-202_B / PDTR-202_B both ride
-    // on the pool, and rolling the printed stat drops them. So would an
-    // Action's Strength +X, the Initiator's only (audit Phase 3, D2), though
-    // no card prints one since the 2026-09-28 list ruling retired Scream's.
-    const ev = unit.uid === init.uid
-      ? electronicStrength(ctx.data, s.tokens, unit, 'initiator', actionOn(ctx, init, c.actionId))
-      : electronicStrength(ctx.data, s.tokens, unit, 'responder');
-    void ctx.rollHits(ev, `rolls ${ev} for the Electronic Counter-roll`).then((res) => {
-      ctx.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces: res.dice.map((d) => d.face) });
-      ctx.refresh();
-    }).catch(() => {
-      ctx.noteNow('The server did not answer the roll. Press it again.', 'system');
-      ctx.refresh();
-    });
-    return;
-  }
-  if (act === 'declare' && unit) {
-    // FAQ G4: the declare travels on its own and pays the Link on arrival, so
-    // the reroll after it - and any retry of that reroll - costs nothing more.
-    const v = ctx.send({
-      kind: 'declareCounterFocus', seat: unit.side, uid: unit.uid, use: !!arg?.use,
-      ...(arg?.whistleUid !== undefined ? { whistleUid: arg.whistleUid } : {}),
-    });
-    if (!v.ok && v.why) ctx.noteNow(v.why);
-    ctx.refresh();
-    return;
-  }
-  if (act === 'focus' && unit) {
-    // THE PLAYER'S CHOICE OF WHICH DICE (4.10: "reroll any Dice in that roll").
-    // The old panel rerolled the whole pool, which is a different and more
-    // generous rule than the one printed.
-    const had = unit.uid === init.uid ? c.initRoll : c.respRoll;
-    const idx = (arg?.indices ?? []).filter((i) => had && i >= 0 && i < had.length);
-    if (!had) return;
-    // Keeping the roll closes this side's reroll turn with the faces it had.
-    if (!idx.length) {
-      ctx.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces: had.slice(), focused: true });
-      ctx.refresh();
-      return;
-    }
-    // The Link was paid at the declare. It used to be spent HERE, and a retry
-    // after a server that did not answer spent it a second time.
-    void ctx.rollHits(idx.length, focusIsFree(ctx.data, unit)
-      ? 'Focuses the Counter-roll for free (Will to Survive)'
-      : 'Focuses the Counter-roll').then((res) => {
-      const faces = had.slice();
-      idx.forEach((at, k) => { const f = res.dice[k]?.face; if (f !== undefined) faces[at] = f; });
-      ctx.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces, focused: true });
-      ctx.refresh();
-    }).catch(() => {
-      ctx.noteNow('The server did not answer the Focus reroll. Press it again: the Link is already paid, and a retry costs nothing more.', 'system');
-      ctx.refresh();
-    });
-    return;
-  }
-  if (act === 'provoke' || act === 'provokepass') {
-    // Yoyu is whichever side the window named: it Provokes in either role
-    // (4.11.2; audit Phase 3, F16). An older press names nobody, and meant the
-    // Responder, which was the only role it used to have.
-    const take = act === 'provoke';
-    const yoyu = arg?.uid === init.uid ? init : resp;
-    const other = yoyu === init ? resp : init;
-    const verdict = ctx.send({ kind: 'provoke', seat: yoyu.side, uid: yoyu.uid, targetUid: other.uid, take });
-    ctx.noteNow(verdict.ok
-      ? take
-        ? `${yoyu.label} provokes ${other.label} into Offensive Stance (LPA-22 Yoyu).`
-        : `${yoyu.label} leaves ${other.label}'s Stance alone.`
-      : `${yoyu.label} cannot provoke ${other.label}: ${verdict.why}`, verdict.ok ? 'done' : 'refused');
-    ctx.refresh();
-    return;
-  }
-  if (act === 'apply') {
-    const a = actionOn(ctx, init, c.actionId);
-    // On a shared table the combat window's applyEffects NEVER RUNS (the
-    // verdict is derived, nobody presses Resolve), so the Initiator's seat
-    // sends the effects from here, through the reading every seam shares
-    // (ewWinCommands). This copy used to find the first top-level status and
-    // fall back to Fire Control Interference, so Manipulation Interference gave
-    // FCI instead of Immobilized and Scream, The Red Shoes and Overload Inject
-    // gave FCI too (audit Phase 3, D1). A Scan strips Low Profile and owes a
-    // camouflaged target its Manifestation, with the free Scan's attack queued
-    // behind it (FAQ I12); Target Tracing drains 1 Link, and the record says
-    // it was the reaction because its Command Token is already spent.
-    if (!a) { ctx.send({ kind: 'clearCounterRoll', seat: init.side }); ctx.refresh(); return; }
-    const win = ewWinCommands(ctx.data, init, resp, a, { reaction: !!c.reaction, thenAttack: c.thenAttack, terminal: c.terminal });
-    let won = true;
-    for (const cmd of win.cmds) won = ctx.send(cmd).ok && won;
-    if (won) ctx.noteNow(win.lines.length
-      ? `${init.label} succeeds: ${win.lines.join('; ')}.`
-      : `${init.label} succeeds, and ${a.name?.en || a.id} has nothing this table can apply: follow the card.`, 'done');
-    ctx.send({ kind: 'clearCounterRoll', seat: init.side });
-    ctx.refresh();
-    return;
-  }
-  if (act === 'close') {
-    // A free Scan that was not applied ends the attack that earned it (FAQ
-    // I11): the Tick is spent, the remaining Ticks are not. Said by whoever
-    // closes the window, once, and only when no attack was queued behind it.
-    // A Multi-Target's extra designation queues none: its applied Scan owes
-    // the Reveal alone, and a failed one drops only that designation (ruled
-    // R3; audit Phase 7, P7C 4).
-    const owed = ensureScript(s).reactions ?? [];
-    const applied = c.thenAttack?.extra
-      ? owed.some((r) => r.kind === 'manifest' && r.uid === resp.uid) || statusCount(resp.statuses, 'camouflage') === 0
-      : owed.some((r) => r.kind === 'scanAttack' && r.uid === init.uid);
-    // Only the Initiator's seat closes it until the Initiator has lost (ruled
-    // R3; audit Phase 7, P7D 1), so the line waits for the close to land.
-    const closed = ctx.send({ kind: 'clearCounterRoll', seat: seatOf(ctx) });
-    if (!closed.ok) {
-      if (closed.why) ctx.noteNow(closed.why);
-    } else if (c.thenAttack && !applied) {
-      ctx.noteNow(c.thenAttack.extra
-        ? `${init.label}'s Scan was not applied, so its attack cannot designate ${resp.label}. Its other targets stand (FAQ I11).`
-        : `${init.label}'s Scan was not applied, so its attack on ${resp.label} ends. The Action Tick is spent; any remaining Ticks may still be used (FAQ I11).`, 'done');
-    }
-    ctx.refresh();
-  }
+  if (!ensureScript(ctx.state).counter) return;
+  sendContestAct({
+    data: ctx.data, state: ctx.state, seat: seatOf(ctx), send: ctx.send, rollHits: ctx.rollHits,
+    say: (text, kind) => ctx.noteNow(text, kind), done: () => ctx.refresh(),
+  }, act, arg);
 }
 
 // Points the window at the shared record, building it the first time. Returns
@@ -3590,6 +3154,13 @@ function syncContest(ctx: HudCtx, host: HTMLElement): boolean {
   // comes out a spectator rather than accidentally owning a hand.
   const role = seat === init.side ? 'initiator' : seat === resp.side ? 'responder' : 'spectator';
   ewHelper.showContest(c, init, resp, action, role);
+  // DRAWN HERE, as the pad draws it (pad/ew.ts syncContest). showContest only
+  // stores the record, and remount() above draws only when the element
+  // changed: #combat-body is one element for the life of the HUD, so without
+  // this the window stayed empty, or kept the last attack's picture, and the
+  // exchange could not be answered (found 2026-10-01, by a computer seat's
+  // Counter-roll on a player).
+  ewHelper.redraw();
   return true;
 }
 
@@ -3616,7 +3187,7 @@ function taskItems(ctx: HudCtx) {
 // A Part already bearing a Box has its Freehand treated as invalid (5.3.1).
 // A Carrier carries one on a Freehand Load (FAQ P11; ruling I19).
 function freeHandsFor(ctx: HudCtx, t: Token) {
-  return freehandSlots(ctx.data, t, boxHands(ctx.state.tasks, t.uid), [], true);
+  return turn.boxHandsFree(ctx.data, ctx.state, t);
 }
 
 // Called once a Movement has landed: every loose Box in a Grid the route passed
@@ -3625,12 +3196,11 @@ function freeHandsFor(ctx: HudCtx, t: Token) {
 // `endAfter`: the offer as the Opportunity ends in the Box's Grid (F2), made
 // only to a unit with a free Freehand. True when an offer is up.
 function offerBoxesOn(ctx: HudCtx, uid: number, path: LargeGrid[], flight = false, endAfter = false): boolean {
-  const grids = flight && path.length > 1 ? [path[0], path[path.length - 1]] : path;
   const t = ctx.state.tokens.find((x) => x.uid === uid);
   if (endAfter && (!t || !freeHandsFor(ctx, t).length)) return false;
-  const on = taskItems(ctx).filter((i) => i.kind === 'blackbox' && i.bearerUid === undefined
-    && i.col !== undefined && i.row !== undefined
-    && grids.some((g) => g.c === Math.floor(i.col! / 3) && g.r === Math.floor(i.row! / 3)));
+  // Which Boxes a route passed is read in turn.ts (boxesOn), where a seat with
+  // no panel reads it too.
+  const on = turn.boxesOn(ctx.state, path, flight);
   if (on.length) boxPick = { uid, queue: on.map((i) => i.id), ...(endAfter ? { endAfter: true } : {}) };
   return on.length > 0;
 }
@@ -3641,8 +3211,9 @@ function offerBoxesOn(ctx: HudCtx, uid: number, path: LargeGrid[], flight = fals
 let minePick: (MineLaying & { left: number; flight: boolean; route: LargeGrid[] }) | null = null;
 
 function offerMinesOn(ctx: HudCtx, t: Token, path: LargeGrid[], steps: number, flying: boolean): void {
-  const spare = steps - pathCost(path, flying || !!t.aerial, moveOptsFor(ctx, t, flying));
-  const lay = minesLayable(ctx.data, t, path, spare, flying || !!t.aerial, ctx.state.tokens);
+  // What the walk may Lay is read in turn.ts (minesOnRoute), where a seat with
+  // no panel reads it too.
+  const lay = turn.minesOnRoute(ctx.data, ctx.state, t, path, steps, flying);
   if (lay) minePick = { ...lay, left: lay.max, flight: flying || !!t.aerial, route: [...path] };
 }
 
@@ -3982,7 +3553,7 @@ function advanceCrush(ctx: HudCtx): void {
   if (!crusher) { crushPlan = null; ctx.refresh(); return; }
   const by = crushActor(m, crusher);
   if (m.terrain.length) {
-    if (ctx.send({ kind: 'destroyTerrain', ...by, pieces: m.terrain }).ok) ctx.noteNow(`${crusher.label} crushes ${m.terrain.length === 1 ? 'a piece of' : `${m.terrain.length} pieces of`} Destructible Terrain in ${gridName(m.goal.c, m.goal.r)}.`, 'done');
+    if (ctx.send(turn.crushDestroy(by, m.terrain)).ok) ctx.noteNow(`${crusher.label} crushes ${m.terrain.length === 1 ? 'a piece of' : `${m.terrain.length} pieces of`} Destructible Terrain in ${gridName(m.goal.c, m.goal.r)}.`, 'done');
     m.terrain = [];
   }
   while (m.queue.length) {
@@ -4090,7 +3661,7 @@ function finishCrush(ctx: HudCtx): void {
   // to it is exactly how the crusher used to land on a unit that never moved.
   const spot = swapped.length
     ? pair?.crusher
-    : standingSpot(m.goal.c, m.goal.r, t.size, t.aerial, terrain, ctx.state.tokens, t.uid);
+    : turn.crushLanding(ctx.data, ctx.state, t, m.goal);
   // Nothing printed lets two units share a Large Grid, so the Crush stops short
   // of it rather than landing on top of one, and the Movement ends where the
   // route last had room. Said out loud: the silence is what made the old failure
@@ -4117,7 +3688,7 @@ function finishCrush(ctx: HudCtx): void {
   const walked = (via: { col: number; row: number }[]) => via.filter((p) => Math.floor(p.col / 3) !== startG.c || Math.floor(p.row / 3) !== startG.r);
   const record = (to: { col: number; row: number }, via: { col: number; row: number }[], from?: { col: number; row: number }): boolean => (ctl
     ? ctx.send({ kind: 'controlledMove', seat: ctl.side, uid: ctl.uid, targetUid: t.uid, to, via: from ? walked(via) : via, facing: m.facing, actionId: m.actionId }).ok
-    : ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to, free: m.free, granted: m.granted, via, facing: m.facing, from, actionId: m.actionId, breakAwayLink: m.breakAwayLink, ...(m.resume ? { resume: true } : {}) }).ok);
+    : ctx.send(turn.crushRecord(t, m, to, via, from)).ok);
   // What follows a Movement is its own player's: the tow, the Mines, the Boxes,
   // a shove and a Shock strike. The controller offers none of it, as the plain
   // controlled route offers none.
@@ -4590,7 +4161,7 @@ function chargePanel(ctx: HudCtx): string {
   const paying = m.on && pendingAction?.kind === 'performAction' && pendingAction.actionId === 'COMMON_CHARGE' ? pendingAction : null;
   const refused = (slot: string): string => {
     if (!paying) return '';
-    const v = ctx.check({ ...paying, partKey: `COMMON_CHARGE@${slot}` });
+    const v = ctx.check(turn.chargePayment(paying, slot));
     return v.ok ? '' : ` aria-disabled="true" data-why="${esc(v.why ?? 'Not now.')}"`;
   };
   const rows = slots
@@ -4846,16 +4417,19 @@ function refundCharge(ctx: HudCtx, refund?: { uid: number; slot: string; choice?
 // wait in `pendingAction` until that tool succeeds. False means the Action is
 // already done and should be paid for now.
 function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeof guidedActions>[number]): boolean {
+  // WHICH tool an Action opens is read in turn.ts (actionRoute), in the order
+  // this function has always asked, so the seat seam routes it the same way.
+  const route = turn.actionRoute(ctx.data, t, a);
   // First, as it is in performGuided. Remote Access is typed like card text but
   // resolves against the board — without this branch it fell through to
   // "follow the card text" and a Terminals mission could not be scored online.
-  if (a.id === 'COMMON_REMOTE_ACCESS') {
+  if (route === 'terminal') {
     terminalPick = { uid: t.uid, actionId: a.id, reach: a.range ?? 4 };
     return true;
   }
   // 6.1: Discard is performed by one Handheld Part, so it asks which one
   // before it pays (audit Phase 7, P7A 2).
-  if (a.id === 'COMMON_DISCARD') {
+  if (route === 'discard') {
     discardPick = { uid: t.uid };
     return true;
   }
@@ -4863,12 +4437,12 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // Token has only the Link to take, so there is no question; one at full
   // Link with none has nothing to do at all (FAQ J8), and backing out of
   // either costs nothing.
-  if (a.id === 'COMMON_STABILIZE') {
+  if (route === 'stabilise') {
     if (stabiliseAsk(ctx.data, t).picks.length) {
       stabilisePick = { uid: t.uid };
       return true;
     }
-    const cmd: Command = { kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true };
+    const cmd: Command = turn.stabiliseCommand(t, null);
     const v = ctx.check(cmd);
     if (!v.ok) {
       ctx.noteNow(v.why ?? 'Stabilize System was refused.');
@@ -4881,29 +4455,29 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     return true;
   }
   // The KK9's Overwatch Strike (audit Phase 5, F8).
-  if (overwatchOf(a)) {
+  if (route === 'overwatch') {
     overwatchPick = { uid: t.uid, actionId: a.id };
     return true;
   }
-  if (isChargeAction(a)) {
+  if (route === 'charge') {
     chargePlan = { uid: t.uid, on: true };
     return true;
   }
-  const supply = resupplyOf(a);
+  const supply = route === 'resupply' ? resupplyOf(a) : null;
   if (supply) {
     resupplyPick = { uid: t.uid, actionId: a.id, rule: supply };
     return true;
   }
   // Ahead of the Delay Phase's Detonation branch below: a Link Beacon restores
   // Link and stays on the board (4.7.5), it never Detonates.
-  const link = linkSupportOf(a);
+  const link = route === 'link' ? linkSupportOf(a) : null;
   if (link) {
     linkPick = { uid: t.uid, actionId: a.id, rule: link };
     return true;
   }
   // ZHDR-206_B Stance feedback: which Ally Mech, then which Stance, and the
   // Action is paid once both are answered (audit Phase 2, D1).
-  if (stanceFeedbackOf(a)) {
+  if (route === 'stanceFeedback') {
     void (async () => {
       const what = a.name?.en || a.id;
       const targets = stanceFeedbackTargets(ctx.data, ctx.state.tokens, t, a, !!ctx.state.noBoard);
@@ -4932,18 +4506,18 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     })();
     return true;
   }
-  const clean = tokenCleanupOf(a);
+  const clean = route === 'cleanup' ? tokenCleanupOf(a) : null;
   if (clean) {
     cleanPick = { uid: t.uid, actionId: a.id, rule: clean };
     return true;
   }
-  const rep = repairSpec(a);
+  const rep = route === 'repair' ? repairSpec(a) : null;
   if (rep) {
     repairPick = { uid: t.uid, actionId: a.id, repair: rep.repair, mend: rep.mend, ally: rep.ally, removeSelf: rep.removeSelf };
     return true;
   }
   // The Bit's Stance Change: pick a form, then take the Movement it grants.
-  if (formSwitch(a)) {
+  if (route === 'form') {
     formPick = { uid: t.uid, actionId: a.id };
     return true;
   }
@@ -4955,7 +4529,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // one is immediate, so it pays the Action itself. Returning true without the
   // commitAction was the first draft's bug: the Tick was never spent and the
   // latched pendingAction rode along to whatever tool ran next.
-  if (activatesCamo(a)) {
+  if (route === 'camo') {
     const stealth = stealthValue(a) ?? 0;
     if (statusCount(t.statuses, 'camouflage') > 0) {
       ctx.noteNow(`${t.label} is already in the Optical Camouflage State.`);
@@ -4976,11 +4550,11 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // A Scan opens the same Counter-roll window through its own door, for the
   // reason units.ts isScanAction spells out: it is not an Electronic Attack and
   // must not be caught by anything that modifies one.
-  if (isElectronicAttack(a) || isScanAction(a)) {
+  if (route === 'electronic') {
     openAttackPick(t, a);
     return true;
   }
-  if (a.type === 'Firing' || a.type === 'Melee') {
+  if (route === 'attack') {
     // A [Charged] Part offers to spend its token before the attack, exactly as
     // offerChargeSpend does ahead of the targeting step. Answering that question
     // either way then opens the targeting.
@@ -4991,7 +4565,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // Prototype Blink is typed Moving but teleports (FAQ E20.2), so it must not
   // reach startMovePlan — there is no route to draw. Mirrors performBlink in
   // freeplay; routeAction and performGuided have to stay faithful to each other.
-  if (isPositionSwap(a)) {
+  if (route === 'blink') {
     // Both facings start unanswered. Seeding this one with t.facing would skip
     // the Taurus's own question and leave freeplay asking three things where
     // the Match Centre asks two.
@@ -4999,23 +4573,18 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     ctx.refresh();
     return true;
   }
-  if (a.type === 'Moving') {
+  if (route === 'move') {
     startMovePlan(ctx, t, {
-      actionId: a.id,
-      range: a.range || undefined,
+      // The Action's own Range, free of the Maneuver Tick when it is paid in
+      // Ticks, flown when it carries Airborne Movement: turn.ts actionMove,
+      // which a seat with no planner opens the same Movement by.
+      ...turn.actionMove(a),
       label: `${a.name?.en || a.id} · Range ${a.range || maneuverRange(ctx.data, t)}${straightLineBonus(a) ? ` (+${straightLineBonus(a)} in a straight line)` : ''}`,
       shoveActionId: knockbackOf(a, ctx.data.actionTranslation(a.id)?.english ?? undefined) ? a.id : undefined,
-      // Free means "the Action Tick already paid for this move". A Drone's
-      // Action costs no Tick, so there is no performed Action for a free move to
-      // ride on and it is an ordinary Movement.
-      free: !!lengthOf(a),
-      // A Jump carrying Airborne Movement IS a Flying Movement (空中移动), with
-      // no choice in it - unlike the Ojs200's optional Maneuver.
-      airborne: isAirborneAction(a),
     });
     return true;
   }
-  if (a.type === 'Projectile') {
+  if (route === 'launch') {
     // The Bit Port Launches OR Recovers (292_A; ruling I23). An empty Port can
     // only Recover the Bit in Range, and the Token comes back (audit Phase 5,
     // H1).
@@ -5047,7 +4616,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // the other face of the same physical card. Nothing else about the unit
   // moves, so like the Unfold below it resolves here and pays here rather than
   // opening a tool that would pay later. Mirrors the freeplay branch.
-  const mode = transformOffer(ctx.data, t, a);
+  const mode = route === 'transform' ? transformOffer(ctx.data, t, a) : null;
   if (mode) {
     commitAction(ctx);
     if (ctx.send({ kind: 'transformPart', seat: t.side, uid: t.uid, slot: mode.slot, cardId: mode.into.id }).ok) ctx.noteNow(`${t.label} transforms: ${cardName(mode.from)} becomes ${cardName(mode.into)}.`, 'done');
@@ -5056,7 +4625,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // Pholcus does not resolve a payload: it becomes a Drone in place (FAQ M18).
   // If the Grid it comes up in is occupied, the derived blast list has it
   // detonate on the spot (M18.4).
-  if (unfoldsOwed(ctx.data, [t]).some((x) => x.actionId === a.id)) {
+  if (route === 'unfold') {
     // Nothing to wait on: the Unfold happens here, so it pays here. Returning
     // true without this left the activation sitting in pendingAction until
     // some later Action dropped it, which is how the folded Pholcus could
@@ -5068,7 +4637,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // A Projectile resolving its payload in the Delay Phase opens the same
   // Detonation resolver its card button uses (3.6.2). Freeplay counts this as
   // performed the moment the resolver opens, and so does this.
-  if (t.kind === 'projectile' && a.type !== 'Passive') {
+  if (route === 'detonate') {
     startDetonation(t.uid, a.id);
     return false;
   }
@@ -5076,7 +4645,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // Placed by the app rather than left to "follow the card text", and refused
   // when the unit already wears it (6.1, FAQ J1). Immediate, so it pays here,
   // like the camouflage branch above. Mirrors performGuided in main.ts.
-  const grant = selfStatusGrant(a);
+  const grant = route === 'selfStatus' ? selfStatusGrant(a) : null;
   if (grant) {
     const why = selfGrantWhy(t, grant);
     if (why) {
@@ -5101,7 +4670,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // Token on anyone (audit Phase 3, E2). Asked before the Tick is paid; the
   // picker offers only units in Range and sight that can bear it (not a Low
   // Value Unit, not a camouflaged one for a Highlight).
-  const tag = targetStatusGrant(a);
+  const tag = route === 'targetStatus' ? targetStatusGrant(a) : null;
   if (tag) {
     const units = targetStatusTargets(ctx.data, ctx.state.tokens, t, a, tag, { terrain: terrainOf(ctx), smoke: ctx.state.smoke ?? [] });
     if (!units.length) {
@@ -5166,11 +4735,7 @@ let attackPick: { uid: number; actionId: string; refund?: { uid: number; slot: s
 // (FAQ A16): the designation unless the player has declined it, and a marked
 // one-handed copy when they have, so the combat window can say so.
 function handsFor(ctx: HudCtx, by: Token, granted: CardAction, choice?: 'declined'): { action: CardAction; use: ReturnType<typeof twoHandedUse> } {
-  // A Load lent by a Carrier in Contact can be the Freehand (FAQ O16).
-  const use = twoHandedUse(ctx.data, by, granted, boxHands(ctx.state.tasks, by.uid), loanedParts(ctx.data, ctx.state.tokens, by));
-  if (!use) return { action: granted, use: null };
-  if (choice === 'declined') return { action: { ...granted, twoHandedDeclined: true }, use };
-  return { action: use.action, use };
+  return turn.handsFor(ctx.data, ctx.state, by, granted, choice);
 }
 
 export function startAttackPick(uid: number, actionId: string, only?: number): void {
@@ -5220,102 +4785,23 @@ export function startActionFromCard(uid: number, actionId: string, onlyProjectil
 }
 
 function attackPanel(ctx: HudCtx): string {
-  const s = ctx.state;
   const m = attackPick!;
-  const by = s.tokens.find((x) => x.uid === m.uid);
-  const raw = by ? actionOn(ctx, by, m.actionId) : undefined;
-  // [Stationary] pays out when the attacker has not moved this Opportunity:
-  // the Mire's railguns reach 2 grids further, and nobody could see why not.
-  const opp0 = ensureScript(s).opp;
-  const steadied = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
-  // [condition] 获得X, folded in so a granted keyword reads as a printed one.
-  const granted = by && steadied ? grantAdjusted(steadied, by, opp0?.uid === by.uid ? opp0 : null) : steadied;
-  // [Two-Handed]: offered, not applied. FAQ A16: the player may decline the
-  // designation and perform the Action one-handed; the row below says which
-  // way this attack is going, and the press reads the same helper.
-  const hands = by && granted ? handsFor(ctx, by, granted, m.twoHanded) : null;
-  const a = hands ? hands.action : granted;
-  const stationary = raw && a !== raw;
-  if (!by || !a) return head('Attack', 'That unit is gone', '', true)
+  // The reading of every line is turn.ts attackReading: who may be named, what
+  // each shot is worth and why a row is refused. The seat seam reads the same
+  // one, so a target offered here is a target every reader is offered.
+  const read = turn.attackReading(ctx.data, ctx.state, m);
+  if (!read) return head('Attack', 'That unit is gone', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Close</button></div>';
-  const terrain = terrainOf(ctx);
-  const smoke = s.smoke ?? [];
-  // Every enemy on the board is offered, with the reading of the line beside
-  // it: out of arc is a warning the player may still overrule, the same way the
-  // guide warns rather than blocks. An Automatic Action is the exception: it
-  // takes the nearest legal target, Highlighted first (3.5.2, FAQ O21), and
-  // networked play is strict, so only those show.
-  const autoLegal = a.speed === 'auto' ? autoTargetsFor(ctx.data, s.tokens, by, a, { terrain, smoke }) : null;
-  // THE EFFECTIVE REACH, not the printed one. actionRange folds in an ally's
-  // firing-range aura, and passing the raw card number here would refuse a shot
-  // the aura legitimately extends. Electronic Attacks never reach this picker
-  // (they take ewPick at the ⌖ press), so the Repeater origins autoTargetsFor
-  // has to consider do not arise on this path.
-  const reach = actionRange(ctx.data, s.tokens, by, a);
-  // PDRH-202_B Link Shock: only a unit this one Tethers, at any distance and
-  // with no line of sight needed. The board is still read for the rest: the
-  // Forward Arc and the no-Aerial Melee rule stay (ruled 2026-09-25, audit
-  // Phase 4, I14), which this row used to skip by not asking at all.
-  const shock = linkShockOf(a);
-  // HIGHLIGHT (6.2.1): a Firing Action "able to target an Enemy Unit that has
-  // Highlight ... must target that Unit" (FAQ J18: Firing only; F15). Only the
-  // Drones' Automatic Actions were bound, so Amplify Profile and Target Tag did
-  // nothing against a Mech's fire (audit Phase 3, E1). Networked play is
-  // strict, so every other row disables while one of those can be taken.
-  const forced = a.type === 'Firing' && !shock
-    ? highlightTargets(ctx.data, s.tokens, a, s.tokens.filter((t) => t.side !== by.side && t.deployed !== false && alive(t)
-      && statusCount(t.statuses, 'camouflage') === 0
-      && !losNote(by, t, { ...a, range: reach }, terrain, s.tokens, smoke, true).includes('✕')), by)
-    : [];
-  const rows = s.tokens
-    .filter((t) => t.side !== by.side && t.deployed !== false && alive(t))
-    .filter((t) => !autoLegal || !autoLegal.length || autoLegal.some((x) => x.uid === t.uid))
-    .filter((t) => m.only === undefined || t.uid === m.only)
-    .filter((t) => !shock || tetheredBy(by, t))
-    .map((t) => {
-      // STRICT, so the Range reading comes back as ✕ rather than ⚠ and the row
-      // below disables itself on it. OTTO shot a Mech ten Grids away with a
-      // Range 6 weapon and the game let him roll: range was a warning nobody
-      // was stopped by, on the one page that is supposed to stop them.
-      const note = losNote(by, t, { ...a, range: reach, anyDistance: shock }, terrain, s.tokens, smoke, true);
-      // ⚠ is a warning the player may overrule; ✕ is an attack the rules do not
-      // allow at all, and both Range (4.4.1) and blocked line of sight are that.
-      // Freeplay warns for both because a table can house-rule; networked play
-      // is strict, so the row cannot be pressed.
-      // 4.12.2 (FAQ I11/I12): a unit in the Optical Camouflage State cannot
-      // simply be named - the attacker Scans it first, and only an attack on
-      // every unit in range skips the Scan. The free Scan-on-designation is
-      // not automated yet, so the row says what to do instead of letting the
-      // shot through.
-      const hidden = statusCount(t.statuses, 'camouflage') > 0;
-      // Not the Highlighted one, while one can be taken.
-      const lit = forced.length > 0 && !forced.some((x) => x.uid === t.uid);
-      // A camouflaged unit MAY be designated: its marker is only a suspected
-      // position, so range and sight are judged after the Reveal, not now.
-      const blocked = (!hidden && note.includes('✕')) || lit;
-      const bad = blocked || hidden || note.includes('⚠');
-      const prot = protectionFor(by, t, a, terrain, s.tokens, smoke,
-        ignoresProtection(ctx.data, by, t, ensureScript(s).opp),
-        (u) => providesUnitProtectionToAllies(ctx.data, u));
+  const { by, raw, action: a, hands, forced } = read;
+  const stationary = a !== raw;
+  const rows = read.rows
+    .map(({ t, note, hidden, lit, blocked, bad, prot, shield, ap }) => {
       // One reading per line. Range, arc and line of sight are three separate
       // judgements and running them together on one line made the list unusable.
       // A zero carries its reason when there is one — the line above says
       // "obstructed" for a medium unit in the way, and 4.5.3 pays nothing for
       // it, so the row would otherwise look like the dice went missing. Not
       // repeated when the row is already ✕, where the note only echoes it.
-      // 自动盾牌 Automatic Shield: read-only disclosure, and the row stays
-      // pressable. The redirect is mandatory (FAQ A12), so this is not a veto to
-      // offer — the attacker's real choice is a DIFFERENT target, and that
-      // choice is this list. Rows are only ever greyed on ✕ blocked line of
-      // sight, and a unit in the way obstructs without blocking.
-      const shield = automaticShieldFor(ctx.data, s.tokens, by, t, a);
-      // Armor Piercing (6.2.1), on the row rather than only in the combat
-      // window: it is the same class of disclosure the Protection bit above is
-      // — what this shot is worth against THIS target — and a Spike's grant is
-      // the half a player cannot read off the weapon card at all. Constant
-      // across the rows of one Action, but so is Protection when the board is
-      // open, and splitting the two would be the odd choice.
-      const ap = armorPiercing(ctx.data, by, a);
       const bits = (lit ? [`✕ ${forced.map((x) => x.label).join(' or ')} has Highlight, and this Firing Action must target it (6.2.1)`] : [])
         .concat(hidden ? ['⚠ in Optical Camouflage: one free Scan first; the attack follows if it is Revealed (4.12.2, FAQ I12)'] : [], note.split(' · '),
         prot.white ? [`+${prot.white} White ${prot.white === 1 ? 'die' : 'dice'} of Protection`]
@@ -5335,24 +4821,18 @@ function attackPanel(ctx: HudCtx): string {
   // rather than made clickable because destroying terrain already has its own
   // path (click the piece on the board), and this is the half a player cannot
   // work out for themselves: that the option exists at all.
-  const neutral = autoLegal && !autoLegal.length
-    ? autoNeutralTargets(ctx.data, s.tokens, terrain, by, a, smoke)
-    : [];
+  const neutral = read.neutral;
   const neutralNote = neutral.length
     ? `<p class="tp-note">No enemy Unit is inside Range ${a.range ?? 0}, so ${esc(by.label)} MAY attack Breakable Terrain instead, and only the nearest, which is
        ${neutral.map((n) => esc(terrainLabel(ctx, n.id))).join(' or ')} (FAQ O9).<br>Click the piece on the board to destroy it. Buildings and Defense walls are never valid targets (O10).</p>`
     : '';
-  // A Container is a Neutral Unit (Supplementary Rules 1.04, 1.1.3): a Firing or
-  // Melee Action may target one in its reach and sight, and Breakable (3.1)
-  // destroys it with no roll (OTTO, 2026-09-30). Not while a Highlighted enemy
-  // must be the target (6.2.1), nor for a pick the rules have already named.
-  const boxes = !autoLegal && !shock && m.only === undefined && !forced.length && (a.type === 'Firing' || a.type === 'Melee')
-    ? containerTargets(ctx.data, s.tokens, terrain, by, a, smoke) : [];
-  const boxRows = boxes.map((b) => `<button class="rowwide targrow" data-attackbox="${esc(b.id)}">
+  // A Container named as the target (Supplementary Rules 1.04, 1.1.3, 3.1):
+  // which ones is turn.ts's reading too.
+  const boxRows = read.boxes.map((b) => `<button class="rowwide targrow" data-attackbox="${esc(b.id)}">
       <span class="tgname">${esc(terrainLabel(ctx, b.id))}</span>
       <span class="tgbits"><span>a Container: Breakable, destroyed with no roll (Supplementary Rules 1.04, 3.1)</span><span>${b.dist} Grid${b.dist === 1 ? '' : 's'} away</span></span></button>`).join('');
   // [Two-Handed] (FAQ A16): what the spare hand buys, and the switch to decline it.
-  const handsRow = hands?.use
+  const handsRow = hands.use
     ? `<button class="rowwide" data-act="twohanded">${m.twoHanded === 'declined'
         ? `[Two-Handed] declined: one-handed, none of the rider (FAQ A16). Press to use ${esc(hands.use.label)}.`
         : `${esc(hands.use.note)}. Press to perform it one-handed instead (FAQ A16).`}</button>`
@@ -5479,7 +4959,7 @@ function terrainLabel(ctx: HudCtx, id: string): string {
 // `resume`: the rest of a line a Mine stopped (C1b), same direction, the
 // Grids it had left; Push's Link was paid on the first leg.
 let shovePlan: { uid: number; actionId: string; targetUid: number | null; facing?: Facing; dir?: number; resume?: { dir: { dc: number; dr: number }; grids: number } } | null = null;
-const PUSH_DIRS = [{ dc: 0, dr: -1 }, { dc: 1, dr: 0 }, { dc: 0, dr: 1 }, { dc: -1, dr: 0 }];
+const PUSH_DIRS = turn.PUSH_DIRS;
 // A Knockback or Push a Mine stopped (C1b; ruling I16): the forcing seat holds
 // the rest of the line and opens it once no Mine is owed on the unit, whichever
 // seat resolved the blast.
@@ -5500,19 +4980,15 @@ export function startShove(uid: number, actionId: string, targetUid?: number): v
   hudRef?.refresh();
 }
 
+// The Grid in front, and the enemy Ground Units in it ("an Enemy GROUND
+// Unit": a Flying Raven is not one, audit Phase 4, B4): turn.ts, the reading a
+// computer seat's shove makes too (M8.2u).
 function gridAhead(t: Token): { c: number; r: number } {
-  const g = { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
-  const fv = [[0, -1], [1, 0], [0, 1], [-1, 0]][t.facing] as [number, number];
-  return { c: g.c + fv[0], r: g.r + fv[1] };
+  return turn.gridAhead(t);
 }
 
 function shoveVictims(ctx: HudCtx, t: Token): Token[] {
-  const ahead = gridAhead(t);
-  return ctx.state.tokens.filter((o) => {
-    // "an Enemy GROUND Unit": a Flying Raven is not one (audit Phase 4, B4).
-    if (o.side === t.side || o.uid === t.uid || !isGroundUnit(ctx.data, o) || o.deployed === false) return false;
-    return Math.floor(o.col / 3) === ahead.c && Math.floor(o.row / 3) === ahead.r;
-  });
+  return turn.shoveVictims(ctx.data, ctx.state, t);
 }
 
 function gridName(c: number, r: number): string {
@@ -5520,26 +4996,12 @@ function gridName(c: number, r: number): string {
 }
 
 // What the Forced Movement would do, or why it does nothing.
+// It is turn.ts forcedMove, the one reading a computer seat makes too (M8.2t).
+// The line ends early in an Abyss (the victim falls, resolveShove below
+// resolves the death) or on a Fragile Platform (the settle sweep removes the
+// Card once the victim stands on it).
 function shoveOutcome(ctx: HudCtx, by: Token, victim: Token, a: CardAction, pushDir?: number, resume?: { dir: { dc: number; dr: number }; grids: number }) {
-  const printed = knockbackOf(a);
-  if (!printed) return null;
-  const kb = resume ? { ...printed, grids: resume.grids } : printed;
-  const dir = resume?.dir ?? (kb.push && pushDir !== undefined ? PUSH_DIRS[pushDir] : attackDirection(by, victim));
-  // The line ends early in an Abyss (the victim falls, resolveShove below
-  // resolves the death) or on a Fragile Platform (the settle sweep removes
-  // the Card once the victim stands on it).
-  // Deployables cannot be Force-Moved (4.3.4; audit Phase 4, B2).
-  const line = canBeForceMoved(ctx.data, victim)
-    ? knockbackPath(victim, dir, kb.grids, terrainOf(ctx), ctx.state.tokens, envForcedStop(ctx.data, ctx.state, victim))
-    : [];
-  // C1b: a Ground unit forced through a mined Grid stops there and the Mine
-  // goes off; the rest follows once the blast is resolved (ruling I16).
-  const stop = mineStopIndex(ctx.data, ctx.state.tokens, victim, [largeGridOf(victim), ...line], false);
-  const path = stop > 0 ? line.slice(0, stop) : line;
-  const rest = stop > 0 ? kb.grids - stop : 0;
-  const heading = ['north', 'east', 'south', 'west'][dir.dr < 0 ? 0 : dir.dc > 0 ? 1 : dir.dr > 0 ? 2 : 3];
-  const end = path[path.length - 1];
-  return { kb, path, heading, end, short: path.length < kb.grids, rest, dir, resumed: !!resume };
+  return turn.forcedMove(ctx.data, ctx.state, by, victim, a, pushDir, resume);
 }
 
 function shovePanel(ctx: HudCtx): string {
@@ -5618,14 +5080,14 @@ function resolveShove(ctx: HudCtx): void {
   const by = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
   const victim = m?.targetUid !== null && m ? s.tokens.find((x) => x.uid === m.targetUid) : undefined;
   const a = by && m ? actionOn(ctx, by, m.actionId) : undefined;
-  const out = by && victim && a ? shoveOutcome(ctx, by, victim, a, m?.dir, m?.resume) : null;
+  // The commands are turn.ts forcedCommands', the ones a computer seat sends.
+  const made = by && victim && a ? turn.forcedCommands(ctx.data, s, by, victim, a, { dir: m?.dir, facing: m?.facing, resume: m?.resume }) : null;
+  const out = made?.out ?? null;
   shovePlan = null;
-  if (!out || !out.path.length || !by || !victim) { flushBoxDrops(); ctx.refresh(); return; }
-  const spot = standingSpot(out.end.c, out.end.r, victim.size, victim.aerial, terrainOf(ctx), s.tokens, victim.uid, { col: victim.col, row: victim.row })
-    ?? { col: victim.col, row: victim.row };
+  if (!made || !out || !out.path.length || !by || !victim) { flushBoxDrops(); ctx.refresh(); return; }
   const wasShut = victim.stance === 'shutdown';
-  const fatal = isGroundUnit(ctx.data, victim) && envCardAt(ctx.state, out.end.c, out.end.r) === 'abyss';
-  const forced = ctx.send({ kind: 'forceMove', seat: by.side, uid: by.uid, targetUid: victim.uid, to: spot, push: out.kb.push && !out.resumed, facing: m?.facing, via: out.path.map((g) => ({ col: g.c * 3 + 1, row: g.r * 3 + 1 })) }).ok;
+  const fatal = made.fatal;
+  const forced = ctx.send(made.commands[0]).ok;
   if (out.rest > 0 && !fatal && m) pushOn = { uid: by.uid, actionId: m.actionId, targetUid: victim.uid, dir: out.dir, grids: out.rest };
   const shut = out.kb.push && !out.resumed && victim.kind === 'mech' && !wasShut && victim.stance === 'shutdown';
   // The Abyss: a Ground Unit forced in is immediately Destroyed, and the kill
@@ -5635,7 +5097,7 @@ function resolveShove(ctx: HudCtx): void {
   if (fatal) {
     // The recordKill leaves a Box no Penetration owes in the Abyss Grid
     // (ruling I20); one a Penetration owes is still the attacker's drop.
-    const fell = ctx.send({ kind: 'recordKill', seat: by.side, uid: by.uid, targetUid: victim.uid, what: 'unit' }).ok;
+    const fell = ctx.send(made.commands[1]).ok;
     if (forced && fell) ctx.noteNow(`${victim.label} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} into the Abyss Grid ${gridName(out.end.c, out.end.r)} and is immediately Destroyed.`, 'done');
     flushBoxDrops();
     ctx.refresh();
@@ -5725,50 +5187,27 @@ function detonationText(ctx: HudCtx, a: CardAction): string {
   return tr?.trim() || a.description?.zh?.trim() || 'See the card for what this detonation does.';
 }
 
+// Who and what a blast reaches are read in turn.ts, where a seat with no
+// panel reads them too.
 function unitsWithin(ctx: HudCtx, from: Token, range: number): { t: Token; dist: number }[] {
-  const gc = Math.floor(from.col / 3);
-  const gr = Math.floor(from.row / 3);
-  return ctx.state.tokens
-    .filter((x) => x.uid !== from.uid && x.deployed !== false)
-    .map((t) => ({ t, dist: Math.abs(Math.floor(t.col / 3) - gc) + Math.abs(Math.floor(t.row / 3) - gr) }))
-    .filter((x) => x.dist <= range)
-    .sort((a, b) => a.dist - b.dist);
+  return turn.unitsWithin(ctx.state, from, range);
 }
 
-// Destructible Terrain is always a legal target for a Projectile in range
-// unless the card says otherwise (4.7.5), and only the 1-inch Containers are
-// destructible: Buildings and both Defense walls are not (p.21).
 function fragileTerrainWithin(ctx: HudCtx, from: Token, range: number) {
-  const gc = Math.floor(from.col / 3);
-  const gr = Math.floor(from.row / 3);
-  return terrainOf(ctx)
-    .filter((p) => p.isFragile)
-    .map((piece) => {
-      const cells = piece.subCells.map((c) => ({ c: Math.floor(c.col / 3), r: Math.floor(c.row / 3) }));
-      return { piece, dist: Math.min(...cells.map((c) => Math.abs(c.c - gc) + Math.abs(c.r - gr))) };
-    })
-    .filter((x) => x.dist <= range)
-    .sort((a, b) => a.dist - b.dist);
+  return turn.fragileTerrainWithin(ctx.data, ctx.state, from, range);
 }
 
 function detonatePanel(ctx: HudCtx): string {
   const s = ctx.state;
-  const proj = s.tokens.find((x) => x.uid === detonateNow!.uid);
-  if (!proj) return head('Detonation', 'That Projectile is gone', '', true)
+  // WHAT the blast may take is read in turn.ts (detonationReading): the units
+  // and Containers in Range, whether it is an Explosion or an effect, whether
+  // it takes one unit or all, the card's own bar on each (4.7.5), and whether
+  // it stays with nothing to take. A seat with no panel reads the same list.
+  const read = turn.detonationReading(ctx.data, s, detonateNow!.uid, detonateNow!.actionId, detonateNow!);
+  if (!read) return head('Detonation', 'That Projectile is gone', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="detdone">Close</button></div>';
-  const a = actionOn(ctx, proj, detonateNow!.actionId);
+  const { proj, a, range, targets, terrain, damaging, scope, barOf, legal, stays } = read;
   const name = a?.name?.en || detonateNow!.actionId;
-  const range = a?.range ?? 0;
-  const targets = unitsWithin(ctx, proj, range);
-  const terrain = fragileTerrainWithin(ctx, proj, range);
-  const damaging = !!(a && ((a.yellowDice ?? 0) || (a.redDice ?? 0)));
-  // The translation fallback, the same one freeplay passes. explosionScope
-  // reads the printed English first and drops to the CHINESE when there is
-  // none; 63 damaging actions have no English in cards.json, and for those this
-  // page was reading the zh while freeplay read the English translation. They
-  // agree on every card today, which is precisely why the day they stop would
-  // have been a scope that differed between the two boards and nothing to say so.
-  const scope = a ? explosionScope(a, ctx.data.actionTranslation(a.id)?.english ?? undefined) : 'single';
   // An effect detonation that prints "line of sight" reaches only the units
   // the Projectile can see - the gate freeplay already applies. Damage is not
   // gated: Explosion damage ignores line of sight (4.7.6).
@@ -5778,15 +5217,6 @@ function detonatePanel(ctx: HudCtx): string {
     : targets;
   const struck = scope === 'all' ? detonateNow!.hit ?? [] : [];
   const reactions = ensureScript(s).reactions ?? [];
-  // What the card lets it take (4.7.5; A5), and whether it stays with nothing
-  // to take (the PK3; A6). A Container is a Neutral Unit (Supplementary Rules
-  // 1.04, 1.1.3), which a single-target Explosion MAY take and so may leave
-  // alone (1.4.2): it no longer stops the PK3 staying. An "all Units" one MUST
-  // take it, and Done destroys any left (3.1).
-  const pool = targets.map((x) => x.t);
-  const barOf = (t: Token) => (a && damaging ? detonationBar(s.tokens, proj, a, pool, t) : '');
-  const legal = targets.filter(({ t }) => !barOf(t));
-  const stays = damaging && !!a && !legal.length && !detonateNow!.terrainHit && keptWithoutTarget(a);
   const rows = targets
     .map(({ t, dist }) => {
       const done = struck.includes(t.uid);
@@ -5997,10 +5427,9 @@ function removeOwedSmoke(ctx: HudCtx, at: { col: number; row: number }): void {
 
 let grantPick: { from: number; grant: ExtraActivation } | null = null;
 
-// Range is counted in Large Grids, the same way the guide counts it.
+// Range is counted in Large Grids, the same way the guide counts it (turn.ts).
 function gridsApart(a: Token, b: Token): number {
-  return Math.abs(Math.floor(a.col / 3) - Math.floor(b.col / 3))
-    + Math.abs(Math.floor(a.row / 3) - Math.floor(b.row / 3));
+  return turn.gridsApart(a, b);
 }
 
 function grantTargets(ctx: HudCtx, from: Token, g: ExtraActivation): Token[] {
@@ -6338,10 +5767,17 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     // Environment Cards ride the same rail: they are laid on the battlefield
     // while it is being set up, so the control lives on the board rather than
     // in the turn panel, and it goes away once Round 1 starts.
+    // The Line of Sight control rides it too (OTTO's playtest, 2026-10-03:
+    // "maybe above or next to the zone button").
     zc.innerHTML = '<button id="btn-zones" title="Shows or hides the tactical zone and deployment overlay drawn on the board." aria-pressed="true">Zones</button>'
+      + '<button id="btn-los" title="Shows what the unit whose card is open can see, or failing one the unit whose turn it is: the Grids in its Forward Arc in the stronger tint, the Grids it would have to turn to see in the fainter one, and a Grid seen through cover lighter than one seen clear." aria-pressed="false">Line of Sight</button>'
       + '<button id="btn-envs" title="Lays Environment Cards on the battlefield. Both players place them alternately while setting up (5.4.1)." hidden>Environments</button>';
     host.querySelector('#mc-board')!.appendChild(zc);
     zc.querySelector('#btn-zones')!.addEventListener('click', () => hudRef?.toggleZones());
+    zc.querySelector('#btn-los')!.addEventListener('click', () => {
+      sightOn = !sightOn;
+      if (hudRef) renderBoard(hudRef);
+    });
     zc.querySelector('#btn-envs')!.addEventListener('click', () => {
       if (hudRef) toggleEnvPicker(hudRef);
     });
@@ -6778,9 +6214,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const ask = stabiliseAsk(ctx.data, t);
     const p = ask.picks.find((x) => x.id === id);
     if (id !== '__keep' && !p) { dropAction(); ctx.refresh(); return; }
-    const cmd: Command = p
-      ? { kind: 'stabilise', seat: t.side, uid: t.uid, statusId: p.statusId, ...(p.face ? { face: p.face } : {}) }
-      : { kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true };
+    const cmd: Command = turn.stabiliseCommand(t, p ?? null);
     // Judged before the Tick is paid, so a refusal costs nothing.
     const v0 = ctx.check(cmd);
     if (!v0.ok) { ctx.noteNow(v0.why ?? 'Stabilize System was refused.'); dropAction(); ctx.refresh(); return; }
@@ -6872,32 +6306,19 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const act = guidedActions(ctx.data, t, { tokens: s.tokens, terrain: terrainOf(ctx) })
         .find((g) => g.partKey === el.dataset.doact || g.action.id === el.dataset.doact);
       const performed = act?.action ?? ctx.data.commonActions.find((a) => a.id === actionIdOf(el.dataset.doact ?? ''));
-      // A Mech's Action is bought with Ticks and a Drone's with its whole
-      // activation, but both are recorded by the same command — without it
-      // nothing marked the activation spent and a Drone could move and then
-      // shoot. Only a Mech's length-less Passive sends nothing.
-      if (performed && (t.kind !== 'mech' || lengthOf(performed))) {
-        // Legality is read now, but nothing is spent: the Ticks wait in
-        // pendingAction until the Action's tool actually does something, so a
-        // misclick that gets cancelled leaves the Opportunity intact.
-        const key = el.dataset.doact!;
-        // The Charge and the Discard are paid under the Part they name, which a
-        // guided game requires (ruled R2), so legality is read under the first
-        // Part the engine takes; the pick then names the real one. A Punch/Kick
-        // or a Crawl is paid under that first Part itself: which of them makes
-        // it changes nothing else, and a second one by another Part is its own
-        // Action (ruled R3; audit Phase 7, P7B 9).
-        const named = commonPartSlots(ctx.data, t, performed).map((s) => `${performed.id}@${s}`);
-        const probe = (k: string): CheckResult => ctx.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: actionIdOf(k), partKey: k });
-        const first = named.find((k) => probe(k).ok);
-        const v = named.length ? probe(first ?? named[0]) : probe(key);
-        if (!v.ok) {
-          if (v.why) ctx.noteNow(v.why);
+      // The command that pays for it is built in turn.ts (actionPayment),
+      // where a computer seat's is built too. Legality is read now, but nothing
+      // is spent: the Ticks wait in pendingAction until the Action's tool
+      // actually does something, so a misclick that gets cancelled leaves the
+      // Opportunity intact.
+      if (performed) {
+        const pay = turn.actionPayment(ctx.data, ctx.state, t, performed, el.dataset.doact!);
+        if (!pay.ok) {
+          if (pay.why) ctx.noteNow(pay.why);
           ctx.refresh();
           return;
         }
-        const own = performed.id === 'COMMON_PUNCH_MELEE' || performed.id === 'COMMON_CRAWL';
-        pendingAction = { kind: 'performAction', seat: t.side, uid: t.uid, actionId: actionIdOf(key), partKey: own && first ? first : key };
+        if (pay.cmd) pendingAction = pay.cmd;
       }
       const grant = act ? extraActivationOf(act.action) : undefined;
       if (grant) grantPick = { from: t.uid, grant };
@@ -7092,7 +6513,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const by = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
     if (m && by) {
       // Asked before the Tick is paid, so a refused target costs nothing.
-      const open = { kind: 'startCounterRoll' as const, seat: by.side, uid: by.uid, actionId: m.actionId, targetUid: Number(el.dataset.ewtarget) };
+      const open = turn.electronicOpening(by, m.actionId, Number(el.dataset.ewtarget));
       const can = checkPaid(ctx, open);
       if (!can.ok) { ctx.noteNow(can.why ?? 'That Counter-roll cannot be opened.'); ctx.refresh(); return; }
       ewPick = null;
@@ -7140,9 +6561,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
         // a payment it never checked, so a refused repeat was a free Charge.
         // The shared Charge Action is keyed to the Part charged (FAQ H6/H7;
         // audit Phase 2, E7); a Drone's own Charge (543_B) Charges its hull.
-        if (pendingAction?.kind === 'performAction' && pendingAction.actionId === 'COMMON_CHARGE') {
-          pendingAction = { ...pendingAction, partKey: `COMMON_CHARGE@${slot}` };
-        }
+        if (pendingAction?.kind === 'performAction') pendingAction = turn.chargePayment(pendingAction, slot);
         const paid = commitAction(ctx);
         if (paid.ok) ctx.noteNow(`${t.label}: the Charge Token on its ${part} is now face-up.`, 'done');
         else ctx.noteNow(paid.why ?? 'The Charge was refused.');
@@ -7511,9 +6930,9 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     // Interception at either end (A2). The Interception outranks this panel,
     // which comes back once it is resolved; picking the target again then goes
     // straight to the Explosion, if the Missile is still flying.
-    if (fliesToTarget(a) && detonateNow.flew !== target.uid) {
-      const flight = missileFlight(ctx.data, s.tokens, s.smoke ?? [], proj, target);
-      ctx.send({ kind: 'flyToTarget', seat: proj.side, uid: proj.uid, actionId: a.id, targetUid: target.uid });
+    const flight = detonateNow.flew !== target.uid ? turn.detonationFlight(ctx.data, s, proj, a, target) : null;
+    if (flight) {
+      ctx.send(flight.fly);
       detonateNow.flew = target.uid;
       if (flight.owed.length) {
         if (ctx.send({ kind: 'queueIntercepts', seat: proj.side, items: flight.owed }).ok) ctx.noteNow(`${proj.label} flies into ${target.label}'s Grid, and its flight owes ${flight.owed.length} Interception attempt${flight.owed.length === 1 ? '' : 's'} (4.9). If it survives, pick the target again.`, 'table');
@@ -7524,8 +6943,9 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     // An Unfolded Pholcus jumps into its target's Grid and blows up there (167;
     // FAQ I19). A Ground Unit's landing: nothing Intercepts it, and a Mine it
     // sets off there waits for its own blast (Supplementary Rules 1.04, 1.9).
-    if (jumpsToTarget(a) && !proj.jumpBlast) {
-      const jumped = ctx.send({ kind: 'flyToTarget', seat: proj.side, uid: proj.uid, actionId: a.id, targetUid: target.uid });
+    const jump = turn.detonationJump(proj, a, target);
+    if (jump) {
+      const jumped = ctx.send(jump);
       if (!jumped.ok) { ctx.noteNow(jumped.why ?? `${proj.label} cannot jump there.`); ctx.refresh(); return; }
       const held = minesOwed(ctx.data, ctx.state.tokens).filter((x) => x.heldBy === proj.uid).length;
       ctx.noteNow(`${proj.label} jumps into ${target.label}'s Grid${held
@@ -7625,14 +7045,12 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const by = item ? s.tokens.find((x) => x.uid === item.uid) : undefined;
     const at = item ? s.tokens.find((x) => x.uid === item.targetUid) : undefined;
     if (!item || !by || !at) { ctx.refresh(); return; }
-    const paid = ctx.send({ kind: 'spendIntercept', seat: by.side, uid: by.uid, actionId: item.actionId });
-    if (!paid.ok) { ctx.refresh(); return; }
-    // Spending a Part's last Token strikes its owed attempts off in the same
-    // command, this one with them (B2), so it is settled only if still owed.
-    const still = ensureScript(s).intercepts.some(
-      (x) => x.uid === item.uid && x.actionId === item.actionId && x.targetUid === item.targetUid,
-    );
-    if (still) ctx.send({ kind: 'resolveIntercept', seat: by.side, uid: item.uid, actionId: item.actionId, targetUid: item.targetUid });
+    // What the attempt sends is read in turn.ts (interceptPayment), where a
+    // seat with no panel reads it too: the Token, and the debt settled apart
+    // only when spending the Token has not already struck it off (B2).
+    const order = turn.interceptPayment(ctx.data, s, item);
+    if (!order || !ctx.send(order[0]).ok) { ctx.refresh(); return; }
+    if (order[1]) ctx.send(order[1]);
     beginIntercept(ctx, by, item.actionId, at);
     ctx.refresh();
   });
@@ -7676,15 +7094,18 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (f) {
       const by = s.tokens.find((x) => x.uid === f.uid);
       const at = s.tokens.find((x) => x.uid === f.targetUid);
-      const left = by ? interceptHeld(ctx.data, s.tokens, by, f.actionId) : 0;
-      if (!at) {
+      // Which of the four it is, and the attempt owed again, are read in
+      // turn.ts (interceptAgain); the words are this page's.
+      const next = turn.interceptAgain(ctx.data, s, f);
+      const left = next.left;
+      if (next.why === 'destroyed') {
         ctx.noteNow(`The target is destroyed, so the chain ends. ${left} Interception Token${left === 1 ? '' : 's'} left on that Part for the rest of the game.`, 'done');
-      } else if (!by || !alive(by)) {
+      } else if (next.why === 'gone') {
         // The obligation died with the unit; nothing more is owed.
-      } else if (left <= 0) {
-        ctx.noteNow(`${at.label} survived, but ${by.label} has spent every Interception Token on that Part and cannot try again (4.9).`, 'done');
+      } else if (next.why === 'spent') {
+        ctx.noteNow(`${at!.label} survived, but ${by!.label} has spent every Interception Token on that Part and cannot try again (4.9).`, 'done');
       } else {
-        if (ctx.send({ kind: 'queueIntercepts', seat: by.side, items: [f] }).ok) ctx.noteNow(`${at.label} survived, so ${by.label} must Intercept again until its Tokens run out or the target is destroyed (4.9). ${left} left.`, 'table');
+        if (ctx.send(next.command!).ok) ctx.noteNow(`${at!.label} survived, so ${by!.label} must Intercept again until its Tokens run out or the target is destroyed (4.9). ${left} left.`, 'table');
       }
     }
     ctx.refresh();
@@ -7853,6 +7274,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       ctx.refresh();
     });
   });
+  on('[data-act="soloagain"]', () => ctx.solo?.again());
+  on('[data-act="sololeave"]', () => ctx.solo?.leave());
   on('[data-act="endmatch"]', () => {
     recorded = false;
     recordNote = null;

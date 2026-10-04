@@ -61,6 +61,12 @@
    selected as colour rather than an edge (ui.css rule 2), the count on the
    right in mono. The confirm button waits, dimmed, until something is ticked. */
 .dlg-picks { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+/* A label over one group of rows, where a dialog asks several things at once
+   (the game against the computer: solosetup.ts). */
+.dlg-eyebrow {
+  margin: 16px 0 -5px; font-size: 9.5px; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--text3); font-weight: 700;
+}
 .dlg-pick {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
   width: 100%; text-align: left; padding: 10px 14px; border: none; border-radius: var(--radius);
@@ -71,6 +77,13 @@
 .dlg-pick[aria-pressed="true"] { background: var(--accent-lt); color: var(--accent); }
 .dlg-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .dlg-pick em { font: 11px var(--mono); font-style: normal; opacity: 0.85; white-space: nowrap; }
+/* A row that shows what is chosen and opens the list it was chosen from, in a
+   dialog of its own (solosetup.ts: the battlefield, the Main Task, a squad).
+   The value and the chevron (ui.css .ui-go) sit together at the row's end;
+   a long name gives way before the value does. */
+.dlg-pick.dlg-open { align-items: center; padding: 7px 10px 7px 14px; }
+.dlg-pick.dlg-open > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlg-pick-end { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 10px; }
 .dlg-actions button:disabled, .dlg-actions button:disabled:hover { opacity: 0.45; cursor: default; filter: none; }
 
 /* A choice dialog opened with `sheet: true`: docked to the bottom, full width

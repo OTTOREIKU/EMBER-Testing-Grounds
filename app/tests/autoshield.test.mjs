@@ -13,6 +13,10 @@
 // Five cards carry it: ZHDR-101 Scutum, ZHDR-301 Apologist, 295 "White Dwarf"
 // Bit, and the 552/553 Mech arms, which gain it in Defensive Stance only.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 import { FOOTPRINT } from './_footprint.mjs';
 
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
@@ -407,7 +411,7 @@ check('the shields it beat are named so the table can overrule the pick',
 // call-site grep of the kind protection.test.mjs needs for protectionFor.
 const hud = src('matchhud.ts'), main = src('main.ts');
 check('the Match Centre target list discloses the redirect',
-  /automaticShieldFor\(ctx\.data, s\.tokens, by, t, a\)/.test(hud)
+  /automaticShieldFor\(data, s\.tokens, by, t, a\)/.test(turnSrc)
     && /⤳ Automatic Shield: \$\{shield\.shield\.label\} takes this shot \(FAQ A12\)/.test(hud), true);
 // The row stays pressable: the redirect is mandatory, so there is nothing to
 // veto. Only ✕ blocked line of sight disables a row, and a unit in the way
@@ -415,7 +419,7 @@ check('the Match Centre target list discloses the redirect',
 check('and the row is still pressable, because the redirect is not a veto',
   // Only ✕ line of sight disables a row - a camouflaged target is pressable
   // since the free Scan on designation (FAQ I12) - and the shield never does.
-  /const blocked = \(!hidden && note\.includes\('✕'\)\) \|\| lit;/.test(hud) && !/shield[\s\S]{0,80}?disabled/.test(hud), true);
+  /const blocked = \(!hidden && note\.includes\('✕'\)\) \|\| lit;/.test(turnSrc) && !/shield[\s\S]{0,80}?disabled/.test(hud), true);
 check('freeplay discloses it on hover, before the click and before the Tick',
   /automaticShieldFor\(data, state\.tokens, sel, hov, aimed\)/.test(main)
     && /⤳ \$\{shield\.shield\.label\} shields it/.test(main), true);

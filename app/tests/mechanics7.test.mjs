@@ -294,7 +294,7 @@ console.log('A. Charge and Discard (P7A)\n');
   check('P7A 2 the tabletop guide routes the Discard to its own question', /if \(action\.id === 'COMMON_DISCARD'\) \{\n\s*void performDiscard\(t, done\);/.test(app), true);
   check('P7A 2 which pays under the Part named', /done\(true, \{ partKey: `COMMON_DISCARD@\$\{slot\}` \}\);/.test(app), true);
   check('P7A 2 the sandbox has a door in the Details panel\'s one Common Actions area', [/commonActions\?\(t: Token\)/.test(panel), /h\.textContent = 'Common Actions';/.test(panel), /commonActions\(t\) \{/.test(app)], [true, true, true]);
-  check('P7A 2 the Match Centre asks its Part', /if \(a\.id === 'COMMON_DISCARD'\) \{\n\s*discardPick = \{ uid: t\.uid \};/.test(hud), true);
+  check('P7A 2 the Match Centre asks its Part', [/if \(a\.id === 'COMMON_DISCARD'\) return 'discard';/.test(src('../src/turn.ts')), /if \(route === 'discard'\) \{\n\s*discardPick = \{ uid: t\.uid \};/.test(hud)], [true, true]);
   check('P7A 2 and pays under it', /pendingAction = \{ \.\.\.pendingAction, partKey: `COMMON_DISCARD@\$\{slot\}` \};/.test(hud), true);
   check('P7A 2 pad Guided sends no second command after the Action', /api\.send\(\{ kind: 'disarm'/.test(guided), false);
 }
@@ -391,9 +391,11 @@ const move = (t, c, r, extra = {}) => ({ kind: 'maneuver', seat: t.side, uid: t.
 const WD = { torso: '288', chasis: '289', leftHand: '291', rightHand: '290', backpack: '292', pilot: 'FPA-04-2' };
 const appSrc = src('../src/main.ts');
 const hudSrc = src('../src/matchhud.ts');
+const turnSrc = src('../src/turn.ts');
 const guideSrc = src('../src/playguide.ts');
 const padSrc = src('../pad/pad.ts');
 const guidedSrc = src('../pad/guided.ts');
+const matchSrc = src('../src/match.ts');
 
 // The tabletop's own startMove, moveOpts and sandbox Common Actions, and the
 // Match Centre's moveOptsFor, cut out of their pages with the closure stubbed
@@ -453,10 +455,15 @@ ${cut(appSrc, '  function targetProblem(', '  // Designating a unit in the Optic
 ${cut(appSrc, '  function highlightForced(', '  // A camouflaged unit that performs an Action without Silence Reveals')}
   return { startMove, moveOpts, cb, targetProblem, said, hints, calls, plan: () => movePlan };
 }
-const terrainOf = (ctx: any) => ctx.terrain ?? [];
-const actionOn = (ctx: any, t: any, id: string) => ctx.actions?.[id];
-${cut(hudSrc, 'function moveOptsFor(', '\n}\n')}
+// The Match Centre's one MoveOpts builder is turn.ts moveOptsFor since
+// 2026-10-01: cut from there, with the board and the Action stubbed as before.
+type GameData = any; type GameState = any;
+let hudStub: any = null;
+const terrainOf = (_data: any, _state: any) => hudStub?.terrain ?? [];
+const actionOf = (_data: any, _state: any, _t: any, id: string) => hudStub?.actions?.[id];
+${cut(turnSrc, 'export function moveOptsFor(', '\n}\n').replace('export function moveOptsFor(', 'function moveOptsCore(')}
 }
+function moveOptsFor(ctx: any, t: any, flying: boolean, actionId?: string) { hudStub = ctx; return moveOptsCore(ctx.data, ctx.state, t, flying, actionId); }
 export { moveOptsFor };
 `);
 await build({
@@ -577,7 +584,8 @@ const P = await import(`${pageOut.href}?t=${Date.now()}`);
   check('R3 every Action other than these two keeps its own key', U.commonPartKey(data, m, common('COMMON_SCAN'), []), 'COMMON_SCAN');
   check('R3 the tabletop guide pays its row under that key', /partKey: commonPartKey\(this\.data, t, c, opp\?\.performed \?\? \[\]\),/.test(guideSrc), true);
   check('R3 the Match Centre keys its row, and its press pays under the Part the engine takes',
-    [/key: commonPartKey\(ctx\.data, t, a, o\.performed\)/.test(hudSrc), /partKey: own && first \? first : key \};/.test(hudSrc)], [true, true]);
+    [/key: commonPartKey\(data, t, a, o\.performed\)/.test(turnSrc), /partKey: own && first \? first : key \} \};/.test(turnSrc),
+      /const pay = turn\.actionPayment\(ctx\.data, ctx\.state, t, performed, el\.dataset\.doact!\);/.test(hudSrc)], [true, true, true]);
   check('R3 the pad keys its Freeform row, its attack and its Crawl',
     [/const key = commonKey\(t, a\) \?\? a\.id;/.test(padSrc), /spendFree\(attacker, actionId, lent\.partKey \?\? part\);/.test(padSrc), /const own = commonPartKey\(d, t, a, opp\?\.uid === t\.uid \? opp\.performed : \[\]\);/.test(guidedSrc)], [true, true, true]);
 }
@@ -618,7 +626,9 @@ const P = await import(`${pageOut.href}?t=${Date.now()}`);
   n.partStates.chasis = 'destroyed';
   check('R5 a destroyed one still may not', [U.maneuverRange(data, n), U.shockMoveAllowed(n), U.chassisGone(n)], [0, false, true]);
   check('R5 the Match Centre reads "turn only" and opens its pivot off the same test',
-    [/chassisGone\(t\)\n\s*\? 'turn only'/.test(hudSrc), /const pivotOnly = steps <= 0 && !opts\.actionId && !opts\.range && chassisGone\(t\);/.test(hudSrc)], [true, true]);
+    // The pivot's opening is turn.ts moveStart since 2026-10-01, which the planner opens through.
+    [/chassisGone\(t\)\n\s*\? 'turn only'/.test(hudSrc), /const pivotOnly = steps <= 0 && !opts\.actionId && !opts\.range && chassisGone\(t\);/.test(turnSrc)
+      && /turn\.moveStart\(ctx\.data, ctx\.state, t, opts\)/.test(hudSrc)], [true, true]);
 }
 
 // ---------- R6 and P7B 10: the Shock Attack walk ----------
@@ -669,10 +679,10 @@ const P = await import(`${pageOut.href}?t=${Date.now()}`);
   check('P7B 7 the tabletop guide greys its rows by it', /blocked: commonActionStop\(t, c\) \?\? actionPartWhy\(this\.data, t, c\) \?\? nothing \?\? undefined,/.test(guideSrc), true);
   check('P7B 7 and asks the engine before a Movement Action moves the Mech (P7B 3)',
     /const paid = row\.action\.type === 'Moving'\n\s*\? check\(this\.data, s, \{ kind: 'performAction', seat: t\.side, uid: t\.uid, actionId: row\.action\.id, partKey: row\.partKey \}\)\n\s*: null;\n\s*const why = row\.blocked \?\? \(verdict\.ok \? undefined : verdict\.why\) \?\? \(paid && !paid\.ok \? paid\.why : undefined\);/.test(guideSrc), true);
-  check('P7B 7 the Match Centre greys its Common rows by it', /const commonStop = t\.kind === 'mech' && !slot \? commonActionStop\(t, a\) : null;/.test(hudSrc), true);
+  check('P7B 7 the Match Centre greys its Common rows by it', /const commonStop = t\.kind === 'mech' && !slot \? commonActionStop\(t, a\) : null;/.test(turnSrc), true);
   check('P7B 7 the pad takes the Freeform chip off by it', /const reason = commonActionStop\(t, a\) \?\? actionPartWhy\(d, t, a\) \?\? undefined;/.test(padSrc), true);
   check('P7B 7 the guide and the Match Centre grey the Maneuver while Immobilized',
-    [/const stuck = ticked\.ok \? immobilizedStop\(t, null\) : null;/.test(guideSrc), /const pinned = man0\.ok \? immobilizedStop\(t, null\) : null;/.test(hudSrc)], [true, true]);
+    [/const stuck = ticked\.ok \? immobilizedStop\(t, null\) : null;/.test(guideSrc), /const pinned = man0\.ok \? immobilizedStop\(t, null\) : null;/.test(turnSrc)], [true, true]);
   check('P7B 7 pad Guided greys its Moved chip by the engine\'s own answer',
     /const moveCheck = !opp\.maneuvered && opp\.maneuver > 0 && t\.stance !== 'shutdown'\n\s*\? api\.check\(\{ kind: 'maneuver', seat: t\.side, uid: t\.uid, to: \{ col: 0, row: 0 \} \}\)/.test(guidedSrc)
       && /moveCheck\.ok \? '' : refused\(api, moveCheck\.why\)/.test(guidedSrc), true);
@@ -1033,8 +1043,9 @@ const diceData = JSON.parse(src('../../data/dice.json'));
   check('P7C 4 each redraws it as it refreshes, and the pad keeps its panel open beside it',
     [/if \(combatBusy\(\)\) attackHelper\?\.refreshSplit\(\);/.test(src('../src/match.ts')), /syncContest\(\); refreshSplit\(\);/.test(padSrc),
       /closeCombat: \(\) => \{ if \(panel === 'combat' && !attackActive\(\)\) \{ panel = null; render\(\); \} \},/.test(padSrc), /attackHelper\.refreshSplit\(\);/.test(appSrc)], [true, true, true, true]);
+  // Said by the Counter-roll's sender, contest.ts since 2026-10-01, which the Match Centre calls.
   check('P7C 4 the Match Centre closes an extra\'s failed Scan without ending the attack',
-    /its attack cannot designate \$\{resp\.label\}\. Its other targets stand \(FAQ I11\)/.test(hudSrc), true);
+    /its attack cannot designate \$\{resp\.label\}\. Its other targets stand \(FAQ I11\)/.test(src('../src/contest.ts')) && /sendContestAct\(\{/.test(hudSrc), true);
 }
 {
   // P7C 3: the tabletop judges a camouflaged marker as the engine does, before its free Scan.
@@ -1212,7 +1223,7 @@ try { Object.defineProperty(globalThis, 'navigator', { value: { userAgent: 'node
 }
 const HUD_EXPOSE = `
 export const __p7d = {
-  panelHtml, renderBoard, boardCallbacks, previewMove, commitWaypoint, commitMove, contestAct,
+  panelHtml, renderBoard, boardCallbacks, previewMove, commitWaypoint, commitMove, contestAct, syncContest,
   setBoard(b) { board = b; }, setHudRef(c) { hudRef = c; },
   get crushPlan() { return crushPlan; },
 };
@@ -1234,6 +1245,8 @@ import { canBeForceMoved } from '../src/melee';
 import { mineStopIndex, nonHumanoidCost, envHotEntries, isSilentAction, maneuverIsSilent, actionSilenceDenier, interceptsOwed, isGroundUnit, envCardAt } from '../src/units';
 import { statusCount, gridsOf } from '../src/types';
 import { snapPlacement } from '../src/board';
+import { explosionScope, knockbackOf } from '../src/units';
+import { detonationHit, startShove } from '../src/matchhud';
 export function steered(ctx: any) {
   const { state, data } = ctx;
   let movePlan: any = null;
@@ -1262,6 +1275,28 @@ ${cut(appSrc, '  function commitPivot(', '  // Resupply (4.13).')}
 ${cut(appSrc, '  // `by`: who sends the Crush', '  // Who a Forced Movement leaves facing.')}
   return { commitMove, set plan(p: any) { movePlan = p; }, said, logs, sent, goOn: () => goOn };
 }
+// The end of an attack on both boards, cut from their pages with what each
+// closes over stubbed: whether a blast's unit is removed as an Explosion ends,
+// or kept with the unit it hit struck off its list. The tabletop's (main.ts)
+// keeps its list in its own blast record; the Match Centre's (match.ts) in
+// matchhud.ts, which this bundle shares with the pages below.
+export function tabletopEnded(ctx: any) {
+  const { data, state } = ctx;
+  const blast = ctx.blast;
+  let selectedUid: number | null = null;
+  const resolveKnockback = async (..._a: any[]) => {};
+  const drainBoxDrops = () => {};
+  const selectToken = (_t: any) => {};
+  const onChanged = () => {};
+  return ${cut(appSrc, '    (attacker, defender, action, hits) => {\n      void (async () => {', '    (killer, victim, what) => {').trim().replace(/,$/, '')};
+}
+export function matchEnded(ctx: any) {
+  const data = ctx.data;
+  const send = (cmd: any) => ctx.send(cmd);
+  const flushBoxDrops = () => {};
+  const render = () => {};
+  return ${cut(matchSrc, '      (attacker, defender, action, hits) => {', '      (killer, victim, what) => {').trim().replace(/,$/, '')};
+}
 `);
 const hudEntry = new URL('./_mechanics7.hud.ts', import.meta.url);
 const hudOut = new URL('./_mechanics7.hud.bundle.mjs', import.meta.url);
@@ -1273,7 +1308,7 @@ writeFileSync(hudEntry, [
   "export { ElectronicHelper } from '../src/combat';",
   "export { boardFingerprint } from '../src/secrecy';",
   "export * as G from '../src/glue';",
-  "export { steered } from './_mechanics7.tabletop';",
+  "export { steered, tabletopEnded, matchEnded } from './_mechanics7.tabletop';",
 ].join('\n') + '\n');
 await build({
   entryPoints: [fileURLToPath(hudEntry)], outfile: fileURLToPath(hudOut),
@@ -1526,6 +1561,120 @@ async function walk(c, ...grids) {
     [A.notes.filter((x) => x.startsWith('startAttack')).length, /still owes \d+ Interception attempts? from its flight/.test(A.notes.at(-1) ?? '')], [0, true]);
 }
 
+// ---------- the live traps of 2026-10-02, fixed 2026-10-03 ----------
+// The Pholcus's blast as it Unfolds takes one of the units it came up among,
+// an ally as well as an enemy (M18.4; rulings I18, I19), and it makes no jump:
+// it is in that Grid already. The Match Centre sent a jump before the
+// Explosion, the engine refused it at the ally ("jumps only at an Enemy
+// Unit"), and the panel stopped there.
+for (const whose of ['s1', 's2']) {
+  const { A, B, pod, there } = await twoSeats(() => {
+    const s = table();
+    s.round.phase = M.PHASES.indexOf('Delay');
+    const pod = droneOn(s, 's1', '156', 5, 5);
+    const there = put(s, whose, whose === 's1' ? L() : FOE, 5, 5);
+    put(s, whose === 's1' ? 's2' : 's1', whose === 's1' ? FOE : L(), 10, 10);
+    return { s, pod, there };
+  });
+  A.use();
+  const unfolded = A.ctx.send({ kind: 'unfold', seat: 's1', uid: pod.uid });
+  A.render();
+  const who = whose === 's1' ? 'an ally' : 'an enemy';
+  check(`the Pholcus Unfolds in a Grid with ${who} in it and owes its blast at once, on both boards`,
+    [unfolded.ok, !!A.state.tokens.find((t) => t.uid === pod.uid)?.unfoldBlast, !!B.state.tokens.find((t) => t.uid === pod.uid)?.unfoldBlast, !!A.row('data-minego', pod.uid)],
+    [true, true, true, true]);
+  A.press('[data-minego]');
+  A.render();
+  A.press(`[data-dettarget="${there.uid}"]`);
+  const jumps = A.sent.filter((x) => x.cmd.kind === 'flyToTarget');
+  check(`its Explosion at ${who} in its Grid starts, with no jump sent and nothing refused`,
+    [A.notes.some((x) => x.startsWith('startAttack') && x.includes(`${pod.uid},"167_A",${there.uid}`)), jumps.length, A.sent.filter((x) => !x.ok).length, !!A.state.tokens.find((t) => t.uid === pod.uid)?.jumpBlast, agree(A, B)],
+    [true, 0, 0, false, true]);
+}
+// The control: the Automatic Phase's jump is still sent, at the nearest enemy.
+{
+  const { A, pod, foe } = await twoSeats(() => {
+    const s = table();
+    s.round.phase = M.PHASES.indexOf('Automatic');
+    const pod = droneOn(s, 's1', '167', 5, 5);
+    const foe = put(s, 's2', FOE, 5, 6);
+    return { s, pod, foe };
+  });
+  A.use();
+  A.M.H.startDetonation(pod.uid, '167_A');
+  A.render();
+  A.press(`[data-dettarget="${foe.uid}"]`);
+  check('the control: the Automatic Detonation still jumps into its target\'s Grid first (FAQ M18.6, I19)',
+    [A.sent.filter((x) => x.cmd.kind === 'flyToTarget').map((x) => x.ok), A.state.tokens.find((t) => t.uid === pod.uid)?.jumpBlast, A.notes.some((x) => x.startsWith('startAttack'))],
+    [[true], true, true]);
+}
+// A Zealot's Martyrdom (ZHDR-302) strikes each unit off its list as its
+// Explosion ends, on both boards. Its unit is a destroyed Drone and its blast
+// a Passive, which neither board's end of an attack struck off: a unit that
+// had taken its Explosion was listed as waiting, to be attacked again.
+{
+  const { A, B, zealot, ally, foe } = await twoSeats(() => {
+    const s = table();
+    const zealot = droneOn(s, 's1', 'ZHDR-302', 5, 5);
+    zealot.partStates = { ...zealot.partStates, main: 'destroyed' };
+    const ally = put(s, 's1', L(), 5, 6, { timing: 'tactical' });
+    const foe = put(s, 's2', FOE, 6, 5, { timing: 'firing' });
+    return { s, zealot, ally, foe };
+  });
+  const martyr = A.data.byId.get('ZHDR-302').actions.find((a) => U.martyrdomOwed(data, A.state.tokens).some((x) => x.actionId === a.id));
+  A.render();
+  check('a destroyed Zealot owes its Martyrdom on every unit in Range, its own squad\'s too, and its owner is asked',
+    [U.martyrdomOwed(data, A.state.tokens).map((x) => [x.uid, x.targets.slice().sort((a, b) => a - b)]), !!A.row('data-minego', zealot.uid), U.explosionScope(martyr, data.actionTranslation(martyr.id)?.english ?? undefined)],
+    [[[zealot.uid, [ally.uid, foe.uid].sort((a, b) => a - b)]], true, 'all']);
+  A.press('[data-minego]');
+  A.render();
+  A.press(`[data-dettarget="${ally.uid}"]`);
+  check('the Match Centre: its blast takes the ally, an Explosion attack', A.notes.some((x) => x.startsWith('startAttack') && x.includes(`${zealot.uid},"${martyr.id}",${ally.uid}`)), true);
+  const tok = (c, uid) => c.state.tokens.find((t) => t.uid === uid);
+  A.use();
+  A.M.matchEnded(A.ctx)(tok(A, zealot.uid), tok(A, ally.uid), martyr, 1);
+  A.render();
+  check('as that Explosion ends the ally is struck off the list, the enemy still waits, and the Zealot stays for it',
+    [A.row('data-dettarget', ally.uid)?.['aria-disabled'], /already taken this Explosion/.test(A.row('data-dettarget', ally.uid)?.['data-why'] ?? ''), A.row('data-dettarget', foe.uid)?.['aria-disabled'] ?? null, !!tok(A, zealot.uid), A.sent.filter((x) => x.cmd.kind === 'despawn').length],
+    ['true', true, null, true, 0]);
+  A.press(`[data-dettarget="${ally.uid}"]`);
+  check('a press on the ally again starts nothing', A.notes.filter((x) => x.startsWith('startAttack')).length, 1);
+  A.press(`[data-dettarget="${foe.uid}"]`);
+  A.use();
+  A.M.matchEnded(A.ctx)(tok(A, zealot.uid), tok(A, foe.uid), martyr, 1);
+  A.render();
+  A.press('[data-act="detdone"]');
+  check('the enemy\'s Explosion, then Done: the Zealot is removed on both boards',
+    [A.notes.filter((x) => x.startsWith('startAttack')).length, !!tok(A, zealot.uid), !!tok(B, zealot.uid), agree(A, B)], [2, false, false, true]);
+  // The tabletop's end of an attack keeps the same list.
+  const blast = { uid: zealot.uid, actionId: martyr.id, hit: [], attacking: true };
+  const s = table();
+  const z2 = droneOn(s, 's1', 'ZHDR-302', 5, 5);
+  z2.partStates = { ...z2.partStates, main: 'destroyed' };
+  const a2 = put(s, 's1', L(), 5, 6);
+  blast.uid = z2.uid;
+  A.M.tabletopEnded({ data, state: s, blast })(z2, a2, martyr, 1);
+  await pause();
+  check('the tabletop: the ally is struck off its list and the Zealot stays', [blast.hit, s.tokens.some((t) => t.uid === z2.uid)], [[a2.uid], true]);
+  // Its controls: a spent Projectile's single-target blast removes it, and a
+  // Grenade's on every unit keeps it with the unit struck off.
+  const g = table();
+  const nade = droneOn(g, 's1', '154', 5, 5, { kind: 'projectile' });
+  const near = put(g, 's2', FOE, 5, 5);
+  const grenade = actionOf('154', '154_A');
+  const g2 = { uid: nade.uid, actionId: '154_A', hit: [], attacking: true };
+  A.M.tabletopEnded({ data, state: g, blast: g2 })(nade, near, grenade, 1);
+  await pause();
+  const r = table();
+  const rocket = droneOn(r, 's1', '267', 5, 5, { kind: 'projectile' });
+  const hitR = put(r, 's2', FOE, 5, 5);
+  A.M.tabletopEnded({ data, state: r, blast: null })(rocket, hitR, actionOf('267', '267_A'), 1);
+  await pause();
+  check('the controls: a Grenade\'s blast on every unit strikes the unit off and keeps it; a Rocket is removed by its blast',
+    [U.explosionScope(grenade, data.actionTranslation('154_A')?.english ?? undefined), g2.hit, g.tokens.some((t) => t.uid === nade.uid), r.tokens.some((t) => t.uid === rocket.uid)],
+    ['all', [near.uid], true, false]);
+}
+
 // ---------- P7D 6: the route overlay lights what Obstruct's Link reaches ----------
 {
   const { A } = await twoSeats(() => {
@@ -1631,6 +1780,38 @@ async function walk(c, ...grids) {
   lost.B.use();
   lost.B.X.contestAct(lost.B.ctx, 'close');
   check('R3 once the Initiator has lost, the Responder closes it for both', [lost.A.state.script.counter ?? null, lost.B.state.script.counter ?? null], [null, null]);
+
+  // THE MATCH CENTRE DRAWS THE COUNTER-ROLL IT IS SHOWN. showContest only
+  // stores the record, and remount() draws only when the element changed. The
+  // HUD keeps ONE #combat-body for its life, so the page has to ask for the
+  // draw, as the pad does: without it the window stayed empty (or kept the
+  // last attack's picture) and neither player could roll (found 2026-10-01,
+  // when a computer seat's Counter-roll waited on a player for ever).
+  const shown = await duel(null);
+  const windowOf = (c) => {
+    const body = makeEl('div');
+    const host = makeEl('div');
+    host.querySelector = (sel) => (sel === '#combat-body' ? body : null);
+    const draw = () => { c.use(); return c.X.syncContest(c.ctx, host); };
+    const acts = () => findButtons(body).filter((b) => !b.disabled && !b.dataset?.why).map((b) => b.dataset?.act).filter(Boolean);
+    return { body, draw, acts };
+  };
+  const resp = windowOf(shown.B);
+  const up = resp.draw();
+  check('the Match Centre draws the Counter-roll on the element it keeps: the Responder finds its roll',
+    [up, resp.body.children.length, resp.acts().includes('ew.roll')], [true, 1, true]);
+  // The record moves on (the Initiator rolls), and the same element is drawn again.
+  const c0 = shown.A.state.script.counter;
+  shown.A.rolls.push([5]); shown.A.use(); shown.A.X.contestAct(shown.A.ctx, 'roll', { uid: c0.initiatorUid }); await pause();
+  const was = resp.body.children[0];
+  resp.draw();
+  check('and draws it again there as the record changes', [resp.body.children.length, resp.body.children[0] !== was, !!shown.B.state.script.counter.initRoll], [1, true, true]);
+  // The exchange over: the window is emptied.
+  shown.A.use(); shown.A.X.contestAct(shown.A.ctx, 'close'); await pause();
+  check('and empties it when the exchange is over', [resp.draw(), resp.body.children.length, shown.B.state.script.counter ?? null], [false, 0, null]);
+  check('the page asks for the draw, as the pad does',
+    [/ewHelper\.showContest\(c, init, resp, action, role\);[\s\S]{0,600}?ewHelper\.redraw\(\);/.test(hudSrc),
+      /h\.showContest\(c, init, resp, action, role\);\n\s*h\.redraw\(\);/.test(readFileSync(new URL('../pad/ew.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n'))], [true, true]);
 }
 
 // ---------- R3 / P7D 1: the window greys the close the engine refuses ----------

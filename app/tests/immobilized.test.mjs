@@ -90,7 +90,12 @@ check('and unrelated text does not trip it',
   // Both planners refuse before the player draws a route, so the rule is felt
   // as a message rather than as a move that silently fails on commit.
   check('freeplay refuses to open the move planner', /const stopped = immobilizedStop\(t, opts\.action \?\? null\)/.test(main), true);
-  check('and the Match Centre does too', /const stopped = immobilizedStop\(t, opts\.actionId \? actionOn\(ctx, t, opts\.actionId\) : null\)/.test(hud), true);
+  // How its planner opens is read in turn.ts moveStart since 2026-10-01 (a
+  // computer seat opens a Movement by it too), and the refusal is said from there.
+  const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  check('and the Match Centre does too',
+    [/const stopped = immobilizedStop\(t, opts\.actionId \? actionOf\(data, state, t, opts\.actionId\) : null\);\s*\n\s*if \(stopped\) return \{ ok: false, why: stopped \};/.test(turnSrc),
+      /const start = turn\.moveStart\(ctx\.data, ctx\.state, t, opts\);\s*\n\s*if \(!start\.ok\) \{\s*\n\s*ctx\.noteNow\(start\.why\);/.test(hud.replace(/\r\n/g, '\n'))], [true, true]);
   // The Match Centre had NOTHING before this - the token simply moved.
   check('the Match Centre now references the rule at all', /immobilizedStop/.test(hud), true);
   // And the Movement Action reaches the gate on both boards, or Unstoppable

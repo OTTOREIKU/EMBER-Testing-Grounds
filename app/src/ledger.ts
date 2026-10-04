@@ -305,9 +305,6 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'flyToTarget': label = `${who()} flies to its target`; break;
 
     // ---------- phase machinery ----------
-    case 'advancePhase': label = 'Next phase'; break;
-    case 'setPhase': label = 'Phase set'; break;
-    case 'markEndStep': label = 'End Phase step'; break;
     case 'commitTimings': label = 'Timing Dials committed'; break;
     case 'revealTimings': label = 'Timing Dials revealed'; break;
     case 'lockDials': label = 'Timing Dials locked'; break;

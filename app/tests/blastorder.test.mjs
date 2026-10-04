@@ -180,13 +180,19 @@ check('a drift in it is a desync the fingerprint sees',
 // ---------- the pages ----------
 {
   const hud = src('../src/matchhud.ts');
-  const jumpAt = hud.indexOf("if (jumpsToTarget(a) && !proj.jumpBlast) {");
+  // The jump's command is turn.ts detonationJump since 2026-10-01: once, and
+  // never for a Pholcus that has already jumped. Nor for the blast it owes as
+  // it Unfolds (M18.4): it is in that Grid already, and the jump was refused
+  // at an ally, which stopped the Match Centre's Detonation (fixed
+  // 2026-10-03; mechanics7.test drives the panel).
+  const jumpAt = hud.indexOf("const jump = turn.detonationJump(proj, a, target);");
   check('the Match Centre jumps the Pholcus before its Explosion starts, and its Mine panel skips the Mines that wait',
-    [jumpAt > 0 && jumpAt < hud.indexOf("ctx.startAttack(proj.uid, detonateNow.actionId, target.uid, 'explosion');"),
+    [jumpAt > 0 && jumpAt < hud.indexOf("ctx.startAttack(proj.uid, detonateNow.actionId, target.uid, 'explosion');")
+      && /if \(!jumpsToTarget\(a\) \|\| proj\.jumpBlast \|\| proj\.unfoldBlast\) return null;/.test(src('../src/turn.ts')),
       /function mineTriggers\(ctx: HudCtx\): \{ trigger: MineTrigger; t: Token \}\[\] \{\s*return blastsReady\(/.test(hud)],
     [true, true]);
   const main = src('../src/main.ts');
-  const tabJump = main.indexOf("if (jumpsToTarget(action) && !proj.jumpBlast");
+  const tabJump = main.indexOf("if (jumpsToTarget(action) && !proj.jumpBlast && !proj.unfoldBlast");
   check('so does the tabletop',
     [tabJump > 0 && tabJump < main.indexOf("attackHelper.start(proj, action, target, 'Explosion damage: no line of sight or facing check.'"),
       /function sweepMines\(\): void \{[\s\S]{0,200}const owed = blastsReady\(data, state\.tokens\);/.test(main)],
@@ -209,7 +215,7 @@ check('a drift in it is a desync the fingerprint sees',
     [true, true, false]);
   const padSrc = src('../pad/pad.ts');
   check('the pad\'s detonation prompt says the order for the table to keep',
-    [/jumpsToTarget\(a\) \? ' It jumps into that unit\\'s Grid first: a Mine there goes off after this blast/.test(padSrc),
+    [/jumpsToTarget\(a\) && !proj\.unfoldBlast \? ' It jumps into that unit\\'s Grid first: a Mine there goes off after this blast/.test(padSrc),
       /proj\.mine \? ` If both squads' Mines went off together, \$\{sideName\(table\.round\.firstPlayer\)\} resolves one first/.test(padSrc)],
     [true, true]);
 }

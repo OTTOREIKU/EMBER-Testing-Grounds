@@ -3874,7 +3874,7 @@ async function continueDetonation(): Promise<void> {
   // in turn from this round's First Player. The pad cannot see which went off
   // together, so it says the rule rather than keeping the order.
   const order = !damaging ? ''
-    : jumpsToTarget(a) ? ' It jumps into that unit\'s Grid first: a Mine there goes off after this blast, and one this blast destroys does not (Supplementary Rules 1.04, 1.9).'
+    : jumpsToTarget(a) && !proj.unfoldBlast ? ' It jumps into that unit\'s Grid first: a Mine there goes off after this blast, and one this blast destroys does not (Supplementary Rules 1.04, 1.9).'
     : proj.mine ? ` If both squads' Mines went off together, ${sideName(table.round.firstPlayer)} resolves one first as this round's First Player, then the squads take turns (Supplementary Rules 1.04, 1.9).`
     : '';
   const pick = await choiceDialog({

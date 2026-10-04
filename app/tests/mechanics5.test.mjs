@@ -311,7 +311,14 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   const at = hud.indexOf('function queueInterceptsFor(');
   const src = hud.slice(at, hud.indexOf('\n}\n', at) + 3);
   const { code } = await transform(src, { loader: 'ts' });
-  const queueInterceptsFor = new Function('interceptsOwed', 'squadLabel', `${code}\nreturn queueInterceptsFor;`)(U.interceptsOwed, (x) => x);
+  // What the launch owes is read in turn.ts interceptsAfterLaunch since
+  // 2026-10-01 (a computer seat's launch reads it too): the real function, cut
+  // out the same way, is what the queue is handed.
+  const turnTs = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const tat = turnTs.indexOf('export function interceptsAfterLaunch(');
+  const lifted = await transform(turnTs.slice(tat, turnTs.indexOf('\n}\n', tat) + 3).replace('export function', 'function'), { loader: 'ts' });
+  const interceptsAfterLaunch = new Function('interceptsOwed', `${lifted.code}\nreturn interceptsAfterLaunch;`)(U.interceptsOwed);
+  const queueInterceptsFor = new Function('turn', 'squadLabel', `${code}\nreturn queueInterceptsFor;`)({ interceptsAfterLaunch }, (x) => x);
   const h = table();
   const hl = put(h, 's1', L({ leftHand: '064' }), 5, 9);
   const hb = droneOn(h, 's1', '072', 5, 6, { parentUid: hl.uid });
@@ -881,15 +888,20 @@ check('G4p the attack and launch find a lent Action', [/function commitDeclared\
   const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   check('C1b the tabletop cuts its Knockback line at the first Mine',
     /const stop = mineStopIndex\(data, state\.tokens, victim, \[\{ c: Math\.floor\(victim\.col \/ 3\), r: Math\.floor\(victim\.row \/ 3\) \}, \.\.\.line\], false\);\s*const path = stop > 0 \? line\.slice\(0, stop\) : line;/.test(main), true);
-  check('C1b with the Grids the line had left', /const rest = stop > 0 \? kb\.grids - stop : 0;/.test(main) && /const rest = stop > 0 \? kb\.grids - stop : 0;/.test(hud), true);
+  // The Match Centre's reading moved to turn.ts forcedMove / forcedCommands,
+  // where a computer seat reads it too (M8.2t); the panel calls them.
+  const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  check('C1b with the Grids the line had left', /const rest = stop > 0 \? kb\.grids - stop : 0;/.test(main) && /const rest = stop > 0 \? kb\.grids - stop : 0;/.test(turnSrc), true);
   check('C1b and holds the rest for after the blast', /if \(rest > 0 && !fatal\) \{\s*pushOn = \{ by: attacker, victimUid: victim\.uid, action, dir, grids: rest \};/.test(main), true);
   check('C1b which goes on from the blast\'s own Go on door', /function offerGoOn\(\): void \{\s*offerPushOn\(\);/.test(main), true);
   check('C1b and pays Push\'s Link once', /push: kb\.push && !resume, facing/.test(main), true);
-  check('C1b the Match Centre cuts it with the same reader',
-    /const stop = mineStopIndex\(ctx\.data, ctx\.state\.tokens, victim, \[largeGridOf\(victim\), \.\.\.line\], false\);\s*const path = stop > 0 \? line\.slice\(0, stop\) : line;/.test(hud), true);
+  check('C1b the Match Centre cuts it with the same reader (turn.ts forcedMove, which its panel reads)',
+    [/const stop = mineStopIndex\(data, state\.tokens, victim, \[largeGridOf\(victim\), \.\.\.line\], false\);\s*const path = stop > 0 \? line\.slice\(0, stop\) : line;/.test(turnSrc),
+      /return turn\.forcedMove\(ctx\.data, ctx\.state, by, victim, a, pushDir, resume\);/.test(hud)], [true, true]);
   check('C1b holds the rest on the forcing seat', /if \(out\.rest > 0 && !fatal && m\) pushOn = \{/.test(hud), true);
   check('C1b opens it once no Mine is owed on the unit', /if \(minesOwed\(ctx\.data, ctx\.state\.tokens\)\.some\(\(x\) => x\.victims\.includes\(victim\.uid\)\)\) return;/.test(hud), true);
-  check('C1b and pays Push\'s Link once there too', /push: out\.kb\.push && !out\.resumed, facing/.test(hud), true);
+  check('C1b and pays Push\'s Link once there too (turn.ts forcedCommands, which the panel sends)',
+    [/push: out\.kb\.push && !out\.resumed, facing/.test(turnSrc), /const made = by && victim && a \? turn\.forcedCommands\(ctx\.data, s, by, victim, a,/.test(hud)], [true, true]);
 }
 
 // ================= A3. an Explosion and Optical Camouflage (p.71; ruling I13) =================
@@ -1162,6 +1174,12 @@ check('G4p the attack and launch find a lent Action', [/function commitDeclared\
   check('A5 the rest follow it', [second.groupTarget, third.groupTarget], [a.uid, a.uid]);
   check('A5 so the second may not pick another', [U.detonationBar(f.tokens, second, rkg, [a, b], b), ok(f, { kind: 'flyToTarget', seat: 's1', uid: second.uid, actionId: '157_A', targetUid: b.uid })], ["group's target", false]);
   check('A5 and takes the group target', [U.detonationBar(f.tokens, second, rkg, [a, b], a), ok(f, { kind: 'flyToTarget', seat: 's1', uid: second.uid, actionId: '157_A', targetUid: a.uid })], ['', true]);
+  // Where the group's target stands out of this Unit's Range (the page lists
+  // only what is in it), it still takes no other, and finds no target: the
+  // page used to let it pick, the engine refused the flight, and a strict
+  // table stood still (the computer games, 2026-10-03, wave 7, seed 13594).
+  check('A5 and with the group target standing out of its Range it may still take no other: the page lists none, as the engine flies it at none',
+    [U.detonationBar(f.tokens, second, rkg, [b], b), ok(f, { kind: 'flyToTarget', seat: 's1', uid: second.uid, actionId: '157_A', targetUid: b.uid })], ["group's target", false]);
   const re = U.migrateState(JSON.parse(JSON.stringify(f)), data);
   check('A5 the group and its target survive a reload', re.tokens.filter((x) => x.cardId === '157').map((x) => [x.group, x.groupTarget ?? null]), [[first.uid, null], [first.uid, a.uid], [first.uid, a.uid]]);
   a.partStates.torso = 'destroyed';
@@ -1674,6 +1692,22 @@ check('G4p the attack and launch find a lent Action', [/function commitDeclared\
   teach.script.strict = false;
   droneOn(teach, 's1', '156', 3, 3);
   check('D3 the control: Teaching lets a house rule pass', ok(teach, { kind: 'passTurn', seat: 's1' }), true);
+  // Nor may its activation end before it has Unfolded: ended, the Pholcus had
+  // acted, the phase held, and only the Undo got the table out (the live trap
+  // of 2026-10-02, fixed 2026-10-03).
+  const held = delay();
+  const pod = droneOn(held, 's1', '156', 3, 3);
+  held.script.opp = opp(pod.uid, { timing: 'delay' });
+  const end = { kind: 'endOpportunity', seat: 's1', uid: pod.uid };
+  const refused = M.check(data, held, end);
+  check('D3 nor may its activation end with the Unfold owed, and the refusal says so', [refused.ok, /must Unfold/.test(refused.why ?? '')], [false, true]);
+  send(held, { kind: 'unfold', seat: 's1', uid: pod.uid });
+  check('D3 once it has Unfolded, its activation ends', send(held, end).ok, true);
+  const loose = delay();
+  loose.script.strict = false;
+  const free = droneOn(loose, 's1', '156', 3, 3);
+  loose.script.opp = opp(free.uid, { timing: 'delay' });
+  check('D3 the control: Teaching lets a house rule end it', ok(loose, { kind: 'endOpportunity', seat: 's1', uid: free.uid }), true);
 
   // D4: the folded Pholcus's landing Reveals by Contact, with I10's
   // Deployables.
@@ -1725,6 +1759,36 @@ check('G4p the attack and launch find a lent Action', [/function commitDeclared\
   droneOn(teach, 's1', 'ZHDR-201', 5, 5);
   put(teach, 's2', L(), 5, 4);
   check('F3 the control: Teaching lets a house rule pass', ok(teach, { kind: 'passTurn', seat: 's1' }), true);
+}
+
+// ================= F3b. a Hound beside a camouflaged enemy (found by the computer's games, 2026-10-03) =================
+{
+  // The obligation counts a unit in Optical Camouflage that the Hound's Melee
+  // "--" reaches (the Adjacent Grids, diagonals included: 4.2.2), and its attack
+  // designates that unit through one free Scan (4.12.2, FAQ I12) at the attack's
+  // own reach (FAQ I18). The Scan measured orthogonal Range against the "--"
+  // and refused every neighbour ("beyond Range 0"): the activation could
+  // neither attack nor end, and a strict table stood still in the Automatic
+  // Phase (wave 5, seed 8527: a GoF Bulldog beside a camouflaged Trial Model).
+  const scanOf = (hound, foe) => ({ kind: 'startCounterRoll', seat: 's1', uid: hound.uid, actionId: 'COMMON_SCAN', targetUid: foe.uid, thenAttack: { actionId: 'ZHDR-203_A' } });
+  const beside = (fc, fr) => {
+    const s = table();
+    s.round.phase = M.PHASES.indexOf('Automatic');
+    s.script.turn = 's1';
+    const hound = droneOn(s, 's1', 'ZHDR-203', 5, 5);
+    const foe = put(s, 's2', L(), fc, fr, { statuses: ['camouflage'] });
+    send(s, { kind: 'designate', seat: 's1', uid: hound.uid });
+    const owes = U.autoShotOwed(data, s.tokens, hound, { terrain: [], smoke: [] })?.id ?? null;
+    const ends = ok(s, { kind: 'endOpportunity', seat: 's1', uid: hound.uid });
+    send(s, { kind: 'performAction', seat: 's1', uid: hound.uid, actionId: 'ZHDR-203_A' });
+    const v = M.check(data, s, scanOf(hound, foe));
+    return [owes, ends, v.ok, v.ok ? '' : v.why];
+  };
+  check('F3b a Hound diagonally beside an enemy in Optical Camouflage (in its Forward Arc) owes its Tear, and the free Scan behind the Tear reaches it',
+    beside(6, 4), ['ZHDR-203_A', false, true, '']);
+  check('F3b and so does one beside it in a straight line', beside(5, 4), ['ZHDR-203_A', false, true, '']);
+  check('F3b the control: one diagonally behind it, outside its Forward Arc, is no legal target, and the activation ends', beside(6, 6).slice(0, 2), [null, true]);
+  check('F3b the control: two Grids off nothing is owed, and the Scan is beyond the Tear\'s reach', beside(5, 3).slice(0, 3), [null, true, false]);
 }
 
 // ================= F8. the KK9's Overwatch Strike (FAQ K15) =================

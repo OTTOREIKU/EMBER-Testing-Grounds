@@ -1677,8 +1677,13 @@ export function detonationBar(
   if (!spec || (spec.selection !== 'chosen' && spec.selection !== 'nearest')) return '';
   const side = (u: Token) => spec.filter !== 'enemy' || u.side !== proj.side;
   if (!side(x)) return 'ally';
+  // The group's target binds it while that target stands, in its Range or
+  // not, as the engine flies it (commands.ts flyToTarget): out of Range, it
+  // finds no target. (This asked only where the target was in Range, so the
+  // page let it pick another that the engine then refused: the computer
+  // games, 2026-10-03.)
   const gt = proj.groupTarget !== undefined ? tokens.find((u) => u.uid === proj.groupTarget) : undefined;
-  if (gt && alive(gt) && gt.deployed !== false && inRange.some((u) => u.uid === gt.uid)) {
+  if (gt && alive(gt) && gt.deployed !== false) {
     return x.uid === gt.uid ? '' : "group's target";
   }
   // An Automatic Detonation that takes the nearest (the Pholcus, M18.6)
@@ -1699,6 +1704,29 @@ export function detonationBar(
 export function detonationPriority(a: CardAction): string | null {
   const p = detonationTargetSpec(a)?.prioritize;
   return p ? UNIT_TYPE_PLURAL[p] ?? p : null;
+}
+
+// A Detonation that deals no damage and hands out a Token instead: the M9 Stun
+// Grenade (155), "all units within range gain 1 Fire Control Interference
+// Token". On a page the player picks the Token and each unit it lands on, the
+// card open beside them; a seat with no hand to pick with reads the card's own
+// rule, which names the Token, and whether it reaches only what the Projectile
+// can see (the structured line, or the printed one the pages gate on). Null
+// for a Detonation that damages, and for an effect nothing here knows: that
+// one is still read off the card by whoever resolves it.
+const DETONATION_TOKENS = new Map<string, string>([['fire_control_interference', 'fci']]);
+export function detonationToken(a: CardAction): { statusId: string; sight: boolean } | null {
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const eff = e as { type?: string; damage?: string; utility?: string; target?: { selection?: string; requireLosToSource?: boolean } };
+      if (eff.type !== 'detonation' || eff.damage !== 'none' || eff.target?.selection !== 'all') continue;
+      const statusId = eff.utility ? DETONATION_TOKENS.get(eff.utility) : undefined;
+      if (!statusId) continue;
+      const printed = `${a.description?.en ?? ''} ${a.description?.zh ?? ''}`;
+      return { statusId, sight: !!eff.target?.requireLosToSource || /line of sight|视线/i.test(printed) };
+    }
+  }
+  return null;
 }
 
 // A Delayed Detonation that finds no target in Range is destroyed (4.7.5)
@@ -7014,6 +7042,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     ...((s as { blastLast?: unknown }).blastLast === 's1' || (s as { blastLast?: unknown }).blastLast === 's2'
       ? { blastLast: (s as { blastLast: Side }).blastLast } : {}),
     ...((s as { unlocked?: boolean }).unlocked ? { unlocked: true } : {}),
+    ...((s as { noSecondary?: boolean }).noSecondary ? { noSecondary: true } : {}),
     roundLimit: int((s as { roundLimit?: unknown }).roundLimit, 5),
     sideNames: Object.fromEntries((['s1', 's2'] as const)
       .map((k) => [k, typeof names?.[k] === 'string' ? cleanName(names[k] as string) : ''])

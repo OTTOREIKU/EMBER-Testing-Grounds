@@ -234,6 +234,40 @@ export interface TokenData {
   tokens: TableToken[];
 }
 
+// Games against the computer (data/solo.json; Project-Documents/
+// AI-OPPONENT-PLAN.md). A squad is an importSquad payload and nothing more, so
+// the table it builds is the table any player could build by hand; `points` is
+// what it must total on the current list, which a test holds it to. A scenario
+// names a shipped map and a Main Task by id, and says which squad sits where.
+export interface SoloSquad {
+  name: string;
+  faction?: string;
+  points?: number;
+  mechs: { name?: string; loadout: MechLoadout }[];
+  drones: { cardId: string; backpack?: string }[];
+  // Its Tactics Cards, by id: a squad of the player's own brings the ones it
+  // was saved with (the shipped games' lists bring none).
+  tactics?: string[];
+}
+
+export interface SoloScenario {
+  id: string;
+  map: string;
+  mission: string;
+  rounds: number;
+  secondaries: boolean;
+  tactics: boolean;
+  seats: Record<Side, string>;
+  // The table edge each seat deploys from, when the scenario fixes it. Absent,
+  // the First Player picks as in any game (3.1.2).
+  edges?: Record<Side, 'black' | 'white'>;
+}
+
+export interface SoloData {
+  squads: Record<string, SoloSquad>;
+  scenarios: SoloScenario[];
+}
+
 // A Season Rule (Supplementary Rules, section 8). The publisher runs these as a
 // trial beside the main rules, never as part of them, so the Reference shows
 // each one apart and marked optional (OTTO, 2026-09-30: "We definitely want to
@@ -576,6 +610,8 @@ export interface GameData {
   changelog: ChangelogData;
   // Every physical token, for the Reference (data/tokens.json).
   tableTokens: TokenData;
+  // The games against the computer a page may offer (data/solo.json).
+  solo: SoloData;
 }
 
 // ONE change to one card between two of the publisher's list revisions
@@ -702,7 +738,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, diceRef, xlate, names, missions, environments, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards, changelog, tokenData] = await Promise.all([
+  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, diceRef, xlate, names, missions, environments, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards, changelog, tokenData, soloData] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     // Optional, and empty until a map is authored and committed: a missing or
@@ -784,6 +820,10 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('tokens.json'))
       .then((r) => (r.ok ? (r.json() as Promise<Partial<TokenData>>) : ({} as Partial<TokenData>)))
       .catch(() => ({}) as Partial<TokenData>),
+    // Optional too: without it no page offers a game against the computer.
+    fetch(dataUrl('solo.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<Partial<SoloData>>) : ({} as Partial<SoloData>)))
+      .catch(() => ({}) as Partial<SoloData>),
   ]);
 
   // Cards the community bundle does not have. cards.json is regenerated from
@@ -931,6 +971,18 @@ export async function loadData(): Promise<GameData> {
       families: (tokenData.families ?? []).filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string'),
       tokens: (tokenData.tokens ?? []).filter((t) => t && typeof t.id === 'string' && typeof t.family === 'string'),
     },
+    // A scenario is kept only when it is whole and both its squads are in the
+    // file: a page offering one must be able to start it.
+    solo: (() => {
+      const squads: Record<string, SoloSquad> = {};
+      for (const [k, v] of Object.entries(soloData.squads ?? {})) {
+        if (v && typeof v.name === 'string' && Array.isArray(v.mechs) && Array.isArray(v.drones)) squads[k] = v;
+      }
+      const scenarios = (soloData.scenarios ?? []).filter((x) => x && typeof x.id === 'string'
+        && typeof x.map === 'string' && typeof x.mission === 'string' && Number.isInteger(x.rounds)
+        && !!x.seats && !!squads[x.seats.s1] && !!squads[x.seats.s2]);
+      return { squads, scenarios };
+    })(),
   };
 }
 

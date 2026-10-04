@@ -77,7 +77,8 @@ const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8
 const win = unitsSrc.slice(unitsSrc.indexOf('export function ewWinCommands('), unitsSrc.indexOf('export function electronicAllTargets('));
 check('the Match Centre drains a Link instead of applying Fire Control Interference',
   /if \(opts\.reaction\) \{\s*\n\s*if \(resp\.kind === 'mech'\) \{\s*\n\s*cmds\.push\(\{ kind: 'drainLink', seat, uid, targetUid: resp\.uid, n: 1 \}\);/.test(win)
-    && /ewWinCommands\(ctx\.data, init, resp, a, \{ reaction: !!c\.reaction/.test(hud), true);
+    // Sent by contest.ts contestAct since 2026-10-01, which the Match Centre calls.
+    && /ewWinCommands\(data, init, resp, a, \{ reaction: !!c\.reaction/.test(src('contest.ts')) && /sendContestAct\(\{/.test(hud), true);
 check('and freeplay drains it from the contest itself',
   /ewWinCommands\(this\.data, c\.initiator, c\.responder, c\.action, \{ reaction: !!c\.linkLoss(, terminal: c\.terminal)? \}\)/.test(combat), true);
 check('the helper carries the loss rather than reading a card that has no rules',

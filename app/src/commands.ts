@@ -461,7 +461,7 @@ export type Command = (
   // The table itself: map, zones, mission and scale used to be local
   // mutations, which is why a host's picks never reached the guest. Tasks
   // ride in the command pre-derived, like dials ride in a reveal.
-  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; tableDice?: boolean; guidedPlay?: boolean; unlocked?: boolean; roundLimit?: number; noBoard?: boolean; season?: string | null }
+  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; tableDice?: boolean; guidedPlay?: boolean; unlocked?: boolean; roundLimit?: number; noBoard?: boolean; season?: string | null; noSecondary?: boolean }
   | { kind: 'startMatch'; seat: Side }
   | { kind: 'endMatch'; seat: Side }
   // A squad's open-information Secondary Task pick (3.1.3). The seat is the
@@ -1058,7 +1058,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (cmd.map === undefined && cmd.grids === undefined && cmd.zones === undefined && cmd.deployZones === undefined
         && cmd.zoneSet === undefined && cmd.mission === undefined && cmd.tasks === undefined && cmd.scale === undefined
         && cmd.roundLimit === undefined && cmd.noBoard === undefined && cmd.tableDice === undefined && cmd.guidedPlay === undefined && cmd.unlocked === undefined
-        && cmd.season === undefined) {
+        && cmd.season === undefined && cmd.noSecondary === undefined) {
         return no('Nothing to configure.');
       }
       // Only a season the data holds: null plays the main rules.
@@ -1091,6 +1091,12 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // The unlock is the HOST's alone (seat 1 opens every room; the seat on a
       // table command is the sender's own, so this holds on every client).
       if (cmd.unlocked !== undefined && cmd.seat !== 's1') return no('Only the host may unlock or lock the game.');
+      // Whether Secondary Tasks are played is settled before either is chosen:
+      // switching them off afterwards would leave a revealed card standing.
+      if (cmd.noSecondary) {
+        const held = normaliseTasks(state.tasks).secondary;
+        if (held.s1 || held.s2) return no('A Secondary Task is already chosen, so this game is played with them.');
+      }
       // Unlocked, the two setup locks below stand aside: that is its whole job.
       if (state.unlocked) return ok;
       // The board size goes with the map; the zones, the Deployment Zones and
@@ -1105,7 +1111,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // The game's length, its scale, how it is played and the rules it plays
       // by (the Season Rules) are the host's, and are fixed once it is under way.
       const house = cmd.roundLimit !== undefined || cmd.scale !== undefined || cmd.noBoard !== undefined || cmd.guidedPlay !== undefined
-        || cmd.season !== undefined;
+        || cmd.season !== undefined || cmd.noSecondary !== undefined;
       if (house && getLocalSeat() && cmd.seat !== 's1') return no('Only the host sets the game length, the scale, the way it is played and its rules.');
       if (house && setup?.stage === 'done') return no('The game is under way, so its length, scale, way of play and rules are fixed. End the game to change them.');
       return ok;
@@ -1138,6 +1144,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'pickSecondary': {
       if (!(data.secondary ?? []).some((c) => c.id === cmd.cardId)) return no('That is not a Secondary Task card.');
+      if (state.noSecondary) return no('This game is played without Secondary Tasks.');
       // In a game: chosen in the Tasks step, after the edges (3.1.3; ruling
       // I3), the First Player first (FAQ P1), final once both are revealed
       // (ruling I5), and never the card the other squad holds (the box has
@@ -1659,10 +1666,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (!su || su.stage !== 'tasks') return no('The Tasks step is not open.');
       // Across a table or on a strict one the step is a rule, not a drawn
       // panel: both Secondaries revealed, every target named, and on a board
-      // every Black Box placed (3.1.3, 5.2.1).
+      // every Black Box placed (3.1.3, 5.2.1). A game set up without Secondary
+      // Tasks owes none; everything else it owes still.
       if (strictNow(state)) {
         const tasks = normaliseTasks(state.tasks);
-        if (!tasks.secondary.s1 || !tasks.secondary.s2) return no('Both squads choose a Secondary Task first (3.1.3).');
+        if (!state.noSecondary && (!tasks.secondary.s1 || !tasks.secondary.s2)) return no('Both squads choose a Secondary Task first (3.1.3).');
         if (taskDesignations(data, state).length) return no('Every Task names its Mech or Zone first (5.2.3).');
         if (!state.noBoard && tasks.items.some((i) => i.kind === 'blackbox' && !i.set)) return no('Every Black Box is placed first, alternately from the First Player (5.2.1).');
       }
@@ -3066,8 +3074,10 @@ function checkActed(
       // Player could take an edge and start placing while the other squad
       // never got the chance to choose one.
       if (getLocalSeat() && t.deployed === false) {
+        // A game set up without Secondary Tasks owes none (finishTasks holds
+        // the same line).
         const picked = normaliseTasks(state.tasks).secondary;
-        if (!picked.s1 || !picked.s2) return no('Both squads pick a Secondary Task before anything deploys (3.1.3).');
+        if (!state.noSecondary && (!picked.s1 || !picked.s2)) return no('Both squads pick a Secondary Task before anything deploys (3.1.3).');
         // A Task that names a Mech or a Zone is not set up until it has, and
         // naming it after seeing where everything stands would be choosing
         // with the board in front of you.
@@ -3393,6 +3403,7 @@ function checkActed(
       // The free Scan on designation (4.12.2, FAQ I12): only a Scan may carry
       // an attack behind it, only against a camouflaged target, and the attack
       // has to be a Firing or Melee Action this unit can declare.
+      let adjacentOnly = false;
       if (cmd.thenAttack) {
         if (!isScanAction(a)) return no('Only a Scan carries an attack behind it (FAQ I12).');
         if (statusCount(target.statuses, 'camouflage') === 0) return no(`${target.label} is not in the Optical Camouflage State, so no free Scan is owed: attack it directly.`);
@@ -3408,6 +3419,14 @@ function checkActed(
         // Scan it earns is "the Common Action: Scan, aside from its range"
         // (FAQ I18): the attack's reach, where it used to be the Scan's own 6.
         reach = actionRange(data, state.tokens, t, atk);
+        // A Melee "--" (Range 0) reaches the Adjacent Grids, diagonals
+        // included (4.2.2), as its attack does (units.ts autoTargetsFor, the
+        // reading losNote gives it). Measured as orthogonal Range its Scan
+        // reached no neighbour at all, so a Hound beside a camouflaged enemy
+        // owed its Automatic Action (3.5) and could not make it, and a strict
+        // table could neither attack nor end the activation (found by the
+        // computer's games, 2026-10-03).
+        adjacentOnly = atk.type === 'Melee' && (atk.range ?? 0) === 0;
         if (!state.noBoard) {
           const gone = new Set(state.removedTerrain ?? []);
           const terrain = (data.terrain?.layouts?.[state.map] ?? []).filter((p) => !gone.has(p.id));
@@ -3437,7 +3456,8 @@ function checkActed(
       // and a Scan measured through one was accepted at Range 12 (audit Phase
       // 3, A5; F9). A free Scan measures from the attacker, at its attack's reach.
       const origins = isElectronicAttack(a) && !cmd.thenAttack ? electronicOrigins(data, state.tokens, t) : [t];
-      if (!cmd.reaction && !origins.some((from) => gridRange(from, target) <= reach) && !state.noBoard) {
+      const inReach = (from: Token): boolean => (adjacentOnly ? rangeBetween(from, target).adjacent : gridRange(from, target) <= reach);
+      if (!cmd.reaction && !origins.some(inReach) && !state.noBoard) {
         return no(`${target.label} is beyond Range ${reach}${origins.length > 1 ? ', even through the Repeater' : ''}.`);
       }
       // EV 0 cannot Initiate; EV "-" cannot Respond (4.11.2).
@@ -3595,6 +3615,15 @@ function checkActed(
         }
       }
       if (rebootOwed(state, t)) return no(`${t.label} is in Shutdown Stance and its Action Opportunity has come, so it Reboots now: choose the Stance it Reboots into (FAQ K17).`);
+      // A folded Pholcus "must" Unfold in the Delay Phase (M18.3), and its
+      // activation is where it does: a strict table does not end that
+      // activation before it has. Ended with the Unfold still owed, the
+      // Pholcus had acted and could not be designated again, the phase could
+      // not be left (advancePhase holds it), and only the Undo got the table
+      // out.
+      if (strictNow(state) && PHASES[state.round.phase] === 'Delay' && unfoldsOwed(data, [t]).length) {
+        return no(`${t.label} must Unfold in the Delay Phase (FAQ M18.3): Unfold it before its activation ends.`);
+      }
       // A Reveal is made at once (4.12.2): on a strict guided table the unit
       // that owes one ends no Action Opportunity of its own before making it.
       // It entered the enemy's turn still camouflaged, where an attack on it
@@ -3919,16 +3948,23 @@ function checkActed(
       const thrown = throwWhy(data, t, launcher, boxHands(state.tasks, t.uid), loanedParts(data, state.tokens, t, { anywhere: !!state.noBoard }));
       if (thrown) return no(thrown);
       // Volley X: one performance launches at most X (4.7.3). Counted inside
-      // the Opportunity, launches whose Units are still on the board, so a
-      // take-back frees its shot. The pages capped it; this did not, and four
-      // launches off one Volley 2 Action went through (audit Phase 2, C12). No
-      // Extra Tick in the data pays for a Projectile Action, so one
-      // performance per Opportunity is exact.
+      // the Opportunity. The pages capped it; this did not, and four launches
+      // off one Volley 2 Action went through (audit Phase 2, C12). No Extra
+      // Tick in the data pays for a Projectile Action, so one performance per
+      // Opportunity is exact.
+      //
+      // EVERY launch of the performance counts, whatever has become of its
+      // Unit since. They were counted while "still on the board", so that a
+      // take-back frees its shot; but a Projectile that detonates as it lands
+      // (an Immediate one) or is shot down leaves the board too, and each one
+      // that did freed a shot: a Launcher that prints "Launch 1" could empty
+      // its magazine in one Action. A take-back now strikes its launch off the
+      // record itself (`despawn`, in apply), and nothing else does.
       const lo = oppOf(state, cmd.uid);
       const act = findAction(data, state, cmd.uid, cmd.actionId);
       if (lo && act) {
         const cap = volleyFor(data, t, act, lo);
-        const live = (lo.launched ?? []).filter((x) => x.actionId === cmd.actionId && x.uids.some((u) => state.tokens.some((tk) => tk.uid === u))).length;
+        const live = (lo.launched ?? []).filter((x) => x.actionId === cmd.actionId).length;
         if (live >= cap) return no(`${act.name?.en || 'This Action'} launches ${cap === 1 ? 'once' : `at most ${cap} times`} per performance (Volley ${cap}).`);
       }
       const { col, row } = cmd.to;
@@ -4764,6 +4800,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     if (cmd.tableDice !== undefined) state.tableDice = cmd.tableDice ? true : undefined;
     if (cmd.guidedPlay !== undefined) state.guidedPlay = cmd.guidedPlay ? true : undefined;
     if (cmd.unlocked !== undefined) state.unlocked = cmd.unlocked ? true : undefined;
+    if (cmd.noSecondary !== undefined) state.noSecondary = cmd.noSecondary ? true : undefined;
     // Deleted rather than stored empty, so a table on the main rules carries
     // nothing that says otherwise.
     if (cmd.season !== undefined) {
@@ -6598,6 +6635,17 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'despawn': {
       const gone = state.tokens.find((x) => x.uid === cmd.targetUid);
+      // A LAUNCH TAKEN BACK: the launcher removes the Projectile it has just
+      // put down, in the Opportunity it launched it in. That launch is struck
+      // off the record, so its shot of the Volley may be made again (C12). A
+      // Projectile that removes itself (it detonated, it was shot down) was
+      // launched all the same, and stays counted.
+      if (gone && sc?.opp && cmd.uid !== cmd.targetUid && gone.parentUid === cmd.uid && sc.opp.uid === cmd.uid && sc.opp.launched?.length) {
+        sc.opp = {
+          ...sc.opp,
+          launched: sc.opp.launched.map((x) => ({ ...x, uids: x.uids.filter((u) => u !== gone.uid) })).filter((x) => x.uids.length > 0),
+        };
+      }
       // A Mine leaving as its Explosion is done, while both squads owed a blast,
       // was that squad's turn: the other squad resolves next (1.9).
       if (gone && !state.noBoard && cmd.targetUid === cmd.uid && blastSides(data, state).size === 2

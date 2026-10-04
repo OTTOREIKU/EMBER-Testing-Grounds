@@ -68,7 +68,15 @@ export function makeEl(tag) {
         return out;
       }
       el._qa ||= {};
-      return (el._qa[sel] ||= sel === 'button' ? [makeEl('button'), makeEl('button')] : []);
+      if (sel === 'button' && !el._qa[sel]) {
+        el._qa[sel] = [makeEl('button'), makeEl('button')];
+        // Markup a browser would have parsed into children: the pair joins
+        // them, so a walk of the tree finds what a player could press. The
+        // pool editor's steppers are how a computer seat moves a Multi-Target's
+        // dice between targets, and a walk that missed them hid the split.
+        if (String(el.innerHTML).includes('<button')) el.children.push(...el._qa[sel]);
+      }
+      return (el._qa[sel] ||= []);
     },
     closest() { return null; },
     contains() { return false; },
@@ -126,11 +134,13 @@ export function installDom() {
 // `extra` names further exports of combat.ts to pull through, for a test that
 // needs a plain function beside the class; the whole module comes back as
 // `mod`, so nothing has to be listed twice.
-export async function loadCombat(name, extra = []) {
+// `lines` are further entry lines, for a test that needs a module beside the
+// window (`export { forecastOf } from '../src/ai/odds';`).
+export async function loadCombat(name, extra = [], lines = []) {
   const entry = new URL(`./_${name}.entry.ts`, import.meta.url);
   const out = new URL(`./_${name}.bundle.mjs`, import.meta.url);
   writeFileSync(entry, "export { AttackHelper } from '../src/combat';\nexport { loadData } from '../src/data';\n"
-    + (extra.length ? `export { ${extra.join(', ')} } from '../src/combat';\n` : ''));
+    + (extra.length ? `export { ${extra.join(', ')} } from '../src/combat';\n` : '') + lines.map((l) => `${l}\n`).join(''));
   await build({
     entryPoints: [fileURLToPath(entry)],
     outfile: fileURLToPath(out),

@@ -10,6 +10,10 @@
 // the bare chip would charge 0 on every Centaur Action and look wired while
 // doing nothing at all.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const start = unitsSrc.indexOf('// ---------- IMMOBILIZED, AND THE ONE KEYWORD THAT IGNORES IT ----------');
@@ -135,12 +139,17 @@ check('and Immobilized does not care about Link', U.immobilizedStop(broke, run),
     /if \(a && state\.noBoard && t\.kind === 'mech'\) \{\s*\n\s*const cost = nonHumanoidCost\(a\);/.test(cmds), true);
   check('and the controlled move charges the unit it steers',
     /case 'controlledMove': \{[\s\S]{0,900}?const cost = nonHumanoidCost\(act\);\s*\n\s*if \(cost > 0\) target\.link/.test(cmds), true);
-  // Its one read is Obstruct's Link budget, as freeplay's.
+  // Its one read is Obstruct's Link budget, as freeplay's: in its one MoveOpts
+  // builder, turn.ts moveOptsFor.
   check('and the Match Centre charges nowhere - its command does that',
-    [(hud.match(/nonHumanoidCost\(/g) ?? []).length, /breakAwayLinkBudget\(t, nonHumanoidCost\(/.test(hud), /\.link = /.test(hud)], [1, true, false]);
+    [(hud.match(/nonHumanoidCost\(/g) ?? []).length, (turnSrc.match(/nonHumanoidCost\(/g) ?? []).length,
+      /breakAwayLinkBudget\(t, nonHumanoidCost\(/.test(turnSrc), /\.link = /.test(hud + turnSrc)], [0, 1, true, false]);
 
   // But the Match Centre still warns early, like it does for Immobilized.
-  check('the Match Centre refuses at its planner too', /nonHumanoidStop\(/.test(hud), true);
+  // In turn.ts moveStart since 2026-10-01, which its planner opens through.
+  check('the Match Centre refuses at its planner too',
+    [/const shortLink = nonHumanoidStop\(t, opts\.actionId \? actionOf\(data, state, t, opts\.actionId\) : null\);\s*\n\s*if \(shortLink\) return \{ ok: false, why: shortLink \};/.test(turnSrc),
+      /turn\.moveStart\(ctx\.data, ctx\.state, t, opts\)/.test(hud)], [true, true]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

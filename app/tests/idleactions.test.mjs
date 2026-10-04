@@ -4,6 +4,10 @@
 // reach to act on, and nothing - and the pages are pinned as text below, since
 // the whole point is that five pages ask it the same way.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { installDom } from './_combatdrive.mjs';
@@ -366,7 +370,7 @@ check('tabletop Details tab: a support button with nothing in reach is greyed',
     /if \(what === 'support'\) \{\s*const action = findAction\(t, actionId\);\s*return action \? actionIdleWhy\(data, t, action, idleWorld\(\)\) : null;/.test(main)],
   [true, true]);
 check('Match Centre: the idle reason joins the row\'s verdict, after the Part\'s own',
-  /: partWhy \? \{ ok: false, why: partWhy \} : idle \? \{ ok: false, why: idle \} :/.test(hud), true);
+  /: partWhy \? \{ ok: false, why: partWhy \} : idle \? \{ ok: false, why: idle \} :/.test(turnSrc), true);
 check('pad: Freeform greys the chips; Guided keeps Perform a greyed button, not a printed sentence',
   [(pad.match(/const idle = mine && (?:g\.)?available \? actionIdleWhy\(d, t, (?:g\.action|a), idleWorld\) : null;/g) ?? []).length,
     pad.includes('Every Part is Charged'), /pad-perform-no/.test(guided),
@@ -386,7 +390,7 @@ check('pad: a shut-down Mech\'s Reboot buttons stay, greyed with when it comes, 
 check('pad: its own doors refuse in the shared words (Overwatch, every-enemy Electronic, Discard)',
   (pad.match(/actionIdleWhy\(data!?, (?:t|attacker), (?:a|discard), idleWorldFor\(data!?, table\)\)/g) ?? []).length, 3);
 check('one board view for all of them (glue.ts idleWorldFor)',
-  [/idleWorldFor\(data, state, currentTerrain\(\)\)/.test(main), /idleWorldFor\(ctx\.data, ctx\.state, terrainOf\(ctx\)\)/.test(hud),
+  [/idleWorldFor\(data, state, currentTerrain\(\)\)/.test(main), /idleWorldFor\(data, state, terrain\)/.test(turnSrc),
     /idleWorldFor\(d, table\)/.test(pad), /idleWorldFor\(api\.data, s\)/.test(guided)],
   [true, true, true, true]);
 

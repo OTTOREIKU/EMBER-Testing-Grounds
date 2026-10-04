@@ -4,6 +4,10 @@
 // Ambush while the first Token is still worn, J19 allows one in Contact. The
 // readers run against the shipped cards; the gate and both doors are pinned.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -64,11 +68,15 @@ const perf = cmds.slice(cmds.indexOf("case 'performAction': {"), cmds.indexOf("c
 check('performAction refuses the grant the unit already wears', /const selfGrant = selfStatusGrant\(a\);\s*\n\s*if \(selfGrant\) \{\s*\n\s*const why = selfGrantWhy\(t, selfGrant\);\s*\n\s*if \(why\) return no\(why\);/.test(perf), true);
 check('freeplay places the Token through applyStatus', /const grant = selfStatusGrant\(action\);[\s\S]{0,700}?kind: 'applyStatus', seat: t\.side, uid: t\.uid, targetUid: t\.uid, statusId: grant\.statusId, stacks: grant\.stacks/.test(main), true);
 check('and refuses before the card text is shown', /selfGrantWhy\(t, grant\);[\s\S]{0,200}?return done\(false\);/.test(main), true);
-check('the Match Centre places it and pays for it', /const grant = selfStatusGrant\(a\);[\s\S]{0,600}?const paid = commitAction\(ctx\);[\s\S]{0,300}?kind: 'applyStatus', seat: t\.side, uid: t\.uid, targetUid: t\.uid, statusId: grant\.statusId, stacks: grant\.stacks/.test(hud), true);
+check('the Match Centre places it and pays for it', /const grant = route === 'selfStatus' \? selfStatusGrant\(a\) : null;[\s\S]{0,600}?const paid = commitAction\(ctx\);[\s\S]{0,300}?kind: 'applyStatus', seat: t\.side, uid: t\.uid, targetUid: t\.uid, statusId: grant\.statusId, stacks: grant\.stacks/.test(hud), true);
 check('and drops the latched Ticks on a refusal', /selfGrantWhy\(t, grant\);\s*\n\s*if \(why\) \{\s*\n\s*ctx\.noteNow\(why\);\s*\n\s*dropAction\(\);/.test(hud), true);
 check('both branches sit before the card-text fallthrough',
   main.indexOf('const grant = selfStatusGrant(action);') < main.indexOf('Swift and Tactical actions are card text')
-  && hud.indexOf('const grant = selfStatusGrant(a);') < hud.indexOf('Swift and Tactical Actions are card text'), true);
+  && hud.indexOf("const grant = route === 'selfStatus' ? selfStatusGrant(a) : null;") > 0
+  && hud.indexOf("const grant = route === 'selfStatus' ? selfStatusGrant(a) : null;") < hud.indexOf('Swift and Tactical Actions are card text')
+  // And the classifier reads it before it falls through to the card text.
+  && turnSrc.indexOf("if (selfStatusGrant(a)) return 'selfStatus';") > 0
+  && turnSrc.indexOf("if (selfStatusGrant(a)) return 'selfStatus';") < turnSrc.indexOf("return 'card';"), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1,5 +1,5 @@
 import type { Side, SmokeScreen, TerrainPiece, Token } from './types';
-import { baseBox, baseCells } from './types';
+import { baseBox, baseCells, DEFAULT_GRIDS } from './types';
 
 // The board's extent in Large Grids.
 //
@@ -139,6 +139,13 @@ export function largeGridOf(t: { col: number; row: number }): LargeGrid {
   return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
 }
 
+// The cells each list of terrain fills (standingSpot), kept by the list itself
+// for as long as one seat's one thought lasts (thinking(), with the lines of
+// sight). A list is what `terrainOf` hands back, made new each time it is
+// asked, so the one a search of the board is run with is gathered once for
+// that search. Outside a thought nothing is kept.
+let GROUND: Map<TerrainPiece[], Set<string>> | null = null;
+
 // Where inside Large Grid (c,r) a unit of this size actually fits. A Grid is 3x3
 // small cells, so a 1x1 or 2x2 unit sharing it with terrain has to take the free
 // corner rather than the middle. Returns the small-cell origin, or null if the
@@ -170,8 +177,17 @@ export function standingSpot(
   spots.sort((a, b) => score(a.col, a.row) - score(b.col, b.row));
   if (aerial) return spots[0];
 
+  // The cells terrain fills are the same for every Grid asked about of one
+  // board. A search of the board asks about hundreds, each with the same list
+  // of pieces: while somebody is thinking the cells of a list are gathered
+  // once (thinking(), below), and otherwise for each call as they always were.
+  let ground = GROUND?.get(terrain);
+  if (!ground) {
+    ground = new Set<string>();
+    for (const p of terrain) for (const cell of p.subCells) ground.add(`${cell.col},${cell.row}`);
+    GROUND?.set(terrain, ground);
+  }
   const blocked = new Set<string>();
-  for (const p of terrain) for (const cell of p.subCells) blocked.add(`${cell.col},${cell.row}`);
   for (const t of tokens) {
     if (t.uid === ignoreUid || t.aerial) continue;
     for (const cell of baseCells(t)) blocked.add(`${cell.col},${cell.row}`);
@@ -180,7 +196,8 @@ export function standingSpot(
     let ok = true;
     outer: for (let dc = 0; dc < size; dc++) {
       for (let dr = 0; dr < size; dr++) {
-        if (blocked.has(`${spot.col + dc},${spot.row + dr}`)) {
+        const k = `${spot.col + dc},${spot.row + dr}`;
+        if (ground.has(k) || blocked.has(k)) {
           ok = false;
           break outer;
         }
@@ -189,6 +206,37 @@ export function standingSpot(
     if (ok) return spot;
   }
   return null;
+}
+
+// A footprint snapped onto the board's cells, with no occupancy and no terrain
+// test at all: the fallback when standingSpot finds no free spot in a Grid.
+// Here, beside standingSpot, since 2026-10-01: it is pure geometry, and
+// turn.ts moveOrder needs it without importing the board's page code.
+// board.ts re-exports it for the callers that had it from there.
+//
+// `grids` defaults to the printed 12 so an un-migrated caller keeps the exact
+// behaviour it had. Every caller that can see the state should pass
+// gridsOf(state): on a 16 or 18 board the old default would clamp a legal
+// placement back onto the printed board's last Grid, silently.
+export function snapPlacement(col: number, row: number, size: 1 | 2 | 3, grids: number = DEFAULT_GRIDS): { col: number; row: number } | null {
+  const cells = grids * 3;
+  const last = grids - 1;
+  col = Math.max(0, Math.min(cells - size, col));
+  row = Math.max(0, Math.min(cells - size, row));
+  if (size === 3) {
+    return { col: Math.round(col / 3) * 3, row: Math.round(row / 3) * 3 };
+  }
+  if (size === 2) {
+    const lg = { c: Math.floor((col + 1) / 3), r: Math.floor((row + 1) / 3) };
+    const c = Math.min(last, Math.max(0, lg.c));
+    const r = Math.min(last, Math.max(0, lg.r));
+    const offC = Math.min(1, Math.max(0, col - c * 3));
+    const offR = Math.min(1, Math.max(0, row - r * 3));
+    return { col: c * 3 + offC, row: r * 3 + offR };
+  }
+  const c = Math.min(last, Math.max(0, Math.floor(col / 3)));
+  const r = Math.min(last, Math.max(0, Math.floor(row / 3)));
+  return { col: c * 3 + 1, row: r * 3 + 1 };
 }
 
 // Where a Mine stands in Large Grid (c, r). The Supplementary Rules 1.04 (1.3)
@@ -418,6 +466,10 @@ function searchMoves(
   // direction the route already has ('' when it has not stepped yet).
   const bonus = opts?.straightBonus ?? 0;
   const straight = new Map<string, string | null>([[startKey, opts?.straightDir ?? '']]);
+  // What entering a Grid comes to (stood in, crushed into, phased through) is
+  // asked once for a search, however many ways the search comes at the Grid:
+  // nothing it reads changes while the search runs.
+  const footing = new Map<string, { standable: boolean; crush: boolean; phase: boolean }>();
   const queue: (LargeGrid & { d: number; l: number })[] = [{ ...start, d: 0, l: 0 }];
   while (queue.length) {
     let best = 0;
@@ -454,20 +506,25 @@ function searchMoves(
       const cheapest = g.d + 1 + exit - payable;
       if (cheapest > limit) continue;
       if (!pay && cheapest >= (sDist.get(sk(n.c, n.r, 0)) ?? Infinity)) continue;
-      const standable = canStandIn(n.c, n.r, t.size, t.aerial, terrain, tokens, t.uid);
-      const crush = !standable && !flying && !t.aerial && (opts?.crushable?.(n.c, n.r) ?? false);
-      // The empty token list is the whole trick, and the only thing standing
-      // between this and a Mech walking through a building: standingSpot folds
-      // terrain subCells and unit footprints into ONE blocked set, so a naive
-      // `passable = true` would open both. Re-asking canStandIn against TERRAIN
-      // ONLY answers "is it just units in the way?", which is exactly what the
-      // card grants.
-      // The Containers go with the units: the Rules Supplement makes both
-      // "Neutral Unit - Deployable - Barricade", so a Firefly in camouflage or
-      // Low Profile moves through them too (FAQ I15; audit Phase 3, C11). It
-      // never stops on one: `standable` above still reads every piece.
-      const phase = !standable && !flying && !t.aerial && !!opts?.phaseThrough
-        && canStandIn(n.c, n.r, t.size, t.aerial, terrain.filter((p) => p.type !== 'container'), [], t.uid);
+      let foot = footing.get(nk);
+      if (!foot) {
+        const standable = canStandIn(n.c, n.r, t.size, t.aerial, terrain, tokens, t.uid);
+        const crush = !standable && !flying && !t.aerial && (opts?.crushable?.(n.c, n.r) ?? false);
+        // The empty token list is the whole trick, and the only thing standing
+        // between this and a Mech walking through a building: standingSpot folds
+        // terrain subCells and unit footprints into ONE blocked set, so a naive
+        // `passable = true` would open both. Re-asking canStandIn against TERRAIN
+        // ONLY answers "is it just units in the way?", which is exactly what the
+        // card grants.
+        // The Containers go with the units: the Rules Supplement makes both
+        // "Neutral Unit - Deployable - Barricade", so a Firefly in camouflage or
+        // Low Profile moves through them too (FAQ I15; audit Phase 3, C11). It
+        // never stops on one: `standable` above still reads every piece.
+        const phase = !standable && !flying && !t.aerial && !!opts?.phaseThrough
+          && canStandIn(n.c, n.r, t.size, t.aerial, terrain.filter((p) => p.type !== 'container'), [], t.uid);
+        footing.set(nk, foot = { standable, crush, phase });
+      }
+      const { standable, crush, phase } = foot;
       const passable = flying || t.aerial ? true : standable || crush || phase;
       if (!passable) continue;
       for (let k = 0; k <= payable; k++) {
@@ -811,15 +868,33 @@ export function movePath(
   flying: boolean,
   opts?: MoveOpts,
 ): LargeGrid[] {
+  return movePaths(t, [to], steps, terrain, tokens, flying, opts)[0];
+}
+
+// The routes to several Grids from the ONE search: each is the route movePath
+// gives for that Grid, empty where it gives none. Whoever wants the way to
+// many Grids at once (a seat reading the roads to every enemy) pays for one
+// search and not one for each.
+export function movePaths(
+  t: Token,
+  goals: LargeGrid[],
+  steps: number,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  flying: boolean,
+  opts?: MoveOpts,
+): LargeGrid[][] {
   const { dist, trace } = searchMoves(t, steps, terrain, tokens, flying, opts);
-  const goal = `${to.c},${to.r}`;
-  if (!dist.has(goal)) return [];
-  // A landing ban closes the ROUTE'S END, not the route: the grid may sit in
-  // `dist` because a flight passed over it, and a path may not finish there.
-  if (opts?.landing && !opts.landing(to.c, to.r)) return [];
-  return trace(goal).map((k) => {
-    const [c, r] = k.split(',').map(Number);
-    return { c, r };
+  return goals.map((to) => {
+    const goal = `${to.c},${to.r}`;
+    if (!dist.has(goal)) return [];
+    // A landing ban closes the ROUTE'S END, not the route: the grid may sit in
+    // `dist` because a flight passed over it, and a path may not finish there.
+    if (opts?.landing && !opts.landing(to.c, to.r)) return [];
+    return trace(goal).map((k) => {
+      const [c, r] = k.split(',').map(Number);
+      return { c, r };
+    });
   });
 }
 
@@ -930,16 +1005,129 @@ export function firingSight(
   return walkLines(a, b, terrain, tokens, grids);
 }
 
+// ---------- lines walked once, while somebody is thinking ----------
+//
+// One walk is eighty-one lines of some thousands of cell lookups, and a seat
+// that looks ahead asks for the same line over and over: each Action of a unit
+// asks its own line to the same target, and each table it thinks about asks
+// them all again. A line depends on nothing but the two footprints, the
+// terrain, the units standing between and the smoke, so inside `thinking()`
+// each is walked once and kept by exactly those. OUTSIDE it nothing is kept:
+// the pages ask a line when they draw one, and a board being edited may change
+// a piece of terrain where it stands, which no key here would notice. The memo
+// lives only as long as one seat's one decision, in which no board changes.
+type Sight = 'clear' | 'obstructed' | 'blocked' | 'smoked';
+let WALKED: Map<string, Sight> | null = null;
+const PIECE = new WeakMap<TerrainPiece, number>();
+let pieces = 0;
+
+// Runs `fn` with every line of sight it asks for walked once, and the cells of
+// each terrain list gathered once. Nested, it is the outer one's memory that
+// is used and left in place.
+export function thinking<T>(fn: () => T): T {
+  if (WALKED) return fn();
+  WALKED = new Map();
+  GROUND = new Map();
+  try {
+    return fn();
+  } finally {
+    WALKED = null;
+    GROUND = null;
+  }
+}
+
+// Everything walkLines reads, as a key: the two units (their footprints are
+// their cell, size, facing and card), each piece of terrain by which piece it
+// is, every unit that could stand in the line, and the smoke.
+const unitKey = (t: Token): string => `${t.uid},${t.col},${t.row},${t.size},${t.facing},${t.aerial ? 1 : 0},${t.mine ? 1 : 0},${t.cardId}`;
+function terrainKey(terrain: TerrainPiece[]): string {
+  let key = '';
+  for (const p of terrain) {
+    let n = PIECE.get(p);
+    if (n === undefined) PIECE.set(p, n = ++pieces);
+    key += `${n},`;
+  }
+  return key;
+}
+function lineKey(a: Token, b: Token, terrain: TerrainPiece[], tokens: Token[], smokeGrids: Set<string> | null): string {
+  let key = `${unitKey(a)}|${unitKey(b)}|${terrainKey(terrain)}|`;
+  for (const t of tokens) if (t.uid !== a.uid && t.uid !== b.uid && !t.aerial) key += `${unitKey(t)};`;
+  return smokeGrids ? `${key}|${[...smokeGrids].sort().join(';')}` : key;
+}
+
+// IS THERE ANY LINE OF SIGHT AT ALL between the two: losBetween, asked only
+// whether it is 'blocked'. For a reader that wants nothing more, and asks it of
+// a great many places at once: where a Projectile may land is asked of every
+// Grid in Range (turn.ts landingGrids). The same walk, stopped at the first of
+// its lines that nothing blocks, which on open ground is the first of the 81.
+// While somebody is thinking it is kept, like every line, by what it reads:
+// the two footprints, the terrain, and the units that block a line as terrain
+// does (a 3-inch Barricade). The other units only obstruct, which this does
+// not ask, so a unit moved elsewhere on the board changes nothing here.
+export function sightBetween(a: Token, b: Token, terrain: TerrainPiece[], tokens: Token[]): boolean {
+  if (!WALKED) return walkLinesNow(a, b, terrain, tokens, null, true) !== 'blocked';
+  let key = `?${unitKey(a)}|${unitKey(b)}|${terrainKey(terrain)}|`;
+  for (const t of tokens) if (t.uid !== a.uid && t.uid !== b.uid && !t.aerial && blocksAsTerrain(t)) key += `${unitKey(t)};`;
+  let sight = WALKED.get(key);
+  if (sight === undefined) WALKED.set(key, sight = walkLinesNow(a, b, terrain, tokens, null, true));
+  return sight !== 'blocked';
+}
+
+// The same for a thought that is put down and picked up again (a seat that
+// hands the page its thread back between the steps of one decision). What is
+// kept is kept by everything it was read from, so a line asked by anybody
+// while the thought is open is the line walked afresh. A second thought begun
+// meanwhile shares the memory, and loses it when the first ends: it is then
+// only slower.
+export async function musing<T>(fn: () => Promise<T>): Promise<T> {
+  if (WALKED) return fn();
+  WALKED = new Map();
+  GROUND = new Map();
+  try {
+    return await fn();
+  } finally {
+    WALKED = null;
+    GROUND = null;
+  }
+}
+
 // The one line-walk behind both readers, so a smoke line and a terrain line are
 // always the same line. With no smoke it is the plain losBetween it always
 // was: an Aerial end sees everything, and one line not blocked is sight.
-function walkLines(
+function walkLines(a: Token, b: Token, terrain: TerrainPiece[], tokens: Token[], smokeGrids: Set<string> | null): Sight {
+  if (!WALKED) return walkLinesNow(a, b, terrain, tokens, smokeGrids);
+  const key = lineKey(a, b, terrain, tokens, smokeGrids);
+  let sight = WALKED.get(key);
+  if (sight === undefined) WALKED.set(key, sight = walkLinesNow(a, b, terrain, tokens, smokeGrids));
+  return sight;
+}
+
+// For the test that holds the memory to the walk: the two readers with
+// nothing kept, and how many lines have been walked in all.
+let walks = 0;
+export const walked = (): number => walks;
+export function losBetweenNow(a: Token, b: Token, terrain: TerrainPiece[], tokens: Token[]): 'clear' | 'obstructed' | 'blocked' {
+  return walkLinesNow(a, b, terrain, tokens, null) as 'clear' | 'obstructed' | 'blocked';
+}
+export function firingSightNow(a: Token, b: Token, terrain: TerrainPiece[], tokens: Token[], smoke: SmokeScreen[]): Sight {
+  if (!smoke.length) return walkLinesNow(a, b, terrain, tokens, null);
+  const grids = new Set(smoke.map(smokeKey));
+  if (standsInSmoke(a, grids) || standsInSmoke(b, grids)) return 'smoked';
+  return walkLinesNow(a, b, terrain, tokens, grids);
+}
+
+// `first` stops the walk at the first line that is sight, for a reader that
+// asks only whether there is one (sightBetween): the answer is then 'clear'
+// for "some line is", and says nothing of what obstructs the others.
+function walkLinesNow(
   a: Token,
   b: Token,
   terrain: TerrainPiece[],
   tokens: Token[],
   smokeGrids: Set<string> | null,
+  first = false,
 ): 'clear' | 'obstructed' | 'blocked' | 'smoked' {
+  walks += 1;
   // 4.2.4: line of sight to or from an Aerial Unit is never Obstructed, and
   // terrain does not block it. Smoke still does (4.16).
   // A Mine is Aerial for placement only: sight to one is a ground unit's,
@@ -967,8 +1155,11 @@ function walkLines(
     }
   }
 
-  const basePoints = (t: Token): { x: number; y: number }[] => {
-    const b = baseBox(t);
+  // The two bases, read once: every point of every line is held against both.
+  type Box = { col: number; row: number; w: number; h: number };
+  const boxA: Box = baseBox(a);
+  const boxB: Box = baseBox(b);
+  const basePoints = (b: Box): { x: number; y: number }[] => {
     const pts: { x: number; y: number }[] = [];
     for (let i = 0; i <= 2; i++) {
       for (let j = 0; j <= 2; j++) {
@@ -978,16 +1169,14 @@ function walkLines(
     return pts;
   };
 
-  const inBase = (x: number, y: number, t: Token) => {
-    const b = baseBox(t);
-    return x >= b.col && x < b.col + b.w && y >= b.row && y < b.row + b.h;
-  };
+  const inBase = (x: number, y: number, b: Box): boolean => x >= b.col && x < b.col + b.w && y >= b.row && y < b.row + b.h;
 
   let anySight = false;
   let smokeTook = false;
   let anyObstruct = false;
-  for (const pa of basePoints(a)) {
-    for (const pb of basePoints(b)) {
+  const pointsB = basePoints(boxB);
+  for (const pa of basePoints(boxA)) {
+    for (const pb of pointsB) {
       const len = Math.hypot(pb.x - pa.x, pb.y - pa.y);
       const n = Math.max(2, Math.ceil(len * 3));
       let lineBlocked = false;
@@ -996,12 +1185,13 @@ function walkLines(
       for (let i = 1; i < n; i++) {
         const x = pa.x + ((pb.x - pa.x) * i) / n;
         const y = pa.y + ((pb.y - pa.y) * i) / n;
-        if (inBase(x, y, a) || inBase(x, y, b)) continue;
+        if (inBase(x, y, boxA) || inBase(x, y, boxB)) continue;
         const key = `${Math.floor(x)},${Math.floor(y)}`;
         if (losCells.has(key)) lineBlocked = true;
         if (obstructCells.has(key)) lineObstruct = true;
         if (smokeGrids?.has(`${Math.floor(x / 3)},${Math.floor(y / 3)}`)) lineSmoked = true;
       }
+      if (first && !lineBlocked && !lineSmoked) return 'clear';
       if (!lineBlocked && !lineSmoked) anySight = true;
       if (!lineBlocked && lineSmoked) smokeTook = true;
       if (lineBlocked || lineObstruct) anyObstruct = true;

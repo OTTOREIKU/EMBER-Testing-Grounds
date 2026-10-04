@@ -98,7 +98,30 @@ export function withoutSecretDials(board: unknown): unknown {
   return copy;
 }
 
-export class Relay {
+// What a page uses of its table's relay. The Relay below is the one that
+// reaches a server; a game against the computer is played over one with no
+// server behind it (loopback.ts), and the page cannot tell them apart.
+export interface TableRelay {
+  readonly state: NetView;
+  readonly connected: boolean;
+  readonly catchingUp: boolean;
+  host(): void;
+  join(room: string): void;
+  leave(): void;
+  closeRoom(): void;
+  publish(cmd: Command): void;
+  rollDice(pool: Record<string, number>, label?: string, kind?: RollKind): Promise<RolledDie[]>;
+  requestResync(): void;
+  publishCheckpoint(): void;
+  setBranch(n: number): void;
+  health(): {
+    latencyMs: number | null; lossPct: number; driftMs: number;
+    backgrounded: boolean; silentMs: number; rev: number; branch: number; queued: number;
+  };
+  diagnostics(): Record<string, unknown>;
+}
+
+export class Relay implements TableRelay {
   private url: string;
   private hooks: NetHooks;
   private ws: WebSocket | null = null;

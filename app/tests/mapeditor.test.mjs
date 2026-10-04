@@ -9,6 +9,10 @@
 //    mission orphans every map authored for it with no error anywhere -- the
 //    same failure class as a mis-keyed keyword override in the reference data.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 const src = readFileSync(new URL('../src/mapeditor.ts', import.meta.url), 'utf8');
 // mapeditor.ts imports only a TYPE from types.ts, so stripping imports leaves a
@@ -221,10 +225,14 @@ const matchCode = matchSrc
   .join('\n');
 ok('and never reads a custom: map', !/custom:/.test(matchCode));
 ok('nor loads one from storage', !/loadCustomMap/.test(matchCode));
-ok('picking a map carries its size', /grids: gridsOf\(doc\)/.test(matchSrc));
-ok('picking a Task resolves the map layer', /tableZonesFor\(doc, m\.id\)/.test(matchSrc));
+// What a map or a Task picked configures the table with is tableconfig.ts
+// since 2026-10-01 (a table set up with no lobby sends the same payloads): the
+// lobby sends them, and the size and the layer are resolved there.
+const tableConfigSrc = readFileSync(new URL('../src/tableconfig.ts', import.meta.url), 'utf8');
+ok('picking a map carries its size', /map: mapId, grids: gridsOf\(doc\)/.test(tableConfigSrc) && /\.\.\.mapConfig\(data, id, state\.mission\)/.test(matchSrc));
+ok('picking a Task resolves the map layer', /tableZonesFor\(doc, m\.id\)/.test(tableConfigSrc) && /\.\.\.missionConfig\(data, state\.map, id \|\| null\)/.test(matchSrc));
 const hudSrc2 = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
-ok('the Match Centre draws an authored map terrain', /function mapPieces\(/.test(hudSrc2));
+ok('the Match Centre draws an authored map terrain', /export function mapPieces\(/.test(turnSrc) && /board\.renderTerrain\(turn\.mapPieces\(ctx\.data, s\.map\)/.test(hudSrc2));
 ok('and draws the resolved zones', /s\.zones\?\.length/.test(hudSrc2));
 
 // ---------- E5: the scaled drafts ----------
@@ -312,7 +320,9 @@ ok('and startDeployPlacement gates on that same function', /const shape = overla
 
 // the Match Centre: deployCellsFor is the gate there.
 const hud3 = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
-const gate = hud3.slice(hud3.indexOf('export function deployCellsFor'), hud3.indexOf('export function deployCellsFor') + 1400);
+// Read in turn.ts since 2026-10-01, which the page hands its board to.
+const gate = turnSrc.slice(turnSrc.indexOf('export function deployCellsFor'), turnSrc.indexOf('export function deployCellsFor') + 1400);
+ok('the Match Centre lights the Grids turn.ts reads', /export const deployCellsFor = turn\.deployCellsFor;/.test(hud3));
 // It reads the engine's own zone (tasks.ts deployGrids; audit Phase 6, A3), so
 // that is run here rather than read.
 const zd = { deployments: [{ id: 'strips', black: { from: 'A1', to: 'L2' }, white: { from: 'A11', to: 'L12' } }], missionDeployment: {} };
@@ -365,7 +375,8 @@ for (const m of (shipped.maps ?? []).filter((x) => /^draft-/.test(x.id))) {
 
 // The senders must not throw the battlefield's deployment away when the Main
 // Task is cleared. This is the exact regression the sweep found in BOTH pages.
-for (const [f, why] of [['main.ts', 'freeplay'], ['match.ts', 'the Match Centre']]) {
+// The Match Centre's senders are tableconfig.ts's two payloads since 2026-10-01.
+for (const [f, why] of [['main.ts', 'freeplay'], ['tableconfig.ts', 'the Match Centre']]) {
   const s = readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
   const bad = /deployZones:\s*\w+\s*\?\s*tableDeployFor\([^)]*\)\s*:\s*null/.test(s);
   ok(`${why} keeps the map's Deployment Zones when no Task is chosen`, !bad);

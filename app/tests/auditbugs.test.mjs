@@ -23,8 +23,13 @@ const bare = [...hud.matchAll(/^[ \t]*ctx\.send\([^\n]*\);[ \t]*\n(?:[ \t]*\/\/[
 check('no Match Centre note follows a send whose result it never read', bare, []);
 check('the drag note waits for both of its commands',
   /const paidTow = ctx\.send\([^\n]*\)\.ok;\s*const towed = ctx\.send\([^\n]*\)\.ok;\s*if \(paidTow && towed\) ctx\.noteNow\(/.test(hud), true);
+// The Counter-roll's sender is contest.ts since 2026-10-01 (the Match Centre
+// and a computer seat share it): the same two rules, read where it lives.
+const contest = src('../src/contest.ts');
+check('nor does the Counter-roll\'s sender',
+  [...contest.matchAll(/^[ \t]*send\([^\n]*\);[ \t]*\n(?:[ \t]*\/\/[^\n]*\n)*[ \t]*(?:[a-zA-Z]+ = [^\n]*;\n[ \t]*)?say\(/gm)].map((m) => contest.slice(0, m.index).split('\n').length), []);
 check('a won Counter-roll sends every command and speaks only if all landed',
-  /let won = true;\s*for \(const cmd of win\.cmds\) won = ctx\.send\(cmd\)\.ok && won;\s*if \(won\) ctx\.noteNow\(/.test(hud), true);
+  /let won = true;\s*for \(const cmd of win\.cmds\) won = send\(cmd\)\.ok && won;\s*if \(won\) say\(/.test(contest), true);
 check('the detonation note on terrain needs a projectile and a landed command',
   /if \(proj && ctx\.send\(\{ kind: 'destroyTerrain'[^\n]*\}\)\.ok\) \{\s*ctx\.noteNow\('A Container is Breakable/.test(hud), true);
 

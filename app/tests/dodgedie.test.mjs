@@ -7,6 +7,10 @@
 // must route it into the helper, and matchhud.ts must bind the mirror button —
 // a gap in any one of them shows up as a button that does nothing.
 import { readFileSync } from 'node:fs';
+// The defending player's answers are sent by defender.ts defenderAct since
+// 2026-10-01 (the Match Centre's mirror and a computer seat share it), so the
+// pins that named them in match.ts read it there. defender.test.mjs drives it.
+const defenderSrc = readFileSync(new URL('../src/defender.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -45,9 +49,9 @@ check('and only when this client owns the attack',
 check('the remote defender is offered it in the same window the attacker sees',
   /sendAct\('dodgeenhance'\)/.test(combat), true);
 check('the mirror sends it rather than applying it here',
-  /act === 'dodgeenhance'/.test(match), true);
+  [/act === 'dodgeenhance'/.test(defenderSrc), /return defenderAct\(\{ data, state, seat, send, roll: rollDefensePool, say, done: render \}, act, arg\);/.test(match)], [true, true]);
 check('and spends the Token by its own command, then declares',
-  /act === 'dodgeenhance'[\s\S]*?kind: 'spendCommand'[\s\S]*?kind: 'dodgeEnhance'/.test(match), true);
+  /act === 'dodgeenhance'[\s\S]*?kind: 'spendCommand'[\s\S]*?kind: 'dodgeEnhance'/.test(defenderSrc), true);
 check('and the one-screen game gets the same button',
   /Dodge Enhancement: spend a Command Token/.test(combat), true);
 check('which also spends the Token before declaring',

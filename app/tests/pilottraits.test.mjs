@@ -13,6 +13,14 @@
 // The dice faces are the shipped ones: red face 7 and yellow face 6 are a solid
 // {Eye}, which is what makes these rolls reachable in a real game at all.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The defending player's answers are sent by defender.ts defenderAct since
+// 2026-10-01 (the Match Centre's mirror and a computer seat share it), so the
+// pins that named them in match.ts read it there. defender.test.mjs drives it.
+const defenderSrc = readFileSync(new URL('../src/defender.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 import { FOOTPRINT } from './_footprint.mjs';
 
 const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
@@ -468,7 +476,7 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   check('surface 4 is gone, because the mirror IS surface 1 now',
     /focusIsFree\(/.test(mirror), false);
   check('and the defender reaches surface 1 by sending their declare',
-    /act === 'focususe'/.test(mirror), true);
+    [/act === 'focususe'/.test(defenderSrc), /return defenderAct\(/.test(mirror)], [true, true]);
 
   // The old gates are gone rather than merely joined by a new one.
   check('no surface still asks the wrong question',
@@ -485,7 +493,8 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   check('every surface still sends the same plain focus command',
     (combat.match(/kind: 'focus'/g) ?? []).length
     + (hud.match(/kind: 'focus'/g) ?? []).length
-    + (mirror.match(/kind: 'focus'/g) ?? []).length, 4);
+    + (mirror.match(/kind: 'focus'/g) ?? []).length
+    + (defenderSrc.match(/kind: 'focus'/g) ?? []).length, 4);
   check('and the Counter-roll declare pays through the same debit',
     // With the board since the Phase 2 audit (D4): Karl Fried pays a Bit's.
     // The Whistle's Command Token is the one alternative (audit Phase 3, D9).
@@ -625,7 +634,7 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
     /canPerform\(o, use\?\.action \?\? shaped, cmd\.partKey \|\| a\.id, startOpts\(data, state\.tokens, t, a\)\)/.test(cmds), true);
   // The Action priced in its Stance goes to canPerform since the Phase 2 audit
 // (D2: ZHRA-102_A is Short in Offensive); the options are read off the printed one.
-check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, key, startOpts\(ctx\.data, ctx\.state\.tokens, t, a\)\)/.test(hud), true);
+check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, key, startOpts\(data, state\.tokens, t, a\)\)/.test(turnSrc), true);
   check('reader 3 — the freeplay guide passes it, in both of its call sites',
     (guide.match(/startOpts\(this\.data, s\.tokens, t, /g) ?? []).length, 2);
   check('and the SPEND agrees with the check that allowed it',
@@ -684,9 +693,9 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
   check('the freeplay landing gate reads the trait-aware reach',
     /const range = projectileReach\(data, t, m\.action, launchOpp\(t\.uid\)\);/.test(mainSrc), true);
   check('and so does its mirror in the Match Centre',
-    /const range = projectileReach\(ctx\.data, t, a, oppFor\(ctx, t\.uid\)\);/.test(hud), true);
+    /const range = projectileReach\(data, t, a, o\?\.uid === t\.uid \? o : null\);/.test(turnSrc), true);
   check('no landing gate still reads a raw a.range',
-    [/const range = m\.action\.range \?\? 0;/.test(mainSrc), /const range = a\.range \?\? 0;/.test(hud)], [false, false]);
+    [/const range = m\.action\.range \?\? 0;/.test(mainSrc), /const range = a\.range \?\? 0;/.test(hud + turnSrc)], [false, false]);
   // The two "within Range N" labels beside them, which a player reads to decide
   // whether the gate is working.
   check('both "within Range N" labels agree with their gate',
@@ -745,7 +754,7 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
     (mainSrc.match(/phaseThrough: phasesThroughUnits\(data, state\.tokens, t\)/g) ?? []).length, 1);
   // One builder now: the overlay reads moveOptsFor (audit Phase 7, P7D 6).
   check('and the Match Centre fills it in its one builder',
-    (hud.match(/phaseThrough: phasesThroughUnits\(ctx\.data, ctx\.state\.tokens, t\)/g) ?? []).length, 1);
+    (turnSrc.match(/phaseThrough: phasesThroughUnits\(data, state\.tokens, t\)/g) ?? []).length, 1);
   // Route only: the landing test is untouched, so a phased Grid is crossable
   // but never a place to stop.
   // `found`, since the search runs over Grid and Link spent together (audit
@@ -1002,7 +1011,7 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
     /export function crushTargets\(\s*t: Token,\s*c: number,\s*r: number,\s*terrain: TerrainPiece\[\],\s*tokens: Token\[\],\s*\): CrushVictims \| null/.test(rules), true);
   // Five: the Match Centre overlay's own copy went with its builder (P7D 6).
   check('so all five call sites are unchanged and cannot disagree',
-    ((src('main.ts') + src('matchhud.ts')).match(/crushTargets\(t, /g) ?? []).length, 5);
+    ((src('main.ts') + src('matchhud.ts') + turnSrc).match(/crushTargets\(t, /g) ?? []).length, 5);
   // The RULING, pinned: the trait adds a target class, not a crusher class.
   check('the "only a Large Unit Crushes" gate is untouched',
     /if \(t\.size !== 3 \|\| t\.aerial\) return null;/.test(rules), true);
@@ -1039,7 +1048,7 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
     (mainSrc.match(/const away = flying \|\| t\.aerial \? undefined : breakAwayCost\(/g) ?? []).length, 1);
   // One builder now: the overlay reads moveOptsFor (audit Phase 7, P7D 6).
   check('and the Match Centre does it in its one builder',
-    (hud.match(/breakAwayCost\(ctx\.data, t, ctx\.state\.tokens, terrain\)/g) ?? []).length, 1);
+    (turnSrc.match(/breakAwayCost\(data, t, state\.tokens, terrain\)/g) ?? []).length, 1);
   // The disclosure has to reach both too, or the "or 1 Link" alternative exists
   // on one page only — which for this rule is the same as not existing.
   check('and both boards print the same Break Away sentence from the same helper',
@@ -1213,8 +1222,11 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
   // Both answers travel, because a decline has to close the question on the far
   // screen too — the offer lives in shared state precisely so both seats agree.
   // Yoyu is whichever side the window names.
+  // The sender is contest.ts contestAct since 2026-10-01 (the Match Centre
+  // and a computer seat share it); the page hands it its own send.
   check('and sends BOTH answers as the same command',
-    /const yoyu = arg\?\.uid === init\.uid \? init : resp;[\s\S]{0,120}?kind: 'provoke', seat: yoyu\.side, uid: yoyu\.uid, targetUid: other\.uid, take \}/.test(hudSrc), true);
+    [/const yoyu = arg\?\.uid === init\.uid \? init : resp;[\s\S]{0,120}?kind: 'provoke', seat: yoyu\.side, uid: yoyu\.uid, targetUid: other\.uid, take \}/.test(src('contest.ts')),
+      /sendContestAct\(\{/.test(hudSrc)], [true, true]);
   check('and offers it to YOYU\'s seat, whichever side that is',
     /take\.disabled = !this\.mayPress\(yoyuWho\);/.test(combatSrc), true);
 

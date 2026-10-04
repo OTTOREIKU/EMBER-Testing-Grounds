@@ -1,0 +1,490 @@
+// WHAT THINGS ARE WORTH to the Tactician (AI-OPPONENT-PLAN.md, section 6).
+//
+// One currency: Victory Points. The Brawler weighs an attack by what it
+// destroys and nothing else, in numbers of its own (150, 50, 25), so it can
+// win every fight on a board and lose the game on it. Here a zone held, a
+// Part destroyed and a Commander lost are the same kind of number, and an
+// answer is chosen by adding them up.
+//
+//   - A Victory Point is 1.
+//   - A unit is worth what its cards cost, at a rate (`material`): the points
+//     still standing in it. That is not Victory Points by any rule of the
+//     game; it is what a squad's guns go on to earn or deny, as an estimate.
+//   - The mission is read off the view: what is banked, and what the Main
+//     Task will go on paying if the board stays as it stands.
+//
+// Everything here is arithmetic on a view and on odds the engine worked out.
+// No rule is read here and no card is known here: a Part is worth its points
+// whatever it is. The numbers are the weights, and they are data (section 7:
+// a tuner plays one set of them against another).
+import type { Forecast, SeatView, UnitView } from '../seat';
+
+export interface Weights {
+  // Victory Points for each point of a unit's cards lost. A 400-point squad
+  // destroyed is counted as 12.
+  material: number;
+  // The share of a Part's worth (a Drone's whole worth) that is gone when it
+  // goes from Intact to Damaged: it still works, and is one Penetration
+  // nearer to not working. At a half, two attacks that each Damage are worth
+  // together what they are worth one after the other (the second finishing
+  // what the first began), so the odds of each can simply be added.
+  damaged: number;
+  // One Link stripped from a Mech.
+  link: number;
+  // What a Focus must add to an attack (or take off one) before a Link is
+  // spent on it: a Link is a reroll not there for the next attack.
+  focus: number;
+  // VIP: the enemy Commander destroyed pays the Main Task's Victory Points
+  // and ends the game, so it counts in full; its own Commander lost counts
+  // for more, because nothing can be won back after it.
+  vipKill: number;
+  vipOwn: number;
+  // VIP: the chance a game goes the distance with both Commanders standing,
+  // which is when a destroyed Part of one pays.
+  vipPart: number;
+  // What a Victory Point a round later is worth of one now: a Control dial
+  // goes on paying, but the other squad has a round to take the zone back.
+  missionFuture: number;
+  // The share of a zone's worth that is at risk when it is held by its dial
+  // alone, with nobody inside it and an enemy unit near enough to walk in. A
+  // unit standing in the zone keeps the dial whoever comes; a unit that has
+  // walked off has left it to be taken.
+  contest: number;
+  // How much of what an enemy could do to a unit counts against standing
+  // there: when that enemy's turn is still to come this round, and when it
+  // comes only next round (by when the unit may have moved again).
+  exposure: number;
+  exposureLater: number;
+  // A Commander on a VIP mission also counts what an enemy Mech that cannot
+  // attack it there THIS round could do NEXT round, having walked up meanwhile:
+  // this share of it. And that round is an exchange: this much of the best the
+  // Commander could do to one of them, from where it stands, is taken off
+  // first (`riposte`: at 0 nothing is, and it hides from any Mech that could
+  // walk up; at 1 a Commander that outguns the one Mech coming stays).
+  // MEASURED (plan section 12, a1 to h3): at 0 RDL's Commander turns timid (100
+  // to 89 of 100 against the Brawler); at 1 UN's stands its ground and is
+  // caught (84 to 75); at a half neither happens and UN gains ten in a hundred
+  // against the eager policy.
+  ahead: number;
+  riposte: number;
+  // What an attack it could make at its NEXT turn from where an answer leaves
+  // it is worth of the same attack made now: for a Mech, a round away; for a
+  // Drone moved by a Command, which fires in the same round's Automatic Phase.
+  future: number;
+  futureSoon: number;
+  // A Projectile launched: its blast lands in the Delay Phase, on a target
+  // that may have moved.
+  launch: number;
+  // An Electronic Attack: the chance it is won, as a share of what the target
+  // could do with the Firing it would lose; and the share of a unit's worth
+  // that stands for that when nothing says what it could do.
+  jam: number;
+  jamIdle: number;
+  // An ENEMY that carries an Electronic Attack is worth what it would take
+  // away: this share of what this squad's best gun does in a round, at the
+  // chance of the Counter-roll (`jam`), counted as its "firepower" in what it
+  // would go on to do (`threat`).
+  jammer: number;
+  // THE WALK TO A ZONE the Main Task scores that is not its squad's: this
+  // share of what the zone would pay from the round the unit could be standing
+  // in it (a zone two activations off pays two rounds less), a zone the other
+  // squad's dial names counting twice, since taking it also ends what it
+  // pays them. The share is less than one because the walk may not end as
+  // planned. `zoneStep` is a little for each Grid, to choose between two
+  // Grids that are the same number of activations away.
+  zonePull: number;
+  zoneStep: number;
+  // A zone another unit of the squad would be standing in sooner could be left
+  // to that unit: what is left of its worth to this one. At 1 (measured: the
+  // best) nothing is shared out and every unit walks for the zone worth most
+  // to it. And a zone an enemy unit stands in cannot be taken while it stands
+  // there: what is left of its worth to walk to meanwhile.
+  zoneShare: number;
+  zoneHeld: number;
+  // An enemy unit destroyed where it stands in a zone holds the zone no longer:
+  // this share of what the Main Task would gain on the board without it, for
+  // the chance the attack destroys it before the round ends.
+  holder: number;
+  // The walk to a fight, for each Grid still to go to its own Range of an
+  // enemy: a flat amount (`contactStep`) and a share of what destroying that
+  // enemy is worth (`approach`). With no share of the prize the enemy walked
+  // to is the nearest; with one, it is the enemy worth most for the walk.
+  contactStep: number;
+  approach: number;
+  // A Remote Access: the chance its Counter-roll against the Terminal is won,
+  // as a share of what the Terminal pays. MEASURED at 0.5 on Terminals:
+  // Receive Signal (plan section 12, tm1b to tm3b): 345 of 400 against the
+  // Brawler, where 0 (the zones alone, held as each round ends) wins 366. The
+  // Tick it costs is an attack not made. 0 until it is priced by the roll's
+  // own odds and by what the Tick would otherwise have done.
+  access: number;
+  // On a Black Box Task that pays for a Box only in one zone, a Box that is
+  // not there yet, as a share of one that is: what a bearer still on its way
+  // loses by a Penetration, and what the walk to fetch a Box lying loose is
+  // worth of the walk that carries one home. The Task itself is priced as the
+  // board stands (missionOf): a Box outside the zone pays nothing there.
+  carry: number;
+  // A Black Box pays once, as the game ends: what a Victory Point of that is
+  // worth of one paid now, for each round still to play. And what a walk for a
+  // Box (to fetch it, to carry it home) is worth for each activation it still
+  // takes: a long walk is less sure than a short one, and nothing else tells
+  // two Grids apart on a Task that pays the same whenever the walk is done.
+  boxFuture: number;
+  walkTurn: number;
+  // A unit carrying a Box with a hand still free: whether the walk to fetch a
+  // second one counts the Boxes it has (1: fetched on the way home, both pay)
+  // or the new one alone (0). And what a Box lying loose is worth to a unit
+  // when another of its squad would have it sooner: 1 is the whole of it to
+  // every unit.
+  boxMore: number;
+  boxShare: number;
+  // A Link restored with nothing better to do.
+  restore: number;
+  // Deploying a Commander: what each Grid of the other squad's Deployment
+  // Zone that would see it costs. The units are not down yet; the lanes are.
+  lane: number;
+  // Acting one Timing sooner, on the dial: enough to choose between two plans
+  // worth the same, and no more.
+  tempo: number;
+  // What a plan loses for starting on a Timing its dial only BORROWS (from an
+  // ally's aura, on the board as it stands): the lender may not be there when
+  // the Opportunity comes. MEASURED at 0.5: as RDL on the alley it gains four
+  // games in a hundred against the eager policy and loses nine against the
+  // Brawler (the Movement dial it sends a Sprint to acts after every Firing
+  // dial). 0 until something better than a flat charge is found.
+  borrowed: number;
+  // What an enemy would go on to do is part of what destroying it is worth:
+  // this share of its best attack on the squad as the board stands, for each
+  // of up to `threatRounds` rounds it has left to make one in.
+  threat: number;
+  threatRounds: number;
+  // What a plan must be better by before a unit leaves where it stands.
+  better: number;
+  // Two things switched for measuring. The dial: every Timing offered is asked
+  // what it would open (1), or only those the Mech's own Actions are printed
+  // with, and Melee and Movement (0). MEASURED: with every Timing asked, RDL on
+  // the alley wins 89 of 100 against the Brawler where it wins 99 without (the
+  // extra dials are the ones that open only borrowed Timings). And a zone
+  // entered by a Maneuver and the Movement Action after it is planned as one
+  // move (1: 92 of 100 against the eager policy, 88 without) or left to the
+  // walk (0).
+  dialAll: number;
+  entry: number;
+  // A Tactics Card is used once a game (FAQ P2): what playing one must gain
+  // over keeping it, where what it would do is weighed (Hit and Run,
+  // Additional Instructions, System Repair, Tactical Disposition; M8.2q).
+  // UNMEASURED.
+  card: number;
+  // WHAT WINS THE GAME (M9.6): Victory Points for the game itself, on top of
+  // the Victory Points it is won by, at how sure the margin the Main Task is
+  // heading for is to hold (`stakesOf`); and the Victory Points of doubt in
+  // that margin in the last round, four times as much for each round before
+  // it. At 0 nothing is added. MEASURED and NOT ADOPTED with the doubt growing
+  // as the square of the rounds left (plan, M9.6: early in the game it was
+  // the Main Task weighed a quarter more, and turned one decision on one
+  // board); the fourfold growth leaves it to the last rounds.
+  stakes: number;
+  stakesSpread: number;
+  // A walk for the Main Task (to a zone, for a Box) priced with the game on
+  // top of the Victory Points it would bring (`swingOf`), at 1; at 0 by the
+  // Victory Points alone. The walk does not go through `missionOf`, so without
+  // it `stakes` never reaches a walk that takes more than one activation.
+  stakesWalk: number;
+  // A FOCUS ON A DEFENCE (OTTO's playtest, 2026-10-03: a Link spent to reroll
+  // a hit that could only have Damaged a Part with Structure left): the share
+  // of what a Part Damaged costs (`damaged`) that counts when a defence asks
+  // whether a reroll is worth a Link, the Part still working after it (1:
+  // all of it, as every other question counts it). And what the Link costs
+  // over `focus` when spending it leaves the Mech one Link from Shutdown,
+  // in multiples of `focus` (0: no more than any other Link). ADOPTED at 0.5
+  // and 2 (2026-10-03, night): the games the same (the copied games head to
+  // head 99 of 200, the mirror 100; random squads paired 129 of 297 against
+  // 130), the reroll OTTO saw gone (of 40 copied games' defence Focuses, those
+  // that bought off a Damage alone 7 to 2, those leaving one Link 10 to 6).
+  focusDamaged: number;
+  focusLow: number;
+  // A LOAD LENT (a Carrier, 162; OTTO's playtest, 2026-10-03): what standing in
+  // Contact with an Ally Mech is worth to a Drone carrying a Load, as a share
+  // of what the Load adds to that Mech's best deed at its next turn (the
+  // engine's odds with the Drone beside it, against them without it). At 0 a
+  // Load is no reason to stand anywhere. ADOPTED at 2 (2026-10-03, night):
+  // against the Ace on the copied games 117 of 200 at 1 and at 2 (the mirror
+  // 100), all of it UN on the Alley, 44 of 50 against 27 (20 seeds turned to a
+  // win, 3 from one): the Carrier set down behind the Wild Cat lends it its
+  // Cooler all game; the VIP board's results the same.
+  lend: number;
+  // AN ENEMY WITH A BETTER TARGET (OTTO's playtest, 2026-10-03: the Raven
+  // backed away from a wall it could jam from): what an enemy could do to a
+  // unit counts against standing there only as often as that unit is worth
+  // shooting against the best other target of this squad the enemy has in its
+  // sights, as (this unit's worth to it / the other's) to this power where the
+  // other is worth more. At 0 every enemy in reach shoots this unit. ADOPTED
+  // at 1 with `lend` 2 (2026-10-03, night): alone 99 of 200 head to head (the
+  // mirror 100) and 138 of 300 random squads paired against 132; with `lend`
+  // 118 of 200; with `lend` on random squads 140 of 300 against 132 (14 seeds
+  // turned to a win, 6 from one).
+  decoy: number;
+}
+
+export const TACTICIAN: Weights = {
+  material: 0.03,
+  damaged: 0.5,
+  link: 0.15,
+  focus: 0.3,
+  vipKill: 1,
+  vipOwn: 1.5,
+  vipPart: 0.5,
+  missionFuture: 0.85,
+  contest: 0,
+  exposure: 0.8,
+  exposureLater: 0.35,
+  ahead: 0.35,
+  riposte: 0.5,
+  future: 0.45,
+  futureSoon: 0.9,
+  launch: 0.8,
+  jam: 0.5,
+  jamIdle: 0.25,
+  jammer: 0,
+  zonePull: 0.6,
+  zoneStep: 0.02,
+  zoneShare: 1,
+  zoneHeld: 0.5,
+  holder: 0.75,
+  contactStep: 0.04,
+  approach: 0,
+  access: 0,
+  carry: 0.5,
+  boxFuture: 0.85,
+  walkTurn: 1,
+  boxMore: 0,
+  boxShare: 1,
+  restore: 0.1,
+  lane: 0.15,
+  tempo: 0.01,
+  borrowed: 0,
+  threat: 0.5,
+  threatRounds: 2,
+  better: 0.01,
+  dialAll: 0,
+  entry: 1,
+  card: 0.3,
+  stakes: 0,
+  stakesSpread: 1,
+  stakesWalk: 0,
+  focusDamaged: 0.5,
+  focusLow: 2,
+  lend: 2,
+  decoy: 1,
+};
+
+// The share of a Part still standing: a Damaged Part works, and is half way
+// to gone.
+const standingShare = (state: string, w: Weights): number => (state === 'destroyed' ? 0 : state === 'damaged' ? 1 - w.damaged : 1);
+
+// WHAT A UNIT'S LOSS COSTS ITS SQUAD, in Victory Points: the points still
+// standing in it, and on a VIP mission the Commander's own price.
+export function unitWorth(u: UnitView, view: SeatView, w: Weights): number {
+  if (!u.alive) return 0;
+  const listed = u.parts.reduce((n, p) => n + p.points, 0);
+  const standing = u.parts.reduce((n, p) => n + p.points * standingShare(p.state, w), 0);
+  // What its Parts do not account for (a pilot) stands while it does.
+  const material = w.material * (standing + Math.max(0, u.points - listed));
+  const task = view.task;
+  const lead = task?.family === 'vip' && u.commander ? task.vp * (u.side === view.seat ? w.vipOwn : w.vipKill) : 0;
+  return material + lead;
+}
+
+// What one more Part of a Mech destroyed costs its squad. A Mech left with
+// two Parts leaves the board (Integrity Loss), so a Part is not a fifth of the
+// Mech: it is one of the few it can lose before it is lost whole, and is
+// priced as that share of it. On a VIP mission a Commander's Part also pays at
+// the round limit.
+function partWorth(u: UnitView, view: SeatView, w: Weights, more: number): number {
+  const live = u.parts.filter((p) => p.state !== 'destroyed').length;
+  if (!live) return 0;
+  const task = view.task;
+  return (unitWorth(u, view, w) + more) / Math.max(1, live - 2) + (task?.family === 'vip' && u.commander ? task.perPart * w.vipPart : 0);
+}
+
+// WHAT AN ATTACK IS WORTH TO WHOEVER MAKES IT, by its odds: the target
+// destroyed, a Part of it destroyed short of that, a Part Damaged, Link
+// stripped. Whose attack it is does not matter: an enemy's attack on one of
+// this squad's units is worth to the enemy what it costs this squad, which is
+// how standing somewhere is priced. `more` is what the target is worth to
+// whoever destroys it beyond what it costs its squad to lose: what it would
+// have gone on to do.
+export function gainOf(f: Forecast, target: UnitView, view: SeatView, w: Weights, more = 0): number {
+  const whole = unitWorth(target, view, w) + more;
+  if (target.kind !== 'mech') return f.kill * whole + f.damage * w.damaged * whole;
+  const part = partWorth(target, view, w, more);
+  // A destroyed Torso is a kill and a destroyed Part both: counted once.
+  const short = Math.max(0, f.destroy - f.kill);
+  return f.kill * whole + short * part + f.damage * w.damaged * part + f.link * w.link;
+}
+
+// WHAT THE MAIN TASK IS WORTH AS THE BOARD STANDS, to the seat whose view it
+// is: the Victory Points banked, its own less the other squad's, and what the
+// Task will go on to pay if nothing moved. For an Occupation that is each
+// zone whose Control dial would name a squad when the round ended (whoever
+// holds it now, or failing anyone the squad the dial already names), paid
+// this round if this round pays and every round after, each round further off
+// counting for less. And what the game is worth on top (`stakesOf`).
+export function missionOf(view: SeatView, w: Weights): number {
+  const margin = marginOf(view, w);
+  return margin + stakesOf(view, w, margin);
+}
+
+// What a side has standing for the tiebreak (5.2.4): its Mech Parts not
+// destroyed and its Drones, on the board, Low Value units left out (as
+// tasks.ts gameResult counts them).
+export function standingFor(view: SeatView, side: SeatView['seat']): number {
+  let n = 0;
+  for (const u of view.units) {
+    if (u.side !== side || !u.alive || !u.deployed || u.lowValue) continue;
+    n += u.kind === 'mech' ? u.parts.filter((p) => p.state !== 'destroyed').length : u.kind === 'drone' ? 1 : 0;
+  }
+  return n;
+}
+
+// WHAT WINS THE GAME (M9.6; plan section 0, open item 9). Victory Points decide
+// it, and level on them the Mech Parts and Drones left on the board (5.2.4).
+// The rest of this price list is in Victory Points, so to it a Box is four
+// whether the game is level or lost by twenty; but to a squad that would lose
+// a level game on its Parts, the Box that ends it 4 to 0 is the game. So the
+// game itself is worth `stakes` Victory Points (and losing it as much against),
+// at how sure the margin the Main Task is heading for is to hold: the tanh of
+// that margin, put half a Victory Point toward whoever would win a level game,
+// over the doubt there is in it (`stakesSpread` for the last round, and four
+// times as much for each round to play before it).
+export function stakesOf(view: SeatView, w: Weights, margin: number): number {
+  if (!w.stakes) return 0;
+  const tie = Math.sign(standingFor(view, view.seat) - standingFor(view, view.other));
+  const doubt = w.stakesSpread * 4 ** Math.max(0, view.roundLimit - view.round);
+  return w.stakes * Math.tanh((margin + tie / 2) / doubt);
+}
+
+// What a gain of `gain` Victory Points on the margin the Main Task is heading
+// for is worth with the game on top of it: the gain, and what it does to the
+// game's stakes. Exactly the gain while `stakes` is 0.
+export function swingOf(view: SeatView, w: Weights, margin: number, gain: number): number {
+  return w.stakes ? gain + stakesOf(view, w, margin + gain) - stakesOf(view, w, margin) : gain;
+}
+
+// The Main Task's worth in Victory Points alone (`missionOf` before the game's).
+export function marginOf(view: SeatView, w: Weights): number {
+  const banked = view.vp[view.seat] - view.vp[view.other];
+  const task = view.task;
+  if (task?.family === 'terminal') return banked + task.vp * terminalLead(view, w, task.fromRound);
+  if (task?.family === 'blackbox') {
+    let lead = 0;
+    for (const u of view.units) lead += (u.side === view.seat ? 1 : -1) * boxesOf(u, view);
+    return banked + task.vp * lead * endsIn(view, w);
+  }
+  if (!task || task.family !== 'control') return banked;
+  if (task.cadence !== 'per-round') {
+    return banked + task.vp * zoneLead(view, w) * (view.round >= view.roundLimit ? 1 : w.missionFuture ** (view.roundLimit - view.round));
+  }
+  let rounds = 0;
+  for (let r = Math.max(view.round, task.fromRound); r <= view.roundLimit; r++) rounds += w.missionFuture ** (r - view.round);
+  return banked + task.vp * zoneLead(view, w) * rounds;
+}
+
+// A Main Task that is scored by standing in the zones it names: an Occupation,
+// and Terminals (whoever holds a Terminal's zone as the round ends accesses it).
+export const zoned = (view: SeatView): boolean => view.task?.family === 'control' || view.task?.family === 'terminal';
+
+// TERMINALS, to the seat whose view it is, in rounds of pay. A Terminal pays
+// whoever has accessed it as the round ends: by Remote Access already, or
+// failing that whoever holds its zone then. Nothing is kept from one round to
+// the next (there is no dial): every Terminal opens again, and next round it
+// is whoever holds the zone again, each round further off counting for less.
+function terminalLead(view: SeatView, w: Weights, fromRound: number): number {
+  let now = 0;
+  let held = 0;
+  for (const z of view.zones) {
+    if (!z.scoring) continue;
+    const lead = z.holder ? (z.holder === view.seat ? 1 : -1) : 0;
+    held += lead;
+    now += z.accessed ? (z.accessed === view.seat ? 1 : -1) : lead;
+  }
+  let later = 0;
+  for (let r = Math.max(view.round + 1, fromRound); r <= view.roundLimit; r++) later += w.missionFuture ** (r - view.round);
+  return (view.round >= fromRound ? now : 0) + held * later;
+}
+
+// What a Victory Point paid as the game ends is worth of one paid now.
+const endsIn = (view: SeatView, w: Weights): number => w.boxFuture ** Math.max(0, view.roundLimit - view.round);
+
+// The Black Boxes a unit carries, and how many of them the Task would pay for
+// as the unit stands: every one, or where the card names a zone, every one
+// while the unit stands in that zone and none while it does not. Nothing for
+// a unit that is not standing.
+function boxesHeld(u: UnitView, view: SeatView): number {
+  return u.alive && view.task?.family === 'blackbox' ? view.boxes.filter((b) => b.bearer === u.uid).length : 0;
+}
+
+function boxesOf(u: UnitView, view: SeatView): number {
+  const held = boxesHeld(u, view);
+  const name = view.task?.scoringZone;
+  if (!held || !name) return held;
+  const zone = view.zones.find((z) => z.name === name || z.id === name);
+  return zone?.cells.includes(`${u.grid.col},${u.grid.row}`) ? held : 0;
+}
+
+// WHAT THE BOXES A UNIT CARRIES ARE WORTH TO ITS SQUAD, in Victory Points:
+// what a Penetration costs it, since a bearer that is Penetrated drops them.
+// A Box that would pay where its bearer stands counts whole; one that has
+// still to be carried to the zone the card names counts for the share `carry`.
+export function carried(u: UnitView, view: SeatView, w: Weights): number {
+  const task = view.task;
+  const held = boxesHeld(u, view);
+  if (!task || !held) return 0;
+  const paying = boxesOf(u, view);
+  return task.vp * (paying + (held - paying) * w.carry) * endsIn(view, w);
+}
+
+// A unit that can take a zone, or keep the other squad from taking it: on the
+// board, not Low Value, and for a Mech not in Shutdown (5.3.2).
+export const holds = (u: UnitView): boolean =>
+  u.alive && u.deployed && !u.lowValue && u.kind !== 'projectile' && !(u.kind === 'mech' && u.stance === 'shutdown');
+
+// WHAT A ZONE PAYS FROM A ROUND ON, to the squad whose dial names it from that
+// round's End Phase to the last: a round's pay for each round the Main Task
+// scores, each round further off than this one counting for less. A Task that
+// pays once, at the end, pays that once if the zone is held by then.
+export function payFrom(arrives: number, view: SeatView, w: Weights): number {
+  const task = view.task;
+  if (!task || arrives > view.roundLimit) return 0;
+  if (task.cadence !== 'per-round') return (task.family === 'blackbox' ? w.boxFuture : w.missionFuture) ** Math.max(0, view.roundLimit - view.round);
+  let rounds = 0;
+  for (let r = Math.max(arrives, task.fromRound, view.round); r <= view.roundLimit; r++) rounds += w.missionFuture ** (r - view.round);
+  return rounds;
+}
+
+// How far a unit could go toward a zone in one activation: its own Movement,
+// and for a Mech the Movement Action it carries on top (a Sprint).
+export function stride(u: UnitView): number {
+  const action = u.kind === 'mech' ? Math.max(0, ...u.weapons.filter((x) => x.usable && x.type === 'Moving').map((x) => x.range)) : 0;
+  return u.move + action;
+}
+
+// The zones the Main Task scores that would be this squad's when the round
+// ended, less the other squad's. A zone somebody holds now is that squad's. A
+// zone nobody holds stays with the squad its dial names: in full while one of
+// that squad's units stands in it (nobody can take it then), and for less
+// while it stands empty with one of the other squad's near enough to walk in.
+function zoneLead(view: SeatView, w: Weights): number {
+  let lead = 0;
+  for (const z of view.zones) {
+    if (!z.scoring) continue;
+    if (z.holder) { lead += z.holder === view.seat ? 1 : -1; continue; }
+    if (!z.control) continue;
+    const cells = z.cells.map((cell) => cell.split(',').map(Number));
+    const near = (u: UnitView): number => Math.min(...cells.map(([col, row]) => Math.abs(u.grid.col - col) + Math.abs(u.grid.row - row)));
+    const kept = view.units.some((u) => u.side === z.control && holds(u) && near(u) === 0);
+    const taken = !kept && view.units.some((u) => u.side !== z.control && holds(u) && near(u) <= stride(u));
+    lead += (z.control === view.seat ? 1 : -1) * (taken ? 1 - w.contest : 1);
+  }
+  return lead;
+}

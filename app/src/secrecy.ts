@@ -209,6 +209,10 @@ export function boardFingerprint(state: GameState): string {
     // The Season Rules the table plays: they change what check() accepts (a
     // Stabilize System costing 2 Action Ticks), so a drift is a desync.
     s.season ?? null,
+    // Played without Secondary Tasks: check() then refuses a pick and closes
+    // the Tasks step without one, so a drift is a desync. Present only when
+    // set, so every table that plays them hashes exactly as it always has.
+    ...(s.noSecondary ? ['noSecondary'] : []),
     // Whose simultaneous blast resolves next (1.9): check() refuses the other's.
     s.blastLast ?? null,
     keyed(s.commandTokens as unknown as Record<string, unknown>),

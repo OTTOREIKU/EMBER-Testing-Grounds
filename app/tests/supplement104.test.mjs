@@ -8,6 +8,10 @@
 // Read against the REAL card database and the real modules, bundled, because
 // every one of these was a question of which card carries what.
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { installDom, makeEl, textOf } from './_combatdrive.mjs';
@@ -102,8 +106,11 @@ check('nor a hit on a destroyed shield',
   U.Un.denseArmorSlot(data, mech({ torso: '175', leftHand: 'ZHLA-301' }, { leftHand: 'destroyed' }), 'leftHand'), null);
 check('the P24 core too', U.Un.denseArmorSlot(data, mech({ torso: '176' }), 'torso'), 'torso');
 check('asked without a Part it still names the first carrier', U.Un.denseArmorSlot(data, both), 'torso');
+// The strip asks through denseOn since 2026-10-01 (the odds read the same
+// answer for every Part in turn); the table-dice note still asks directly.
 check('both attack-window readers pass the hit Part',
-  (combat.match(/denseArmorSlot\(this\.data, c\.defender, c\.targetPart \?\? 'main'\)/g) ?? []).length, 2);
+  [(combat.match(/denseArmorSlot\(this\.data, c\.defender, c\.targetPart \?\? 'main'\)/g) ?? []).length,
+    /const slot = this\.denseOn\(c\.targetPart \?\? 'main'\);/.test(combat), /return denseArmorSlot\(this\.data, c\.defender, slot\);/.test(combat)], [1, true, true]);
 const kwNames = (id) => (card(id).keywords ?? []).map((k) => k.en);
 check('the two Armored Cores lose the retired keyword chip', [kwNames('175'), kwNames('176')],
   [['Command Generation X'], ['Command Generation X']]);
@@ -239,7 +246,10 @@ console.log('\n1.1.3, 1.4.2 Containers');
   const hud = src('../src/matchhud.ts');
   check('the PK3 stays unless a unit is in Range or it took a Container, on both boards',
     [/const stays = !legal\.length && !burst\.terrainHit && keptWithoutTarget\(action\);/.test(main),
-      /const stays = damaging && !!a && !legal\.length && !detonateNow!\.terrainHit && keptWithoutTarget\(a\);/.test(hud)], [true, true]);
+      // Read in turn.ts detonationReading since 2026-10-01, which the panel
+      // hands what its Detonation has done so far.
+      /const stays = damaging && !!a && !legal\.length && !soFar\.terrainHit && keptWithoutTarget\(a\);/.test(turnSrc)
+        && /turn\.detonationReading\(ctx\.data, s, detonateNow!\.uid, detonateNow!\.actionId, detonateNow!\)/.test(hud)], [true, true]);
   check('taking a Container spends it, on both boards',
     [/burst\.terrainHit = true;\n\s*startDetonation\(proj, actionId\);/.test(main), /if \(detonateNow\) detonateNow\.terrainHit = true;/.test(hud)], [true, true]);
   check('an "all Units" blast destroys every Container it caught, on both boards',
@@ -262,7 +272,7 @@ console.log('\n1.1.3, 1.4.2 Containers');
   check('a Firing Action may target a Container in its reach, never one past it, nor a wall',
     U.Un.containerTargets(data, range.tokens, terrain, shooter, gun, []).map((b) => b.id), ['near']);
   check('the attack lists offer them on both boards, and a pick destroys it with the attacker named',
-    [/containerTargets\(ctx\.data, s\.tokens, terrain, by, a, smoke\)/.test(hud), /data-attackbox="\$\{esc\(b\.id\)\}"/.test(hud),
+    [/containerTargets\(data, s\.tokens, terrain, by, a, smoke\)/.test(turnSrc), /data-attackbox="\$\{esc\(b\.id\)\}"/.test(hud),
       /kind: 'destroyTerrain', seat: by\.side, uid: by\.uid, pieces: \[id\]/.test(hud),
       /containerTargets\(data, state\.tokens, currentTerrain\(\), attacker, act, state\.smoke \?\? \[\]\)/.test(main)],
     [true, true, true, true]);
@@ -305,8 +315,11 @@ console.log('\n1.8 Turning on the spot');
   check('a free Movement that turned a full circle is Movement; one that did nothing is not', [s.script.opp.moved, plain.script.opp.moved], [true, false]);
   check('the tabletop counts its turns, so a full circle can be confirmed',
     [/return !!t && \(t\.facing !== m\.facing0 \|\| Math\.abs\(m\.spin \?\? 0\) >= 4\);/.test(src('../src/main.ts')), /movePlan\.spin = \(movePlan\.spin \?\? 0\) \+ \(d === 1 \? 1 : -1\);/.test(src('../src/main.ts'))], [true, true]);
+  // The pivot's command is built in turn.ts moveOrder since 2026-10-01; the
+  // Match Centre sends it and says the full circle off the same reading.
   check('the Match Centre says so to the engine',
-    /const full = m\.facing === t\.facing && Math\.abs\(m\.spin\) >= 4;[\s\S]{0,300}\.\.\.\(full \? \{ spun: true \} : \{\}\)/.test(src('../src/matchhud.ts')), true);
+    [/const full = m\.facing === t\.facing && Math\.abs\(m\.spin\) >= 4;[\s\S]{0,300}\.\.\.\(full \? \{ spun: true \} : \{\}\)/.test(turnSrc),
+      /const turned = ctx\.send\(order\.command\)\.ok;\s*\n\s*if \(turned\) ctx\.noteNow\(order\.full/.test(src('../src/matchhud.ts'))], [true, true]);
 
   // "That unit may not perform that action": the engine refuses an Action with
   // nothing to change, in the words the pages grey it with (ruled 2026-09-30,

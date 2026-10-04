@@ -1812,6 +1812,13 @@ export interface GameState {
   // at setup and fixed once the game is under way; absent means the main rules
   // (season.ts). Rules-bearing: it changes what check() accepts.
   season?: string;
+  // This game is played with NO Secondary Tasks: the Tasks step asks for none
+  // and closes without them, and a pick is refused. What the Main Task names
+  // (a VIP's Commanders) and its Black Boxes are still owed. Set by
+  // configureTable before either squad has chosen one; a scenario against the
+  // computer says so in data/solo.json. Absent means each squad picks one
+  // (3.1.3). Rules-bearing: it changes what check() accepts.
+  noSecondary?: boolean;
   // The HOST has lifted the setup locks of a running Guided game (the Main Task
   // and battlefield after the edges, squads after deployment), to correct
   // something entered wrong without abandoning the game. On the table, so both

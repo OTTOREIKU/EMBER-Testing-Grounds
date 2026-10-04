@@ -137,6 +137,22 @@ async function attack(card, action, opts = {}) {
   check('a status is granted if and only if something Hit', applied.length > 0, hits > 0);
 }
 
+// ---------- a Low Value Unit gains no Hexagon Token (Supplementary Rules 1.6) ----------
+// ZHLA-302's [On Hit] grants a Pursuit Token, a Hexagon one. A Drone worth 0
+// points (the Delphinium) never carries one: the engine refuses it, and the
+// window used to send it anyway, beside a line saying it was gained (found by
+// the computer games, 2026-10-03).
+{
+  const gun = data.cards.find((c) => c.id === 'ZHLA-302');
+  const act = gun?.actions?.find((a) => a.type === 'Firing' && (a.range ?? 0) > 0);
+  check('the Pursuit fixture: ZHLA-302 has a Firing Action, and the Delphinium is worth 0 points', [!!act, data.cards.find((c) => c.id === '159')?.score ?? 0], [true, 0]);
+  const onMech = await attack(gun, act);
+  const onDrone = await attack(gun, act, { defender: { kind: 'drone', cardId: '159', size: 1, partStates: { main: 'intact' } } });
+  const pursuit = (run) => run.cmds.filter((c) => c.kind === 'applyStatus' && c.statusId === 'pursuit').length;
+  check('a hit on a Mech grants the Pursuit Token; a hit on the 0-point Drone sends none (each walk landed a Hit)',
+    [onMech.hits > 0, pursuit(onMech) > 0, onDrone.hits > 0, pursuit(onDrone)], [true, true, true, 0]);
+}
+
 // ---------- the helper itself, read directly ----------
 {
   const src = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');

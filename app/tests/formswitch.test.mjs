@@ -12,6 +12,10 @@
 // Rebuilding it from the card (which is what Unfold correctly does, being a
 // DIFFERENT unit) would hand out a free repair once per round.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const start = unitsSrc.indexOf('// ---------- FORM SWITCH: the "White Dwarf" Bit');
@@ -106,7 +110,7 @@ check('the Bit Port is not a form switch',
   check('freeplay routes the Action', /if \(formSwitch\(action\)\) \{[\s\S]{0,140}?performFormSwitch/.test(main), true);
   check('and follows the switch with a Movement',
     /performFormSwitch[\s\S]{0,2000}?kind: 'switchForm'[\s\S]{0,1200}?startMove\(/.test(main), true);
-  check('the Match Centre routes it', /if \(formSwitch\(a\)\) \{\s*\n\s*formPick =/.test(hud), true);
+  check('the Match Centre routes it', [/if \(formSwitch\(a\)\) return 'form';/.test(turnSrc), /if \(route === 'form'\) \{\s*\n\s*formPick =/.test(hud)], [true, true]);
   check('and follows with its own move plan',
     /data-formgo[\s\S]{0,700}?kind: 'switchForm'[\s\S]{0,300}?startMovePlan\(/.test(hud), true);
   // Paid before the switch, so the Movement belongs to the same Action. The

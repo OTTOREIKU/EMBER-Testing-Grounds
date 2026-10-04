@@ -32,7 +32,7 @@ import { FOOTPRINT } from './_footprint.mjs';
 // Read as LF whatever the checkout wrote: the gridRef cut below ends on a blank
 // line, and a working copy saved with LF endings failed it with CRLF in the marker.
 const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const rules = src('rules.ts'), mainSrc = src('main.ts'), hudSrc = src('matchhud.ts');
+const rules = src('rules.ts'), mainSrc = src('main.ts'), hudSrc = src('matchhud.ts'), turnSrc = src('turn.ts');
 
 const cut = (s, a, b, what) => {
   const i = s.indexOf(a);
@@ -217,6 +217,7 @@ type HudCtx = any;
 type Side = any;
 type TerrainPiece = any;
 type GameData = any;
+type Command = any;
 export const rec: any = { notes: [], sent: [], tow: 0, mines: 0, boxes: 0, shove: 0 };
 export function reset(): void { rec.notes = []; rec.sent = []; rec.tow = 0; rec.mines = 0; rec.boxes = 0; rec.shove = 0; }
 export function setPlan(p: any): void { crushPlan = p; }
@@ -238,8 +239,17 @@ const board: any = { clearHighlights() {}, showSmokeTargets() {}, animateMove(_u
   + cut(hudSrc, 'function esc(s: string): string {', '// ---------- the guide glue', 'esc')
   // mapPieces is SLICED, not stubbed: terrainOf reads it, and a stub that only
   // knew about terrain layouts would hide an authored map's own pieces -- the
-  // exact thing E4 added.
-  + cut(hudSrc, 'function mapPieces(data: GameData, map: string)', '// ---------- zones & deployment geometry', 'mapPieces')
+  // exact thing E4 added. Both live in turn.ts since 2026-10-01, where the
+  // Match Centre and the seat seam read the table's terrain; the page's own
+  // terrainOf hands its board to them.
+  + 'type GameState = any;\nconst turn = (() => {\n'
+  + cut(turnSrc, 'export function mapPieces(data: GameData, map: string)', '// The terrain as it stands now', 'mapPieces').replace('export function', 'function')
+  + cut(turnSrc, 'export function terrainOf(data: GameData, state: GameState)', 'export function actionOf', 'turn.terrainOf').replace('export function', 'function')
+  // What a Crush sends, piece by piece (the terrain destroyed, the landing,
+  // the Movement's record): SLICED too, so the loop below is driven with the
+  // builders a computer seat's Crush is made of.
+  + cut(turnSrc, '// ---------- a Movement that ends in a Crush (4.3.6) ----------', '// A Movement as it is planned: whose it is', 'the Crush builders').replaceAll('export function', 'function')
+  + 'return { mapPieces, terrainOf, crushDestroy, crushLanding, crushRecord };\n})();\n'
   + cut(hudSrc, 'function terrainOf(ctx: HudCtx) {', '// `steps` is how far this particular Movement reaches', 'terrainOf')
   + cut(hudSrc, 'function head(eyebrow: string', 'function waiting(side: Side', 'head')
   + cut(hudSrc, 'function gridName(c: number, r: number): string {', '// What the Forced Movement would do, or why it does nothing.', 'gridName')

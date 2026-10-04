@@ -2,6 +2,7 @@ import './styles.css';
 import { Board, footprint, snapPlacement, type BoardDeployment, type BoardZone, type DeployShape } from './board';
 import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
+import { openSoloSetup } from './solosetup';
 import { lowValueOf } from './scoring';
 import { boxHands, boxPlaceTurn, deployOpenGrids, gameResult, isLowValue, newTaskState, normaliseTasks, remoteAccessWhy, taskItemsFor, terminalsInReach, terminalStandIn, zoneCentreGrid, type GameResult, type TaskItem, type TaskState } from './tasks';
 import { DiceTray } from './dice';
@@ -239,16 +240,17 @@ async function init() {
         // Action destroys it: the Unfolded Pholcus jumps and blows up (167; FAQ
         // M18.6), and this board left it standing, holding the Mines its jump
         // set off (Supplementary Rules 1.04, 1.9).
-        if (attacker.kind === 'projectile' || action.type === 'Detonation') {
-          // An "all Units" blast keeps its Projectile until Done, and this unit
-          // is struck off its list instead (A1).
-          if (blast?.uid === attacker.uid && explosionScope(action, data.actionTranslation(action.id)?.english ?? undefined) === 'all') {
-            if (!blast.hit.includes(defender.uid)) blast.hit.push(defender.uid);
-          } else {
-            state.tokens = state.tokens.filter((x) => x.uid !== attacker.uid);
-            if (selectedUid === attacker.uid) selectToken(null);
-            onChanged();
-          }
+        // An "all Units" blast keeps its Projectile until Done, and this unit
+        // is struck off its list instead (A1). So does a Zealot's Martyrdom
+        // (ZHDR-302), whose unit is a destroyed Drone and its blast a Passive:
+        // it was never struck off, and a unit that had taken its Explosion was
+        // offered again.
+        if (blast?.uid === attacker.uid && explosionScope(action, data.actionTranslation(action.id)?.english ?? undefined) === 'all') {
+          if (!blast.hit.includes(defender.uid)) blast.hit.push(defender.uid);
+        } else if (attacker.kind === 'projectile' || action.type === 'Detonation') {
+          state.tokens = state.tokens.filter((x) => x.uid !== attacker.uid);
+          if (selectedUid === attacker.uid) selectToken(null);
+          onChanged();
         }
       })();
     },
@@ -2269,7 +2271,10 @@ async function init() {
         if (sight) {
           const probe = { ...t, col: c * 3 + 1, row: r * 3 + 1, size: 1 as const };
           if (losBetween(t, probe, terrain, state.tokens) === 'blocked') continue;
-          if (!standingSpot(c, r, 1, false, terrain, state.tokens, t.uid)) continue;
+          // A Grid TERRAIN fills, and only that (4.7.1; turn.ts landingGrids,
+          // which says why): a Mech filling its Grid kept every Direct Fire
+          // Projectile off it.
+          if (!standingSpot(c, r, 1, false, terrain, [], t.uid)) continue;
         }
         out.push({ c, r, ok: true });
       }
@@ -5138,8 +5143,9 @@ async function init() {
         // An Unfolded Pholcus jumps into its target's Grid and blows up there
         // (167; FAQ I19). A Ground Unit's landing: nothing Intercepts it, and a
         // Mine it sets off there waits for its own blast (Supplementary Rules
-        // 1.04, 1.9).
-        if (jumpsToTarget(action) && !proj.jumpBlast
+        // 1.04, 1.9). Not the blast it owes as it Unfolds (M18.4): it is in
+        // that Grid already (turn.ts detonationJump).
+        if (jumpsToTarget(action) && !proj.jumpBlast && !proj.unfoldBlast
           && perform(data, state, { kind: 'flyToTarget', seat: proj.side, uid: proj.uid, actionId: action.id, targetUid: target.uid }).ok) {
           const held = minesOwed(data, state.tokens).filter((x) => x.heldBy === proj.uid).length;
           logTo(proj, `${proj.label} jumps into ${target.label}'s Grid${held
@@ -8812,6 +8818,13 @@ async function init() {
     showSideTab('squad');
     renderAll();
   }
+
+  // A game against the computer is set up here and played on the Match
+  // Centre's table (solosetup.ts; AI-OPPONENT-PLAN.md, M4.4). This board is
+  // left as it stands: it is still here when the player comes back.
+  document.getElementById('btn-solo')!.addEventListener('click', () => {
+    openSoloSetup(data, (address) => { location.href = address; });
+  });
 
   document.getElementById('btn-scenarios')!.addEventListener('click', () => {
     document.getElementById('scn-dialog')?.remove();

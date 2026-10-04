@@ -89,6 +89,19 @@ button { font-family: inherit; }
 }
 .mc-account:hover { background: var(--accent-lt); color: var(--accent); }
 
+/* How fast the computer plays (a game against it only): a pick-one row on the
+   bar, flat, the chosen speed in the accent tint (ui.css rules 1 and 2). The
+   phone's bar has no room for it; its Menu sets the speed instead. */
+.mc-speeds { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--radius-sm); background: var(--surface2); }
+.mc-speed {
+  border: none; cursor: pointer; padding: 5px 10px; border-radius: var(--radius-sm);
+  background: none; color: var(--text3); font: 600 11px var(--mono);
+  transition: background 0.12s, color 0.12s;
+}
+.mc-speed:hover { background: var(--surface3); color: var(--text); }
+.mc-speed.on { background: var(--accent-lt); color: var(--accent); }
+@media (max-width: 767px) { .mc-speeds { display: none; } }
+
 /* THE PHONE BAR (OTTO's option 3, 2026-09-25). Below tablet width the bar
    keeps the logo (without "Testing Grounds"), the account and a Menu that
    opens the bottom sheet (match.ts openBarMenu); Report, Back to Board and the

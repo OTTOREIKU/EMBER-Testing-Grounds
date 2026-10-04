@@ -117,6 +117,11 @@ check('the pad seals in a room and proves its plays',
 check('the Match Centre seals its squad\'s hand and proves its plays',
   [/perform\(data, state, handCommand\(seat, merged, roomKey\(\)\)\);/.test(match), /const salt = saltFor\(ctx\.state, m\.side, m\.cardId, ctx\.room\);/.test(hud)],
   [true, true]);
+// Its squad panel (squads.ts) reads a hand with the page's room: without it a
+// player's own sealed hand read "hidden until played" there (found 2026-10-03,
+// in a game against the computer, which seals both hands).
+check('and tells its squad panel which room it is in, so a player\'s own sealed hand is listed there',
+  /onChange\(view\) \{\n\s*setLocalSeat\(view\.room \? view\.seat : null\);\n(?:\s*\/\/[^\n]*\n)*\s*setHandRoom\(view\.room\?\.id \?\? null\);/.test(match), true);
 check('the tabletop too, and its squad panel counts a hand it cannot see',
   [/perform\(data, state, handCommand\(side, merged, handRoom\)\);/.test(main), /setHandRoom\(handRoom\);/.test(main), /let hidden = sealedAway \? total - held\.length : 0;/.test(src('../src/squads.ts'))],
   [true, true, true]);

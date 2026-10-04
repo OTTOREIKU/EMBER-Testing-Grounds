@@ -605,6 +605,41 @@ check('A4 and not on a Shutdown one (4.1: no Passive effects)', await reactionsA
   send(s, act(t, '004_A'));
   const shot = (row) => send(s, { kind: 'launch', seat: 's1', uid: t.uid, actionId: '004_A', cardId: '071', to: { col: 4, row }, facing: 2 }).ok;
   check('C12 a Volley 2 Action launches two, and a third is refused (4.7.3)', [shot(1), shot(2), shot(3)], [true, true, false]);
+  // A Projectile that has left the board was launched all the same. The cap
+  // counted the launches "whose Units are still on the board", so that a
+  // take-back frees its shot; but a Projectile that detonates as it lands, or
+  // is shot down, leaves the board too, and each one that did freed a shot:
+  // a Launcher that prints "Launch 1" could empty its magazine in one Action
+  // (found by a computer seat's own launch options, 2026-10-03).
+  const first = s.tokens.find((x) => x.kind === 'projectile');
+  check('C12 a Missile shot down, or one that detonated, does not free its shot: it removes itself, and the third launch is still refused',
+    [send(s, { kind: 'despawn', seat: 's1', uid: first.uid, targetUid: first.uid }).ok, s.tokens.some((x) => x.uid === first.uid), shot(3)], [true, false, false]);
+  const second = s.tokens.find((x) => x.kind === 'projectile');
+  check('C12 a TAKE-BACK does: the launcher removes the Projectile it has just put down, the launch is struck off the record, and that shot may be made again',
+    [send(s, { kind: 'despawn', seat: 's1', uid: t.uid, targetUid: second.uid }).ok, (s.script.opp.launched ?? []).length, shot(3), shot(4)], [true, 1, true, false]);
+}
+{
+  // The same for an Action that prints no Volley: "Launch 1".
+  const s = table();
+  const t = put(s, 's1', L({ torso: '015', leftHand: '056' }), 1, 1, { timing: 'projectile' });
+  open(s);
+  send(s, act(t, '056_A'));
+  const shot = (row) => send(s, { kind: 'launch', seat: 's1', uid: t.uid, actionId: '056_A', cardId: '267', to: { col: 4, row }, facing: 2 }).ok;
+  const fired = shot(1);
+  const rocket = s.tokens.find((x) => x.kind === 'projectile');
+  check('C12 a Rocket Launcher launches ONE Rocket a performance: with the first detonated and gone, and a Token still in the magazine, a second is refused',
+    [fired, send(s, { kind: 'despawn', seat: 's1', uid: rocket.uid, targetUid: rocket.uid }).ok, t.ammo['056_A'], shot(2)], [true, true, 1, false]);
+}
+{
+  // Each Action has its own Volley: a Mech with two launchers.
+  const s = table();
+  const t = put(s, 's1', L({ torso: '015', backpack: '004', leftHand: '056' }), 1, 1, { timing: 'projectile' });
+  open(s);
+  send(s, act(t, '004_A'));
+  const missile = (row) => send(s, { kind: 'launch', seat: 's1', uid: t.uid, actionId: '004_A', cardId: '071', to: { col: 4, row }, facing: 2 }).ok;
+  const rocket = (row) => send(s, { kind: 'launch', seat: 's1', uid: t.uid, actionId: '056_A', cardId: '267', to: { col: 7, row }, facing: 2 }).ok;
+  check('C12 the count is each Action\'s own: with the rack\'s Volley of two spent, the Rocket Launcher still launches its one, and then no more',
+    [missile(1), missile(2), missile(3), rocket(1), rocket(2)], [true, true, false, true, false]);
 }
 
 // ---------- C9: PRDR Emergency Smoke (FAQ D10) ----------

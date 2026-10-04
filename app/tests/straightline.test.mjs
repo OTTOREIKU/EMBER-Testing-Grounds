@@ -4,6 +4,10 @@
 // whole route runs one way, and a turn anywhere caps it at the printed number.
 // FAQ E16 rides the same search: a Crush ends the Movement whatever is left.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 import { FOOTPRINT } from './_footprint.mjs';
 
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
@@ -100,8 +104,12 @@ check('the crushSwap ceiling knows the bonus reach',
   (cmds.match(/reach = Math\.max\(reach, \(a\.range \?\? 0\) \+ straightLineBonus\(a\)\)/g) ?? []).length, 2);
 check('freeplay hands the Movement Action to its MoveOpts', /straightBonus: straightLineBonus\(action\),/.test(main), true);
 // One builder: the overlay reads moveOptsFor too (audit Phase 7, P7D 6).
-check('and the Match Centre to its one builder', (hud.match(/straightBonus: straightLineBonus\(actionId \? actionOn\(ctx, t, actionId\) : null\)/g) ?? []).length, 1);
-check('the Match Centre route extension names the Action', /moveOptsFor\(ctx, t, m\.flying, m\.actionId\)/.test(hud), true);
+check('and the Match Centre to its one builder', (turnSrc.match(/straightBonus: straightLineBonus\(actionId \? actionOf\(data, state, t, actionId\) : null\)/g) ?? []).length, 1);
+// The route extension is turn.ts extendRoute since 2026-10-01: the planner
+// hands it the plan's Action, and it builds the MoveOpts with it.
+check('the Match Centre route extension names the Action',
+  [/turn\.extendRoute\(ctx\.data, ctx\.state, t, m\.path, \{ c, r \}, m\.steps, m\.flying, m\.actionId\)/.test(hud),
+    /return extendPath\(path, to, t, steps, terrainOf\(data, state\), state\.tokens, flying, moveOptsFor\(data, state, t, flying, actionId\)\);/.test(turnSrc)], [true, true]);
 check('and so does its overlay', /reachableFor\(ctx, t, movePlan\.steps, movePlan\.flying \|\| !!t\.aerial, movePlan\.actionId\)/.test(hud), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);

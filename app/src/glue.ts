@@ -10,7 +10,7 @@
 // and adds only what a board page needs on top (the smoke-dissipation queue).
 import type { GameData } from './data';
 import type { Command } from './commands';
-import { ammoAvailable, clearDroneCommands, seedCommandTokens } from './commands';
+import { ammoAvailable, apply, check, clearDroneCommands, seedCommandTokens } from './commands';
 import { alive, type InitLookup, nextActivation } from './loop';
 import { normaliseSetup } from './setup';
 import { extrasFor, type IdleWorld } from './units';
@@ -99,6 +99,23 @@ export function glueAfter(data: GameData, state: GameState, cmd: Command): void 
   // not settle. Both clients run this after every command, ours and theirs,
   // so both reach the same answer.
   if (state.round.phase === 2) opportunity(data, state);
+}
+
+// The table as it will stand once these commands have landed: each judged as
+// the table stands when it arrives, applied, and followed by the glue, the way
+// every client runs them. Null when one of them would be refused. A COPY: the
+// table itself is untouched. What an answer would do is read off this, so a
+// reader values a choice by trying it and not by knowing the rule behind it
+// (AI-OPPONENT-PLAN.md, R5), and many answers that begin with the same command
+// are judged against one copy.
+export function tableAfter(data: GameData, state: GameState, cmds: Command[]): GameState | null {
+  const next = JSON.parse(JSON.stringify(state)) as GameState;
+  for (const cmd of cmds) {
+    if (!check(data, next, cmd).ok) return null;
+    apply(data, next, cmd);
+    glueAfter(data, next, cmd);
+  }
+  return next;
 }
 
 // An echoed Mech destroyed inside its Extra Action Opportunity - shot down by

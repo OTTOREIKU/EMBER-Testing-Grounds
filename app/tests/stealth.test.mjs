@@ -12,6 +12,10 @@
 // Manifestation Movement, up to this unit's Stealth value" without ever saying
 // what that value was or enforcing it.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 // From activatesCamo (the door into the State) through the SCANNING block, so
 // this test drives the real readers for both halves of the rule. Both offsets
@@ -192,9 +196,9 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
 
   // Both boards can now ENTER the state, which is the half that did not exist.
   check('freeplay routes the activating Action', /if \(activatesCamo\(action\)\) \{[\s\S]{0,120}?performCamo/.test(main), true);
-  check('and the Match Centre routes it too', /if \(activatesCamo\(a\)\) \{/.test(hud), true);
+  check('and the Match Centre routes it too', [/if \(activatesCamo\(a\)\) return 'camo';/.test(turnSrc), /if \(route === 'camo'\) \{/.test(hud)], [true, true]);
   check('freeplay applies the camouflage status', /performCamo[\s\S]{0,900}?statusId: 'camouflage'/.test(main), true);
-  check('and the Match Centre sends the same one', /activatesCamo\(a\)[\s\S]{0,700}?statusId: 'camouflage'/.test(hud), true);
+  check('and the Match Centre sends the same one', /route === 'camo'\) \{[\s\S]{0,700}?statusId: 'camouflage'/.test(hud), true);
 
   // And both offer the hop on the way out.
   check('freeplay offers Manifestation on Reveal', /offerManifestation/.test(main), true);
@@ -218,7 +222,7 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   //    returning true without commitAction left the Tick unspent and the
   //    latched pendingAction riding along to the next tool.
   check('the Match Centre camo branch pays for the Action',
-    /activatesCamo\(a\)\) \{[\s\S]{0,700}?commitAction\(ctx\)[\s\S]{0,400}?statusId: 'camouflage'/.test(hud), true);
+    /route === 'camo'\) \{[\s\S]{0,700}?commitAction\(ctx\)[\s\S]{0,400}?statusId: 'camouflage'/.test(hud), true);
   check('and an already-hidden misclick drops the pending Action instead',
     /already in the Optical Camouflage State\.`\);\s+dropAction\(\);/.test(hud), true);
   // 2. The activation is exempt from the Reveal, or one was owed the instant the
@@ -274,7 +278,8 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   check('freeplay opens the Counter-roll for a Scan',
     /isElectronicAttack\(action\) \|\| isScanAction\(action\)/.test(main), true);
   check('and the Match Centre does too',
-    /isElectronicAttack\(a\) \|\| isScanAction\(a\)/.test(hud), true);
+    [/if \(isElectronicAttack\(a\) \|\| isScanAction\(a\)\) return 'electronic';/.test(turnSrc), /if \(route === 'electronic'\) \{\s*\n\s*openAttackPick\(t, a\);/.test(hud),
+      /isElectronicAttack\(a\) \|\| isScanAction\(a\)/.test(hud)], [true, true, true]);
 
   // ---------- the three holes the second fresh-eyes pass found ----------
   // 1. ON A SHARED TABLE applyEffects NEVER RUNS: the verdict is derived, no
@@ -283,12 +288,15 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   //    successful online Scan handed the target Fire Control Interference.
   // Since the audit's Phase 3 (D1) there is no FCI fallback left to fall
   // through to: the Match Centre's apply is the shared reader, Scan included.
+  // The Counter-roll's sender is contest.ts contestAct since 2026-10-01 (the
+  // Match Centre and a computer seat share it), so the branch is read there.
+  const contestSrc = readFileSync(new URL('../src/contest.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   check('the Match Centre apply branch handles a Scan before the FCI fallback',
-    /act === 'apply'\) \{[\s\S]{0,1600}?const win = ewWinCommands\(ctx\.data, init, resp, a,/.test(hud)
-      && !/STATUSES\.find\(\(x\) => x\.id === 'fci'\)/.test(hud), true);
-  check('stripping the Tokens there too', /for \(const cmd of win\.cmds\) won = ctx\.send\(cmd\)\.ok && won;/.test(hud), true);
+    /act === 'apply'\) \{[\s\S]{0,1600}?const win = ewWinCommands\(data, init, resp, a,/.test(contestSrc)
+      && !/STATUSES\.find\(\(x\) => x\.id === 'fci'\)/.test(hud + contestSrc) && /sendContestAct\(\{/.test(hud), true);
+  check('stripping the Tokens there too', /for \(const cmd of win\.cmds\) won = send\(cmd\)\.ok && won;/.test(contestSrc), true);
   check('and queueing the manifest debt for the target player',
-    /kind: 'manifest', fromUid: uid/.test(win) && /ewWinCommands\(/.test(hud), true);
+    /kind: 'manifest', fromUid: uid/.test(win) && /ewWinCommands\(/.test(contestSrc), true);
   // 2. Freeplay consumes reactions per-kind and had no manifest branch, so a
   //    Scan debt fell through toward the Emergency Smoke default.
   // The debt is no longer cleared before the picker: the Reveal pays it, so a

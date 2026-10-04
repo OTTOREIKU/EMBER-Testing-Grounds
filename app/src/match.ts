@@ -2,23 +2,30 @@ import { openAccount } from './account';
 import { ApiError, EmberApi, type Account, type AdminInvite, type RegistrationInfo, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type SquadEntry, type StatsSummary } from './api';
 import { bindCollection } from './collection';
 import { bindLibrary, onLibrary } from './library';
-import { Relay, type RolledDie, type RollKind } from './net';
+import { Relay, type NetHooks, type RolledDie, type RollKind, type TableRelay } from './net';
+import { LoopbackRelay } from './loopback';
+import { Rng } from './ai/rng';
+import { forecastOf } from './ai/odds';
+import { OPPONENTS, ownGame, SOLO_OWN, SOLO_OWN_KEY, SOLO_ROOM, SoloTable, soloAsk, soloHands, soloQuery, soloSetup, soloSpec, SPEEDS, type SoloOwn, type SoloSpec, type Speed } from './solo';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
-import { installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
+import { diagErrors, diagRefusals, installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
 import { openBoardReport } from './reportui';
 import { clearHistory, historyEntries, recordSnapshot, rollbackCatalog, undoToPhase, undoToSeq } from './history';
 import { groupLedger, labelFor, namesFrom, SEALED_KINDS, type LedgerNames } from './ledger';
 import { setLocalSeat } from './loop';
-import { resolveLayer, tableDeployFor, tableZonesFor } from './mapeditor';
+import { attackActionOf as turnAttackActionOf, attackOpening } from './turn';
+import { defenderAct } from './defender';
+import { tableDeployFor } from './mapeditor';
+import { mapConfig, missionConfig } from './tableconfig';
 import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, parseGridRef, setSquadNames, squadLabel, type GameData } from './data';
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells, resetHudTools, startActionFromCard, startSupportPick } from './matchhud';
 import { printedDeployment } from './overlays';
-import { actionIdleWhy, kcArmorReady, knockbackOf, migrateState, multiTargetLimit, providesUnitProtectionToAllies, squadAllegiance, squadPoints, tokenCards, unfoldsOwed, type AttackReaction, ignoresProtection } from './units';
+import { actionIdleWhy, kcArmorReady, knockbackOf, migrateState, squadAllegiance, squadPoints, tokenCards, unfoldsOwed, type AttackReaction } from './units';
 import { idleWorldFor } from './glue';
 import { countHits, normaliseSetup } from './setup';
 import { lowValueOf } from './scoring';
-import { boxHands, gameResult, normaliseTasks, taskItemsFor } from './tasks';
+import { boxHands, gameResult, normaliseTasks } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { loadMechPresets } from './presets';
 import { hideTooltip, installTooltip, preloadCards } from './tooltip';
@@ -29,16 +36,16 @@ import { choiceDialog } from './dialog';
 import { clearNotice, configureNotices, explainOnHold, notify, speakInPlace, type NoticeKind } from './notices';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { animateRemoteMove, clearRangeOverlayFor, detonationHit, ensureHud, offerCoordinationAfterManeuver, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, clearRangeOverlayFor, detonationHit, ensureHud, offerCoordinationAfterManeuver, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, walking, type DiceLine, type HudCtx } from './matchhud';
 import { AttackHelper, combatRoleFor, type MirrorAct } from './combat';
-import { losNote, protectionFor, spotsInGrid } from './rules';
+import { spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
-import { boxNoteText, chargeAdjusted, dodgeEnhanceOf, grantAdjusted, SLOT_LABEL, stationaryAdjusted, twoHandedUse, loanedParts, explosionScope } from './units';
+import { boxNoteText, dodgeEnhanceOf, SLOT_LABEL, loanedParts, explosionScope } from './units';
 import { gridsOf, PHASES, SCALES, statusCount } from './types';
 import { syncSeason } from './season';
-import { handCommand, handCount, handIds } from './tactichand';
+import { handCommand, handCount, handIds, setHandRoom } from './tactichand';
 // FIRST, before anything else in this module runs. A net that is installed
 // after the thing it is meant to catch is not a net.
 installDiagnostics(window);
@@ -131,6 +138,17 @@ type Door = 'play' | 'stats' | 'admin';
 let door: Door = 'play';
 // ?dev=1 renders the HUD without a room, for building and testing it solo.
 const devSeat: Side | null = new URLSearchParams(location.search).get('dev') ? 's1' : null;
+// ?solo=<game> is a game against the computer (solo.ts): no account, no lobby
+// and no server. Read here, before the card data is in; the game itself is
+// made once it is (startSolo).
+const soloWanted = soloAsk(location.search);
+let solo: { spec: SoloSpec; table: SoloTable } | null = null;
+let soloErr: string | null = null;
+// What a computer seat is doing, in the bar's words, or null while it waits.
+let soloDoing: { seat: Side; doing: string } | null = null;
+// The player is sitting in the computer's seat for a moment, to get it past
+// something it could not do.
+let soloTaken = false;
 // The zone overlay is a per-player view preference, held here rather than in
 // GameState so a checkpoint can never overwrite it. Always starts on.
 let zonesVisible = true;
@@ -145,6 +163,9 @@ const diceFeed: DiceLine[] = [];
 let dialSecret: { round: number; salt: string; dials: DialEntry[] } | null = null;
 
 function dialSecretKey(): string | null {
+  // A game against the computer does not outlive its page: there is nothing
+  // for a reload to recover, so nothing is kept.
+  if (soloWanted) return null;
   const room = relay.state.room;
   return room ? `mc-dialsecret-${room.id}` : null;
 }
@@ -324,7 +345,7 @@ const preHash = new WeakMap<object, string>();
 // playing instead and says why.
 let boardBroken = false;
 
-const relay = new Relay(api.base, {
+const hooks: NetHooks = {
   onCommand(cmd) {
     if (!data || boardBroken) return;
     // Where the unit stood before their command lands, so the board can walk
@@ -467,9 +488,14 @@ const relay = new Relay(api.base, {
   },
   onChange(view) {
     setLocalSeat(view.room ? view.seat : null);
+    // The room a sealed hand of Tactics Cards is kept for (tactichand.ts), so
+    // the squad panel finds this device's own cards, as the tabletop's does.
+    // Without it a player's own sealed hand read "hidden until played" there.
+    setHandRoom(view.room?.id ?? null);
     // Remembered for the Rejoin door: a dropped connection should not need
     // the code typed back in.
-    if (view.room) rememberRoom(view.room.id);
+    // (A table against the computer lives in this page: not one to rejoin.)
+    if (view.room) { if (!loopback) rememberRoom(view.room.id); }
     // A refused join with nothing to show for it means the code is dead, so
     // the door stops offering it rather than failing the same way twice, and
     // says why instead of simply not opening the table.
@@ -498,7 +524,12 @@ const relay = new Relay(api.base, {
   },
   fingerprint: () => boardFingerprint(state),
   stampFor: (cmd) => preHash.get(cmd) ?? null,
-});
+};
+
+// The table's relay: a room's, or, in a game against the computer, one with no
+// server behind it (loopback.ts). Nothing below can tell which it holds.
+const loopback = soloWanted ? new LoopbackRelay(hooks) : null;
+const relay: TableRelay = loopback ?? new Relay(api.base, hooks);
 
 // Everything performed on this page mirrors, same as on the board — and a
 // strict refusal is worth a note here rather than silence.
@@ -929,81 +960,30 @@ function settleDefense(cmd: Command): void {
   }
 }
 
-// The Action a unit and an id name, as the combat window needs it: the unit's
-// own equipped Parts first, then the common Actions every unit has, with
-// [Stationary] applied from shared state so the printed Range and pool are the
-// ones the condition earned.
+// The Action a unit and an id name, as the combat window needs it, and what
+// the window is opened with (the reading of the line, the Protection, a
+// Multi-Target's limit): read in turn.ts, where a computer seat's own window
+// takes them from too.
 //
 // ONE lookup, used by the window that RESOLVES the attack and by the window
 // that mirrors it. Two lookups would be two answers to "which card is this",
 // and the whole point of the single renderer is that both screens are reading
 // the same card.
 function attackActionOf(t: Token | undefined, actionId: string, twoHandedDeclined = false, charge?: { spent?: boolean; choice?: string }): CardAction | undefined {
-  const built = attackActionBuilt(t, actionId, twoHandedDeclined);
-  // The Charge last, as the attacker's own door applies it (audit Phase 2,
-  // C13): the mirror used to leave a consumed Mutilation out of its Surplus.
-  return built && charge?.spent ? chargeAdjusted(built, true, charge.choice) : built;
-}
-
-function attackActionBuilt(t: Token | undefined, actionId: string, twoHandedDeclined = false): CardAction | undefined {
-  if (!data || !t) return undefined;
-  const printed = tokenCards(data, t)
-    .flatMap(({ card }) => card.actions ?? [])
-    .find((a) => a.id === actionId) ?? data.commonActions.find((a) => a.id === actionId);
-  const oppNow = state.script?.opp;
-  // The stationary bonus AND the [condition] grants, in that order, so the
-  // AttackHelper's ctx.action carries a granted keyword (Stationary Snipe,
-  // stance-granted Shock) the same way it carries a printed one.
-  const opp = oppNow?.uid === t.uid ? oppNow : null;
-  if (!printed) return printed;
-  const granted = grantAdjusted(stationaryAdjusted(printed, opp), t, opp);
-  // [Two-Handed] LAST, as on every other site (twohanded.test.mjs). This page
-  // used to stop at the grants, so the Match Centre rolled a Two-Handed weapon
-  // without its rider while the turn panel had promised it. FAQ A16: the
-  // player may decline, and the declined copy is marked so the window says so.
-  // A Load lent by a Carrier in Contact can be the Freehand (FAQ O16).
-  const loans = loanedParts(data, state.tokens, t);
-  if (twoHandedDeclined) return twoHandedUse(data, t, granted, boxHands(state.tasks, t.uid), loans) ? { ...granted, twoHandedDeclined: true } : granted;
-  return twoHandedUse(data, t, granted, boxHands(state.tasks, t.uid), loans)?.action ?? granted;
+  return data ? turnAttackActionOf(data, state, t, actionId, twoHandedDeclined, charge) : undefined;
 }
 
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack', opts: { twoHandedDeclined?: boolean; charged?: boolean; chargeChoice?: string } = {}): void {
   if (!data || !attackHelper) return;
-  const attacker = state.tokens.find((t) => t.uid === uid);
-  const defender = state.tokens.find((t) => t.uid === targetUid);
-  const adjusted = attackActionOf(attacker, actionId, !!opts.twoHandedDeclined);
-  // [Charged] (4.14): folded in only when the Charge Token was consumed for
-  // this attack, the same fold the pad and freeplay make.
-  const action = adjusted ? chargeAdjusted(adjusted, !!opts.charged, opts.chargeChoice) : adjusted;
-  if (!attacker || !defender || !action) return;
-  const terrain = terrainNow();
-  const smoke = state.smoke ?? [];
-  // Interception and Explosion both hand the defender no Terrain or Unit
-  // Protection, and neither checks arc or line of sight — so the reading of the
-  // board that an ordinary attack needs would be wrong guidance for them.
-  const note = mode === 'intercept'
-    ? 'Interception: no Forward Arc is required, terrain never blocks a line to an Aerial Unit though a Smoke Screen does, and the target claims no Terrain or Unit Protection (4.9, 4.16, FAQ F3).'
-    : mode === 'explosion'
-      ? 'Explosion damage ignores line of sight and facing, and the defender claims no Terrain or Unit Protection (4.7.6).'
-      : losNote(attacker, defender, action, terrain, state.tokens, smoke);
-  // Both card-data arguments, both previously dropped here: the Match Centre
-  // rolled Protection with no knowledge of 095 Responsive Targetting at all.
-  // `gd` because the module-level `data` is nullable and the narrowing above
-  // does not survive into a closure.
-  const gd = data;
-  const prot = mode === 'attack'
-    ? protectionFor(attacker, defender, action, terrain, state.tokens, smoke,
-        ignoresProtection(gd, attacker, defender, state.script?.opp),
-        (t) => providesUnitProtectionToAllies(gd, t))
-    : { white: 0, note: '' };
+  const open = attackOpening(data, state, uid, actionId, targetUid, mode, opts);
+  if (!open) return;
   attackHelper.roller = combatRoller();
   // Multi-Target opens on the helper's own split step: the extra targets, the
   // shared pool and the split all live there, so this page needs no second
   // targeting flow and cannot drift from freeplay. Interception and Explosion
   // are single-target by rule and route to the ordinary front door.
-  const multi = mode === 'attack' ? multiTargetLimit(action) : undefined;
-  if (multi) attackHelper.startMulti(attacker, action, defender, multi);
-  else attackHelper.start(attacker, action, defender, note, prot.white, prot.note, mode === 'explosion', mode === 'intercept');
+  if (open.multi) attackHelper.startMulti(open.attacker, open.action, open.defender, open.multi);
+  else attackHelper.start(open.attacker, open.action, open.defender, open.note, open.protection.white, open.protection.note, mode === 'explosion', mode === 'intercept');
   render();
 }
 
@@ -1246,9 +1226,11 @@ function mountSide(): void {
         // (Supplementary Rules 1.04, 1.9).
         const spent = attacker.kind === 'projectile' || action.type === 'Detonation';
         // An "all Units" blast keeps its Projectile until Done: this unit is
-        // struck off its list instead (4.7.6, M21; audit Phase 5, A1).
-        const blasting = spent
-          && explosionScope(action, data?.actionTranslation(action.id)?.english ?? undefined) === 'all'
+        // struck off its list instead (4.7.6, M21; audit Phase 5, A1). So does
+        // a Zealot's Martyrdom (ZHDR-302), whose unit is a destroyed Drone and
+        // its blast a Passive: it was never struck off, and a unit that had
+        // taken its Explosion was still listed, to be attacked again.
+        const blasting = explosionScope(action, data?.actionTranslation(action.id)?.english ?? undefined) === 'all'
           && detonationHit(attacker.uid, defender.uid);
         if (spent) { if (!blasting) send({ kind: 'despawn', seat: attacker.side, uid: attacker.uid, targetUid: attacker.uid }); }
         else if (shoving) startShove(attacker.uid, action.id, defender.uid);
@@ -1276,6 +1258,9 @@ function mountSide(): void {
       (cmd) => send(cmd),
     );
     attackHelper.tokens = () => state.tokens;
+    // The odds of the attack in hand, shown before its dice are thrown (M9.3):
+    // the computer's own reading of the window (ai/odds.ts forecastOf).
+    attackHelper.oddsOf = (r) => { const f = forecastOf(r); return { hit: f.hit, pen: f.pen, destroy: f.destroy, kill: f.kill }; };
     attackHelper.boxHands = (uid) => boxHands(state.tasks, uid);
     attackHelper.opportunity = () => state.script?.opp ?? null;
     // A Multi-Target's camouflaged extra target earns its own free Scan (p.71,
@@ -1587,6 +1572,7 @@ function tacticsPicker(side: Side): string {
 // ---------- pieces ----------
 
 function barHtml(): string {
+  if (soloWanted) return soloBarHtml();
   const v = relay.state;
   // Who is actually here, not just who holds a seat. Saying "both seated" over
   // a paused board is the bar contradicting the veil in front of it.
@@ -1657,6 +1643,7 @@ function syslineHtml(): string {
 // the bar, hidden by match.css on a phone - so it does exactly what the
 // desktop button does, with no second copy of Report or Leave to drift.
 async function openBarMenu(): Promise<void> {
+  if (soloWanted) { await openSoloMenu(); return; }
   const inRoom = !!relay.state.room;
   const pick = await choiceDialog({
     title: 'Match Centre',
@@ -2495,6 +2482,8 @@ function rulesStep(): string {
 // which is why the seat travels with it.
 async function recordMatch(): Promise<string | null> {
   if (!data) return 'Still loading.';
+  // A game against the computer is nobody's record.
+  if (loopback) return 'A game against the computer is not kept on a record.';
   if (!account) return 'Sign in to keep a record.';
   const tasks = normaliseTasks(state.tasks);
   const vp = tasks.vp;
@@ -2581,6 +2570,9 @@ function hudCtx(): HudCtx {
     diceData,
     recordMatch,
     refresh: () => render(),
+    // A game against the computer: nothing to record, no second player to
+    // agree an Undo with, and the table is this page's own to start again.
+    ...(solo ? { solo: { again: () => void soloRestart(false), leave: () => { location.href = '../'; } } } : {}),
   };
 }
 
@@ -2655,112 +2647,10 @@ function syncCombatMirror(): boolean {
 // sent one goes quiet until the attacker's republished view answers it.
 function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
   const seat = mySeat();
-  const view = state.script?.combatView;
-  const df = view ? state.tokens.find((t) => t.uid === view.targetUid) : undefined;
-  // Only the defending player answers any of these. check() refuses them from
-  // anywhere else in any case, so this is about not sending, not about safety.
-  if (!seat || !view || !df || df.side !== seat) return false;
-  if (act === 'rolldefense') {
-    const call = state.script?.combat;
-    // One roll per call: the ask is cleared by answerDefense, so a second press
-    // while the first is in the air finds no call and does nothing.
-    if (!call || call.faces) return false;
-    void rollDefensePool(call.white, call.blue).then((faces) => {
-      send({ kind: 'answerDefense', seat, faces });
-      render();
-    }).catch(() => {
-      say('system', 'The dice did not come back. Nothing was recorded, so roll again.');
-      render();
-    });
-    return true;
-  }
-  if (act === 'kcarmor') {
-    // The Charge spend travels as an ordinary setCharge; the kcArmor command
-    // only tells the attacker's window the trade was declared.
-    const kc = df.kind === 'mech' ? kcArmorReady(data!, df) : null;
-    if (!kc) return false;
-    // THE COST GATES THE DECLARE, here and in every paid ask below. These
-    // used to travel unconditionally paired, so a refused spend still sent
-    // the declare and the attacker's window granted the effect unpaid.
-    const paid = send({ kind: 'setCharge', seat, uid: df.uid, slot: kc.slot, on: false });
-    if (!paid.ok) { say('refused', paid.why); return false; }
-    send({ kind: 'kcArmor', seat });
-    render();
-    return true;
-  }
-  if (act === 'meleeevade') {
-    const paid = send({ kind: 'spendCommand', seat, uid: df.uid });
-    if (!paid.ok) { say('refused', paid.why); return false; }
-    send({ kind: 'meleeEvade', seat });
-    render();
-    return true;
-  }
-  if (act === 'dodgeenhance') {
-    // The mass-production HALO (GoF 1.021) spends nothing.
-    const paid = dodgeEnhanceOf(data!, df)?.free ? { ok: true, why: '' } : send({ kind: 'spendCommand', seat, uid: df.uid });
-    if (!paid.ok) { say('refused', paid.why); return false; }
-    send({ kind: 'dodgeEnhance', seat });
-    render();
-    return true;
-  }
-  if (act === 'designate') {
-    // The choice is the defender's; the ATTACKER's open window is what actually
-    // moves the hit, which is the same shape focusAnswer has.
-    if (typeof arg !== 'string') return false;
-    send({ kind: 'designateHit', seat, slot: arg });
-    render();
-    return true;
-  }
-  if (act === 'focususe') {
-    // The Link spend gates the answer: a refused `focus` with the answer
-    // still sent would advance the attacker's stage to a reroll nobody paid
-    // for. And the refusal is SAID -- 4.10's last-Link floor is a real rule a
-    // player can hit, and a button that eats the press in silence is what
-    // teaches them to keep clicking.
-    const paid = send({ kind: 'focus', seat, uid: df.uid });
-    if (!paid.ok) { say('refused', paid.why); return false; }
-    send({ kind: 'focusAnswer', seat, use: true });
-    render();
-    return true;
-  }
-  if (act === 'focuspass') {
-    const went = send({ kind: 'focusAnswer', seat, use: false });
-    render();
-    return went.ok;
-  }
-  if (act === 'focuskeep') {
-    send({ kind: 'focusReroll', seat, indices: [], faces: [] });
-    render();
-    return true;
-  }
-  if (act === 'focusreroll') {
-    // The dice were picked in the mirror window, which holds the selection
-    // across its own repaints; only the indexes travel.
-    const defense = view.defense ?? [];
-    const indices = (Array.isArray(arg) ? arg : []).filter((i) => defense[i]).sort((a, b) => a - b);
-    if (!indices.length) return false;
-    const white = indices.filter((i) => defense[i].color === 'white').length;
-    const blue = indices.filter((i) => defense[i].color === 'blue').length;
-    void rollDefensePool(white, blue).then((faces) => {
-      // Server faces come back grouped by colour; hand them back to the
-      // chosen dice colour-by-colour so every index gets a face of its own
-      // die's colour.
-      const byColor: Record<string, { color: string; face: number }[]> = {};
-      for (const f of faces) (byColor[f.color] ??= []).push({ color: f.color, face: f.face });
-      const out = indices.map((i) => byColor[defense[i].color]?.shift() ?? { color: defense[i].color, face: 0 });
-      send({ kind: 'focusReroll', seat, indices, faces: out });
-      render();
-    }).catch(() => {
-      // The Link is already spent by the declare, so a roll that never came
-      // back has to SAY so: the buttons are still on screen and pressing again
-      // is the retry. rolldefense beside this has carried the same catch all
-      // along; this path just never got one.
-      say('system', 'The reroll dice did not come back. Nothing was recorded, so reroll again.');
-      render();
-    });
-    return true;
-  }
-  return false;
+  if (!data || !seat) return false;
+  // What each press sends is defender.ts defenderAct, the one sender of the
+  // defending player's answers, which a computer seat answers through too.
+  return defenderAct({ data, state, seat, send, roll: rollDefensePool, say, done: render }, act, arg);
 }
 
 // A tiny dev harness behind ?dev=1: seeds two demo squads and starts, so the
@@ -2917,6 +2807,229 @@ function bringSquad(name: string, mechs: SavedSquad['mechs'], drones: SavedSquad
   render();
 }
 
+// ---------- a game against the computer ----------
+//
+// Everything that makes this page's opponent a computer (AI-OPPONENT-PLAN.md,
+// M4): the table is set here instead of in a lobby, the relay is the loopback,
+// and a driver sits in the other seat (solo.ts). From the roll for First
+// Player on, the page plays it exactly as it plays a room.
+
+function startSolo(): void {
+  if (!data || !loopback || !soloWanted) return;
+  // A game the player put together on the tabletop is kept in this device's
+  // storage (solosetup.ts wrote it there); the address only asks for it.
+  let own: SoloOwn | null = null;
+  if (soloWanted.solo === SOLO_OWN) {
+    try { own = ownGame(JSON.parse(localStorage.getItem(SOLO_OWN_KEY) ?? 'null')); } catch { own = null; }
+  }
+  const spec = soloSpec(data, soloWanted, () => Math.floor(Math.random() * 1e9), own);
+  if (typeof spec === 'string') { soloErr = spec; return; }
+  const dice = diceData;
+  if (!dice) { soloErr = 'The dice did not load, so a game cannot be played. Reload the page to try again.'; return; }
+  // The host sets the table while no seat is held, as a lobby does before its
+  // Launch. Nothing here is published: there is no room yet. Each squad's
+  // Tactics Cards are dealt sealed, the computer's salts to its seat alone.
+  const hands = soloHands(spec);
+  for (const cmd of soloSetup(data, spec.scenario, spec.squads, hands.commands)) {
+    const v = send(cmd);
+    if (!v.ok) { soloErr = `The table could not be set: ${v.why}`; return; }
+  }
+  loopback.open({
+    id: SOLO_ROOM,
+    seat: spec.human,
+    // Each seat's name on screen: the player's squad, and the computer.
+    names: { [spec.human]: state.sideNames?.[spec.human] || 'Player', [spec.bot]: OPPONENTS[spec.opponent].name } as Record<Side, string>,
+    // One seeded stream for every die the table rolls: a game is its seed and
+    // what the player did.
+    dice: new Rng(`${spec.seed}:dice`),
+    sides: (color) => dice.dice[color as DieColor]?.sides ?? 6,
+  });
+  const table = new SoloTable({
+    data,
+    state: () => state,
+    loop: loopback,
+    walking,
+    changed: () => render(),
+    status: (seat, doing) => {
+      if (doing) soloDoing = { seat, doing };
+      else if (soloDoing?.seat === seat) soloDoing = null;
+      paintSoloPill();
+    },
+    // What it just did, and why, on the notice line as the other player's
+    // move (solo.ts whyLine; M9.2).
+    told: (_seat, line) => say('event', line),
+    // A game the player only watches (?watch=1): the computer in this page's
+    // own seat sends through the page's door and rolls the page's dice. The
+    // page turns the phase itself when its own ready completes the pair
+    // (advanceIfBothReady), so the turn such a seat sends after its ready has
+    // nothing left to do.
+    page: spec.watch ? {
+      send: (cmd) => (cmd.kind === 'advancePhase' && !(state.ready?.s1 && state.ready?.s2) ? { ok: true } : send(cmd)),
+      roll: (pool, label, kind) => sealedRoll(pool, label, kind),
+    } : undefined,
+  }, spec, hands.held);
+  solo = { spec, table };
+  // What a problem report says of this table (the Report button reads the
+  // relay's own report): the seed that replays the game, and what the computer
+  // last decided.
+  loopback.about = () => ({ game: spec.scenario.id, seed: spec.seed, opponent: spec.opponent, speed: table.speed, computer: table.log.slice(-80) });
+  // On the dev server only: the game in hand for whoever is testing the page.
+  if (import.meta.env.DEV) (window as unknown as { __solo?: unknown }).__solo = { spec, table, state: () => state, refusals: diagRefusals, errors: diagErrors };
+  table.start();
+}
+
+// Before the table is up, or when it could not be set.
+function soloPane(): string {
+  return `<div class="mc-col" style="max-width:420px">
+    <h1 class="mc-h">Against the computer</h1>
+    ${soloErr
+      ? `<p class="mc-sub">${esc(soloErr)}</p><div class="panel"><button class="btn wide" id="mc-soloback" style="margin-top:0">Back to the board</button></div>`
+      : '<p class="mc-sub">Setting the table…</p>'}
+  </div>`;
+}
+
+function soloPillText(): string {
+  const t = solo?.table;
+  if (!t) return '';
+  const who = squadLabel(t.spec.bot);
+  if (soloTaken) return `● you hold ${who}'s seat`;
+  if (t.trouble) return `● ${who} has stopped`;
+  if (t.over) return '● game over';
+  if (t.paused) return '● paused';
+  return soloDoing ? `● ${squadLabel(soloDoing.seat)} is ${soloDoing.doing}` : `● ${who} is waiting`;
+}
+
+// The pill alone, repainted as the computer begins and ends a decision: a
+// whole render for each of those would redraw the page for a few words.
+function paintSoloPill(): void {
+  const el = document.getElementById('mc-solopill');
+  if (el) el.textContent = soloPillText();
+}
+
+// The bar of a game against the computer: who the opponent is and what it is
+// doing, how fast it plays, and the ways out (pause, give up, start again,
+// leave). No room code, no account and no connection, because there is none.
+function soloBarHtml(): string {
+  const t = solo?.table;
+  const speed = t?.speed ?? 'normal';
+  const speeds = SPEEDS.map((s) =>
+    `<button class="mc-speed${s.id === speed ? ' on' : ''}" data-speed="${s.id}" aria-pressed="${s.id === speed}" title="${esc(`${s.name}: ${s.note}`)}">${esc(s.name)}</button>`).join('');
+  const tone = t?.trouble ? ' bad' : t && !t.over && !t.paused ? ' live' : '';
+  return `<div class="mc-bar">
+    <a class="ui-home" href="../../"><b>‹</b>EMBER</a>
+    <a class="mc-logo" href="../../">EMBER <em>Testing Grounds</em><small>Against the computer</small></a>
+    ${t ? `<span class="pill${tone}" id="mc-solopill">${esc(soloPillText())}</span>` : ''}
+    <span class="spacer"></span>
+    ${t && !t.over ? `<span class="mc-speeds" role="group" aria-label="How fast the computer plays">${speeds}</span>` : ''}
+    ${t && !t.over && !t.trouble && !soloTaken ? `<button class="mc-backbtn ghostbtn" id="mc-solopause" title="${t.paused ? 'Let the computer play on' : 'Hold the computer where it is'}">${t.paused ? 'Resume' : 'Pause'}</button>` : ''}
+    ${soloTaken ? '<button class="mc-backbtn" id="mc-sologive" title="Give the seat back to the computer">Hand the seat back</button>' : ''}
+    ${canConcede() && !soloTaken && !t?.over ? '<button class="mc-backbtn ghostbtn" id="mc-concede" title="Give up this game: the computer wins, whatever the score">Concede</button>' : ''}
+    ${t ? '<button class="mc-backbtn ghostbtn" id="mc-solorestart" title="Start this game again from the beginning">Restart</button>' : ''}
+    <button class="mc-backbtn ghostbtn" id="mc-report" title="Report a problem with this game">Report</button>
+    <button class="mc-account mc-menu" id="mc-menu">Menu</button>
+    <a class="mc-backbtn" href="../">Back to Board</a>
+  </div>`;
+}
+
+// The phone's menu for the same bar (openBarMenu): each choice clicks the
+// desktop button it stands for, and the speeds, which the phone's bar has no
+// room for, are set from here.
+async function openSoloMenu(): Promise<void> {
+  const t = solo?.table;
+  const pick = await choiceDialog({
+    title: 'Against the computer',
+    sheet: true,
+    stacked: true,
+    choices: [
+      { id: 'board', label: 'Back to Board' },
+      ...(document.getElementById('mc-solopause') ? [{ id: 'pause', label: t?.paused ? 'Resume' : 'Pause the computer' }] : []),
+      ...(document.getElementById('mc-sologive') ? [{ id: 'give', label: 'Hand the seat back' }] : []),
+      ...(t && !t.over ? SPEEDS.filter((s) => s.id !== t.speed).map((s) => ({ id: `speed:${s.id}`, label: `Speed: ${s.name}` })) : []),
+      ...(document.getElementById('mc-concede') ? [{ id: 'concede', label: 'Concede the game' }] : []),
+      ...(t ? [{ id: 'restart', label: 'Restart the game' }] : []),
+      { id: 'report', label: 'Report a problem' },
+    ],
+  });
+  if (pick === 'board') document.querySelector<HTMLAnchorElement>('.mc-bar a.mc-backbtn')?.click();
+  else if (pick === 'pause') document.getElementById('mc-solopause')?.click();
+  else if (pick === 'give') document.getElementById('mc-sologive')?.click();
+  else if (pick === 'concede') document.getElementById('mc-concede')?.click();
+  else if (pick === 'restart') document.getElementById('mc-solorestart')?.click();
+  else if (pick === 'report') document.getElementById('mc-report')?.click();
+  else if (pick?.startsWith('speed:')) setSoloSpeed(pick.slice(6) as Speed);
+}
+
+function setSoloSpeed(speed: Speed): void {
+  if (!solo || !SPEEDS.some((s) => s.id === speed)) return;
+  solo.table.speed = speed;
+  // Kept in the address, so a reload and a rematch play at the same speed.
+  const { spec } = solo;
+  try {
+    history.replaceState(null, '', `./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: spec.seed, speed, opponent: spec.opponent, watch: spec.watch })}`);
+  } catch { /* an address that cannot be rewritten costs only that */ }
+  render();
+}
+
+// Starts the game again: the same battlefield, side and speed, on a new seed.
+// The page is loaded afresh, which takes every tool, window and note of the
+// old game with it.
+async function soloRestart(ask = true): Promise<void> {
+  if (!solo) return;
+  if (ask && !solo.table.over) {
+    const pick = await choiceDialog({
+      title: 'Start this game again?',
+      body: 'The game on the table is given up and a new one begins: the same battlefield and squads, and a fresh roll for First Player.',
+      choices: [
+        { id: 'yes', label: 'Start again', danger: true },
+        { id: '', label: 'Keep playing', cancel: true },
+      ],
+    });
+    if (pick !== 'yes') return;
+  }
+  const { spec, table } = solo;
+  table.stop();
+  location.assign(`./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: Math.floor(Math.random() * 1e9), speed: table.speed, opponent: spec.opponent, watch: spec.watch })}`);
+}
+
+// The computer has stopped and cannot go on by itself: said in plain words,
+// with the ways on. A game must never simply stand still.
+function soloVeilHtml(): string {
+  const t = solo?.table;
+  if (!t?.trouble || soloTaken) return '';
+  const who = squadLabel(t.trouble.seat);
+  return `<div class="mc-veil pauseveil"><div class="acct" style="text-align:center">
+      <div class="waitbox"><div class="msg">${esc(who)} has stopped</div>
+      <div class="sub">${t.trouble.kind === 'refused' ? 'The table refused what it tried to do.' : 'It could not find a way on.'}<br>${esc(t.trouble.why)}</div></div>
+      <button class="btn wide" id="mc-soloretry" style="margin-top:6px">Let it try again</button>
+      <button class="btn wide ghost" id="mc-solotake" style="margin-top:6px">Play its seat yourself for a moment</button>
+      <button class="btn wide ghost" id="mc-solorestart2" style="margin-top:6px">Start the game again</button>
+    </div></div>`;
+}
+
+function wireSolo($: (id: string) => HTMLElement | null): void {
+  $('mc-soloback')?.addEventListener('click', () => { location.href = '../'; });
+  if (!solo) return;
+  const { table, spec } = solo;
+  $('mc-solopause')?.addEventListener('click', () => { if (table.paused) table.resume(); else table.pause(); });
+  $('mc-solorestart')?.addEventListener('click', () => void soloRestart());
+  $('mc-solorestart2')?.addEventListener('click', () => void soloRestart(false));
+  $('mc-soloretry')?.addEventListener('click', () => table.retry());
+  // The page takes the computer's chair: its panels are the player's until the
+  // seat is handed back, and the computer is asked again from there.
+  $('mc-solotake')?.addEventListener('click', () => {
+    soloTaken = true;
+    loopback?.sit(spec.bot);
+    render();
+  });
+  $('mc-sologive')?.addEventListener('click', () => {
+    soloTaken = false;
+    loopback?.sit(spec.human);
+    table.retry();
+  });
+  root.querySelectorAll<HTMLElement>('[data-speed]').forEach((b) =>
+    b.addEventListener('click', () => setSoloSpeed(b.dataset.speed as Speed)));
+}
+
 // ---------- render ----------
 
 function render(): void {
@@ -2952,7 +3065,7 @@ function render(): void {
   // THE FRONT DOOR (sign-in and the door's Play / Stats / Admin): the site's
   // front-door dressing, as the landing page and the pad wear it. Not in a
   // room and not in a match - those are the game, not the way in.
-  const front = !hud && !relay.state.room && !devSeat;
+  const front = !hud && !relay.state.room && !devSeat && !soloWanted;
   root.classList.toggle('mc-front', front);
   barhost.innerHTML = barHtml();
   const p = hud ? paused() : null;
@@ -2965,7 +3078,7 @@ function render(): void {
       </div></div>`
     : '';
   veilhost.innerHTML = `${pickerOpen ? pickerHtml() : ''}${
-    squadOpen ? squadHtml() : ''}${pauseVeil}`;
+    squadOpen ? squadHtml() : ''}${pauseVeil}${soloVeilHtml()}`;
   if (hud) {
     const stage = bodyhost.querySelector('.mc-stage.hudmode');
     let host = stage as HTMLElement | null;
@@ -2977,7 +3090,9 @@ function render(): void {
   } else {
     const inner = !data
       ? `<div class="mc-col" style="max-width:400px"><p class="mc-sub">Loading the card database…</p></div>`
-      : devSeat
+      : soloWanted
+        ? soloPane()
+        : devSeat
         ? devPane()
         : !account
           ? loginHtml()
@@ -3071,6 +3186,7 @@ function wire(): void {
   $('mc-code2')?.addEventListener('click', copyCode);
   $('mc-health')?.addEventListener('click', copyDiagnostics);
   $('mc-concede')?.addEventListener('click', () => void concedeGame());
+  wireSolo($);
   $('mc-report')?.addEventListener('click', () => {
     const v = relay.state;
     openBoardReport({
@@ -3234,18 +3350,9 @@ function wire(): void {
     el.addEventListener('click', () => {
       if (!data) return;
       const id = el.dataset.map!;
-      const doc = data.boardMaps?.find((m) => m.id === id) ?? null;
-      const m = state.mission ? data.missions.cards.find((x) => x.id === state.mission) : undefined;
-      // The zones ride with the map: a Task already chosen has to be
-      // re-resolved against the new battlefield, or it would keep scoring the
-      // old one's areas. Both seats read the same shipped document, so both
-      // land on the identical answer.
-      perform(data, state, {
-        kind: 'configureTable', seat: mySeat() ?? 's1', map: id, grids: gridsOf(doc),
-        zones: m ? tableZonesFor(doc, m.id) : null,
-        deployZones: tableDeployFor(doc, m?.id ?? null),
-        ...(m ? { tasks: taskItemsFor(tableZonesFor(doc, m.id) ?? data.zoneData.zones, m, resolveLayer(doc, m.id).objectives) } : {}),
-      });
+      // The zones ride with the map, re-resolved for a Task already chosen:
+      // tableconfig.ts mapConfig, which a table set up with no lobby sends too.
+      perform(data, state, { kind: 'configureTable', seat: mySeat() ?? 's1', ...mapConfig(data, id, state.mission) });
       render();
     });
   }
@@ -3253,23 +3360,9 @@ function wire(): void {
     el.addEventListener('click', () => {
       if (!data) return;
       const id = el.dataset.mission!;
-      const m = id ? data.missions.cards.find((x) => x.id === id) : undefined;
-      // Resolved against the SHIPPED document for the chosen map, so an
-      // authored map's own zones and objective spots are what this table plays
-      // with. A `custom:` map is never offered here, so there is no storage to
-      // read and both seats compute the identical set.
-      const doc = data.boardMaps?.find((x) => x.id === state.map) ?? null;
-      const zones = m ? tableZonesFor(doc, m.id) : null;
-      perform(data, state, {
-        kind: 'configureTable', seat: mySeat() ?? 's1',
-        mission: m ? m.id : null,
-        zones,
-        // See the note in main.ts: the Deployment Zones survive a Task being
-        // cleared, because they belong to the battlefield rather than the Task.
-        deployZones: tableDeployFor(doc, m?.id ?? null),
-        tasks: m ? taskItemsFor(zones ?? data.zoneData.zones, m, resolveLayer(doc, m.id).objectives) : null,
-        zoneSet: m ? `mission:${m.id}` : '',
-      });
+      // The Task's zones, Deployment Zones and Task items on this battlefield:
+      // tableconfig.ts missionConfig, which a table set up with no lobby sends too.
+      perform(data, state, { kind: 'configureTable', seat: mySeat() ?? 's1', ...missionConfig(data, state.map, id || null) });
       render();
     });
   }
@@ -3428,16 +3521,19 @@ speakInPlace(document.body, { keep: '#card-tip, .ref-mech' });
 
 render();
 void (async () => {
+  // A game against the computer asks the server nothing: it needs no account,
+  // and plays with no connection at all.
   const [d, user, dice, mode] = await Promise.all([
     loadData(),
-    api.refresh(),
+    soloWanted ? Promise.resolve(null) : api.refresh(),
     fetch(dataUrl('dice.json')).then((r) => r.json() as Promise<DiceData>).catch(() => null),
-    api.registration().catch(() => null),
+    soloWanted ? Promise.resolve(null) : api.registration().catch(() => null),
   ]);
   data = d;
   account = user;
   diceData = dice;
   reg = mode;
+  if (soloWanted) startSolo();
   // The squad list and the card panel already tag their rows with
   // `data-tip-card`; this is the delegated listener that turns those into the
   // hover previews the freeplay board has. Nothing else was missing.

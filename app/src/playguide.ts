@@ -1029,10 +1029,14 @@ export class PlayGuide {
               <button class="pg-unit" data-keep-box="${esc(b.id)}"${can ? '' : ' disabled'}>Keep it there</button></div>`}`;
         }).join('')}`
       : '';
+    // A game set up without Secondary Tasks asks for none (state.noSecondary).
+    const lead = s.noSecondary
+      ? 'This game is played without Secondary Tasks.'
+      : `${esc(squadLabel(fp))} picks and reveals their Secondary Task first, then ${esc(squadLabel(sp))}.`;
     return `<p>${esc(squadLabel(fp))} won the roll and took the ${esc(normaliseSetup(s.setup)?.edge[fp] ?? '')} edge. Now the Tasks (3.1.3):
-      ${esc(squadLabel(fp))} picks and reveals their Secondary Task first, then ${esc(squadLabel(sp))}.</p>
+      ${lead}</p>
       ${row('Main Task', mission ? mission.name : (s.zoneSet ? 'zones picked' : 'none'), true)}
-      ${this.secondaryHtml(s)}
+      ${s.noSecondary ? '' : this.secondaryHtml(s)}
       ${named}
       ${placing}
       <div class="pg-units">
@@ -1139,7 +1143,7 @@ export class PlayGuide {
         <button class="pg-unit${mission ? '' : ' warn'}" data-pick-mission="1">${mission ? 'Change the Main Task' : 'Choose a Main Task'}</button>
       </div>
       ${pickRow}
-      <p class="pg-intercept-note">The other side takes the opposite edge. Deployment Zones follow the edges, so this decides where each squad starts. The Main Task is fixed once the edge is picked, and the Secondary Tasks come next (3.1.3).</p>`;
+      <p class="pg-intercept-note">The other side takes the opposite edge. Deployment Zones follow the edges, so this decides where each squad starts. The Main Task is fixed once the edge is picked${s.noSecondary ? '' : ', and the Secondary Tasks come next'} (3.1.3).</p>`;
   }
 
   // Prepare Tasks (5.1 step 3): starting from the First Player, each side picks

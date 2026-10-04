@@ -58,7 +58,11 @@ check('and the Link is paid once, above the branch',
 check('and never writes a position', /if \(state\.noBoard\) \{[\s\S]{0,1400}?return;\s*\n\s*\}\s*\n\s*const from = cmd\.from \?\? \{ col: t\.col, row: t\.row \};/.test(cmds), true);
 check('Forced Movement keeps facing and Link but not the cell', /if \(!state\.noBoard\) \{\s*\n\s*target\.col = cmd\.to\.col;\s*\n\s*target\.row = cmd\.to\.row;\s*\n\s*\}/.test(cmds), true);
 check('the tether leash is not judged without a board', /const leash = state\.noBoard \? null : tetherCap\(t, state\.tokens\);/.test(cmds), true);
-check('the electronic Range is the table\'s to judge', /if \(!cmd\.reaction && !origins\.some\(\(from\) => gridRange\(from, target\) <= reach\) && !state\.noBoard\)/.test(cmds), true);
+// The reach is read by `inReach` since 2026-10-03 (a free Scan behind a Melee "--" reaches the Adjacent
+// Grids, diagonals included, 4.2.2: mechanics5 F3b); the table's own judgement gates it all the same.
+check('the electronic Range is the table\'s to judge',
+  [/const inReach = \(from: Token\): boolean => \(adjacentOnly \? rangeBetween\(from, target\)\.adjacent : gridRange\(from, target\) <= reach\);/.test(cmds),
+    /if \(!cmd\.reaction && !origins\.some\(inReach\) && !state\.noBoard\)/.test(cmds)], [true, true]);
 check('placing in a Grid is refused', /case 'placeInGrid': \{\s*\n\s*if \(state\.noBoard\) return no\(/.test(cmds), true);
 check('so is the Crush exchange', /case 'crushSwap': \{\s*\n\s*if \(state\.noBoard\) return no\(/.test(cmds), true);
 

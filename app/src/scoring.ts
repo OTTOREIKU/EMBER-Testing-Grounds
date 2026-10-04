@@ -77,9 +77,17 @@ export function gameEndsThisRound(data: GameData, state: GameState): boolean {
   return state.round.n >= (state.roundLimit ?? 5) || vipFallen(data, state);
 }
 
-// The Grids a zone covers, as the scorers ask for them.
+// The Grids a zone covers, as the scorers ask for them: by its id, which is
+// what a Task item carries, or failing that by its NAME, which is what a
+// mission card prints. Asset Preservation pays for a Box "in the Echo zone",
+// and the zone's id is `echo`: asked by id alone this found no Grids for it,
+// and the Task paid nobody for a Box carried into the zone.
 export function zoneCellsOf(data: GameData, state: GameState): (zone: string) => string[] {
-  return (zone: string) => zonesOf(data.zoneData.zones, state).find((z) => z.id === zone)?.cells ?? [];
+  return (zone: string) => {
+    const zones = zonesOf(data.zoneData.zones, state);
+    const named = zone.toLowerCase();
+    return (zones.find((z) => z.id === zone) ?? zones.find((z) => z.name.toLowerCase() === named))?.cells ?? [];
+  };
 }
 
 export interface PreviewOpts {

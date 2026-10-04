@@ -228,7 +228,9 @@ check('095 still ignores the Protection the Bunker would have given',
 // (combat.ts) and in the Match Centre (match.ts) without a test noticing.
 const source = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
 for (const [file, callee] of [['combat.ts', 'protectionFor'], ['main.ts', 'protectionForShared'],
-  ['match.ts', 'protectionFor'], ['matchhud.ts', 'protectionFor']]) {
+  // turn.ts: the Match Centre's target list and its attack's opening
+  // (attackOpening) both read their Protection there.
+  ['turn.ts', 'protectionFor']]) {
   const text = source(file);
   // The shared question since 1.04 (units.ts ignoresProtection): 095's reading
   // and the pilot Tourmaline's Stationary Shadow, asked in one place.

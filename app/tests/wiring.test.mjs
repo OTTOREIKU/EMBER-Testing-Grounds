@@ -249,14 +249,19 @@ check('...the other mention being the list the table confirms at the roll, which
 // window now, so the pool is sized by the one renderer (showContest, both
 // hands) and the page only rolls what it is asked for (contestAct).
 const combat = read('combat.ts');
-const contestFn = hud.slice(hud.indexOf('function contestAct(ctx: HudCtx'), hud.indexOf('function syncContest('));
+// contestAct is contest.ts's since 2026-10-01: the Match Centre and a computer
+// seat send a Counter-roll's presses through the one function.
+const contestSrc = read('contest.ts');
+const contestFn = contestSrc.slice(contestSrc.indexOf('export function contestAct(env: ContestEnv'));
 check('contestAct was located', contestFn.includes('rollCounter'), true);
+check('and the Match Centre hands it the page\'s own send and dice',
+  /sendContestAct\(\{\s*data: ctx\.data, state: ctx\.state, seat: seatOf\(ctx\), send: ctx\.send, rollHits: ctx\.rollHits,/.test(hud), true);
 // Twice since the audit's Phase 3 (D2): the Initiator's pool carries its
 // Action's Strength +X and the Responder's never does, so each role is asked
 // for by name rather than through one expression.
 check('and sizes the roll with electronicStrength',
   [(contestFn.match(/electronicStrength\(/g) ?? []).length,
-    /electronicStrength\(ctx\.data, s\.tokens, unit, 'initiator', actionOn\(ctx, init, c\.actionId\)\)/.test(contestFn)], [2, true]);
+    /electronicStrength\(data, s\.tokens, unit, 'initiator', actionOf\(data, s, init, c\.actionId\)\)/.test(contestFn)], [2, true]);
 check('and never rolls the printed value', contestFn.includes('electronicValue('), false);
 // THE FOCUS REROLL IS NOT A POOL. 4.10 is 'reroll any Dice in that roll',
 // player's choice, and the retired panel rerolled the whole hand instead --
@@ -276,8 +281,10 @@ check('freeplay ElectronicHelper reads the same helper',
   (combat.match(/electronicStrength\(this\.data/g) ?? []).length, 4);
 // The printed value still gates who may INITIATE (4.11.2: EV 0 cannot start
 // one, but may respond), which is a different question from the pool size.
+// Twice: the Scan reaction's own gate in the Match Centre, and the picker's
+// printed value, which is read in turn.ts electronicReading since 2026-10-01.
 check('the printed value is still what gates initiating',
-  (hud.match(/electronicValue\(ctx\.data/g) ?? []).length, 2);
+  [(hud.match(/electronicValue\(ctx\.data/g) ?? []).length, (read('turn.ts').match(/const evPrinted = electronicValue\(data, by,/g) ?? []).length], [1, 1]);
 // Same class, the Ammo edition (BUG-4). A Volley is capped by the magazine, and
 // a launcher lent by a Carrier Tarantula keeps its magazine on the DRONE (FAQ
 // O3/O16). Both launch UIs sized that cap off their own `t.ammo`, found nothing
@@ -294,9 +301,13 @@ check('and sizes the volley off the magazine that pays',
   // empty Pod (audit Phase 2, C6), the same pools launch() itself pays from.
   startLaunch.includes('ammoAvailable(data, state, t, action.id)'), true);
 const startPlan = hud.slice(hud.indexOf('export function startLaunchPlan'), hud.indexOf('// A Landing Point is a Grid'));
-check('the Match Centre launch plan was located', startPlan.includes('volleyFor'), true);
+// Its count is turn.ts launchShots since 2026-10-01, which a computer seat's
+// launch reads too: the plan asks it, and it reads the magazine that pays.
+const turnTs = read('turn.ts');
+const shotsFn = turnTs.slice(turnTs.indexOf('export function launchShots('), turnTs.indexOf('export function launchLeft('));
+check('the Match Centre launch plan was located', startPlan.includes('turn.launchShots(ctx.data, ctx.state, t, a, actionId)') && shotsFn.includes('volleyFor'), true);
 check('and sizes its volley off the same one',
-  startPlan.includes('ammoAvailable(ctx.data, ctx.state, t, actionId)'), true);
+  shotsFn.includes('ammoAvailable(data, state, t, actionId)'), true);
 
 // ---------- Class 4: a Movement has two endings, and both owe the same riders ----------
 //
@@ -310,7 +321,9 @@ check('the tow has exactly one home', (hud.match(/function towDraggedAlly\(/g) ?
 check('and nothing else re-implements the spendCommand/forceMove pair',
   (hud.match(/drags \$\{ally\.label\} along/g) ?? []).length, 1);
 const settleFn = hud.slice(hud.indexOf('function commitMove(ctx: HudCtx)'), hud.indexOf('// A snapped footprint counts only'));
-check('commitMove was located', settleFn.includes('crushTargets'), true);
+// What the route comes to (the Crush it ends in, with the rest) is read in
+// turn.ts moveOrder since 2026-10-01; the two endings are still this function's.
+check('commitMove was located', settleFn.includes('turn.moveOrder(') && settleFn.includes('victims && crushes'), true);
 check('the plain settle tows', /if \(drag\) towDraggedAlly\(/.test(settleFn), true);
 // The plan is the only thing that survives between the two endings, so the tow
 // has to be ON it — a field, and a value written into it.
@@ -427,8 +440,9 @@ check('the crusher\'s own position is settled from the token only after it was p
   const start = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'rollCounter'"));
   check('startCounterRoll refuses a dash as the Responder',
     /electronicDash\(data, target\)/.test(start), true);
+  // Its picker's list is turn.ts electronicReading since 2026-10-01.
   check('and the Match Centre does not offer one',
-    /alive\(t\) && !electronicDash\(ctx\.data, t\)/.test(read('matchhud.ts')), true);
+    [/alive\(t\) && !electronicDash\(data, t\)/.test(read('turn.ts')), /turn\.electronicReading\(ctx\.data, s, m\.uid, m\.actionId\)/.test(read('matchhud.ts'))], [true, true]);
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

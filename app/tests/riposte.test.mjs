@@ -6,6 +6,10 @@
 // turn structure: one ends the OTHER seat's Action Opportunity, and the other
 // performs an Action outside any Opportunity at all.
 import { readFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -63,7 +67,7 @@ check('the picked Melee rides the ordinary attack pick with the flag set',
 // FAQ C1: the Riposte's target can only be the attacker. The pick used to list
 // every enemy; since 2026-09-25 it is handed the one target.
 check('and its one target is the attacker (FAQ C1)',
-  /startAttackPick\(uid, actionId, r\.fromUid\)/.test(hud) && /m\.only === undefined \|\| t\.uid === m\.only/.test(hud), true);
+  /startAttackPick\(uid, actionId, r\.fromUid\)/.test(hud) && /pick\.only === undefined \|\| t\.uid === pick\.only/.test(turnSrc), true);
 // Pressing it twice must not strand the debt: the first press already ended it.
 check('and re-entering does not re-send the ending',
   /ensureScript\(s\)\.opp\?\.uid === r\.fromUid\) \{/.test(hud), true);

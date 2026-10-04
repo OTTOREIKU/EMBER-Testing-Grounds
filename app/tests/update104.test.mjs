@@ -94,12 +94,16 @@ const src = (f) => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
 const calls = (f, name) => (src(f).match(new RegExp(`\\b${name}\\(`, 'g')) ?? []).length;
 check('the attack window asks ignoresProtection at both of its doors', calls('src/combat.ts', 'ignoresProtection'), 2);
 check('freeplay, the Match Centre board and its target list ask it too',
-  [calls('src/main.ts', 'ignoresProtection'), calls('src/match.ts', 'ignoresProtection'), calls('src/matchhud.ts', 'ignoresProtection')], [1, 1, 1]);
+  // The target list's reading and the attack's opening are turn.ts
+  // attackReading and attackOpening since 2026-10-01; the Match Centre asks them.
+  [calls('src/main.ts', 'ignoresProtection'), calls('src/match.ts', 'ignoresProtection'), calls('src/turn.ts', 'ignoresProtection')], [1, 0, 2]);
 check('and nothing outside units.ts asks the old Highlight-only question',
   ['src/combat.ts', 'src/main.ts', 'src/match.ts', 'src/matchhud.ts'].map((f) => calls(f, 'ignoresProtectionOnHighlight')), [0, 0, 0, 0]);
+// The Match Centre's count is turn.ts launchShots since 2026-10-01.
 check('every launch reader sizes the volley with volleyFor',
-  ['src/commands.ts', 'src/main.ts', 'src/matchhud.ts', 'pad/pad.ts'].map((f) => [calls(f, 'volleyFor') > 0, calls(f, 'volleyOf')]),
-  [[true, 0], [true, 0], [true, 0], [true, 0]]);
+  [...['src/commands.ts', 'src/main.ts', 'src/turn.ts', 'pad/pad.ts'].map((f) => [calls(f, 'volleyFor') > 0, calls(f, 'volleyOf')]),
+    [calls('src/matchhud.ts', 'turn.launchShots') > 0, calls('src/matchhud.ts', 'volleyOf')]],
+  [[true, 0], [true, 0], [true, 0], [true, 0], [true, 0]]);
 check('the attack window is handed the running Opportunity on both boards',
   [/attackHelper\.opportunity = \(\) => state\.script\?\.opp/.test(src('src/main.ts')), /attackHelper\.opportunity = \(\) => state\.script\?\.opp/.test(src('src/match.ts'))], [true, true]);
 

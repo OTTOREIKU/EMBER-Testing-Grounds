@@ -36,7 +36,10 @@ check('Match Centre: nothing writes the old note directly any more, except to cl
   [...match.matchAll(/lobbyNote = ([^;\n]+)/g)].map((m) => m[1]).filter((v) => v !== 'null' && v !== 'text'), []);
 check('Match Centre: the HUD\'s notes say what kind they are, and refuse by default',
   [/noteNow: \(text, kind\) => say\(kind \?\? 'refused', text\),/.test(match),
-    (hud.match(/, 'done'\)/g) ?? []).length >= 60, (hud.match(/, 'table'\)/g) ?? []).length >= 6, (hud.match(/, 'system'\)/g) ?? []).length >= 5],
+    (hud.match(/, 'done'\)/g) ?? []).length >= 60, (hud.match(/, 'table'\)/g) ?? []).length >= 6,
+    // Three of them are the Counter-roll's dice failing, said by its sender
+    // (contest.ts since 2026-10-01) through the HUD's own note line.
+    ((hud + src('../src/contest.ts')).match(/, 'system'\)/g) ?? []).length >= 5 && /say: \(text, kind\) => ctx\.noteNow\(text, kind\)/.test(hud)],
   [true, true, true, true]);
 check('Match Centre: each player hears what the other did to their units or the table (pick 3)',
   // Wider since P7A: the other player's Charge and Discard are said first (audit Phase 7).

@@ -442,8 +442,9 @@ function setupHtml(api: GuideApi, stage: string): string {
     const fp = s.round.firstPlayer;
     const tasks = normaliseTasks(s.tasks);
     const owed = taskDesignations(api.data, s);
-    const both = !!tasks.secondary.s1 && !!tasks.secondary.s2;
-    const rows = [fp, other(fp)].map((side, i) => {
+    // A game set up without Secondary Tasks lists none and owes none.
+    const both = !!s.noSecondary || (!!tasks.secondary.s1 && !!tasks.secondary.s2);
+    const rows = s.noSecondary ? '' : [fp, other(fp)].map((side, i) => {
       const id = tasks.secondary[side];
       const card = id ? api.data.secondary.find((c) => c.id === id) : undefined;
       const waits = i === 1 && !tasks.secondary[fp];
@@ -457,7 +458,7 @@ function setupHtml(api: GuideApi, stage: string): string {
     const mainRow = `<div class="pad-turn-row"><span class="pad-turn-name">Main Task</span>
         <span class="pad-turn-val">${main ? api.esc(main.name) : '—'}</span></div>`;
     const done = both && !owed.length;
-    return head(api, 'Secondary Tasks', `${api.actorName(fp)} first (FAQ P1)`, true) + mainRow + rows + desig
+    return (s.noSecondary ? head(api, 'Tasks', 'No Secondary Tasks in this game', true) : head(api, 'Secondary Tasks', `${api.actorName(fp)} first (FAQ P1)`, true)) + mainRow + rows + desig
       + btn(api, 'g-tasks-done', 'Continue', done ? '' : 'disabled', 'pad-chip on');
   }
   // deploy

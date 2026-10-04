@@ -7,6 +7,10 @@
 // sliced in; the pages are pinned as text, because the other half of the audit
 // was three pages asking the same question three different ways.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -132,9 +136,13 @@ check('and each has a Cancel that cancels',
 check('the Guided pad pays for Stabilize only once it is answered',
   /api\.stabilise\?\.\(t\.uid, \(\) => api\.send\(\{ kind: 'performAction'/.test(guided), true);
 const route = cut(hud, 'function routeAction(', 'function launchPickPanel', 'routeAction');
-check('the Match Centre asks Stabilize in routeAction, before it pays', route.includes("if (a.id === 'COMMON_STABILIZE')"), true);
+// Which branch an Action takes is turn.ts actionRoute's to say since 2026-10-01;
+// the order the Match Centre asked in is that function's order.
+const classed = cut(turnSrc, 'export function actionRoute(', "return 'card';", 'actionRoute');
+check('the Match Centre asks Stabilize in routeAction, before it pays',
+  [classed.includes("if (a.id === 'COMMON_STABILIZE') return 'stabilise';"), route.includes("if (route === 'stabilise') {\n    if (stabiliseAsk(")], [true, true]);
 check('and routes a Link Beacon before the Detonation branch',
-  route.indexOf('linkSupportOf(a)') > 0 && route.indexOf('linkSupportOf(a)') < route.indexOf("t.kind === 'projectile' && a.type !== 'Passive'"), true);
+  classed.indexOf('linkSupportOf(a)') > 0 && classed.indexOf('linkSupportOf(a)') < classed.indexOf("t.kind === 'projectile' && a.type !== 'Passive'"), true);
 const perform = cut(main, 'function performGuided(', 'async function performStabilize', 'performGuided');
 check('the tabletop routes a Link Beacon before the Detonation branch',
   perform.indexOf('linkSupportOf(action)') > 0 && perform.indexOf('linkSupportOf(action)') < perform.indexOf("t.kind === 'projectile' && action.type !== 'Passive'"), true);

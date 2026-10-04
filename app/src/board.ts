@@ -195,6 +195,9 @@ export class Board {
   // How many Black Boxes each unit carries, staged by renderTokens so the
   // token shows them (audit Phase 6, F12).
   private carried = new Map<number, number>();
+  // The walks under way, by unit (animateMove), for a token built mid-walk.
+  private walks = new Map<number, { frames: Keyframe[]; total: number; begun: number; landed: string }>();
+  private gSight!: SVGGElement;
   private gOverlay: SVGGElement;
   private gHighlight: SVGGElement;
   private gMarkers!: SVGGElement;
@@ -312,6 +315,9 @@ export class Board {
     this.gMarkers = el('g', { class: 'markers' });
     this.gTaskItems = el('g', { class: 'task-items', 'pointer-events': 'none' });
     this.gSmoke = el('g', { class: 'smoke-layer' });
+    // What one unit can see (showSight): under every pick and highlight, which
+    // clear their own layer and must not take this one with them.
+    this.gSight = el('g', { class: 'sight-layer', 'pointer-events': 'none' });
     this.gHighlight = el('g', { class: 'highlight', 'pointer-events': 'none' });
     this.gTokens = el('g');
     this.gGhost = el('g', { class: 'ghost', 'pointer-events': 'none' });
@@ -322,6 +328,7 @@ export class Board {
     this.gWorld.appendChild(this.gMarkers);
     this.gWorld.appendChild(this.gTaskItems);
     this.gWorld.appendChild(this.gSmoke);
+    this.gWorld.appendChild(this.gSight);
     this.gWorld.appendChild(this.gHighlight);
     this.gWorld.appendChild(this.gTokens);
     this.gWorld.appendChild(this.gGhost);
@@ -783,7 +790,9 @@ export class Board {
       const pv = preview && preview.uid === t.uid ? preview : null;
       // A unit awaiting deployment is in the squad but not on the board yet.
       if (t.deployed !== false) {
-        this.gTokens.appendChild(this.buildToken(pv?.facing !== undefined ? { ...t, facing: pv.facing } : t));
+        const g = this.buildToken(pv?.facing !== undefined ? { ...t, facing: pv.facing } : t);
+        this.gTokens.appendChild(g);
+        this.resumeWalk(g, t.uid);
       } else if (pv && pv.col !== undefined && pv.row !== undefined) {
         const g = this.buildToken({ ...t, col: pv.col, row: pv.row, facing: pv.facing ?? t.facing });
         g.classList.add('pending');
@@ -1197,12 +1206,32 @@ export class Board {
     const hops = stops.length - 1;
     const total = Math.min(1500, 260 + hops * 170);
     const frames = stops.map((s) => ({ transform: `translate(${s.col * CELL}px, ${s.row * CELL}px)` }));
+    const landed = `translate(${stops[hops].col * CELL}, ${stops[hops].row * CELL})`;
+    // A board drawn again in the middle of a walk builds every token afresh
+    // (renderTokens), and the walk went with the token it began on: the unit
+    // stood still and then jumped. A Movement Action pays as its walk begins,
+    // and in a game against the computer or across a room the other seat's
+    // news arrives at any moment, so most walks after the first were lost that
+    // way (OTTO's playtest, 2026-10-03). The walk is kept here by unit, and a
+    // token built while it lasts takes it up where it had got to (resumeWalk).
+    const walk = { frames, total, begun: performance.now(), landed };
+    this.walks.set(uid, walk);
+    // One walk settles ONCE. Two things arrive for every walk, the animation's
+    // own finish and the timer below, in either order, and `done` is where a
+    // page records the Movement. The second arrival used to run it again: the
+    // Match Centre sent the move a second time (refused, and said so on the
+    // notice line), sometimes long after, when a pane's animation clock caught
+    // up. The mark belongs to this walk, not to the element, which walks again
+    // later.
+    let settled = false;
     const settle = () => {
-      if (g.dataset.moveDone) return;
-      g.dataset.moveDone = '1';
-      g.classList.remove('moving');
-      g.setAttribute('transform', `translate(${stops[hops].col * CELL}, ${stops[hops].row * CELL})`);
-      delete g.dataset.moveDone;
+      if (settled) return;
+      settled = true;
+      if (this.walks.get(uid) === walk) this.walks.delete(uid);
+      // The token the board holds now, which a draw may have built since.
+      const now = this.gTokens.querySelector<SVGGElement>(`[data-uid="${uid}"]`) ?? g;
+      now.classList.remove('moving');
+      now.setAttribute('transform', landed);
       done();
     };
     g.classList.add('moving');
@@ -1214,6 +1243,20 @@ export class Board {
       anim.onfinish = settle;
     } catch {
       settle();
+    }
+  }
+
+  // A token built while its unit is walking takes the walk up where it had got
+  // to. The walk's own timer still settles it (animateMove).
+  private resumeWalk(g: SVGGElement, uid: number): void {
+    const walk = this.walks.get(uid);
+    if (!walk) return;
+    g.classList.add('moving');
+    try {
+      const anim = g.animate(walk.frames, { duration: walk.total, easing: 'ease-in-out', fill: 'forwards' });
+      anim.currentTime = Math.min(walk.total, Math.max(0, performance.now() - walk.begun));
+    } catch {
+      g.setAttribute('transform', walk.landed);
     }
   }
 
@@ -1325,6 +1368,24 @@ export class Board {
   clearHighlights(): void {
     this.gHighlight.replaceChildren();
     this.gPick.replaceChildren();
+  }
+
+  // WHAT ONE UNIT CAN SEE (the Line of Sight control; OTTO's playtest,
+  // 2026-10-03: "so I know to turn the unit if needed"): each Grid it has a
+  // line of sight to, in its Forward Arc in the stronger tint and outside it in
+  // the fainter, a line through cover lighter than a clear one. Null clears it.
+  showSight(grids: { c: number; r: number; arc: boolean; clear: boolean }[] | null): void {
+    this.gSight.replaceChildren();
+    for (const cell of grids ?? []) {
+      this.gSight.appendChild(el('rect', {
+        x: cell.c * 3 * CELL + 2,
+        y: cell.r * 3 * CELL + 2,
+        width: 3 * CELL - 4,
+        height: 3 * CELL - 4,
+        rx: 4,
+        class: `sight-cell ${cell.arc ? 'sight-arc' : 'sight-turn'}${cell.clear ? '' : ' sight-cover'}`,
+      }));
+    }
   }
 
   showGhost(cells: { col: number; row: number }[], ok: boolean): void {
@@ -1444,30 +1505,10 @@ export class Board {
   }
 }
 
-// `grids` defaults to the printed 12 so an un-migrated caller keeps the exact
-// behaviour it had. Every caller that can see the state should pass
-// gridsOf(state): on a 16 or 18 board the old default would clamp a legal
-// placement back onto the printed board's last Grid, silently.
-export function snapPlacement(col: number, row: number, size: 1 | 2 | 3, grids: number = DEFAULT_GRIDS): { col: number; row: number } | null {
-  const cells = cellsFor(grids);
-  const last = grids - 1;
-  col = Math.max(0, Math.min(cells - size, col));
-  row = Math.max(0, Math.min(cells - size, row));
-  if (size === 3) {
-    return { col: Math.round(col / 3) * 3, row: Math.round(row / 3) * 3 };
-  }
-  if (size === 2) {
-    const lg = { c: Math.floor((col + 1) / 3), r: Math.floor((row + 1) / 3) };
-    const c = Math.min(last, Math.max(0, lg.c));
-    const r = Math.min(last, Math.max(0, lg.r));
-    const offC = Math.min(1, Math.max(0, col - c * 3));
-    const offR = Math.min(1, Math.max(0, row - r * 3));
-    return { col: c * 3 + offC, row: r * 3 + offR };
-  }
-  const c = Math.min(last, Math.max(0, Math.floor(col / 3)));
-  const r = Math.min(last, Math.max(0, Math.floor(row / 3)));
-  return { col: c * 3 + 1, row: r * 3 + 1 };
-}
+// snapPlacement lives in rules.ts now, beside standingSpot: it is pure
+// geometry, and a reader with no board (turn.ts) needs it. Re-exported for the
+// callers that had it from here.
+export { snapPlacement } from './rules';
 
 // The cells a base covers, a line unit's 1x3 across its facing included
 // (types.ts baseCells).

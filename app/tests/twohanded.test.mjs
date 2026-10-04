@@ -4,6 +4,10 @@
 // before an attack apply it — a site that misses it is a weapon that quietly
 // loses its Range on one page only.
 import { readFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -27,12 +31,17 @@ const units = src('units.ts'), combat = src('combat.ts'), hud = src('matchhud.ts
 // rider its own picker had promised.
 // Three sites since the 1.04 Containers (Supplementary Rules 3.1): a Container
 // named as the target re-reads the same adjusted Action before it pays.
+// The target list's own reading is turn.ts attackReading; the two presses
+// re-read it on the page.
 check('the Match Centre reads it in all three places it adjusts an Action',
-  (hud.match(/handsFor\(ctx, by, granted, m\.twoHanded\)/g) ?? []).length, 3);
+  [(hud.match(/handsFor\(ctx, by, granted, m\.twoHanded\)/g) ?? []).length, (turnSrc.match(/handsFor\(data, s, by, granted, pick\.twoHanded\)/g) ?? []).length], [2, 1]);
 check('and freeplay asks it at both of its doors',
   (main.match(/askTwoHanded\(t, granted\)/g) ?? []).length, 2);
+// Where the attack starts is turn.ts attackActionBuilt, which the page's
+// startAttack opens its window with (attackOpening).
 check('and the Match Centre applies it where the attack starts',
-  /twoHandedUse\(data, t, granted, boxHands\(state\.tasks, t\.uid\), loans\)\?\.action \?\? granted/.test(match), true);
+  [/twoHandedUse\(data, t, granted, boxHands\(state\.tasks, t\.uid\), loans\)\?\.action \?\? granted/.test(turnSrc),
+    /const open = attackOpening\(data, state, uid, actionId, targetUid, mode, opts\);/.test(match)], [true, true]);
 check('both sit AFTER the Stationary adjustment, so the riders compound',
   /const steadied = raw \? stationaryAdjusted[\s\S]{0,900}handsFor/.test(hud)
   && /const steadied = stationaryAdjusted[\s\S]{0,900}askTwoHanded/.test(main), true);
@@ -41,7 +50,7 @@ check('both sit AFTER the Stationary adjustment, so the riders compound',
 check('the helper applies and the pages offer, with the reasoning recorded',
   /the pages OFFER it \(FAQ A16/.test(units), true);
 check('a declined designation is a marked one-handed copy on every page',
-  /twoHandedDeclined: true/.test(hud) && /twoHandedDeclined: true/.test(main) && /twoHandedDeclined: true/.test(match), true);
+  /twoHandedDeclined: true/.test(turnSrc) && /twoHandedDeclined: true/.test(main) && /\? \{ \.\.\.granted, twoHandedDeclined: true \} : granted;/.test(turnSrc), true);
 check('and the combat window reports the decline instead of re-deriving the bonus',
   /if \(c\.action\.twoHandedDeclined\) return/.test(combat), true);
 check('and the mirror rebuilds the same one-handed Action',

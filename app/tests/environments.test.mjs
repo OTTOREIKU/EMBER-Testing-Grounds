@@ -16,6 +16,10 @@
 // Ground Unit walking into that Grid. The card is laid on the table and the
 // players read it, the way the app treats every rule it has not modelled.
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 const root = new URL('../../', import.meta.url);
 const env = JSON.parse(readFileSync(new URL('data/environments.json', root), 'utf8'));
@@ -525,17 +529,23 @@ console.log('\nwired into both boards');
 // one page and absent on the other.
 check('freeplay flies the Anti-Gravity start in all three derivations',
   (mainSrc2.match(/envFlightFrom\(data, state, t\)/g) ?? []).length, 3);
+// Its planner's own (turn.ts moveStart, which the planner opens through since
+// 2026-10-01), and the reach every reader of the turn takes (turn.ts
+// movesAsFlight), which its overlay draws from.
 check('the Match Centre in both of its own',
-  (src('matchhud.ts').match(/envFlightFrom\(ctx\.data, ctx\.state, t\)/g) ?? []).length, 2);
+  [(turnSrc.match(/envFlightFrom\(data, state, t\)/g) ?? []).length, /const start = turn\.moveStart\(ctx\.data, ctx\.state, t, opts\);/.test(src('matchhud.ts'))], [2, true]);
+// The Match Centre's resolver is turn.ts forcedMove / forcedCommands since
+// M8.2t, where a computer seat reads it too; its panel calls them.
 check('both knockback resolvers stop the line on the cards', [
   // `d`, not `dir`: freeplay's Push picks its own direction first (audit
   // Phase 4, B4), so the line the resolver walks is whichever was chosen.
   /knockbackPath\(victim, d, kb\.grids, currentTerrain\(\), state\.tokens, envForcedStop\(data, state, victim\)\)/.test(mainSrc2),
-  /knockbackPath\(victim, dir, kb\.grids, terrainOf\(ctx\), ctx\.state\.tokens, envForcedStop\(ctx\.data, ctx\.state, victim\)\)/.test(src('matchhud.ts')),
+  /knockbackPath\(victim, dir, kb\.grids, terrainOf\(data, state\), state\.tokens, envForcedStop\(data, state, victim\)\)/.test(turnSrc)
+    && /return turn\.forcedMove\(ctx\.data, ctx\.state, by, victim, a, pushDir, resume\);/.test(src('matchhud.ts')),
 ], [true, true]);
 check('both resolve the Abyss death with the kill credited', [
   (mainSrc2.match(/envCardAt\(state, end\.c, end\.r\) === 'abyss'/g) ?? []).length,
-  (src('matchhud.ts').match(/envCardAt\(ctx\.state, out\.end\.c, out\.end\.r\) === 'abyss'/g) ?? []).length,
+  (turnSrc.match(/envCardAt\(state, out\.end\.c, out\.end\.r\) === 'abyss';\n\s+const commands[\s\S]{0,400}if \(fatal\) commands\.push\(\{ kind: 'recordKill'/g) ?? []).length,
 ], [1, 1]);
 // Handed to the one shared crushEscapeGrids as its `barred` test now (audit
 // Phase 4, C1), so the Grid arrives as (c, r).
@@ -545,7 +555,7 @@ check('both crush displacements filter the Abyss out', [
 ], [true, true]);
 check('both forced-movement senders carry the line for the heat', [
   (mainSrc2.match(/via: path\.map\(\(g\) => \(\{ col: g\.c \* 3 \+ 1, row: g\.r \* 3 \+ 1 \}\)\)/g) ?? []).length,
-  (src('matchhud.ts').match(/via: out\.path\.map\(\(g\) => \(\{ col: g\.c \* 3 \+ 1, row: g\.r \* 3 \+ 1 \}\)\)/g) ?? []).length,
+  (turnSrc.match(/via: out\.path\.map\(\(g\) => \(\{ col: g\.c \* 3 \+ 1, row: g\.r \* 3 \+ 1 \}\)\)/g) ?? []).length,
 ], [1, 1]);
 // Freeplay's endpoint roads: renderAll settles BEFORE it saves, so the grants
 // are in the state that save writes - and the DRAG handler settles too,
@@ -561,8 +571,9 @@ check('freeplay settles on both of its non-command roads',
 }
 check('freeplay grants pass-through heat through the command layer, not a page write',
   /kind: 'applyStatus', seat: t\.side, uid: t\.uid, targetUid: t\.uid, statusId: 'fragile'/.test(mainSrc2), true);
+// Built in turn.ts moveOrder since 2026-10-01; the Match Centre sends what it built.
 check('the maneuver carries its movement mode for the same reason',
-  /flying: m\.flying \|\| undefined/.test(src('matchhud.ts')), true);
+  [/flying: m\.flying \|\| undefined/.test(turnSrc), /const moveOk = ctx\.send\(order\.command!\)\.ok;/.test(src('matchhud.ts'))], [true, true]);
 check('and the abyss catch-all sweep is registered',
   /sweepAbyss\(\);/.test(mainSrc2), true);
 

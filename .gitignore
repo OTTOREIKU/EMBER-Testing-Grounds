@@ -31,6 +31,9 @@ app/tests/_*.mjs
 # The footprint reader fifteen slice harnesses prepend (types.ts baseCells):
 # source, not an artefact.
 !app/tests/_footprint.mjs
+# The real engine, bundled and run with no page (solosetup and the computer
+# seat's suites import it): source too.
+!app/tests/_engine.mjs
 
 # Cached responses from the publisher's card API (tools/sync_official.mjs).
 .cache/

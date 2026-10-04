@@ -5,6 +5,10 @@
 // the remaining Ticks still the attacker's. Both pages used to refuse the
 // target outright. The shared record is driven; the two flows are pinned.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -59,25 +63,30 @@ check('and a Scan never measures through a Repeater (A5, F9)',
 
 // ---------- the Match Centre ----------
 const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
-check('a camouflaged target is a pressable row', /const blocked = \(!hidden && note\.includes\('✕'\)\) \|\| lit;/.test(hud), true);
+check('a camouflaged target is a pressable row', /const blocked = \(!hidden && note\.includes\('✕'\)\) \|\| lit;/.test(turnSrc), true);
 check('that says what will happen', /one free Scan first; the attack follows if it is Revealed \(4\.12\.2, FAQ I12\)/.test(hud), true);
 const press = hud.slice(hud.indexOf("on('[data-attacktarget]'"), hud.indexOf("on('[data-attacktarget]'") + 4200);
 // As the table will stand once the attack is paid (ruled R2; audit Phase 7, P7C 2).
 check('the press asks the command before paying', /const can = checkPaid\(ctx, scan\);\s*\n\s*if \(!can\.ok\)/.test(press), true);
 check('then pays the Tick - the attack is declared (3.4.5)', /const paid = commitAction\(ctx\);[\s\S]{0,200}?ctx\.send\(scan\)/.test(press), true);
 check('and the Scan carries the attack', /actionId: 'COMMON_SCAN', targetUid: t\.uid,\s*thenAttack: \{\s*actionId: m\.actionId,\s*\.\.\.\(m\.refund \? \{ charged: true \} : \{\}\),/.test(press), true);
-const apply = hud.slice(hud.indexOf("if (act === 'apply') {"), hud.indexOf("if (act === 'apply') {") + 3000);
+// The Counter-roll's sender is contest.ts contestAct since 2026-10-01 (the
+// Match Centre and a computer seat share it): its apply and close are read there.
+const contestSrc = readFileSync(new URL('../src/contest.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const apply = contestSrc.slice(contestSrc.indexOf("if (act === 'apply') {"), contestSrc.indexOf("if (act === 'apply') {") + 3000);
 // Since the audit's Phase 3 (D1) every seam builds a won Counter-roll through
 // ewWinCommands in units.ts; the Match Centre hands it the record's thenAttack.
 const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const win = unitsSrc.slice(unitsSrc.indexOf('export function ewWinCommands('), unitsSrc.indexOf('export function electronicAllTargets('));
 check('a successful Scan queues the attack behind the Reveal',
-  /kind: 'scanAttack' as const, fromUid: resp\.uid/.test(win) && /ewWinCommands\(ctx\.data, init, resp, a, \{ reaction: !!c\.reaction, thenAttack: c\.thenAttack(, terminal: c\.terminal)? \}\)/.test(apply), true);
+  /kind: 'scanAttack' as const, fromUid: resp\.uid/.test(win) && /ewWinCommands\(data, init, resp, a, \{ reaction: !!c\.reaction, thenAttack: c\.thenAttack(, terminal: c\.terminal)? \}\)/.test(apply), true);
 // `uid` there is the Initiator's own, the attacker's.
 check('to the ATTACKER\'s seat', /const uid = init\.uid;[\s\S]*?\.\.\.\(then \? \[\{\s*uid, actionId: then\.actionId/.test(win), true);
 // A Multi-Target's extra designation queues no attack, so it is read apart (ruled R3; audit Phase 7, P7C 4).
 // Said once the close has landed: a refused one ends nothing (ruled R3; audit Phase 7, P7D 1).
-check('a Scan closed without applying ends the attack (I11)', /: owed\.some\(\(r\) => r\.kind === 'scanAttack' && r\.uid === init\.uid\);[\s\S]{0,300}?const closed = ctx\.send\(\{ kind: 'clearCounterRoll', seat: seatOf\(ctx\) \}\);[\s\S]{0,120}?\} else if \(c\.thenAttack && !applied\)/.test(hud) && /any remaining Ticks may still be used \(FAQ I11\)/.test(hud), true);
+check('a Scan closed without applying ends the attack (I11)', /: owed\.some\(\(r\) => r\.kind === 'scanAttack' && r\.uid === init\.uid\);[\s\S]{0,300}?const closed = send\(\{ kind: 'clearCounterRoll', seat: env\.seat \}\);[\s\S]{0,120}?\} else if \(c\.thenAttack && !applied\)/.test(contestSrc) && /any remaining Ticks may still be used \(FAQ I11\)/.test(contestSrc)
+  // The seat that closes it is the page's own, handed over with its send.
+  && /seat: seatOf\(ctx\), send: ctx\.send, rollHits: ctx\.rollHits/.test(hud), true);
 check('the reaction panel waits while the target Reveals', /r\.kind === 'scanAttack'\) \{[\s\S]{0,600}?const hidden = !!target && statusCount\(target\.statuses, 'camouflage'\) > 0;/.test(hud), true);
 check('judges the attack from where it appeared', /r\.kind === 'scanAttack'\) \{[\s\S]{0,900}?losNote\(t, target, \{ \.\.\.act, range: actionRange\(ctx\.data, ctx\.state\.tokens, t, act\) \}/.test(hud), true);
 check('and resumes through the ordinary front door, as it was declared', /r\.kind === 'scanAttack'\) \{\s*\n\s*if \(!place\) \{[\s\S]{0,300}?ctx\.startAttack\(uid, actionId, r\.fromUid, 'attack', \{ charged: !!r\.charged, chargeChoice: r\.chargeChoice, twoHandedDeclined: !!r\.twoHandedDeclined \}\);/.test(hud), true);

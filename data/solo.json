@@ -1,0 +1,51 @@
+{
+  "_comment": "Games against the computer (Project-Documents/AI-OPPONENT-PLAN.md, M0.1). A scenario names a shipped map, a Main Task, the game's length, whether Secondary Tasks and Tactics Cards are in play, which squad takes which seat, and, when `edges` is given, which table edge each seat deploys from whoever wins the roll (the copied mode fixes them: its first squad always holds the Black edge). A squad is exactly an importSquad payload: Mechs by loadout, Drones by card id, a Drone's Load as `backpack`. `points` is what the squad must total on the current list prices; the test fails if a price change moves it, so a fixed scenario is never changed by accident.",
+  "_source": "OTTO, 2026-10-01: start with a direct copy of the solo mode on watermelon02.github.io/builder-web, so the two computer opponents can be compared: the Raid combat pack's RDL and UN squads, two map and mission pairs, five rounds, no Secondary Tasks, no Tactics Cards. Its squads total 400 and 410 there; ours agree on the 1.04 list prices.",
+  "squads": {
+    "raid-rdl": {
+      "name": "RDL Raid",
+      "faction": "RDL",
+      "points": 400,
+      "mechs": [
+        { "name": "Mire", "loadout": { "torso": "533", "chasis": "534", "leftHand": "535", "rightHand": "536", "backpack": "004", "pilot": "FPA-04-2" } },
+        { "name": "Dune", "loadout": { "torso": "014", "chasis": "020", "leftHand": "032", "rightHand": "033", "backpack": "532", "pilot": "FPA-63" } }
+      ],
+      "drones": []
+    },
+    "raid-un": {
+      "name": "UN Raid",
+      "faction": "UN",
+      "points": 410,
+      "mechs": [
+        { "name": "Wild Cat", "loadout": { "torso": "539", "chasis": "099", "leftHand": "540", "rightHand": "541", "backpack": "538", "pilot": "LPA-23-2" } }
+      ],
+      "drones": [
+        { "cardId": "543" },
+        { "cardId": "166" },
+        { "cardId": "162", "backpack": "083" }
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "alley-forward-advance",
+      "map": "alley",
+      "mission": "control-frontal-breakthrough",
+      "rounds": 5,
+      "secondaries": false,
+      "tactics": false,
+      "seats": { "s1": "raid-rdl", "s2": "raid-un" },
+      "edges": { "s1": "black", "s2": "white" }
+    },
+    {
+      "id": "intersection-vip-assassination",
+      "map": "crossroads",
+      "mission": "vip-commander-assassination",
+      "rounds": 5,
+      "secondaries": false,
+      "tactics": false,
+      "seats": { "s1": "raid-rdl", "s2": "raid-un" },
+      "edges": { "s1": "black", "s2": "white" }
+    }
+  ]
+}

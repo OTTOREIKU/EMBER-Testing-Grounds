@@ -7,6 +7,10 @@
 // back are all pinned here together. Driven against the real cards.json,
 // because every reader in this block is a reader of printed text.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
 const rules = src('rules.ts'), unitsSrc = src('units.ts'), dataSrc = src('data.ts');
@@ -308,19 +312,23 @@ const board = (tokens) => ({ tokens, nextUid: 99, round: { n: 1, phase: 2, first
 // Two now: the Match Centre's overlay reads moveOptsFor, so that page builds its
 // MoveOpts once (audit Phase 7, P7D 6), pinned by the third check.
 check('every MoveOpts site carries the leash',
-  (mainSrc + hudSrc).match(/const (?:leash|tethered) = tetherCap\(/g)?.length, 2);
+  (mainSrc + turnSrc).match(/const (?:leash|tethered) = tetherCap\(/g)?.length, 2);
 check('and every site composes it with the Abyss ban',
-  (mainSrc + hudSrc).match(/allowed: leash && env\.allowed/g)?.length, 2);
+  (mainSrc + turnSrc).match(/allowed: leash && env\.allowed/g)?.length, 2);
+// The builder is turn.ts moveOptsFor since 2026-10-01: the Match Centre's
+// overlay and its route both ask it, and so does the seat seam.
 check('and the Match Centre overlay reads the route\'s own opts',
-  /return reachableGrids\(t, steps, terrainOf\(ctx\), ctx\.state\.tokens, flying, moveOptsFor\(ctx, t, flying, actionId\)\);/.test(hudSrc), true);
+  [/return reachableGrids\(t, steps, terrainOf\(data, state\), state\.tokens, flying, moveOptsFor\(data, state, t, flying, actionId\)\);/.test(turnSrc),
+    /return turn\.reachableFor\(ctx\.data, ctx\.state, t, steps, asFlight, actionId\);/.test(hudSrc),
+    /return turn\.moveOptsFor\(ctx\.data, ctx\.state, t, flying, actionId\);/.test(hudSrc)], [true, true, true]);
 check('and each page imports it', [
   /import \{[^}]*tetherCap[^}]*\} from '\.\/melee'/.test(mainSrc),
-  /import \{[^}]*tetherCap[^}]*\} from '\.\/melee'/.test(hudSrc),
+  /import \{[^}]*tetherCap[^}]*\} from '\.\/melee'/.test(turnSrc),
 ], [true, true]);
 // Priced as exitCost it would be buyable; tested in the search it is not.
 check('the leash is tested in searchMoves, not priced',
   /if \(opts\?\.allowed && !opts\.allowed\(n\.c, n\.r\)\) continue;/.test(rules), true);
-check('and it is not folded into exitCost', /exitCost:[^\n]*tetherCap/.test(mainSrc + hudSrc), false);
+check('and it is not folded into exitCost', /exitCost:[^\n]*tetherCap/.test(mainSrc + hudSrc + turnSrc), false);
 // The overlay silently shrinking is the one thing a player cannot deduce, so
 // both boards say why — out of one helper, so they cannot say it differently.
 check('both boards explain the short reach from the same helper',

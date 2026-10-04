@@ -11,6 +11,10 @@
 // the keyword for a Mech in the wrong stance. The keyword must be invisible on
 // the raw action and visible only on the grantAdjusted copy.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 // Two ranges: snipeOn (so B3's closure is proved against the real reader, not
@@ -134,8 +138,13 @@ const match = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
 check('freeplay folds grants into the attack action', /grantAdjusted\(steadied, t, opp0/.test(main), true);
 check('the Match Centre attack panel does', /grantAdjusted\(steadied, by, opp0/.test(hud), true);
 // Three since the 1.04 Containers: a Container target re-checks the same way.
-check('three times - the target and Container re-checks too', (hud.match(/grantAdjusted\(steadied, by, opp0/g) ?? []).length, 3);
-check('and the combat window action deriver does', /grantAdjusted\(stationaryAdjusted\(printed, opp\), t, opp\)/.test(match), true);
+// The list itself is read in turn.ts attackReading; the two re-checks are the
+// page's own presses.
+check('three times - the target and Container re-checks too',
+  [(hud.match(/grantAdjusted\(steadied, by, opp0/g) ?? []).length, (turnSrc.match(/grantAdjusted\(steadied, by, opp0/g) ?? []).length], [2, 1]);
+// The deriver is turn.ts attackActionBuilt since 2026-10-01; the page asks it.
+check('and the combat window action deriver does',
+  [/grantAdjusted\(stationaryAdjusted\(printed, opp\), t, opp\)/.test(turnSrc), /turnAttackActionOf\(data, state, t, actionId, twoHandedDeclined, charge\)/.test(match)], [true, true]);
 
 // Freeplay: the offer, the free walk, then the same targeting either way.
 check('freeplay offers the walk before targeting', /Shock Attack \$\{shock\}[\s\S]{0,600}?startMove\(uid, \{ range: shock/.test(main), true);

@@ -1065,6 +1065,31 @@ const spinning = (root) => shakingDice(root).length > 0;
   focusBtn().click();
   check('and takes its own single press', acts.filter((a) => a[0] === 'focususe').length, 2);
 
+  // 2b. THE NEXT ATTACK ASKS AFRESH. The latch names an attack by its attacker,
+  //     its target and its Action, and that is not the name of ONE attack: the
+  //     same unit firing the same Action at the same target again (a Drone's
+  //     Automatic shot, round after round) carries it too. The latch outlived
+  //     the window, so the second attack's Focus arrived already "answered",
+  //     both buttons dead, and the attacking window waited on an answer nobody
+  //     could give. Found 2026-10-01 by two computer seats playing each other.
+  //     An attack that ends takes its picture down, and the latch goes with it.
+  const b5b = board();
+  const acts5b = [];
+  const Wb = watcher(b5b.all, acts5b);
+  const passOf = (w) => findButtons(w.root).find((x) => label(x) === 'Pass');
+  const useOf = (w) => findButtons(w.root).find((x) => /^Focus/.test(label(x)) && !/reroll/i.test(label(x)));
+  Wb.h.showMirror(asking, b5b.atk, b5b.def, firing, 'defender');
+  passOf(Wb).click();
+  Wb.h.showMirror(asking, b5b.atk, b5b.def, firing, 'defender');
+  check('an answered declare is dead while its attack is still the one on the table',
+    [acts5b.map((a) => a[0]), passOf(Wb)?.disabled, useOf(Wb)?.disabled], [['focuspass'], true, true]);
+  Wb.h.closeMirror();
+  Wb.h.showMirror(asking, b5b.atk, b5b.def, firing, 'defender');
+  check('the same unit attacking the same target with the same Action again is asked afresh',
+    [passOf(Wb)?.disabled, useOf(Wb)?.disabled, /Focus answered/.test(texts(Wb.root))], [false, false, false]);
+  useOf(Wb).click();
+  check('and its answer goes', acts5b.map((a) => a[0]), ['focuspass', 'focususe']);
+
   // 3. THE PAID ROWS share the same latch through sendAct.
   // BEFORE the Defense Roll: both HALO spends are declared before any dice
   // (FAQ A18), so the offer is drawn on the pre-roll frame and not after.
@@ -1098,28 +1123,17 @@ const spinning = (root) => shakingDice(root).length > 0;
 }
 
 // ---------- THE COST GATES THE DECLARE, and a failed roll says so ----------
-// Source pins on match.ts, because this is page wiring. The cost command and
-// the declare used to travel unconditionally paired, so a refused spend still
-// sent the declare and the attacker's window granted the effect UNPAID: a free
-// KC Armor, a free Melee Evasion, a free Focus advance.
+// The cost command and the declare used to travel unconditionally paired, so a
+// refused spend still sent the declare and the attacker's window granted the
+// effect UNPAID: a free KC Armor, a free Melee Evasion, a free Focus advance.
+// These were source pins on match.ts. The sender is one function now
+// (defender.ts defenderAct, shared with a computer seat), and defender.test.mjs
+// DRIVES it: every paid answer with its cost refused, and the dice failing.
+// What is left to pin here is that the page sends through it.
 {
   const page = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
-  for (const [what, cost] of [
-    ['focususe', "kind: 'focus'"],
-    ['kcarmor', "kind: 'setCharge'"],
-    ['meleeevade', "kind: 'spendCommand'"],
-    ['dodgeenhance', "kind: 'spendCommand'"],
-  ]) {
-    const at = page.indexOf(`if (act === '${what}')`);
-    const seg = page.slice(at, page.indexOf('if (act ===', at + 10));
-    check(`${what} pays first and only declares on ok`,
-      seg.includes(cost) && /if \(!paid\.ok\) \{ say\('refused', paid\.why\); return false; \}/.test(seg), true);
-  }
-  // The reroll's server dice can fail like any other request, and the Link is
-  // already spent by then. rolldefense beside it has carried a catch all along.
-  const rr = page.slice(page.indexOf("if (act === 'focusreroll')"));
-  check('a failed Focus reroll is told to the player, not swallowed',
-    /\.catch\(\(\) => \{[\s\S]{0,500}?reroll again/.test(rr), true);
+  check('the page\'s mirror presses are sent by defenderAct',
+    /return defenderAct\(\{ data, state, seat, send, roll: rollDefensePool, say, done: render \}, act, arg\);/.test(page), true);
   // And the callback reports what it did, because the helper latches on it.
   check('mirrorAct answers whether the press went',
     /function mirrorAct\(act: MirrorAct, arg\?: string \| number\[\]\): boolean \{/.test(page), true);

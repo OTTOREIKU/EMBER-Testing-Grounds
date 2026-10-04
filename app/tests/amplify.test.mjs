@@ -120,7 +120,10 @@ check('the aura walker measures the amplified reach', /rangeBetween\(src, t\)\.r
 // `let` since the audit's Phase 3: a free Scan is re-aimed at its attack's own
 // reach (FAQ I18), which is the same actionRange of a different Action.
 check('the Counter-roll command judges the effective reach', /(?:const|let) reach = actionRange\(data, state\.tokens, t, a\);/.test(cmds), true);
-check('the Match Centre picker shows it', /const reach = actionRange\(ctx\.data, s\.tokens, by, a\);/.test(hud), true);
+// The picker's list is turn.ts electronicReading since 2026-10-01, which the
+// panel draws from.
+check('the Match Centre picker shows it',
+  [/const reach = actionRange\(data, s\.tokens, by, a\);/.test(readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')), /const read = turn\.electronicReading\(ctx\.data, s, m\.uid, m\.actionId\);/.test(hud)], [true, true]);
 check('and freeplay draws its rings at it', /const ewReach = actionRange\(data, state\.tokens, t, action\);/.test(main), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);

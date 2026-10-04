@@ -9,6 +9,7 @@ import { statusCount, STATUSES } from './types';
 import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, tallyCounter, resolveCounterRoll, type AttackReaction, type MultiTarget, ignoresProtection } from './units';
 import { timingOf } from './ticks';
 import { isTerminalStandIn, TERMINAL_EV } from './tasks';
+import { lowValueOf } from './scoring';
 import { inArc, largeGridOf, losBetween, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
 import { canBeForceMoved } from './melee';
 import type { Command } from './commands';
@@ -36,6 +37,100 @@ const FOCUS_STAGES: readonly string[] = ['declareA', 'declareD', 'rerollA', 'rer
 // The Black Die's printed part names, mapped to Token slots. Shared by the
 // settle and by the Focus offer, which must agree on where a face lands.
 const BLACK_SLOT: Record<string, string> = { torso: 'torso', chassis: 'chasis', leftArm: 'leftHand', rightArm: 'rightHand', backpack: 'backpack' };
+
+// ---------- an attack read without dice ----------
+//
+// What this window would work out for an attack, for every roll and not for
+// one: the pools, what each face of each die comes to, where the hit may land
+// and how each Part answers it. A seat that weighs an attack before making it
+// (src/ai/odds.ts) turns this into chances. Every number in it is ASKED of the
+// window (AttackHelper.reading), never worked out a second time.
+
+// One face of an Attack die, as the resolution counts it: its Heavy and Light
+// Hits after every exchange the attack carries, the {Lightning} a Concussion,
+// Wrecking or a Lightning rider counts, and the Hits and the Penetration it
+// comes to against no defence at all.
+export interface AttackFace { heavy: number; light: number; bolt: number; hits: number; pen: number }
+
+// One face of a Defence die: the icons a {Dodge} and a {Defense} would cancel.
+export interface DefenceFace { dodge: number; defense: number }
+
+export interface PartReading {
+  slot: string;
+  state: 'intact' | 'damaged';
+  // Where one Penetration leaves it (4.4.4).
+  next: 'damaged' | 'destroyed';
+  // The Defence Roll for a hit here with no Parry declared, and with the Parry
+  // the defender may declare on it (null where it has none to declare).
+  defense: { white: number; blue: number };
+  parried: { white: number; blue: number } | null;
+  // The faces Dense Armor on this Part takes off the Attack Roll before any
+  // reroll, by colour and face.
+  stripped: { red: boolean[]; yellow: boolean[] };
+  // The Defence Roll of a Surplus round on this Part (4.8: no Protection, no
+  // Parry, nothing of the attacker's): as it stands now, and as it will stand
+  // once its own first Penetration has left it Damaged (Mutilation; null where
+  // that Penetration destroys it).
+  surplus: { white: number; blue: number };
+  mutilated: { white: number; blue: number } | null;
+}
+
+export interface AttackReading {
+  attackerUid: number;
+  defenderUid: number;
+  // A Mech has Parts and a hit location; anything else is its one `main`.
+  mech: boolean;
+  attack: { red: number; yellow: number };
+  faces: { red: AttackFace[]; yellow: AttackFace[]; white: DefenceFace[]; blue: DefenceFace[] };
+  // The Surplus keywords the Action carries, by name (4.8).
+  surplus: string[];
+  // What the counted {Lightning} does to a Mech: strips Link (Concussion,
+  // Wrecking), or rides (a Token, a Shutdown).
+  drain: 'concussion' | 'wrecking' | null;
+  location: {
+    // No die: a Drone's `main`, a Mech in Cruise Mode's Torso.
+    fixed: string | null;
+    // The attacker designates by its own right (4.4.1 step 2).
+    attackerPicks: boolean;
+    // Where each face of the Part Die lands; `any` is the attacker's to pick.
+    die: string[];
+    // What the defender may declare before the die, and the Parry it earns.
+    declare: { slot: string; parry: number }[];
+  };
+  // The Parts a hit may land on: every one still standing.
+  parts: PartReading[];
+  // The Parts the unit has left, its Link, and whether a lost Part costs Link.
+  partsLeft: number;
+  link: number;
+  keepsLink: boolean;
+  // Where the attack in hand has got to. Everything above describes the
+  // attack as it stands on the table now; this is what has been settled of it.
+  hand: {
+    step: string;
+    // The Part the hit is on, once that is known.
+    part: string | null;
+    // 1 in a Surplus round, with what was carried into it and the Part the
+    // first hit landed on (the Surplus goes elsewhere, or back into it).
+    round: number;
+    carried: { heavy: number; light: number };
+    original: string | null;
+    // A Part the defender designated while the attacker could designate too,
+    // so the Part Die decides (FAQ A14), and the Parry in force on the hit.
+    declared: { slot: string; parry: number } | null;
+    parry: number;
+    // Where the Part Die has landed while its Focus is still on offer (`any`
+    // for that face), and null at every other moment.
+    die: string | null;
+    // The pools as dealt for this hit, and the dice on the table.
+    pool: { attack: { red: number; yellow: number }; defense: { white: number; blue: number } };
+    attack: { color: string; face: number }[] | null;
+    defense: { color: string; face: number }[] | null;
+    // Where the Focus stands (4.4.1 step 5), and a Melee Evasion declared: one
+    // {Dodge} more than the dice show.
+    focus: string | null;
+    evade: boolean;
+  };
+}
 
 // Every press a MIRROR window can make. Each one is a question the defending
 // player owns and the attacking client is parked waiting on, so the answer
@@ -953,6 +1048,9 @@ export class AttackHelper {
   private pendingPart: string | null = null;
   // The Black Die has landed this attack (see spinBlack).
   private blackLanded = false;
+  // Where it landed, for as long as its Focus is on offer and nothing has been
+  // settled: `any`, or the Part once a gone one has sent it to the Torso.
+  private blackOffer: string | null = null;
   // Asked before a live attack is closed; false keeps the window open. The
   // page decides what closing costs and says so (the pad: the Action stays
   // spent, or the whole attack is undone).
@@ -963,6 +1061,22 @@ export class AttackHelper {
   // is handed the target, because the table is asked which of THAT unit's
   // Parts the die named.
   blackRoller: ((defender: Token) => Promise<number>) | null = null;
+  // A window nobody is watching (a computer seat's own): the dice do not shake
+  // and nothing pauses for a face to be read. The sequence, the questions and
+  // every rule are exactly what a player's window runs; only the waits go.
+  instant = false;
+  // A window that is never drawn at all: a calculator (reading(), below). The
+  // sequence and every rule still run; nothing is built for anyone to look at.
+  headless = false;
+  // Every control here names what it does (`data-act`, with `data-arg` where
+  // it has a subject), so whatever drives this window presses the same
+  // buttons a player does and no second road through an attack exists.
+  //
+  // A pause a player needs and a seat with no screen does not.
+  private after(ms: number, fn: () => void): void {
+    if (this.instant) fn();
+    else window.setTimeout(fn, ms);
+  }
   // HANDS-OFF (the pad's table dice): the players rolled and resolved the
   // attack themselves, so no faces came back. The window then asks nothing
   // about Focus - that was settled across the table - and the resolution is
@@ -1187,6 +1301,13 @@ export class AttackHelper {
   // Scan never opened. Without one, a camouflaged unit is not offered as an
   // extra target at all.
   freeScan: ((attacker: Token, target: Token, action: CardAction, resume: () => void) => boolean | void) | null = null;
+  // THE ODDS OF THE ATTACK IN HAND, shown to the player before its dice are
+  // thrown (M9.3; OTTO, 2026-10-03: "Yes"): the chance of at least one Hit, of
+  // a Penetration, of a Part destroyed and of the unit destroyed. This window
+  // cannot work them out itself (ai/odds.ts reads this window), so its reading
+  // goes out through this hook and the numbers come back; a page that hands in
+  // none shows none.
+  oddsOf: ((r: AttackReading) => { hit: number; pen: number; destroy: number; kill: number } | null) | null = null;
   // The split as last drawn: the element, and who it offered (refreshSplit).
   private splitDrawn: { el: HTMLElement | null; offer: string } = { el: null, offer: '' };
 
@@ -1346,6 +1467,12 @@ export class AttackHelper {
     this.multi = null;
     this.duelPlayed = '';
     this.role = 'attacker';
+    // The one-press latch belongs to the attack whose picture this was. Its key
+    // names the attacker, the target and the Action, which the NEXT attack by
+    // the same unit on the same target shares: kept past the close, it left
+    // that attack's Focus and paid declares dead on arrival, and the attacking
+    // window waiting for ever (found 2026-10-01, by two computer seats).
+    this.asked = null;
   }
 
   // Faces off the wire, matched against what this window already had. An
@@ -1548,6 +1675,7 @@ export class AttackHelper {
     this.tableLightning = 0;
     this.pendingPart = null;
     this.blackLanded = false;
+    this.blackOffer = null;
     this.ctx = {
       attacker,
       defender,
@@ -1787,6 +1915,7 @@ export class AttackHelper {
   cancel(): void {
     this.stopBlack();
     this.closedUnrolled = this.unrolled !== null;
+    this.blackOffer = null;
     this.ctx = null;
     this.multi = null;
     this.onClose();
@@ -2301,6 +2430,7 @@ export class AttackHelper {
         : `Focus (4.4.1-5): ${t.label} may spend 1 Link (${t.link ?? 0} left) to reroll any of its ${side === 'attacker' ? 'Attack' : 'Defense'} dice. ${side === 'attacker' ? 'The attacker declares first' : 'The defender declares second'}.`;
       wrap.appendChild(p);
       const use = document.createElement('button');
+      use.dataset.act = 'focus.use';
       use.className = 'ah-primary';
       // The paragraph above already says whether it is free (ZPA-39 Cadaver's
       // Will to Survive), so the BUTTON must agree — an unconditional "spend 1
@@ -2332,6 +2462,7 @@ export class AttackHelper {
       use.disabled = use.disabled || sent;
       use.addEventListener('click', () => declared(true));
       const pass = document.createElement('button');
+      pass.dataset.act = 'focus.pass';
       pass.className = 'ah-pass';
       pass.textContent = 'Pass';
       pass.disabled = !mine || sent;
@@ -2345,6 +2476,7 @@ export class AttackHelper {
       const lent = side === 'attacker' ? this.lentEyeReroll() : null;
       if (lent) {
         const b = document.createElement('button');
+        b.dataset.act = 'focus.lent';
         b.className = 'ah-alt';
         // A boardless table judges the reach itself, so the offer says so.
         b.textContent = `${lent.name}: reroll ${lent.eyes} [Eye], free${this.noBoard ? `, if ${lent.by.label} covers ${c.defender.label} on the table` : ''}`;
@@ -2356,6 +2488,7 @@ export class AttackHelper {
       const funder = this.whistleFor(side);
       if (funder) {
         const b = document.createElement('button');
+        b.dataset.act = 'focus.whistle';
         b.className = 'ah-alt';
         b.textContent = `Whistle: ${funder.label}'s Command Token`;
         b.title = `${funder.label} is within Range 4 with a face-up Command Token. Consuming it lets ${t.label} reroll any of its dice, as this roll's one reroll (4.15.4, FAQ A6).`;
@@ -2976,6 +3109,198 @@ export class AttackHelper {
     };
   }
 
+  // ---------- the attack in hand, read without dice ----------
+  //
+  // What this window would work out for the attack it has open, for every
+  // roll and not for one (AttackReading, at the top of this file). It is ASKED
+  // of the window and never worked out a second time: each face of each die is
+  // put on the table alone and resolve() says what it comes to, each Part is
+  // made the target and suggestedDefensePool() deals its Defence Roll, and the
+  // designation rules are the ones the Part step asks. So an exchange, an aura
+  // or a keyword that changes what a played attack does changes this with it.
+  //
+  // Nothing is drawn, logged or sent, and everything touched is put back: a
+  // window asked in the middle of an attack goes on exactly as it was. Null
+  // with no attack open, on a mirror (which holds a picture, not the attack),
+  // on a Multi-Target split and where the dice are the table's own.
+  reading(): AttackReading | null {
+    const c = this.ctx;
+    // A Multi-Target is read a sequence at a time, each on its own share of
+    // the pool; its split, which no attack is made in, has nothing to read.
+    if (!c || this.mirroring || (this.multi && c.step === 'split') || this.handsOff) return null;
+    const d = c.defender;
+    const mech = d.kind === 'mech';
+    const kept = {
+      attackRoll: c.attackRoll, defenseRoll: c.defenseRoll, targetPart: c.targetPart, designatedParry: c.designatedParry,
+      surplusRound: c.surplusRound, carried: c.carried, declared: c.declared, blackResult: c.blackResult,
+      dodgeOnLightning: c.dodgeOnLightning, lightningThrough: c.lightningThrough, lightningSwapped: c.lightningSwapped,
+      pursuitSwapped: c.pursuitSwapped, fierceSwapped: c.fierceSwapped, marksmanSwapped: c.marksmanSwapped,
+      eyeSwaps: c.eyeSwaps, eyeToLight: c.eyeToLight, evadeUsed: c.evadeUsed, dodgeDieUsed: c.dodgeDieUsed,
+    };
+    const keptChoice = this.lightningChoice;
+    const die = (color: DieColor, face: number): Rolled => ({ color, face, selected: false });
+    const sidesOf = (color: DieColor): number => this.dice.dice[color].faces.length;
+    // The two faces the Defence dice are read against (below).
+    const solid = (color: DieColor, type: string, n: number): number =>
+      this.dice.dice[color].faces.findIndex((f) => f.filter((ic) => ic.type === type && !ic.hollow).length === n);
+    const heavyFace = solid('red', 'heavyHit', 1);
+    const lightFace = solid('yellow', 'lightHit', 2);
+    if (heavyFace < 0 || lightFace < 0) return null;
+    try {
+      // The first round, with nothing spent that a player elects to spend
+      // after the dice are thrown: no paid exchange, no {Eye} handed to the
+      // rifle, no Dodge held back, no Melee Evasion, no Dodge Enhancement. (KC
+      // Armor is declared before the dice, and a window that has it reads it.)
+      c.surplusRound = 0;
+      c.carried = { heavy: 0, light: 0 };
+      c.declared = null;
+      c.blackResult = null;
+      c.dodgeOnLightning = 0;
+      c.eyeSwaps = 0;
+      c.eyeToLight = 0;
+      c.evadeUsed = false;
+      c.dodgeDieUsed = false;
+
+      // Each face of an Attack die against no defence at all.
+      const attackFace = (color: DieColor, face: number): AttackFace => {
+        c.attackRoll = [die(color, face)];
+        c.defenseRoll = [];
+        const r = this.resolve();
+        return {
+          heavy: r.duel.icons.filter((i) => i.kind === 'heavyHit').length,
+          light: r.duel.icons.filter((i) => i.kind === 'lightHit').length,
+          bolt: c.lightningThrough ?? 0,
+          hits: r.hits,
+          pen: r.penetrating,
+        };
+      };
+      // Each face of a Defence die against a hand with more than it could
+      // cancel: two Heavy Hits for its Dodges, four Light Hits for its Defense.
+      const soak: Rolled[] = [die('red', heavyFace), die('red', heavyFace), die('yellow', lightFace), die('yellow', lightFace)];
+      const defenceFace = (color: DieColor, face: number): DefenceFace => {
+        c.attackRoll = soak;
+        c.defenseRoll = [die(color, face)];
+        const r = this.resolve();
+        return {
+          dodge: r.duel.icons.filter((i) => i.offset === 'dodge').length,
+          defense: r.duel.icons.filter((i) => i.offset === 'defense').length,
+        };
+      };
+      const each = <T>(color: DieColor, fn: (color: DieColor, face: number) => T): T[] =>
+        Array.from({ length: sidesOf(color) }, (_, face) => fn(color, face));
+      // Two faces printed alike come to the same thing, so each is asked once.
+      const alike = <T>(color: DieColor, fn: (color: DieColor, face: number) => T): T[] => {
+        const seen = new Map<string, T>();
+        return each(color, (col, face) => {
+          const key = JSON.stringify(this.dice.dice[col].faces[face]);
+          if (!seen.has(key)) seen.set(key, fn(col, face));
+          return seen.get(key)!;
+        });
+      };
+      const faces = {
+        red: alike('red', attackFace), yellow: alike('yellow', attackFace),
+        white: alike('white', defenceFace), blue: alike('blue', defenceFace),
+      };
+
+      // Where the hit may land (4.4.1 step 2; settleBlack reads the die the
+      // same way: a Part that is gone, or one bearing a Repaired Token, sends
+      // the hit to the Torso).
+      const repaired = d.repairedSlots ?? [];
+      const fixed = !mech ? 'main' : cruising(this.data, d) ? 'torso' : null;
+      const lands = this.dice.dice.black.faces.map((f) => {
+        const part = f[0]?.part ?? 'any';
+        if (part === 'any') return 'any';
+        const slot = BLACK_SLOT[part] ?? 'torso';
+        return slot !== 'torso' && (this.partGone(slot) || repaired.includes(slot)) ? 'torso' : slot;
+      });
+      const offers = mech && !fixed ? this.designateOffers(ROLL) : [];
+
+      // Each Part still standing, made the target in turn.
+      const pool = (slot: string, parry: number, surplus: boolean): { white: number; blue: number } => {
+        c.targetPart = slot;
+        c.designatedParry = parry;
+        c.surplusRound = surplus ? 1 : 0;
+        return this.suggestedDefensePool(slot);
+      };
+      const slots = mech
+        ? tokenCards(this.data, d).map((x) => x.slot).filter((slot) => slot !== 'pilot' && !this.partGone(slot) && !repaired.includes(slot))
+        : ['main'];
+      const parts: PartReading[] = slots.map((slot) => {
+        const state = (d.partStates[slot as PartSlot | 'main'] ?? 'intact') as 'intact' | 'damaged';
+        const next = state === 'intact' && structureOf(this.data, d, slot as PartSlot | 'main') > 0 ? 'damaged' : 'destroyed';
+        const offer = offers.find((x) => x.slot === slot);
+        const dense = !!this.denseOn(slot);
+        const stripped = (color: DieColor): boolean[] => each(color, (col, face) => dense && this.denseTakes(die(col, face)));
+        const out: PartReading = {
+          slot,
+          state,
+          next,
+          defense: pool(slot, 0, false),
+          parried: offer && offer.parry > 0 ? pool(slot, offer.parry, false) : null,
+          stripped: { red: stripped('red'), yellow: stripped('yellow') },
+          surplus: pool(slot, 0, true),
+          mutilated: null,
+        };
+        if (next === 'damaged') {
+          // The Part as its own first Penetration leaves it, defending again:
+          // set for the one reading and put back as it was, absent included.
+          const key = slot as PartSlot | 'main';
+          const had = Object.prototype.hasOwnProperty.call(d.partStates, key);
+          const was = d.partStates[key];
+          d.partStates[key] = 'damaged';
+          try {
+            out.mutilated = pool(slot, 0, true);
+          } finally {
+            if (had) d.partStates[key] = was;
+            else delete d.partStates[key];
+          }
+        }
+        return out;
+      });
+      c.surplusRound = 0;
+      return {
+        attackerUid: c.attacker.uid,
+        defenderUid: d.uid,
+        mech,
+        attack: { red: c.attackPool.red, yellow: c.attackPool.yellow },
+        faces,
+        surplus: surplusEffects(c.action).map((e) => e.name),
+        drain: lightningLinkDrain(c.action),
+        location: {
+          fixed,
+          attackerPicks: mech && !fixed && this.attackerMayDesignate(),
+          die: lands,
+          declare: offers.map((x) => ({ slot: x.slot, parry: x.parry })),
+        },
+        parts,
+        partsLeft: Object.values(d.partStates).filter((s) => s !== 'destroyed').length,
+        link: d.link ?? 0,
+        keepsLink: keepsLinkOnPartLoss(this.data, d),
+        hand: {
+          step: c.step,
+          part: kept.targetPart,
+          round: kept.surplusRound,
+          carried: { heavy: kept.carried.heavy, light: kept.carried.light },
+          original: c.surplusOriginalPart,
+          declared: kept.declared ? { slot: kept.declared.slot, parry: kept.declared.parry } : null,
+          parry: kept.designatedParry ?? 0,
+          die: this.blackOffer,
+          pool: {
+            attack: { red: c.attackPool.red, yellow: c.attackPool.yellow },
+            defense: { white: c.defensePool.white, blue: c.defensePool.blue },
+          },
+          attack: kept.attackRoll ? kept.attackRoll.map((x) => ({ color: x.color, face: x.face })) : null,
+          defense: kept.defenseRoll ? kept.defenseRoll.map((x) => ({ color: x.color, face: x.face })) : null,
+          focus: c.focus?.stage ?? null,
+          evade: !!kept.evadeUsed,
+        },
+      };
+    } finally {
+      Object.assign(c, kept);
+      this.lightningChoice = keptChoice;
+    }
+  }
+
   // ---------- UI ----------
 
   // A checkpoint REPLACES every token object while the helper is open — and
@@ -3331,7 +3656,7 @@ export class AttackHelper {
 
   private render(): void {
     const c = this.ctx;
-    if (!c) return;
+    if (!c || this.headless) return;
     this.rebind(c);
     const el = document.createElement('div');
     el.className = 'attack-helper';
@@ -3630,6 +3955,10 @@ export class AttackHelper {
             if (col === 'red') row.red = n; else row.yellow = n;
             this.render();
           },
+          'attacker',
+          // Named by the designation, as Drop is, so a computer seat can say
+          // which row it moves a die off and onto.
+          { act: 'split', key: String((row.declared ?? row.defender).uid) },
         ),
       );
       // The first target is the one the player clicked on the board, so
@@ -3640,6 +3969,7 @@ export class AttackHelper {
       // button on the duplicate and then drop both rows at once.
       if (row !== m.targets[0]) {
         const drop = document.createElement('button');
+        drop.dataset.act = 'split.drop'; drop.dataset.arg = String((row.declared ?? row.defender).uid);
         drop.className = 'ah-ghost';
         drop.textContent = `Drop ${row.declared?.label ?? row.defender.label}`;
         drop.disabled = !this.mayDrive('attacker');
@@ -3664,6 +3994,7 @@ export class AttackHelper {
         // this is the third and last door an attack is declared through.
         const swap = this.shieldSwap(m.attacker, u, m.action);
         const b = document.createElement('button');
+        b.dataset.act = 'split.add'; b.dataset.arg = String(u.uid);
         b.className = 'ah-ghost';
         b.textContent = `+ ${u.label}${swap ? ` → ${swap.shield.label}` : ''}`;
         b.disabled = !this.mayDrive('attacker');
@@ -3692,6 +4023,7 @@ export class AttackHelper {
         }
         const scan = this.freeScan;
         const b = document.createElement('button');
+        b.dataset.act = 'split.scan'; b.dataset.arg = String(u.uid);
         b.className = 'ah-ghost';
         b.textContent = `Scan ${u.label} first (free, FAQ I12)`;
         b.disabled = !this.mayDrive('attacker');
@@ -3723,6 +4055,7 @@ export class AttackHelper {
       wrap.appendChild(none);
     }
     const go = document.createElement('button');
+    go.dataset.act = 'split.begin';
     go.className = 'ah-primary';
     // Same reading as the row label: the button names the unit the dice will
     // land on, with the designation it came from beside it.
@@ -3768,6 +4101,12 @@ export class AttackHelper {
     // too; this is the one place that owes the window's whole list (audit
     // Phase 2, A4).
     if (defender.kind === 'mech' && defender.stance === 'shutdown') return [];
+    // Nor does a defender the attack destroyed: "its model is removed from the
+    // battlefield immediately" (FAQ D10). Emergency Smoke already read its own
+    // Part's state; a Defense Reaction and Target Tracing did not, so the debt
+    // was queued for a unit that had left the board and refused in front of
+    // the attacker (found by the computer games, 2026-10-02).
+    if (!this.aliveNow(defender)) return [];
     const out: AttackReaction[] = [];
     // Riposte answers a Parry that HELD, and only on the Part that made it.
     if (parried) {
@@ -3936,6 +4275,7 @@ export class AttackHelper {
       row.className = 'ah-partpick';
       for (const e of setup.effects) {
         const b = document.createElement('button');
+        b.dataset.act = 'surplus.effect'; b.dataset.arg = e.name;
         b.className = 'chip chip-intact';
         b.innerHTML = `<b>${esc(e.name)}</b> ${esc(e.targets)}`;
         b.disabled = !this.mayDrive('attacker');
@@ -3959,6 +4299,7 @@ export class AttackHelper {
     row.className = 'ah-partpick';
     if (otherPart) {
       const b = document.createElement('button');
+      b.dataset.act = 'surplus.part';
       b.className = 'chip chip-intact';
       b.innerHTML = `<b>Another Part</b> of ${esc(c.defender.label)}`;
       b.disabled = !this.mayDrive('attacker');
@@ -3971,6 +4312,7 @@ export class AttackHelper {
     }
     for (const u of this.cleaveTargets()) {
       const b = document.createElement('button');
+      b.dataset.act = 'surplus.unit'; b.dataset.arg = String(u.uid);
       b.className = 'chip chip-intact';
       b.innerHTML = `<b>${esc(u.label)}</b> ${esc(u.kind)}`;
       b.disabled = !this.mayDrive('attacker');
@@ -4133,6 +4475,7 @@ export class AttackHelper {
       wrap.appendChild(note);
     }
     const rollBtn = document.createElement('button');
+    rollBtn.dataset.act = 'part.roll';
     rollBtn.className = mayDesignate ? 'ah-alt' : 'ah-primary';
     rollBtn.innerHTML = `${ICON_DICE} Roll Black Die`;
     rollBtn.disabled = !this.mayDrive('attacker');
@@ -4163,6 +4506,7 @@ export class AttackHelper {
       if (c.surplusRound > 0 && slot === c.surplusOriginalPart) continue;
       const st = c.defender.partStates[slot as PartSlot | 'main'] ?? 'intact';
       const b = document.createElement('button');
+      b.dataset.act = 'part.pick'; b.dataset.arg = slot;
       b.className = `chip chip-${st}`;
       b.innerHTML = `<b>${SLOT_LABEL[slot]}</b> ${cardName(card)}`;
       // Disabled rather than hidden, so the reader still sees WHICH Parts are
@@ -4191,6 +4535,7 @@ export class AttackHelper {
     if (chosen && this.mayDrive('attacker') && this.mayPickPart() && !this.partGone(chosen)
       && !(c.surplusRound > 0 && chosen === c.surplusOriginalPart)) {
       const ok = document.createElement('button');
+      ok.dataset.act = 'part.confirm';
       ok.className = 'ah-primary';
       ok.textContent = `Confirm ${SLOT_LABEL[chosen as PartSlot | 'main'] ?? chosen}`;
       ok.addEventListener('click', () => {
@@ -4215,6 +4560,11 @@ export class AttackHelper {
       return;
     }
     const landed = Math.floor(Math.random() * 6);
+    if (this.instant) {
+      showFace(landed);
+      done(landed);
+      return;
+    }
     stage.classList.add('rolling');
     caption.textContent = '';
     let ticks = 0;
@@ -4255,10 +4605,12 @@ export class AttackHelper {
       return;
     }
     const free = focusIsFree(this.data, c.attacker);
+    this.blackOffer = lands ?? 'any';
     caption.textContent = `${part === 'any' ? 'ANY' : SLOT_LABEL[lands as PartSlot | 'main'] ?? part}. Keep it, or Focus to reroll?`;
     const offer = document.createElement('span');
     offer.className = 'rerolls';
     const go = document.createElement('button');
+    go.dataset.act = 'part.focus';
     go.innerHTML = free ? 'Focus: reroll the Black Die<small>free, Will to Survive</small>' : 'Focus: reroll the Black Die<small>1 Link</small>';
     go.title = 'The Part Die is a roll like any other, so Focus may reroll it (4.10). Once, and the new result stands.';
     go.addEventListener('click', () => {
@@ -4278,6 +4630,7 @@ export class AttackHelper {
       this.spinBlack(stage, caption, showFace, (again) => this.settleBlack(again, caption));
     });
     const keep = document.createElement('button');
+    keep.dataset.act = 'part.keep';
     keep.textContent = 'Keep it';
     keep.addEventListener('click', () => {
       offer.remove();
@@ -4292,11 +4645,12 @@ export class AttackHelper {
   // player see the settled die before the panel changes under them.
   private settleBlack(face: number, caption: HTMLElement): void {
     const c = this.ctx!;
+    this.blackOffer = null;
     // Cruise Mode, if a die is thrown at all: the Torso (D3). A Surplus round
     // reads the die normally (FAQ N7; audit Phase 5, H2).
     if (c.defender.kind === 'mech' && cruising(this.data, c.defender) && c.surplusRound === 0) {
       caption.textContent = 'Cruise Mode: the Torso takes the hit.';
-      window.setTimeout(() => { if (this.ctx === c) this.pickPart('torso'); }, 700);
+      this.after(700, () => { if (this.ctx === c) this.pickPart('torso'); });
       return;
     }
     const part = this.dice.dice.black.faces[face][0]?.part ?? 'any';
@@ -4305,7 +4659,7 @@ export class AttackHelper {
       caption.textContent = 'ANY. The attacker picks the Part.';
       this.note('Black Die: ANY, so the attacker picks the Part.');
       // The panel can be closed during the pause, so nothing here assumes ctx.
-      window.setTimeout(() => { if (this.ctx === c) this.render(); }, 700);
+      this.after(700, () => { if (this.ctx === c) this.render(); });
       return;
     }
     let slot = BLACK_SLOT[part] ?? 'torso';
@@ -4332,11 +4686,11 @@ export class AttackHelper {
     if (c.surplusRound > 0 && slot === c.surplusOriginalPart) {
       caption.textContent = `${SLOT_LABEL[slot as PartSlot] ?? part} was the original hit, so reroll the Black Die.`;
       this.note(`Black Die: ${part}, the Part the original hit landed on. Surplus Damage must go elsewhere, so the die is rerolled (FAQ D4).`);
-      window.setTimeout(() => { if (this.ctx === c) this.render(); }, 900);
+      this.after(900, () => { if (this.ctx === c) this.render(); });
       return;
     }
     const landed = slot;
-    window.setTimeout(() => { if (this.ctx === c) this.pickPart(landed); }, 700);
+    this.after(700, () => { if (this.ctx === c) this.pickPart(landed); });
   }
 
   private pickPart(slot: string): void {
@@ -4401,15 +4755,21 @@ export class AttackHelper {
     const c = this.ctx!;
     if (c.denseDone || c.surplusRound || !c.attackRoll?.length || this.handsOff) return;
     c.denseDone = true;
-    // A Shutdown Mech "cannot activate any Passive effects" (4.1), and Dense
-    // Armor is a Passive.
-    if (c.defender.kind === 'mech' && c.defender.stance === 'shutdown') return;
-    const slot = denseArmorSlot(this.data, c.defender, c.targetPart ?? 'main');
+    const slot = this.denseOn(c.targetPart ?? 'main');
     if (!slot) return;
     const gone = c.attackRoll.filter((d) => this.denseTakes(d));
     if (!gone.length) return;
     c.attackRoll = c.attackRoll.filter((d) => !this.denseTakes(d));
     this.note(`Dense Armor (GoF 1.021): ${SLOT_LABEL[slot as PartSlot | 'main'] ?? slot} is the Part hit, so ${gone.length} Attack ${gone.length === 1 ? 'die' : 'dice'} showing a blank, [Lightning] or [Eye] ${gone.length === 1 ? 'is' : 'are'} removed before any reroll.`, [c.attacker, c.defender]);
+  }
+
+  // The Part whose Dense Armor answers a hit on `slot`, if any. None on a
+  // Shutdown Mech, which "cannot activate any Passive effects" (4.1), and Dense
+  // Armor is a Passive.
+  private denseOn(slot: string): string | null {
+    const c = this.ctx!;
+    if (c.defender.kind === 'mech' && c.defender.stance === 'shutdown') return null;
+    return denseArmorSlot(this.data, c.defender, slot);
   }
 
   // A blank, a {Lightning} or an {Eye}. Hollow faces stay: they are Hits that
@@ -4493,6 +4853,7 @@ export class AttackHelper {
         : `A designated Part takes the hit with no Part Die rolled. A Parry is declared now or not at all (FAQ C6).`}</p>` : ''}`;
     for (const opt of offers) {
       const b = document.createElement('button');
+      b.dataset.act = 'declare.designate'; b.dataset.arg = opt.slot;
       b.className = 'ah-primary';
       b.textContent = `Designate ${SLOT_LABEL[opt.slot as PartSlot | 'main']}: ${opt.label}`;
       b.disabled = !mine;
@@ -4504,6 +4865,7 @@ export class AttackHelper {
     }
     if (kc) {
       const b = document.createElement('button');
+      b.dataset.act = 'declare.kc';
       b.className = 'ah-alt';
       b.textContent = 'KC Armor: consume a Charge Token so every [Lightning] in the Defense Roll becomes [Defense]';
       b.disabled = !mine || this.askSent('kcarmor');
@@ -4516,6 +4878,7 @@ export class AttackHelper {
       wrap.appendChild(b);
     }
     const none = document.createElement('button');
+    none.dataset.act = 'declare.none';
     none.className = 'ah-alt';
     none.textContent = !offers.length ? 'Continue to the target Part'
       : atkMay ? `No designation: ${c.attacker.label} chooses the Part` : 'No designation: roll the Part Die';
@@ -4583,6 +4946,7 @@ export class AttackHelper {
       }</p>`;
     for (const opt of this.designateOffers(from)) {
       const b = document.createElement('button');
+      b.dataset.act = 'designate.to'; b.dataset.arg = opt.slot;
       b.className = 'ah-primary';
       b.textContent = `${SLOT_LABEL[opt.slot as PartSlot | 'main']}: ${opt.label}`;
       b.disabled = !mine;
@@ -4596,6 +4960,7 @@ export class AttackHelper {
       wrap.appendChild(b);
     }
     const keep = document.createElement('button');
+    keep.dataset.act = 'designate.keep';
     keep.className = 'ah-alt';
     keep.textContent = `Keep ${rolled}`;
     keep.disabled = !mine;
@@ -4650,7 +5015,11 @@ export class AttackHelper {
   // `owner` is whose pool this is, for the role gate. The attack pool is the
   // attacker's; the defence pool is the defender's, and on a one-screen board
   // that is the same person.
-  private poolEditor(pools: [string, DieColor][], get: (c: DieColor) => number, set: (c: DieColor, n: number) => void, owner: 'attacker' | 'defender' = 'attacker'): HTMLElement {
+  // `named` gives the steppers a `data-act` (`<act>.less`, `<act>.more`, with
+  // `<key>:<colour>`): only the split's rows have one, the controls a computer
+  // seat moves dice between targets with. A pool nobody names stays the
+  // player's alone.
+  private poolEditor(pools: [string, DieColor][], get: (c: DieColor) => number, set: (c: DieColor, n: number) => void, owner: 'attacker' | 'defender' = 'attacker', named?: { act: string; key: string }): HTMLElement {
     const div = document.createElement('div');
     div.className = 'ah-pool';
     // mayDrive: a stepper edits the pool in this window's own memory and there
@@ -4662,6 +5031,10 @@ export class AttackHelper {
       item.className = `pool-die die-${color}`;
       item.innerHTML = `<button>−</button><b>${get(color)}</b><button>+</button> <small>${esc(label)}</small>`;
       const [minus, plus] = item.querySelectorAll('button');
+      if (named) {
+        minus.dataset.act = `${named.act}.less`; minus.dataset.arg = `${named.key}:${color}`;
+        plus.dataset.act = `${named.act}.more`; plus.dataset.arg = `${named.key}:${color}`;
+      }
       minus.disabled = !live;
       plus.disabled = !live;
       minus.addEventListener('click', () => {
@@ -4699,6 +5072,7 @@ export class AttackHelper {
     const live = per.map((x) => Object.values(x).reduce((a, b) => a + b, 0) > 0);
     roll.forEach((d, i) => {
       const b = document.createElement('button');
+      b.dataset.act = 'die'; b.dataset.arg = `${which}:${i}`;
       b.className = `die die-${d.color}${d.selected ? ' sel' : ''}${live[i] ? ' live' : ''}`;
       const face = this.dice.dice[d.color].faces[d.face];
       b.innerHTML = face.length ? face.map((ic: DiceIcon) => iconSvg(ic)).join('') : '<span class="blank">·</span>';
@@ -4715,7 +5089,7 @@ export class AttackHelper {
       const only = this.spinOnly;
       this.spinFor = null;
       this.spinOnly = null;
-      window.setTimeout(() => this.spinner.spin(div, roll, only), 0);
+      if (!this.instant) window.setTimeout(() => this.spinner.spin(div, roll, only), 0);
       // One column: the dice land below the fold on a phone, so the hand
       // that just rolled is brought into view.
       if (this.root.clientWidth < 560) window.setTimeout(() => div.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
@@ -4736,6 +5110,7 @@ export class AttackHelper {
       const how = which === 'attack' ? f.attackerHow : f.defenderHow;
       const lent = how === 'lent' ? this.lentEyeReroll() : null;
       const go = document.createElement('button');
+      go.dataset.act = 'reroll.go'; go.dataset.arg = which;
       go.textContent = how === 'lent' ? `${lent?.name ?? 'Lent reroll'}: reroll every [Eye]`
         : how === 'whistle' ? 'Whistle: reroll selected' : 'Focus: reroll selected';
       go.title = how === 'lent' ? 'The card names the face: every {Eye} in the Attack Roll is thrown again.'
@@ -4760,6 +5135,7 @@ export class AttackHelper {
       });
       rr.appendChild(go);
       const keep = document.createElement('button');
+      keep.dataset.act = 'reroll.keep'; keep.dataset.arg = which;
       keep.textContent = 'Keep the roll';
       keep.title = 'End the Focus without rerolling anything.';
       keep.disabled = !mine;
@@ -4812,8 +5188,33 @@ export class AttackHelper {
         wrap.appendChild(p);
       }
     }
+    // The odds, as a player reads them before the roll (`oddsOf`).
+    if (!c.attackRoll && this.oddsOf) {
+      const reading = this.reading();
+      const odds = reading ? this.oddsOf(reading) : null;
+      if (odds) {
+        const pct = (x: number): string => (x > 0 && x < 0.005 ? 'under 1%' : `${Math.round(x * 100)}%`);
+        const parts: [number, string][] = [[odds.hit, 'to Hit'], [odds.pen, 'to Penetrate']];
+        // A Part destroyed reads apart from the unit only where they differ.
+        if (odds.destroy > odds.kill + 0.005) parts.push([odds.destroy, 'to destroy a Part']);
+        if (odds.kill > 0) parts.push([odds.kill, `to destroy ${c.defender.label}`]);
+        // Text nodes and a <b> for each number: nothing in it is read as markup.
+        const line = document.createElement('p');
+        line.className = 'ah-sum ah-odds';
+        line.appendChild(document.createTextNode('Odds: '));
+        parts.forEach(([x, words], i) => {
+          if (i) line.appendChild(document.createTextNode(' · '));
+          const b = document.createElement('b');
+          b.textContent = pct(x);
+          line.appendChild(b);
+          line.appendChild(document.createTextNode(` ${words}`));
+        });
+        wrap.appendChild(line);
+      }
+    }
     if (!c.attackRoll) {
       const roll = document.createElement('button');
+      roll.dataset.act = 'attack.roll';
       roll.className = 'ah-primary';
       roll.innerHTML = `${ICON_DICE} Roll attack dice`;
       roll.disabled = !this.mayDrive('attacker');
@@ -4866,6 +5267,7 @@ export class AttackHelper {
       // reroll, and here it let the attacker pay before the defence had even
       // rolled. It lives in stepResolve now.
       const next = document.createElement('button');
+      next.dataset.act = 'attack.next';
       next.className = 'ah-primary';
       next.textContent = 'Continue to Defense ▸';
       next.disabled = !this.mayDrive('attacker');
@@ -5076,6 +5478,7 @@ export class AttackHelper {
       // The two ZYBP-302 Command Token spends.
       if (evadeOffer) {
         const b = document.createElement('button');
+        b.dataset.act = 'defense.evade';
         b.className = 'ah-alt';
         b.textContent = 'Melee Evasion: spend a Command Token for +1 [Dodge] on the Parry';
         b.disabled = !defMine || this.askSent('meleeevade');
@@ -5089,6 +5492,7 @@ export class AttackHelper {
       }
       if (dodgeOffer) {
         const b = document.createElement('button');
+        b.dataset.act = 'defense.dodge';
         b.className = 'ah-alt';
         b.textContent = dodgeFree
           ? 'Dodge Enhancement: each [Dodge] cancels a whole Attack die (free, mass-production HALO)'
@@ -5103,6 +5507,7 @@ export class AttackHelper {
         wrap.appendChild(b);
       }
       const roll = document.createElement('button');
+      roll.dataset.act = 'defense.roll';
       roll.className = 'ah-primary';
       roll.innerHTML = `${ICON_DICE} Roll defense dice`;
       roll.disabled = !mine;
@@ -5153,6 +5558,7 @@ export class AttackHelper {
         if (f && f.stage === 'done' && !f.attackerUse && !f.defenderUse && !this.handsOff
           && !c.penetrated && (this.canFocus('attacker') || this.canFocus('defender'))) {
           const back = document.createElement('button');
+          back.dataset.act = 'focus.back';
           back.className = 'ah-alt';
           back.textContent = 'Back to Focus';
           back.disabled = !!this.mirroring || !this.mayDrive('attacker') || !!(this.focusRemote && this.focusRemote(c.defender));
@@ -5185,6 +5591,7 @@ export class AttackHelper {
           wrap.appendChild(state);
           const move = (delta: number, label: string, why: string) => {
             const b = document.createElement('button');
+            b.dataset.act = 'exchange.eye'; b.dataset.arg = String(delta);
             b.className = 'ah-alt';
             b.textContent = label;
             b.title = why;
@@ -5206,6 +5613,7 @@ export class AttackHelper {
           }
         }
         const next = document.createElement('button');
+        next.dataset.act = 'defense.resolve';
         next.className = 'ah-primary';
         next.textContent = 'Resolve ▸';
         next.disabled = !this.mayDrive('attacker');
@@ -5247,6 +5655,7 @@ export class AttackHelper {
         row.innerHTML = `<span>[Lightning] not cancelled by a Dodge</span>`;
         const mk = (label: string, to: number, off: boolean): HTMLButtonElement => {
           const b = document.createElement('button');
+          b.dataset.act = 'table.lightning'; b.dataset.arg = String(to);
           b.className = 'ah-alt';
           b.textContent = label;
           b.disabled = off || !this.mayDrive('attacker');
@@ -5260,6 +5669,7 @@ export class AttackHelper {
       }
       for (const [id, label] of asks) {
         const b = document.createElement('button');
+        b.dataset.act = 'table.outcome'; b.dataset.arg = id;
         b.className = id === 'pen' ? 'ah-primary' : 'ah-alt';
         b.textContent = label;
         b.disabled = !this.mayDrive('attacker');
@@ -5305,6 +5715,7 @@ export class AttackHelper {
       // A table result entered by mistake, before anything was applied.
       if (this.handsOff && this.tableOutcome !== null) {
         const redo = document.createElement('button');
+        redo.dataset.act = 'table.redo';
         redo.className = 'ah-alt';
         redo.textContent = 'Change the result';
         redo.addEventListener('click', () => { this.tableOutcome = null; this.render(); });
@@ -5318,6 +5729,7 @@ export class AttackHelper {
       // than one. Never in a Surplus round, whose icons are carried (4.8).
       if (!this.handsOff && c.surplusRound === 0 && this.chefCanSwap(c, this.attackIcons(c))) {
         const swap = document.createElement('button');
+        swap.dataset.act = 'resolve.chef';
         swap.className = 'ah-alt';
         swap.textContent = 'Chef: consume a Command → {Eye} becomes {Heavy Hit}';
         swap.title = 'Consumes 1 face-up Command Token from this Mech (4.15.4). The token turns face-down and cannot be issued or used again.';
@@ -5339,6 +5751,7 @@ export class AttackHelper {
         row.innerHTML = `<span>${esc(c.defender.label)}: Dodges held for [Lightning]</span>`;
         const mk = (label: string, to: number, off: boolean): HTMLButtonElement => {
           const b = document.createElement('button');
+          b.dataset.act = 'resolve.dodgehold'; b.dataset.arg = String(to);
           b.className = 'ah-alt';
           b.textContent = label;
           b.disabled = off;
@@ -5367,7 +5780,7 @@ export class AttackHelper {
     // recording THAT as played meant a watcher who was on another tab when the
     // attack resolved came back to a finished strip that could never replay.
     // Left unrecorded, the next render plays it once they are looking.
-    if (duelEl && key !== this.duelPlayed) {
+    if (duelEl && key !== this.duelPlayed && !this.instant) {
       window.setTimeout(() => { if (playDuel(duelEl)) this.duelPlayed = key; }, 0);
     } else {
       this.duelPlayed = key;
@@ -5375,6 +5788,7 @@ export class AttackHelper {
 
     if (penetrating > 0 && c.targetPart) {
       const apply = document.createElement('button');
+      apply.dataset.act = 'resolve.apply';
       apply.className = 'ah-primary';
       apply.textContent = `Apply Penetration to ${SLOT_LABEL[c.targetPart as PartSlot | 'main']}`;
       apply.disabled = !this.mayDrive('attacker');
@@ -5514,6 +5928,12 @@ export class AttackHelper {
           c.carried = carried;
           c.surplusOriginalPart = original;
           c.targetPart = null;
+          // The first hit's Part Die is not this round's. A Surplus that goes
+          // to another Part rolls its own, and only an ANY on THAT roll is the
+          // attacker's to place (4.8.1 step 2). Left standing, an ANY from the
+          // first roll opened the chips with no die thrown, and the attacker
+          // hand-picked where a Scatter-shot or a Cleave went.
+          c.blackResult = null;
           c.attackRoll = null;
           c.eyeSwaps = 0;
           c.defenseRoll = null;
@@ -5565,6 +5985,7 @@ export class AttackHelper {
       wrap.appendChild(apply);
     } else {
       const done = document.createElement('button');
+      done.dataset.act = 'resolve.done';
       done.className = 'ah-primary';
       done.textContent = 'Done';
       // An Attack with no Penetration still ends through finish(), because icons
@@ -5613,7 +6034,11 @@ export class AttackHelper {
     // shoves against a leash that is already on, and if the shove takes them
     // beyond X the chip comes off under the card's own third removal condition
     // rather than by never having been placed.
-    const tether = onHit > 0 && struck.uid !== c.attacker.uid
+    // And not onto a unit the same hit destroyed: it is off the board, so the
+    // command was refused and its reason ("That target is not on the board")
+    // was put in front of the attacker (found by the computer games,
+    // 2026-10-02, with the Link rider and the reactions below).
+    const tether = onHit > 0 && struck.uid !== c.attacker.uid && this.aliveNow(struck)
       ? tetherStrike(this.data, c.attacker, c.action, this.data.actionTranslation(c.action.id)?.english ?? undefined)
       : null;
     if (tether) {
@@ -5677,6 +6102,19 @@ export class AttackHelper {
           // some other token -- which is exactly what the Electronic Attack path
           // does today by falling back to 'fci'.
           if (!def) continue;
+          // A unit the same hit destroyed bears no Token. A Drone or a
+          // Projectile is off the board by now, so the command was refused and
+          // its reason ("That target is not on the board") was put in front of
+          // the attacker, beside a line saying the Token had been gained
+          // (found by the computer games, 2026-10-01). The Lightning rider
+          // below already asked.
+          if (!this.aliveNow(struck)) continue;
+          // A Low Value Unit never carries a Hexagon Token (Supplementary Rules
+          // 1.6; FAQ J3, M23): every Projectile, and a Drone worth 0 points. The
+          // engine refuses one, and the refusal was put in front of the
+          // attacker beside a line saying the Token had been gained (found by
+          // the computer games, 2026-10-03: a Pursuit rider on such a Drone).
+          if (def.shape === 'hexagon' && lowValueOf(this.data)(struck)) continue;
           this.onCommand({
             kind: 'applyStatus', seat: c.attacker.side, uid: c.attacker.uid,
             targetUid: struck.uid, statusId: def.id, stacks: r.amount,
@@ -5686,6 +6124,9 @@ export class AttackHelper {
             [c.attacker, struck],
           );
         } else if (r.kind === 'link' && struck.kind === 'mech') {
+          // A Mech the same hit destroyed has no Link left to lose, and is off
+          // the board: the drain was refused in front of the attacker.
+          if (!this.aliveNow(struck)) continue;
           // Clamped to the Link actually left, the same rule sendLightningDrain
           // follows, so a rider can never push a Mech below zero on the wire.
           const n = Math.min(r.amount, struck.link ?? 0);
@@ -5711,7 +6152,8 @@ export class AttackHelper {
       ? lightningRiderOf(c.action, this.data.actionTranslation(c.action.id)?.english ?? undefined) : null;
     if (lr?.kind === 'status' && lr.statusId && this.aliveNow(struck)) {
       const def = STATUSES.find((x) => x.id === lr.statusId);
-      if (def) {
+      // Nor from a Lightning rider (Supplementary Rules 1.6).
+      if (def && !(def.shape === 'hexagon' && lowValueOf(this.data)(struck))) {
         this.onCommand({ kind: 'applyStatus', seat: c.attacker.side, uid: c.attacker.uid, targetUid: struck.uid, statusId: def.id, stacks: bolts });
         this.note(`${struck.label} gains ${bolts} ${def.label} Token${bolts === 1 ? '' : 's'}, one for each [Lightning] no Dodge cancelled.`, [c.attacker, struck]);
         this.onChanged();
@@ -5783,6 +6225,7 @@ export class AttackHelper {
       note.className = 'ah-note';
       note.textContent = `${bolts} [Lightning] got through, so ${c.action.name?.en || 'this Action'} may switch ${tgtLabel} into Shutdown Stance now (GoF 1.021).`;
       const go = document.createElement('button');
+      go.dataset.act = 'finish.shutdown';
       go.className = 'ah-alt';
       go.textContent = `Switch ${tgtLabel} into Shutdown Stance`;
       go.disabled = !this.mayDrive('attacker');
@@ -5813,6 +6256,7 @@ export class AttackHelper {
         this.onKnockback(rider.attacker, rider.defender, rider.action, rider.hits);
       };
       const go = document.createElement('button');
+      go.dataset.act = 'finish.bonus';
       go.className = 'ah-primary';
       go.textContent = `Take the bonus ${bonus.action.name?.en ?? 'attack'}`;
       go.disabled = !this.mayDrive('attacker');
@@ -5848,6 +6292,7 @@ export class AttackHelper {
           0, '', false, false, false);
       });
       const decline = document.createElement('button');
+      decline.dataset.act = 'finish.decline';
       decline.className = 'ah-ghost';
       decline.textContent = 'Decline it';
       decline.disabled = !this.mayDrive('attacker');
@@ -5872,7 +6317,12 @@ export class AttackHelper {
     // Any target, not only a Mech: the keywords say "the target", and a Hook or
     // Whip hit on a Drone offered nothing (audit Phase 4, B1). Disarm still
     // needs a Mech's Part, and skips itself below when the hit was on `main`.
-    if (onHit > 0 && struck.uid !== c.attacker.uid
+    // And only a target the hit left standing, as every other rider asks: a
+    // unit the same hit destroyed is off the board, and a Drag, an Immobilized
+    // Token or a turn sent to it was refused in front of the attacker (found by
+    // the computer games, 2026-10-03: a Whip's Immobilize on a Drone it had
+    // destroyed, its Flog's turn on a Mech whose Torso had gone).
+    if (onHit > 0 && struck.uid !== c.attacker.uid && this.aliveNow(struck)
       && (disarmOn(c.action) || dragPrinted(c.action) || immobilizeChoiceOn(c.action) || faceAwayOnHit(c.action))) {
       const seat = c.attacker.side;
       const atkUid = c.attacker.uid;
@@ -5905,6 +6355,7 @@ export class AttackHelper {
         const far = held ? discardFaceOf(this.data, held) : null;
         if (far) {
           const go = document.createElement('button');
+          go.dataset.act = 'finish.disarm';
           go.className = 'ah-alt';
           go.textContent = `Disarm: flip ${SLOT_LABEL[slot as PartSlot] ?? slot} to its Discard Card`;
           go.disabled = !this.mayDrive('attacker');
@@ -5938,6 +6389,7 @@ export class AttackHelper {
       // rider is a MAY, which skipping any button already honours.
       if (immobilizeChoiceOn(c.action)) {
         const go = document.createElement('button');
+        go.dataset.act = 'finish.immobilize';
         go.className = 'ah-alt';
         go.textContent = `Immobilize: ${defLabel} gains 1 Immobilized Token`;
         go.disabled = !this.mayDrive('attacker');
@@ -5969,6 +6421,7 @@ export class AttackHelper {
         const away = (Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 1 : 3) : (dy >= 0 ? 2 : 0)) as Facing;
         const to = { col: struck.col, row: struck.row };
         const go = document.createElement('button');
+        go.dataset.act = 'finish.faceaway';
         go.className = 'ah-alt';
         go.textContent = `Turn ${defLabel} to face away from the attacker`;
         go.disabled = !this.mayDrive('attacker');
@@ -6016,6 +6469,7 @@ export class AttackHelper {
           let picked: { col: number; row: number } | null = null;
           for (const s of spots) {
             const b = document.createElement('button');
+            b.dataset.act = 'finish.drag'; b.dataset.arg = s.label;
             b.className = 'chip chip-intact';
             b.textContent = `Drag ${s.label}`;
             b.disabled = !this.mayDrive('attacker');
@@ -6032,6 +6486,7 @@ export class AttackHelper {
           const FACINGS: [string, number][] = [['North', 0], ['East', 1], ['South', 2], ['West', 3]];
           for (const [name, f] of FACINGS) {
             const b = document.createElement('button');
+            b.dataset.act = 'finish.face'; b.dataset.arg = String(f);
             b.className = 'chip chip-intact';
             b.textContent = `Face ${name}`;
             b.disabled = !this.mayDrive('attacker');
@@ -6062,6 +6517,7 @@ export class AttackHelper {
     const m = this.multi;
     const more = m && m.index + 1 < m.targets.length;
     const done = document.createElement('button');
+    done.dataset.act = 'finish.done';
     done.className = 'ah-primary';
     done.textContent = more ? `Next target: ${m!.targets[m!.index + 1].defender.label} ▸` : 'Done';
     done.disabled = !this.mayDrive('attacker');
@@ -6172,6 +6628,10 @@ export class ElectronicHelper {
   // the seat, the same way the attack window asks it.
   private role: 'initiator' | 'responder' | 'spectator' = 'spectator';
   contestAct: ((act: EwAct, arg?: EwArg) => void) | null = null;
+  // A window nobody is watching (a computer seat's): the dice do not shake and
+  // the verdict strip does not replay. Every question and every rule is what a
+  // player's window runs, as AttackHelper.instant.
+  instant = false;
   private root: HTMLElement;
   private onChanged: () => void;
   private onClose: () => void;
@@ -6283,9 +6743,9 @@ export class ElectronicHelper {
     };
   }
 
-  // Draws the record it was last shown. showContest only stores it: the
-  // Match Centre hands this window a fresh element every refresh and remount
-  // draws, but a host that keeps one root (the pad) has to ask.
+  // Draws the record it was last shown. showContest only stores it, and
+  // remount draws only when the element changed, so every host asks: the
+  // Match Centre, the pad and a computer seat's own window all keep one root.
   redraw(): void {
     if (this.ctx) this.render();
   }
@@ -6530,6 +6990,7 @@ export class ElectronicHelper {
       row.className = 'ah-roll';
       roll.forEach((d) => {
         const b = document.createElement('button');
+        b.dataset.act = 'die'; b.dataset.arg = `${who}:${roll.indexOf(d)}`;
         b.className = `die die-yellow${d.selected ? ' sel' : ''}`;
         b.innerHTML = faceHtml(this.dice, 'yellow', d.face);
         b.title = 'select for a Focus reroll';
@@ -6550,7 +7011,7 @@ export class ElectronicHelper {
       if (who in this.pending) {
         const only = this.pending[who];
         delete this.pending[who];
-        window.setTimeout(() => this.spins[who].spin(row, roll, only), 0);
+        if (!this.instant) window.setTimeout(() => this.spins[who].spin(row, roll, only), 0);
       }
       const n = this.tally(roll, this.offensive(who));
       const sum = document.createElement('p');
@@ -6581,6 +7042,7 @@ export class ElectronicHelper {
           : `Focus (FAQ G4): waiting for ${t.label}'s player to declare.`;
         wrap.appendChild(p);
         const pass = document.createElement('button');
+        pass.dataset.act = 'focus.pass';
         pass.className = 'ah-pass';
         pass.textContent = 'Pass';
         pass.disabled = !this.mayPress(who);
@@ -6588,6 +7050,7 @@ export class ElectronicHelper {
         wrap.appendChild(pass);
         if (canFocus) {
           const use = document.createElement('button');
+          use.dataset.act = 'focus.use';
           use.className = 'ah-cancel';
           use.innerHTML = freeFocus ? 'Focus<small>free, Will to Survive</small>' : 'Focus<small>1 Link</small>';
           use.disabled = !this.mayPress(who);
@@ -6596,6 +7059,7 @@ export class ElectronicHelper {
         }
         if (funder) {
           const whistle = document.createElement('button');
+          whistle.dataset.act = 'focus.whistle';
           whistle.className = 'ah-cancel';
           whistle.innerHTML = `Whistle<small>${esc(funder.label)}'s Command Token</small>`;
           whistle.disabled = !this.mayPress(who);
@@ -6610,6 +7074,7 @@ export class ElectronicHelper {
           : `Waiting for ${t.label}'s player to reroll.`;
         wrap.appendChild(p);
         const rr = document.createElement('button');
+        rr.dataset.act = 'reroll.go';
         rr.className = 'ah-cancel';
         rr.textContent = 'Focus: reroll selected';
         rr.disabled = !this.mayPress(who);
@@ -6634,6 +7099,7 @@ export class ElectronicHelper {
           })();
         });
         const keep = document.createElement('button');
+        keep.dataset.act = 'reroll.keep';
         keep.className = 'ah-pass';
         keep.textContent = 'Keep the roll';
         keep.disabled = !this.mayPress(who);
@@ -6708,6 +7174,7 @@ export class ElectronicHelper {
       wrap.innerHTML = `<h4><span class="ah-n">!</span>Cannot initiate</h4>
         <p class="dim">${esc(c.initiator.label)} has Electronic Value 0, so it cannot start an Electronic Counter-roll. A unit at 0 may still respond to one.</p>`;
       const done = document.createElement('button');
+      done.dataset.act = 'ew.close';
       done.className = 'ah-primary';
       done.textContent = 'Close';
       done.addEventListener('click', () => this.cancel());
@@ -6737,6 +7204,7 @@ export class ElectronicHelper {
         wrap.appendChild(note);
         if (mineNow) {
           const roll = document.createElement('button');
+          roll.dataset.act = 'ew.roll';
           roll.className = 'ah-primary';
           roll.innerHTML = `${ICON_DICE} Roll ${mineNow[2]} Yellow ${mineNow[2] === 1 ? 'die' : 'dice'}`;
           roll.addEventListener('click', () => { this.sendAct('roll', { uid: mineNow[1].uid }); });
@@ -6745,6 +7213,7 @@ export class ElectronicHelper {
         return wrap;
       }
       const roll = document.createElement('button');
+      roll.dataset.act = 'ew.rollboth';
       roll.className = 'ah-primary';
       roll.innerHTML = `${ICON_DICE} Roll ${c.initEv}Y vs ${c.respEv}Y`;
       roll.addEventListener('click', () => {
@@ -6780,6 +7249,7 @@ export class ElectronicHelper {
     // and two answers is how the two screens come to disagree.
     if (!c.done && !this.shared) {
       const resolve = document.createElement('button');
+      resolve.dataset.act = 'ew.resolve';
       resolve.className = 'ah-primary';
       resolve.textContent = 'Resolve ▸';
       resolve.addEventListener('click', () => {
@@ -6832,7 +7302,7 @@ export class ElectronicHelper {
       // straight to settled on a hidden tab, and banking that as played would
       // lose the animation for anyone who was looking elsewhere.
       const key = duel?.innerHTML ?? '';
-      if (duel && key !== this.duelPlayed) {
+      if (duel && key !== this.duelPlayed && !this.instant) {
         window.setTimeout(() => { if (playDuel(duel)) this.duelPlayed = key; }, 0);
       } else {
         this.duelPlayed = key;
@@ -6864,6 +7334,7 @@ export class ElectronicHelper {
       ask.innerHTML = `<b>${esc(yoyu.label)}</b> won the Counter-roll, so Yoyu may switch <b>${esc(other.label)}</b> to Offensive Stance (LPA-22).`;
       wrap.appendChild(ask);
       const take = document.createElement('button');
+      take.dataset.act = 'ew.provoke';
       take.className = 'ah-primary';
       take.textContent = `Provoke ${other.label} into Offensive Stance`;
       // The question belongs to YOYU's seat, and both screens draw it so the
@@ -6879,6 +7350,7 @@ export class ElectronicHelper {
       });
       wrap.appendChild(take);
       const leave = document.createElement('button');
+      leave.dataset.act = 'ew.leave';
       leave.className = 'ah-cancel';
       leave.textContent = 'Leave its Stance alone';
       leave.disabled = !this.mayPress(yoyuWho);
@@ -6898,6 +7370,7 @@ export class ElectronicHelper {
     // only that seat, because it is their Action doing it.
     if (this.shared && c.initiatorWins) {
       const apply = document.createElement('button');
+      apply.dataset.act = 'ew.apply';
       apply.className = 'ah-primary';
       apply.textContent = `Apply ${c.action.name.en || c.action.name.zh || c.action.id} to ${c.responder.label}`;
       apply.disabled = !this.mayPress('init');
@@ -6905,6 +7378,7 @@ export class ElectronicHelper {
       wrap.appendChild(apply);
     }
     const done = document.createElement('button');
+    done.dataset.act = 'ew.done';
     done.className = this.shared && c.initiatorWins ? 'ah-cancel' : 'ah-primary';
     done.textContent = 'Done';
     // Greyed for a Responder while the Initiator's win still waits on Apply (R3).

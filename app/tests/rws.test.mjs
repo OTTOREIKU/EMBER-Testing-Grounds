@@ -4,6 +4,10 @@
 // readers run against the shipped cards; the loop rules against the real
 // loop.ts; the command-layer gates are pinned by source.
 import { readFileSync, writeFileSync } from 'node:fs';
+// The Match Centre's turn readings (which Actions, which targets, which Grids)
+// live in turn.ts since 2026-10-01, shared with the seat seam; the pins that
+// named them in matchhud.ts follow them there.
+const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -114,7 +118,7 @@ check('the apply marks the Part fired and spends the activation',
 const man = cmds.slice(cmds.indexOf("case 'maneuver': {"), cmds.indexOf("case 'maneuver': {") + 2000);
 check('and a commanded Mech does not move', /A Mech commanded through RWS fires that Part and does not move/.test(man), true);
 check('the Match Centre lists the Mech with an RWS chip', /t\.kind === 'mech' \? 'RWS' : t\.kind/.test(hud), true);
-check('and offers only its RWS Actions while it is activated', /\.filter\(\(\{ a \}\) => !rwsOnly \|\| isRwsAction\(a\)\)/.test(hud), true);
+check('and offers only its RWS Actions while it is activated', /\.filter\(\(\{ a \}\) => !rwsOnly \|\| isRwsAction\(a\)\)/.test(turnSrc), true);
 check('priced as the Command, not as Ticks', /const price = rwsOnly \? 'RWS'/.test(hud), true);
 check('the guide lists the Mech\'s RWS Actions and nothing else of its', /if \(phase !== 'Command' \|\| !isRwsAction\(a\)\) continue;/.test(guide), true);
 check('and hides its Move button', /phase === 'Command' && chosen\.kind !== 'mech'/.test(guide), true);
