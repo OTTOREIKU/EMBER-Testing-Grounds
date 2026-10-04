@@ -541,9 +541,12 @@ function towDraggedAlly(ctx: HudCtx, t: Token, path: LargeGrid[], drag: { allyUi
   // Each note below is written only when its command went through: a refused
   // one has already put its reason in the note line, and a success note would
   // have overwritten it (notices audit, 2026-09-28).
+  // The drag is made only once it is paid for: a token the engine refused to
+  // spend dragged the Ally for nothing.
   const paidTow = ctx.send({ kind: 'spendCommand', seat: t.side, uid: drag.funderUid }).ok;
+  if (!paidTow) return;
   const towed = ctx.send({ kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: ally.uid, to: spot }).ok;
-  if (paidTow && towed) ctx.noteNow(`${t.label} drags ${ally.label} along (-1 Movement, 1 Command Token consumed).`, 'done');
+  if (towed) ctx.noteNow(`${t.label} drags ${ally.label} along (-1 Movement, 1 Command Token consumed).`, 'done');
   // Forced Movement: the Harpy's player sets the facing (FAQ B4; audit Phase 4, B3).
   void askTowFacing(ally, t.label).then((f) => {
     if (f === null) return;

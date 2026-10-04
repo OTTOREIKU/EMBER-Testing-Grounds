@@ -156,8 +156,11 @@ export async function offerHarpyDrag(
   // Phase's move — an Automatic Phase move is the Drone acting on its own and
   // gets no drag. The freeplay sandbox with no game running stays permissive.
   if (state.script && PHASES[state.round.phase] !== 'Command') return null;
+  // A Mech in Shutdown Stance can spend no Command Token (4.1, 4.15.4: the
+  // engine refuses it), and was named the funder here all the same: the Match
+  // Centre then dragged the Ally for nothing.
   const funders = state.tokens.filter(
-    (m) => m.side === t.side && m.kind === 'mech' && m.deployed !== false && readyCommands(m) > 0,
+    (m) => m.side === t.side && m.kind === 'mech' && m.deployed !== false && m.stance !== 'shutdown' && readyCommands(m) > 0,
   );
   // "1 adjacent Ally Unit": Adjacent, the eight Grids around plus its own
   // (4.2.2), not Contact, which refused a diagonal ally and one in the next Grid

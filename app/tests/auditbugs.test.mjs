@@ -21,8 +21,10 @@ const hud = src('../src/matchhud.ts');
 const bare = [...hud.matchAll(/^[ \t]*ctx\.send\([^\n]*\);[ \t]*\n(?:[ \t]*\/\/[^\n]*\n)*[ \t]*(?:[a-zA-Z]+ = [^\n]*;\n[ \t]*)?ctx\.noteNow\(/gm)]
   .map((m) => hud.slice(0, m.index).split('\n').length);
 check('no Match Centre note follows a send whose result it never read', bare, []);
+// (Since 2026-10-03 the drag itself waits for the payment: a token the engine
+// refused to spend, a Shutdown Mech's, dragged the Ally for nothing.)
 check('the drag note waits for both of its commands',
-  /const paidTow = ctx\.send\([^\n]*\)\.ok;\s*const towed = ctx\.send\([^\n]*\)\.ok;\s*if \(paidTow && towed\) ctx\.noteNow\(/.test(hud), true);
+  /const paidTow = ctx\.send\([^\n]*\)\.ok;\s*if \(!paidTow\) return;\s*const towed = ctx\.send\([^\n]*\)\.ok;\s*if \(towed\) ctx\.noteNow\(/.test(hud), true);
 // The Counter-roll's sender is contest.ts since 2026-10-01 (the Match Centre
 // and a computer seat share it): the same two rules, read where it lives.
 const contest = src('../src/contest.ts');

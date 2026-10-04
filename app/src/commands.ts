@@ -6128,8 +6128,14 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // much of an outcome as a switch. Guarded on the pair, because a
       // Counter-roll that moved on while the answer was in flight is not the
       // one this answers.
+      // In either role, as check() takes it (4.11.2; audit Phase 3, F16): this
+      // recorded a Responder's answer alone, so a Yoyu that opened the
+      // Counter-roll was asked the same question for ever and the table stood
+      // still (found by the computer games, 2026-10-03).
       const c = sc?.counter;
-      if (c && c.responderUid === cmd.uid && c.initiatorUid === cmd.targetUid && !c.provoke) {
+      const pair = !!c && ((c.responderUid === cmd.uid && c.initiatorUid === cmd.targetUid)
+        || (c.initiatorUid === cmd.uid && c.responderUid === cmd.targetUid));
+      if (c && pair && !c.provoke) {
         c.provoke = cmd.take ? 'taken' : 'passed';
       }
       if (!cmd.take) return;

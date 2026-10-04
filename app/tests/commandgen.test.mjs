@@ -434,6 +434,11 @@ check('the Harpy drag is declared before the move',
 check('and the plan and the paint both take that one allowance',
   /steps: range/.test(mainSrc) && /showReachable\([^)]*range/.test(mainSrc), true);
 check('and it needs a Mech holding a face-up token', /readyCommands\(m\) > 0/.test(pickSrc), true);
+// One that could spend it: a Mech in Shutdown Stance cannot (the engine refuses
+// its spendCommand), and the Match Centre then dragged the Ally for nothing
+// (2026-10-03, found building the computer's tow).
+check('and not one in Shutdown Stance', /m\.stance !== 'shutdown' && readyCommands\(m\) > 0/.test(pickSrc), true);
+check('and the Match Centre drags nothing it could not pay for', /const paidTow = ctx\.send\(\{ kind: 'spendCommand'[^\n]*\)\.ok;\s*if \(!paidTow\) return;/.test(hudSrc), true);
 // Adjacent, the eight Grids around plus its own (4.2.2), not Contact, which
 // refused a diagonal ally (audit Phase 4, B3/F1). This pinned inContact.
 check('the dragged unit must be adjacent', /rangeBetween\(t, o\)\.adjacent/.test(pickSrc), true);

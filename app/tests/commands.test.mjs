@@ -3764,6 +3764,17 @@ globalThis.__baseData = data;
     C.check(data, winit, { kind: 'provoke', seat: 's1', uid: 1, targetUid: 2, take: true }).ok, true);
   C.apply(data, winit, { kind: 'provoke', seat: 's1', uid: 1, targetUid: 2, take: true });
   check('and taking it turns the RESPONDER', [winit.tokens[1].stance, winit.tokens[0].stance], ['offensive', 'defensive']);
+  // AND THE ANSWER IS RECORDED in either role, so the question closes. It was
+  // recorded for a Responder alone, so a Yoyu that opened the Counter-roll was
+  // asked the same question for ever and the table stood still (found by the
+  // computer games, 2026-10-03: an EC50's Fire Control Interference by a Yoyu).
+  check('and records the answer on the shared Counter-roll, so the question closes',
+    [winit.script.counter.provoke, C.check(data, winit, { kind: 'provoke', seat: 's1', uid: 1, targetUid: 2, take: true }).ok], ['taken', false]);
+  const wipass = world([pv(1, 's1', 'EW1', 'LPA-22'), pv(2, 's2', 'EW2', 'ZPA-38')], 2, opp(1));
+  wipass.script.counter = { ...settled };
+  C.apply(data, wipass, { kind: 'provoke', seat: 's1', uid: 1, targetUid: 2, take: false });
+  check('and the decline of an Initiator closes it too, the Stances as they stood',
+    [wipass.script.counter.provoke, wipass.tokens[1].stance, C.check(data, wipass, { kind: 'provoke', seat: 's1', uid: 1, targetUid: 2, take: true }).ok], ['passed', 'defensive', false]);
   // The control that proves the refusal is the binding rather than something
   // in the shared reader: the same board says yes to the Yoyu that DID roll.
   check('while the Yoyu that DID roll still answers on that same board',
