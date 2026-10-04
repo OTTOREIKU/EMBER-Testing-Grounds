@@ -418,8 +418,9 @@ function activation(asked: Decision, view: SeatView): Choice | null {
   // His squads carry no Mines and his ladder has no rung about one: a
   // Movement that would set a Mine off is left out of what it chooses from.
   // Nor has it one about a Crush of a Unit (4.3.6): a Movement that ends in
-  // one is left out too, and the copy walks as it always has.
-  const left = (o: Option): boolean => o.tags.includes('mined') || o.tags.includes('crush-unit');
+  // one is left out too, and the copy walks as it always has. Nor about a
+  // Harpy's tow (ZHDR-304): its squads have no Harpy.
+  const left = (o: Option): boolean => o.tags.includes('mined') || o.tags.includes('crush-unit') || o.tags.includes('tow');
   const d = asked.options.some(left) ? { ...asked, options: asked.options.filter((o) => !left(o)) } : asked;
   const foes = foesOf(view);
   const now = bestShot(d.options, view, me.grid);

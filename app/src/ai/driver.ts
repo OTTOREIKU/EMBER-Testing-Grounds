@@ -253,6 +253,13 @@ export class Driver {
         let known: ReturnType<Odds['hidden']> | undefined;
         o.chance = () => (known === undefined ? (known = this.odds.hidden(state, args)) : known);
       }
+      // An answer that opens an Electronic Counter-roll: the chance it is won.
+      const opens = o.commands?.length ? o.commands[o.commands.length - 1] : undefined;
+      if (opens?.kind === 'startCounterRoll' && !o.win) {
+        const args = { uid: opens.uid, targetUid: opens.targetUid, actionId: opens.actionId, terminal: opens.terminal, before: o.commands!.slice(0, -1) };
+        let known: number | null | undefined;
+        o.win = () => (known === undefined ? (known = this.odds.counter(state, args)) : known);
+      }
       if (o.commands?.length && !o.run && !o.then) {
         const commands = o.commands;
         o.then = once((only) => {

@@ -15,7 +15,7 @@ import type { GameData } from './data';
 import { cardName, isMine, unfoldsInto } from './data';
 import { makeInit, opportunity, tableAfter } from './glue';
 import { alive, canAct, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, tiedChoices, type LoopPhase } from './loop';
-import { crushEscapeGrids, crushExchange, crushExchangeSpots, firingSight, inArc, inContact, largeGridOf, losBetween, mineSpot, spotsInGrid, standingSpot, type LargeGrid } from './rules';
+import { crushEscapeGrids, crushExchange, crushExchangeSpots, firingSight, inArc, inContact, largeGridOf, losBetween, mineSpot, rangeBetween, spotsInGrid, standingSpot, type LargeGrid } from './rules';
 import { canBeForceMoved } from './melee';
 import { gameEndsThisRound, lowValueOf, previewScore, zoneCellsOf } from './scoring';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, type SetupState } from './setup';
@@ -451,6 +451,64 @@ interface MoveSpec {
   // The rest of a Movement a Mine stopped (ruling I16): on the Range it had
   // left, and on the Tick already paid for it.
   resume?: boolean;
+  // Flown, where flying is the unit's to choose: an Ojs200 lends its Mech
+  // Flying Movement on the Maneuver, and the page's panel offers the switch
+  // (turn.ts moveStart `flightOptional`).
+  fly?: boolean;
+  // The Harpy's tow (ZHDR-304): the Ally dragged along, and the Mech whose
+  // Command Token pays for it (`towOf`).
+  tow?: { allyUid: number; funderUid: number };
+}
+
+// THE HARPY'S TOW (ZHDR-304, "Air Transport"): "When performing a Command
+// Movement, may consume 1 additional Command Token and -1 Movement to drag 1
+// adjacent Ally Unit." The page asks it before the route is drawn, the Range
+// one less (commandpick.ts offerHarpyDrag), and once the Movement has landed
+// sets the Ally down in the Grid the route left last, else in the one it ended
+// in (matchhud.ts towDraggedAlly): the funder's Command Token spent, and the
+// Ally moved by the Forced Movement Knockback is made with. Here: where the
+// Ally is set down on the table the Movement leaves, and those two commands;
+// null where nothing is free for it to stand in (the page then drags nothing
+// and spends nothing). The Ally keeps its facing, which the page lets the
+// Harpy's player leave as it was.
+function towOf(data: GameData, table: GameState, t: Token, tow: { allyUid: number; funderUid: number }, route: LargeGrid[]): { commands: Command[]; to: LargeGrid } | null {
+  const ally = table.tokens.find((x) => x.uid === tow.allyUid);
+  const goal = route[route.length - 1];
+  if (!ally || !goal) return null;
+  const terrain = turn.terrainOf(data, table);
+  const prev = route.length >= 2 ? route[route.length - 2] : null;
+  const behind = prev ? standingSpot(prev.c, prev.r, ally.size, ally.aerial, terrain, table.tokens, ally.uid) : null;
+  const spot = behind ?? standingSpot(goal.c, goal.r, ally.size, ally.aerial, terrain, table.tokens, ally.uid);
+  if (!spot) return null;
+  const to = behind && prev ? prev : goal;
+  return {
+    commands: [
+      { kind: 'spendCommand', seat: t.side, uid: tow.funderUid },
+      { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: ally.uid, to: { col: spot.col, row: spot.row } },
+    ],
+    to: { c: to.c, r: to.r },
+  };
+}
+
+// The Harpy's Command Movements that drag an Ally (`towOf`): for each Ally Unit
+// adjacent to it that can be Force-Moved, the Movement on the Range the drag
+// leaves, each answer carrying the drag. Paid by the first Mech of the squad
+// with a face-up Command Token that could spend it, as the page pays it.
+function towMoves(data: GameData, state: GameState, t: Token): Option[] {
+  if (t.cardId !== 'ZHDR-304' || PHASES[state.round.phase] !== 'Command') return [];
+  const opened = turn.moveStart(data, state, t, { maneuver: true });
+  if (!opened.ok || opened.steps <= 1) return [];
+  const funder = state.tokens.find((m) => m.side === t.side && m.kind === 'mech' && m.deployed !== false && alive(m) && m.stance !== 'shutdown' && readyCommands(m) > 0);
+  if (!funder) return [];
+  const out: Option[] = [];
+  for (const ally of state.tokens) {
+    if (ally.uid === t.uid || ally.side !== t.side || ally.deployed === false || !alive(ally) || !rangeBetween(t, ally).adjacent || !canBeForceMoved(data, ally)) continue;
+    out.push(...movementOptions(data, state, t, {
+      key: `tow:${ally.uid}`, name: `${t.label}: move, dragging ${ally.label}`, tags: ['maneuver', 'tow'], prefix: [], maneuver: true,
+      range: opened.steps - 1, tow: { allyUid: ally.uid, funderUid: funder.uid },
+    }));
+  }
+  return out;
 }
 
 // One Movement's options: each Grid the board would light for it, reached by
@@ -598,12 +656,27 @@ function besideMech(data: GameData, state: GameState, t: Token, g: LargeGrid, la
 }
 
 function movementOptions(data: GameData, state: GameState, t: Token, spec: MoveSpec): Option[] {
-  const start = turn.moveStart(data, state, t, { range: spec.range, actionId: spec.actionId, maneuver: spec.maneuver, airborne: spec.airborne });
-  if (!start.ok) return [];
+  const opened = turn.moveStart(data, state, t, { range: spec.range, actionId: spec.actionId, maneuver: spec.maneuver, airborne: spec.airborne });
+  if (!opened.ok || (spec.fly && !opened.flightOptional)) return [];
+  const start = spec.fly ? { ...opened, flying: true } : opened;
   const paid = spec.prefix.length ? tableAfter(data, state, spec.prefix) : state;
   if (!paid) return [];
   const here = largeGridOf(t);
   const out: Option[] = [];
+  // A Harpy's tow (`towOf`): the drag worked out once a route, on the table
+  // the Movement leaves, and kept only where the engine takes it there. A
+  // route it cannot be made on is offered without it, as the Movement alone.
+  const tows = new Map<string, { commands: Command[]; to: LargeGrid } | null>();
+  const towFor = (route: LargeGrid[], move: Command): { commands: Command[]; to: LargeGrid } | null => {
+    if (!spec.tow) return null;
+    const id = route.map((x) => `${x.c},${x.r}`).join('>');
+    if (!tows.has(id)) {
+      const moved = tableAfter(data, paid, [move]);
+      const tow = moved ? towOf(data, moved, t, spec.tow, route) : null;
+      tows.set(id, moved && tow && tableAfter(data, moved, tow.commands) ? tow : null);
+    }
+    return tows.get(id) ?? null;
+  };
   // An Aerial unit's Movement owes Interception where an interceptor of the
   // other squad reaches the Grid it leaves or the one it lands in (4.9). The
   // debt travels with the move, as the page queues it once the walk has
@@ -707,6 +780,9 @@ function movementOptions(data: GameData, state: GameState, t: Token, spec: MoveS
     for (const f of FACINGS) {
       const order = turn.moveOrder(data, state, t, draft(route, f));
       if (order.kind !== 'route' || !order.command) break;
+      // A tow is made on a walk that lands: not on one a Mine stops, nor in a
+      // Crush (the Harpy flies, and makes neither).
+      if (spec.tow && (order.cut > 0 || order.crushes)) break;
       // A walk a Mine stops: the stop is the answer, in the Mine's Grid,
       // whichever Grid beyond it the route was drawn to.
       if (order.cut > 0) {
@@ -776,6 +852,10 @@ function movementOptions(data: GameData, state: GameState, t: Token, spec: MoveS
         continue;
       }
       if (!check(data, paid, order.command).ok) continue;
+      // The drag the route can carry: none, and the route is no tow.
+      const tow = towFor(route, order.command);
+      if (spec.tow && !tow) break;
+      const drag = tow?.commands ?? [];
       const drawn = watched && order.last ? turn.interceptsForMove(data, state, t, order.last) : [];
       const owes: Command[] = drawn.length ? [{ kind: 'queueIntercepts', seat: t.side, items: drawn }] : [];
       // It ends in a Mine's Grid, and sets the Mine off.
@@ -785,13 +865,13 @@ function movementOptions(data: GameData, state: GameState, t: Token, spec: MoveS
       const facts = {
         uid: t.uid, to: { c: g.c, r: g.r }, facing: f, grids: route.length - 1, ...(spec.actionId ? { actionId: spec.actionId } : {}),
         ...(drawn.length ? { intercepts: drawn.length } : {}), ...(boom ? { mined: true, mine: boom } : {}), ...lay, ...shoves(g, f),
-        ...(lent ? { lendsTo: lent.uid } : {}),
+        ...(lent ? { lendsTo: lent.uid } : {}), ...(tow && spec.tow ? { towed: spec.tow.allyUid, funder: spec.tow.funderUid, towedTo: tow.to } : {}),
       };
       out.push({
         id: `move:${spec.key}:${g.c},${g.r}:${f}`,
-        label: `${spec.name} to ${gridName(g)}, facing ${FACING_NAME[f]}${boom ? ', onto the Mine there' : ''}`,
+        label: `${spec.name} to ${gridName(g)}, facing ${FACING_NAME[f]}${boom ? ', onto the Mine there' : ''}${tow ? `, and sets it down in ${gridName(tow.to)}` : ''}`,
         tags: ['move', ...spec.tags, `facing:${f}`, ...(drawn.length ? ['intercepted'] : []), ...(boom ? ['mined'] : [])],
-        commands: [...spec.prefix, order.command, ...owes],
+        commands: [...spec.prefix, order.command, ...drag, ...owes],
         facts,
       });
       // THE SAME MOVEMENT, ITS BASE PUT AGAINST AN ALLY MECH'S, where the spot
@@ -800,7 +880,7 @@ function movementOptions(data: GameData, state: GameState, t: Token, spec: MoveS
       // way the walk came in, and met the Mech only by chance (OTTO's
       // playtest, 2026-10-03: "The carrier drone also seems to be in the top
       // left corner not moving").
-      const beside = lends && order.last && !boom ? besideMech(data, paid, t, g, order.last) : null;
+      const beside = lends && order.last && !boom && !spec.tow ? besideMech(data, paid, t, g, order.last) : null;
       if (beside && order.command.kind === 'maneuver') {
         const put: Command = { ...order.command, to: beside.spot, via: [...order.stops.slice(0, -1), beside.spot] };
         const drawnThere = watched ? turn.interceptsForMove(data, state, t, beside.spot) : [];
@@ -818,12 +898,12 @@ function movementOptions(data: GameData, state: GameState, t: Token, spec: MoveS
       // takes the whole of it.
       const takes = carries ? turn.boxTakes(data, state, t, route, flown) : [];
       if (takes.length) {
-        if (tableAfter(data, state, [...spec.prefix, order.command, ...takes])) {
+        if (tableAfter(data, state, [...spec.prefix, order.command, ...drag, ...takes])) {
           out.push({
             id: `move:${spec.key}:${g.c},${g.r}:${f}:take`,
-            label: `${spec.name} to ${gridName(g)}, facing ${FACING_NAME[f]}, picking up ${takes.length === 1 ? 'the Black Box' : `${takes.length} Black Boxes`} on the way`,
+            label: `${spec.name} to ${gridName(g)}, facing ${FACING_NAME[f]}, picking up ${takes.length === 1 ? 'the Black Box' : `${takes.length} Black Boxes`} on the way${tow ? `, and sets it down in ${gridName(tow.to)}` : ''}`,
             tags: ['move', ...spec.tags, `facing:${f}`, 'take', ...(drawn.length ? ['intercepted'] : []), ...(boom ? ['mined'] : [])],
-            commands: [...spec.prefix, order.command, ...takes, ...owes],
+            commands: [...spec.prefix, order.command, ...drag, ...takes, ...owes],
             facts: { ...facts, boxes: takes.length, taken: taken(takes) },
           });
         }
@@ -835,14 +915,18 @@ function movementOptions(data: GameData, state: GameState, t: Token, spec: MoveS
       if (!around) continue;
       const turned = turn.moveOrder(data, state, t, draft(around, f));
       if (turned.kind !== 'route' || !turned.command || turned.cut > 0 || turned.crushes || !check(data, paid, turned.command).ok) continue;
+      // A tow by way of the Box sets the Ally down behind that route's end.
+      const towAround = towFor(around, turned.command);
+      if (spec.tow && !towAround) continue;
+      const dragAround = towAround?.commands ?? [];
       const fetched = turn.boxTakes(data, state, t, around, flown);
-      if (!fetched.length || !tableAfter(data, state, [...spec.prefix, turned.command, ...fetched])) continue;
+      if (!fetched.length || !tableAfter(data, state, [...spec.prefix, turned.command, ...dragAround, ...fetched])) continue;
       out.push({
         id: `move:${spec.key}:${g.c},${g.r}:${f}:take`,
-        label: `${spec.name} to ${gridName(g)}, facing ${FACING_NAME[f]}, by way of ${fetched.length === 1 ? 'the Black Box' : `${fetched.length} Black Boxes`}, which it picks up`,
+        label: `${spec.name} to ${gridName(g)}, facing ${FACING_NAME[f]}, by way of ${fetched.length === 1 ? 'the Black Box' : `${fetched.length} Black Boxes`}, which it picks up${towAround ? `, and sets it down in ${gridName(towAround.to)}` : ''}`,
         tags: ['move', ...spec.tags, `facing:${f}`, 'take', ...(drawn.length ? ['intercepted'] : []), ...(boom ? ['mined'] : [])],
-        commands: [...spec.prefix, turned.command, ...fetched, ...owes],
-        facts: { ...facts, grids: around.length - 1, boxes: fetched.length, taken: taken(fetched), lay: undefined },
+        commands: [...spec.prefix, turned.command, ...dragAround, ...fetched, ...owes],
+        facts: { ...facts, grids: around.length - 1, boxes: fetched.length, taken: taken(fetched), lay: undefined, ...(towAround ? { towedTo: towAround.to } : {}) },
       });
     }
   }
@@ -860,8 +944,9 @@ function movementOptions(data: GameData, state: GameState, t: Token, spec: MoveS
     });
   }
   // Turning on the spot is a Movement in its own right and costs no Range: the
-  // Maneuver may be spent on it, a quarter turn either way or a half.
-  if (spec.maneuver) {
+  // Maneuver may be spent on it, a quarter turn either way or a half. (Flown,
+  // it is the same turn: the walked Maneuver's answers carry it.)
+  if (spec.maneuver && !spec.fly && !spec.tow) {
     for (const f of FACINGS) {
       if (f === t.facing) continue;
       const quarter = (f - t.facing + 4) % 4;
@@ -893,7 +978,14 @@ function reaching(data: GameData, state: GameState, t: Token, o: Opportunity, mo
   const attacks = turn.actionRows(data, state, t, o).filter((row) => row.v.ok && turn.actionRoute(data, t, row.a) === 'attack');
   if (!attacks.length) return [];
   // How far the longest of them reaches: a Range of none is a Grid beside it.
-  const far = Math.max(...attacks.map((row) => actionRange(data, state.tokens, t, row.a) || 1));
+  // As the attack would be built (turn.ts attackActionBuilt: a [Two-Handed]
+  // rider, [Stationary]), not as printed: a Tactical Rifle held in two hands
+  // reaches two Grids further, and every step from which only that reached was
+  // passed over, so an enemy that would step out and shoot from there was
+  // counted as no danger (a traced game, 2026-10-03: a Missile Artillery stood
+  // in a VIP's rifle's reach at "cost 0.00" and was shot every round). A Range
+  // the move then loses ([Stationary]) is judged on the table the move leaves.
+  const far = Math.max(...attacks.map((row) => Math.max(actionRange(data, state.tokens, t, row.a), actionRange(data, state.tokens, t, turn.attackActionBuilt(data, state, t, row.a.id) ?? row.a)) || 1));
   const ends = moves
     .map((move) => ({ move, to: move.facts?.to as { c: number; r: number } | undefined, facing: move.facts?.facing as Facing | undefined }))
     .filter((x): x is { move: Option; to: { c: number; r: number }; facing: Facing } => !!x.to && x.facing !== undefined)
@@ -999,6 +1091,15 @@ function activationOwed(data: GameData, state: GameState, seat: Side, t: Token, 
     const moves = movementOptions(data, state, t, {
       key: 'maneuver', name: t.kind === 'mech' ? `${t.label}: Maneuver` : `${t.label}: move`, tags: ['maneuver'], prefix: [], maneuver: true,
     });
+    // The same Maneuver flown, where an Ojs200 lends the flight: over terrain
+    // and Melee Locks, and no Crush (FAQ E14). Its own answers, as the panel's
+    // switch makes it a move of its own.
+    const flown = movementOptions(data, state, t, {
+      key: 'maneuver-fly', name: `${t.label}: Maneuver, flying`, tags: ['maneuver', 'fly'], prefix: [], maneuver: true, fly: true,
+    });
+    moves.push(...flown);
+    // And the Harpy's Command Movement dragging an Ally along (`towMoves`).
+    moves.push(...towMoves(data, state, t));
     options.push(...(reach === null ? moves : reaching(data, state, t, o, moves, reach)));
   }
   // The rest of a Movement a Mine stopped (ruling I16, M19): the Go on, with

@@ -87,7 +87,7 @@ export const COMMANDS = {
   meleeEvade: ['window', 'Melee Evasion'],
   dodgeEnhance: ['window', 'Dodge Enhancement'],
   kcArmor: ['window', 'KC Armor'],
-  spendCommand: ['window', 'the Command Token a declare costs'],
+  spendCommand: ['window', 'the Command Token a declare costs; by a seat, the one a Harpy\'s tow spends (M12)'],
   applyPenetration: ['window', 'the Penetration, on the Part it lands on'],
   applyStatus: ['window', 'a Token an attack or a won Counter-roll grants; the seam sends the one an effect Detonation hands out (a Stun Grenade) and the one an Action puts on (Ambush, Amplify Profile, Target Tag, Optical Camouflage)'],
   removeStatus: ['window', 'a won Scan strips Low Profile; the seam sends a Token cleaned off an Ally (System Cleanup)'],
@@ -100,7 +100,7 @@ export const COMMANDS = {
   suppress: ['window', 'Suppression, as a Surplus effect'],
   disarm: ['window', 'Disarm, as an attack\'s rider'],
   tether: ['window', 'Tether X on a Hit'],
-  forceMove: ['window', 'Drag, inside the window; by a seat, a unit pushed aside by a Crush (M8.2p) and a Knockback or a Push its attack made (M8.2t); the Harpy\'s tow is later'],
+  forceMove: ['window', 'Drag, inside the window; by a seat, a unit pushed aside by a Crush (M8.2p) and a Knockback or a Push its attack made (M8.2t), and the Ally a Harpy tows (M12)'],
   dropBlackBox: ['window', 'a Penetrated bearer\'s Black Box, put down by the attacker as its attack ends: in Contact with the bearer, on the side nearest itself'],
   // ---------- inside a Counter-roll ----------
   rollCounter: ['window', 'a seat\'s own unit\'s dice, and its Focus reroll'],
@@ -222,8 +222,6 @@ export const DECISIONS = {
 // What an activation does not offer yet, in the seam's own words: each is a
 // `continue` or an early return in owed.ts with this reason beside it.
 export const NOT_OFFERED = [
-  'the optional flight an Ojs200 lends its Maneuver',
-  'an Ally towed after a Movement (the Harpy)',
   'a Container as a target, a Neutral target; a Charge spent on an attack that designates a unit in Optical Camouflage',
   'a Multi-Target attack\'s further target in Optical Camouflage (its free Scan)',
   'a 1x3 line',

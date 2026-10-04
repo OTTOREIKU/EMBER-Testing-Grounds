@@ -166,9 +166,9 @@ M.L.setLocalSeat(null);
   const zoneId = (t, label) => viewOf(t.state, 's1').zones.find((z) => z.name === label).id;
   // The worth of an access is a weight, 0 as it ships (measured: the plan,
   // section 12); given one, this is what it does with it.
-  const a = await table({ access: 0.5 });
+  const a = await table({ access: 0.5, ewOdds: 0 });
   const d = a.t.drivers.s1.pending();
-  const plans = AI.weighed(d, viewOf(a.t.state, 's1'), { focus: false }, { access: 0.5 });
+  const plans = AI.weighed(d, viewOf(a.t.state, 's1'), { focus: false }, { access: 0.5, ewOdds: 0 });
   const best = plans[0];
   check('with the other squad\'s Drone standing in Echo, the Tactician\'s best plan is a Remote Access at ECHO: taken from them it pays twice, and Bravo, which nobody holds, pays once',
     [/Remote Access: the Terminal in Echo/.test(best.does) || /Remote Access: the Terminal in Echo/.test(best.label), near(best.now, 0.5 * 2 * 2)], [true, true]);
@@ -183,21 +183,33 @@ M.L.setLocalSeat(null);
   check('and that is what it does, behind its Maneuver if the plan begins with one',
     [made.at(-1), made.slice(0, -1).every((x) => x[0] === 'move' || x[0] === 'stance')], [['terminal', zoneId(a.t, 'Echo')], true]);
   a.t.close();
+  // With the Counter-roll's odds read (`ewOdds`, M12), an access is weighed at
+  // the chance its roll is won (`Option.win`), not at a chance it never read.
+  const o = await table({ access: 1, ewOdds: 1 });
+  const od = o.t.drivers.s1.pending();
+  const echo = od.options.find((x) => x.tags[0] === 'terminal' && x.facts?.zone === zoneId(o.t, 'Echo'));
+  const p = echo?.win?.();
+  const oplans = AI.weighed(od, viewOf(o.t.state, 's1'), { focus: false }, { access: 1, ewOdds: 1 });
+  const top = oplans.find((x) => /Remote Access: the Terminal in Echo/.test(x.does) || /Remote Access: the Terminal in Echo/.test(x.label));
+  check('WITH THE COUNTER-ROLL\'S ODDS READ, an access is worth the chance its roll is won: Echo\'s, taken from the Drone there, at that chance of twice what it pays',
+    [typeof p === 'number' && p > 0 && p < 1, !!top && near(top.now, p * 2 * 2)], [true, true]);
+  o.t.close();
   const b = await table({});
   const none = AI.weighed(b.t.drivers.s1.pending(), viewOf(b.t.state, 's1'), { focus: false });
-  check('as it ships an access is worth nothing to it, and it makes none', [AI.TACTICIAN.access, none.some((p) => /Remote Access/.test(p.does) || /Remote Access/.test(p.label))], [0, false]);
+  // (Since 2026-10-04 the access ships at its roll's odds: `access` 1, `ewOdds` 1.)
+  check('as it ships an access is weighed at the odds of its Counter-roll, and with the Drone of the other squad in Echo it is planned',[AI.TACTICIAN.access, AI.TACTICIAN.ewOdds, none.some((p) => /Remote Access/.test(p.does) || /Remote Access/.test(p.label))], [1, 1, true]);
   b.t.close();
   // A zone this squad already holds pays its Terminal as the round ends: an
   // access there gains nothing. The Mire at F3, with Echo alone in its Range,
   // and the squad's own Dune standing in Echo.
-  const own = await table({ access: 0.5 });
+  const own = await table({ access: 0.5, ewOdds: 0 });
   const put = (x, c, r) => { x.col = c * 3; x.row = r * 3; };
   put(own.U.Mire, 5, 2); put(own.U.Dune, 5, 5); put(own.U.Porcupine, 11, 9);
   own.t.state.script.opp = null;
   M.G.opportunity(data, own.t.state);
   const asked = own.t.drivers.s1.pending();
   const offered = asked.options.filter((o) => o.tags[0] === 'terminal').map((o) => o.facts.zone);
-  const weighed = AI.weighed(asked, viewOf(own.t.state, 's1'), { focus: false }, { access: 0.5 });
+  const weighed = AI.weighed(asked, viewOf(own.t.state, 's1'), { focus: false }, { access: 0.5, ewOdds: 0 });
   check('a Terminal in a zone the squad already holds is offered and is worth nothing to access: no plan makes one',
     [offered, viewOf(own.t.state, 's1').zones.find((z) => z.name === 'Echo').holder, weighed.some((p) => /Remote Access/.test(p.does) || /Remote Access/.test(p.label))],
     [[zoneId(own.t, 'Echo')], 's1', false]);

@@ -29,9 +29,9 @@ import type { GameData } from '../data';
 import { tableAfter } from '../glue';
 import type { Forecast } from '../seat';
 import { boxHands } from '../tasks';
-import { counterReading, counterVerdict, type CounterReading } from '../contest';
+import { counterReading, counterResponder, counterVerdict, type CounterReading } from '../contest';
 import { attackOpening, terrainOf } from '../turn';
-import type { DiceData, GameState } from '../types';
+import type { CounterRoll, DiceData, GameState } from '../types';
 import type { AttackArgs } from './botcombat';
 
 // ---------- what a hand of dice comes to ----------
@@ -831,6 +831,27 @@ export class Odds {
       this.known.set(key, f);
     }
     return f;
+  }
+
+  // THE CHANCE AN ELECTRONIC COUNTER-ROLL IS WON (an Electronic Attack, a
+  // Scan, a Remote Access) as it is opened, on the table once `before` (its
+  // payment) has landed: for a Remote Access the Responder is the Terminal's
+  // stand-in, as the window makes it (contest.ts counterResponder). Null with
+  // no reading.
+  counter(state: GameState, a: { uid: number; targetUid: number; actionId: string; terminal?: string; before?: Command[] }): number | null {
+    const table = tableAfter(this.data, state, a.before ?? []);
+    if (!table) return null;
+    let resp = a.targetUid;
+    if (a.terminal !== undefined) {
+      const init = table.tokens.find((t) => t.uid === a.uid);
+      const record = { initiatorUid: a.uid, responderUid: a.targetUid, actionId: a.actionId, terminal: a.terminal } as unknown as CounterRoll;
+      const stand = counterResponder(this.data, table, record, init);
+      if (!stand) return null;
+      table.tokens.push(stand);
+      resp = stand.uid;
+    }
+    const r = counterReading(this.data, table, a.uid, resp, a.actionId);
+    return r ? counterChance(r) : null;
   }
 
   // AN ATTACK ON A UNIT IN OPTICAL CAMOUFLAGE, made through the one free Scan

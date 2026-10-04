@@ -525,6 +525,12 @@ export interface Option {
   // when asked. Null where no forecast can be made. Whoever puts the question
   // to a seat adds this; the question itself is plain data.
   chance?: () => Forecast | null;
+  // An answer that opens an Electronic Counter-roll (an Electronic Attack, a
+  // Scan, a Remote Access): the chance the Initiator wins it, neither side
+  // taken to Focus (ai/odds.ts counterChance), on the table once its payment
+  // has landed. Null where no reading can be made. Added, as `chance` is, by
+  // whoever puts the question.
+  win?: () => number | null;
   // An answer that splits an attack's dice between targets (a Multi-Target's
   // split, FAQ B7): each target's share and what it is likely to do there,
   // the unit named being the one the dice land on. Added, as `chance` is, by

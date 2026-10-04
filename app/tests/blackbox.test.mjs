@@ -568,6 +568,61 @@ M.L.setLocalSeat(null);
   check('an enemy carrying a Box is worth more to shoot, by what its Boxes are worth for the chance of the Penetration that makes it drop them',
     [!!aim(plain), pen > 0.3, stay(bears).now - stay(plain).now >= drop - 1e-9, / at Wild Cat/.test(stay(bears).does)], [true, true, true, true]);
   plain.t.close(); bears.t.close();
+  // THE OTHER SQUAD'S BOXES (M11; OTTO, 2026-10-03: "if I saw someone go for
+  // the box ... I would plan accordingly to try to intercept and stop them or
+  // steal it myself"). Each loose Box is a race (`AI.races`): the round each
+  // squad's soonest unit with a hand free could take it, and the enemy unit
+  // that would. The Wild Cat stands a Grid from the Box at F5, the Dune four
+  // Grids off; the Wild Cat has had its turn this round, as `staged` leaves it.
+  const BOX = { boxRace: 0.5, boxSteal: 1, deny: 1 };
+  const raced = await staged(keyGame, { round: 3 }, ({ U, at, boxes }) => {
+    at(U.Dune, 1, 4, 1); at(U['Wild Cat'], 6, 4, 3); boxes[0].col = 5 * 3 + 1; boxes[0].row = 4 * 3 + 1;
+  });
+  const rv = viewOf(raced.t.state, 's1');
+  const done = AI.races(raced.d, rv, BOX)[raced.boxes[0].id];
+  raced.t.state.script.acted = raced.t.state.script.acted.filter((uid) => uid !== raced.U['Wild Cat'].uid);
+  const ready = AI.races(raced.d, viewOf(raced.t.state, 's1'), BOX)[raced.boxes[0].id];
+  // (Since 2026-10-03 the three weights ship on: `boxRace` 0.5, `boxSteal` 1, `deny` 1.)
+  check('A LOOSE BOX IS A RACE: the Wild Cat beside it would take it, a round later for having had its turn this round; and with the Box weights off nothing is worked out',
+    [Object.keys(AI.races(raced.d, rv, { boxRace: 1, boxSteal: 0, deny: 0 })).length, done?.by, ready?.by, done?.theirs - ready?.theirs, ready?.theirs, typeof done?.ours],
+    [0, raced.U['Wild Cat'].uid, raced.U['Wild Cat'].uid, 1, 3, 'number']);
+  const steal = (w) => Math.max(...AI.weighed(raced.d, rv, { focus: false }, w).map((p) => p.shape));
+  check('a Box this squad would take first that the other squad would take otherwise is worth more to walk for (`boxSteal`): the Box it keeps from them',
+    steal({ boxSteal: 1 }) > steal({ boxSteal: 0 }) + 0.5, true);
+  raced.t.close();
+  // The same Box, the Wild Cat's turn still to come and the Dune far off: the
+  // Wild Cat takes it this round, and the walk for it is worth half (`boxRace`).
+  const lost = await staged(keyGame, { round: 3 }, ({ U, at, boxes }) => {
+    at(U.Dune, 0, 0, 2); at(U['Wild Cat'], 6, 4, 3); boxes[0].col = 5 * 3 + 1; boxes[0].row = 4 * 3 + 1;
+  });
+  lost.t.state.script.acted = lost.t.state.script.acted.filter((uid) => uid !== lost.U['Wild Cat'].uid);
+  const lv = viewOf(lost.t.state, 's1');
+  const stayAt = (w) => AI.weighed(lost.d, lv, { focus: false }, w).find((p) => p.how === 'stay');
+  const lostRace = AI.races(lost.d, lv, BOX)[lost.boxes[0].id];
+  check('a Box the other squad would take first is worth less to walk for (`boxRace`): the Dune\'s walk to it, from where it stands, is worth less than it was',
+    [lostRace.theirs < lostRace.ours || lostRace.ours === null, stayAt({ boxRace: 0.5 }).shape < stayAt({ boxRace: 1 }).shape - 0.1], [true, true]);
+  lost.t.close();
+  // The Dune with the Wild Cat in its rifle's sights, a Box beside the Wild
+  // Cat, whose turn is still to come and which would take it first, and its
+  // Torso one Penetration from gone.
+  const grab = await staged(keyGame, { timing: 'firing' }, ({ U, at, boxes }) => {
+    at(U.Dune, 4, 4, 1); at(U['Wild Cat'], 8, 4, 3); boxes[0].col = 9 * 3 + 1; boxes[0].row = 4 * 3 + 1;
+    U['Wild Cat'].partStates.torso = 'damaged';
+  });
+  grab.t.state.script.acted = grab.t.state.script.acted.filter((uid) => uid !== grab.U['Wild Cat'].uid);
+  const gv = viewOf(grab.t.state, 's1');
+  const aimed = grab.d.options.find((o) => o.run?.routine === 'attack' && o.facts?.targetUid === grab.U['Wild Cat'].uid && !o.tags.includes('spend-charge'));
+  const kill = aimed?.chance().kill ?? 0;
+  const shotAt = (w) => AI.weighed(grab.d, gv, { focus: false }, w).find((p) => p.how === 'stay').now;
+  const graceRace = AI.races(grab.d, gv, BOX)[grab.boxes[0].id];
+  // (The Wild Cat has one hand free: of the Box beside it, which it would take
+  // first, and the four it would reach in the same round as the Dune, it is
+  // worth the one. The Dune's plan fires twice, each shot with its chance.)
+  const box = 4 * W.boxFuture ** 4;
+  const more = shotAt({ deny: 1 }) - shotAt({ deny: 0 });
+  check('AN ATTACK ON THE UNIT THAT WOULD TAKE A BOX FIRST is worth that Box more (`deny`), for the chance it is destroyed before it can: no more Boxes than it has hands free',
+    [graceRace?.by, graceRace?.theirs < graceRace?.ours, kill > 0, more >= kill * box - 1e-9, more <= 2 * box + 1e-9], [grab.U['Wild Cat'].uid, true, true, true, true]);
+  grab.t.close();
   // AND ITS OWN BEARER COSTS MORE TO LEAVE IN A LINE OF FIRE: the same Grid,
   // in the same rifle's sights, with a Box in the Dune's hand and without.
   const sighted = async (carries) => staged(keyGame, {}, ({ U, at, boxes }) => {
@@ -631,6 +686,22 @@ M.L.setLocalSeat(null);
   check('THE TACTICIAN WALKS TO A BOX AND PICKS IT UP: two Grids off, with nothing to shoot, the Mire has it within its Opportunity',
     [bearerOf(a.t.state, a.boxes[0].id), made.includes('take'), a.t.refused], [a.U.Mire.uid, true, []]);
   a.t.close();
+  // THE STEAL IS THE PICK-UP'S TOO (`stealOf`, 2026-10-04): the Box the other
+  // squad would take otherwise, picked up now, is worth what it pays and the
+  // steal beside it (`boxSteal`), as the walk for it is; without it a walk for
+  // the Box outweighed having it, and the Mire stood beside it (this check's
+  // table, before the mend). The same table again, weighed with the steal on
+  // and off.
+  const s2 = await table(keyGame, ({ boxes }) => { boxes[0].col = 4 * 3 + 1; boxes[0].row = 2 * 3 + 1; });
+  const sv = viewOf(s2.t.state, 's1');
+  const sd = s2.t.drivers.s1.pending();
+  const take = (w) => AI.weighed(sd, sv, { focus: false }, w).find((p) => /picking up the Black Box/.test(p.label));
+  const stayOf = (w) => AI.weighed(sd, sv, { focus: false }, w).find((p) => p.how === 'stay');
+  const on = take({});
+  const off = take({ boxSteal: 0 });
+  check('A BOX THE OTHER SQUAD WOULD TAKE OTHERWISE, PICKED UP NOW, IS WORTH THE STEAL TOO: twice what it is worth with `boxSteal` 0, and more than standing beside it',
+    [!!on && !!off, on && off ? Math.abs(on.mission - 2 * off.mission) < 1e-6 : false, on && stayOf({}) ? on.worth > stayOf({}).worth : false], [true, true, true]);
+  s2.t.close();
   // A Box underfoot.
   const b = await table(keyGame, ({ boxes }) => { boxes[0].col = 2 * 3 + 1; boxes[0].row = 2 * 3 + 1; });
   const picked = [];

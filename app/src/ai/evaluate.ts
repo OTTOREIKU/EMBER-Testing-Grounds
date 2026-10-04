@@ -116,7 +116,11 @@ export interface Weights {
   // Receive Signal (plan section 12, tm1b to tm3b): 345 of 400 against the
   // Brawler, where 0 (the zones alone, held as each round ends) wins 366. The
   // Tick it costs is an attack not made. 0 until it is priced by the roll's
-  // own odds and by what the Tick would otherwise have done.
+  // own odds and by what the Tick would otherwise have done. ADOPTED at 1 with
+  // `ewOdds` 1 (2026-10-04): the roll's odds read (`Option.win`), the access
+  // is worth that chance of what a won roll pays, weighed against what else
+  // the Tick could do; random squads on Terminals paired by seed 96 of 178
+  // won against 77 (24 seeds turned to a win, 5 from one).
   access: number;
   // On a Black Box Task that pays for a Box only in one zone, a Box that is
   // not there yet, as a share of one that is: what a bearer still on its way
@@ -138,6 +142,26 @@ export interface Weights {
   // every unit.
   boxMore: number;
   boxShare: number;
+  // THE OTHER SQUAD'S BOXES (M11; OTTO, 2026-10-03: "if I saw someone go for
+  // the box in an attempt to get an extra point to take the victory I would
+  // plan accordingly to try to intercept and stop them or steal it myself").
+  // Each loose Box is a race: the round each squad's soonest unit with a hand
+  // free could take it (`races`). A walk for a Box the other squad would take
+  // first is worth `boxRace` of itself (1: as before), level on the round half
+  // way to that; one this unit would take first, which the other squad would
+  // take otherwise, is worth `boxSteal` more of itself (0: as before), for the
+  // Box it keeps from them. An attack on the enemy unit that would take a Box
+  // first is worth `deny` of that Box for each it would stop by destroying the
+  // unit (0: as before). ADOPTED at 0.5, 1 and 1 (2026-10-03, night): head to
+  // head on Key Facility 112 games won of 200 against 84 lost (the mirror is
+  // level; each alone 109/88, 100/95, 105/93), Asset Preservation 100 against
+  // 92; random squads on Black Box Tasks paired by seed 145 of 299 against 136
+  // (25 seeds turned to a win, 14 from one), the Victory Points margin -101 to
+  // -29; and OTTO's table (Key Facility on the Alley, UN against RDL, both
+  // racing): UN 15 of 20 against 9, its 4 to 4 losses on the Parts 6 to 0.
+  boxRace: number;
+  boxSteal: number;
+  deny: number;
   // A Link restored with nothing better to do.
   restore: number;
   // Deploying a Commander: what each Grid of the other squad's Deployment
@@ -224,6 +248,64 @@ export interface Weights {
   // 118 of 200; with `lend` on random squads 140 of 300 against 132 (14 seeds
   // turned to a win, 6 from one).
   decoy: number;
+  // THE HARPY'S TOW (ZHDR-304, M12): a Command Movement that drags an Ally
+  // along is worth `tow` of what the Ally gains by where it is set down (its
+  // best deed at its next turn, and its walk to the Main Task), less
+  // `towToken` for the Command Token it spends; what the other squad could do
+  // to the Ally there that it could not where it stands is charged in full.
+  // At 0 a tow is never planned.
+  tow: number;
+  towToken: number;
+  // FOCUS FIRE (M13): a blow that leaves an enemy's vital Part Damaged (a
+  // Mech's Torso, a Drone's one Part), where a unit of this squad still to
+  // come this round could then finish it, is worth `gang` of what that unit
+  // would gain on destroying it (its chance of Penetrating the Damaged Part
+  // over its chance as the enemy stands), at what destroying it is worth. At 0
+  // nothing is asked.
+  gang: number;
+  // AN ENEMY'S MISSILE STILL TO BE LAUNCHED (M12): what standing somewhere
+  // costs counts, for each enemy Mech that may still launch a Projectile this
+  // round, what the Projectile could do to the unit from the Landing Point
+  // nearest it, at `salvo` x `exposure` x `launch`. A Missile lands first and
+  // attacks in the Delay Phase, so an enemy's turn never counted it as an
+  // attack (a traced game: a Mech walked among two Razors already landed and
+  // two more on their way, and was lost). At 0 nothing is asked.
+  salvo: number;
+  // HITS THAT ADD UP ON A MECH (M12): the chance a run of enemy attacks
+  // destroys a Mech, its Torso followed from Intact to Damaged to Destroyed
+  // as a Drone's one Part is, where each attack's own forecast reads the Mech
+  // as it stands and so never destroys it alone; what the run destroys that no
+  // one attack would is charged at `compound` x what the Mech is worth, and is
+  // the plan's risk. At 0 each attack's chance is taken alone, as before.
+  compound: number;
+  // AN ENEMY WHOSE DIAL THIS ROUND CANNOT TOUCH A UNIT (shown, on a Timing with
+  // no attack on it) costs what it could do a round on, as an enemy whose turn
+  // is behind it does, at `later` x `exposureLater`. At 0 such an enemy costs
+  // nothing.
+  later: number;
+  // THE LAST MECH OF A SQUAD WITH DRONES is worth `keystone` of the Drones'
+  // worth besides its own (`keystoneOf`). At 0 it is worth its own.
+  keystone: number;
+  // THE TIEBREAK: each Part or Drone destroyed is worth `tiebreak` Victory
+  // Points x the chance the game ends level on them (`tieWorth`), read with a
+  // doubt of `tieSpread` per round left. At 0 a Part is worth its points alone.
+  tiebreak: number;
+  tieSpread: number;
+  tieCount: number;
+  // THE ODDS OF AN ELECTRONIC COUNTER-ROLL (M12): an Electronic Attack and a
+  // Remote Access are weighed at the chance their Counter-roll is won
+  // (`Option.win`, ai/odds.ts counterChance), `jam` read as what a won roll is
+  // worth at even odds and `access` as a share of what a won one pays. At 0
+  // each is weighed as before, at a chance it never read (a Remote Access, 0 of
+  // 95 offers taken in the night's census). ADOPTED at 1 with `access` 1
+  // (2026-10-04): in the factorial alone, on a jam, +2.3 points of win rate
+  // (z 1.4); with the access, the Terminals result above.
+  ewOdds: number;
+  // AN ESCORT (M13): on a VIP mission, a plan that moves a unit within three
+  // Grids of its squad's Commander is charged `escort` of what it leaves the
+  // Commander more open to, and credited what it spares it by standing in the
+  // way (`escortOf`). At 0 a unit's own Grid is all it weighs.
+  escort: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -253,12 +335,15 @@ export const TACTICIAN: Weights = {
   holder: 0.75,
   contactStep: 0.04,
   approach: 0,
-  access: 0,
+  access: 1,
   carry: 0.5,
   boxFuture: 0.85,
   walkTurn: 1,
   boxMore: 0,
   boxShare: 1,
+  boxRace: 0.5,
+  boxSteal: 1,
+  deny: 1,
   restore: 0.1,
   lane: 0.15,
   tempo: 0.01,
@@ -276,6 +361,18 @@ export const TACTICIAN: Weights = {
   focusLow: 2,
   lend: 2,
   decoy: 1,
+  tow: 0,
+  towToken: 0.25,
+  gang: 0,
+  salvo: 0,
+  compound: 0,
+  later: 0,
+  keystone: 0,
+  tiebreak: 0,
+  tieSpread: 1,
+  tieCount: 3,
+  ewOdds: 1,
+  escort: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
@@ -292,7 +389,21 @@ export function unitWorth(u: UnitView, view: SeatView, w: Weights): number {
   const material = w.material * (standing + Math.max(0, u.points - listed));
   const task = view.task;
   const lead = task?.family === 'vip' && u.commander ? task.vp * (u.side === view.seat ? w.vipOwn : w.vipKill) : 0;
-  return material + lead;
+  return material + lead + keystoneOf(u, view, w);
+}
+
+// THE SQUAD'S LAST MECH (`keystone`, M12). A Drone acts on a Command, and a
+// Command comes from a Mech of its squad (4.15): with the last Mech gone the
+// Drones stand idle but for what they do of themselves. So the last Mech of a
+// squad that still has Drones is worth `keystone` of their worth besides its
+// own, to its squad and to whoever destroys it. (Two games read by eye: a
+// squad of one Mech and four Drones walked its Mech into a zone among Missiles
+// at a cost a Mech of a two-Mech squad might pay.)
+function keystoneOf(u: UnitView, view: SeatView, w: Weights): number {
+  if (w.keystone <= 0 || u.kind !== 'mech') return 0;
+  const squad = view.units.filter((x) => x.side === u.side && x.uid !== u.uid && x.alive && x.deployed);
+  if (squad.some((x) => x.kind === 'mech')) return 0;
+  return w.keystone * w.material * squad.filter((x) => x.kind === 'drone' && !x.lowValue).reduce((n, x) => n + x.points, 0);
 }
 
 // What one more Part of a Mech destroyed costs its squad. A Mech left with
@@ -316,11 +427,48 @@ function partWorth(u: UnitView, view: SeatView, w: Weights, more: number): numbe
 // have gone on to do.
 export function gainOf(f: Forecast, target: UnitView, view: SeatView, w: Weights, more = 0): number {
   const whole = unitWorth(target, view, w) + more;
-  if (target.kind !== 'mech') return f.kill * whole + f.damage * w.damaged * whole;
+  // What each Part or Drone is worth in the tiebreak (`tiebreak`).
+  const tie = w.tiebreak > 0 && !target.lowValue && target.kind !== 'projectile' ? tieWorth(view, w) : 0;
+  if (target.kind !== 'mech') return f.kill * (whole + tie) + f.damage * w.damaged * whole;
   const part = partWorth(target, view, w, more);
   // A destroyed Torso is a kill and a destroyed Part both: counted once.
   const short = Math.max(0, f.destroy - f.kill);
-  return f.kill * whole + short * part + f.damage * w.damaged * part + f.link * w.link;
+  // A Mech destroyed takes every Part it still stands on out of the count.
+  const live = tie ? target.parts.filter((x) => x.state !== 'destroyed').length : 0;
+  return f.kill * (whole + tie * live) + short * (part + tie) + f.damage * w.damaged * part + f.link * w.link;
+}
+
+// THE TIEBREAK (`tiebreak`, M12). Level on Victory Points, the game goes to
+// the side with more Mech Parts not destroyed and Drones on the board (5.2.4,
+// `standingFor`), and so do half the Black Box games and half the VIP games the
+// computer plays (1,144 of 3,988 random games read: Black Box 48%, VIP 54%,
+// Occupation and Terminals 8%). There each Part and each Drone counts one,
+// whatever its points: a Drone of 30 points is worth a Mech's Arm. So while
+// the margin the Main Task is heading for is near level, each one destroyed
+// is worth `tiebreak` x the chance the game ends level, read off that margin
+// with a doubt of `tieSpread` Victory Points for the last round and as much
+// again for each round before it; and x how close the count itself is, read
+// off the Parts and Drones each side has standing with a doubt of `tieCount`
+// for the last round and as much again for each round before it (a side five
+// ahead on the count gains little by a sixth). Worked out once a table.
+// (Kept by the view and the two doubts it is read with: one table may be read
+// with two weight lists, as a test or a tuner does.)
+const LEVEL = new WeakMap<SeatView, Map<string, number>>();
+export function tieWorth(view: SeatView, w: Weights): number {
+  let byDoubt = LEVEL.get(view);
+  if (!byDoubt) { byDoubt = new Map(); LEVEL.set(view, byDoubt); }
+  const doubt = `${w.tieSpread}|${w.tieCount}`;
+  let level = byDoubt.get(doubt);
+  if (level === undefined) {
+    const left = 1 + Math.max(0, view.roundLimit - view.round);
+    const margin = marginOf(view, w);
+    const spread = w.tieSpread * left;
+    const count = standingFor(view, view.seat) - standingFor(view, view.other);
+    const close = w.tieCount * left;
+    level = Math.exp(-(margin * margin) / (2 * spread * spread)) * Math.exp(-(count * count) / (2 * close * close));
+    byDoubt.set(doubt, level);
+  }
+  return w.tiebreak * level;
 }
 
 // WHAT THE MAIN TASK IS WORTH AS THE BOARD STANDS, to the seat whose view it

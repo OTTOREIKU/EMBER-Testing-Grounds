@@ -424,8 +424,12 @@ M.L.setLocalSeat(null);
   const next = co(d)[0].then();
   check('as a driver puts the question, each answer says what would be asked next, on a copy of the table: the Drone\'s own turn; the table in play is not touched',
     [next?.kind, next?.unit === co(d)[0].facts.targetUid, held(x.U.Tracer), [x.U.Eagle, x.U.Ram, x.U.Zealot].map(borne)], ['opp.act', true, 4, [0, 0, 0]]);
-  check('PLAYED BY THE TACTICIAN: with an enemy in its sights the Tracer attacks, the attack is rolled out in its window, and only then is the Coordination its shot carried on offer (FAQ 1.04 C9)',
-    [steps[0].startsWith(`s1:attack:ZHRA-101_`), steps[0].endsWith(':attack_value'), steps.some((y) => y.startsWith('s2:defense.roll')), x.s.script.opp.performed.length, x.s.script.combatView ?? null, co(d).length],
+  // (Since 2026-10-04 the Tracer takes Defensive Stance first: the seam's reach look reads the Wolf's
+  // rifle held two-handed, two Grids further, and the Grid the Tracer shoots from costs it more. A Stance
+  // is no Action: the attack is still the one Action, and the Coordination its shot carried.)
+  const shot = steps.findIndex((y) => y.startsWith('s1:attack:'));
+  check('PLAYED BY THE TACTICIAN: with an enemy in its sights the Tracer attacks (a Stance taken first, if any), the attack is rolled out in its window, and only then is the Coordination its shot carried on offer (FAQ 1.04 C9)',
+    [shot >= 0 && steps[shot].startsWith(`s1:attack:ZHRA-101_`), shot >= 0 && steps[shot].endsWith(':attack_value') && steps.slice(0, shot).every((y) => /^s1:stance:/.test(y)), steps.some((y) => y.startsWith('s2:defense.roll')), x.s.script.opp.performed.length, x.s.script.combatView ?? null, co(d).length],
     [true, true, true, 1, null, 3]);
   check('IT IS WEIGHED BEFORE ANYTHING ELSE, AND GOES TO THE DRONE THAT GAINS MOST BY ACTING NOW: what a Command adds is the Drone\'s best plan with it over its doing nothing, as a Command in the Command Phase is priced',
     [pick.option === top(list).id, pick.reason, Math.abs(pick.score - top(list).gain) < 1e-6, top(list).gain > 0, list.every((g) => g.gain > 0)], [true, 'coordinate_by_value', true, true, true]);
