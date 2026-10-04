@@ -11,7 +11,8 @@ import { ElectronicHelper } from '../combat';
 import { contestAct, counterResponder } from '../contest';
 import type { Decision, Option } from '../seat';
 import { actionOf } from '../turn';
-import type { DiceData, Side } from '../types';
+import type { CounterRoll, DiceData, Side } from '../types';
+import { counterOffensive, tallyCounter } from '../units';
 import type { Host } from './driver';
 
 type Press = [act: string, arg?: string];
@@ -155,6 +156,7 @@ export class BotContest {
     // Initiator has lost, and leaves it to the player whose Action it was.
     if (q.kind === 'contest.close' && role !== 'initiator') return null;
     const c = this.host.state().script!.counter!;
+    const read = this.dice(role, c);
     const options: Option[] = [];
     this.offered.clear();
     const add = (id: string, label: string, tags: string[], presses: Press[]): void => {
@@ -164,7 +166,9 @@ export class BotContest {
     for (const b of live) {
       if (!q.has.includes(b.act)) continue;
       // The reroll throws the dice that are selected. This seat's own dice are
-      // the ones it may press; the selection offered is all of them.
+      // the ones it may press; the selection offered is all of them, or the
+      // ones that count nothing for this side (a reroll of those can only
+      // better the hand).
       if (b.act === 'reroll.go') {
         const dice = live.filter((d) => d.act === 'die');
         if (dice.length) {
@@ -172,6 +176,17 @@ export class BotContest {
             ...dice.filter((d) => !/\bsel\b/.test(d.cls)).map((d): Press => ['die', d.arg]),
             ['reroll.go'],
           ]);
+          const blank = read?.blank ?? [];
+          const own = role === 'initiator' ? 'init' : 'resp';
+          if (blank.length && blank.length < dice.length) {
+            add('reroll.blanks', `Reroll the ${blank.length === 1 ? 'die' : `${blank.length} dice`} that count nothing`, ['reroll', 'blanks'], [
+              ...dice.filter((d) => {
+                const [who, at] = String(d.arg ?? '').split(':');
+                return who === own && blank.includes(Number(at)) !== /\bsel\b/.test(d.cls);
+              }).map((d): Press => ['die', d.arg]),
+              ['reroll.go'],
+            ]);
+          }
         }
         continue;
       }
@@ -186,7 +201,32 @@ export class BotContest {
       unit: role === 'initiator' ? c.initiatorUid : c.responderUid,
       options,
       fallback: (options.find((o) => o.id === q.safe) ?? options[0]).id,
-      facts: { initiatorUid: c.initiatorUid, responderUid: c.responderUid, actionId: c.actionId, role },
+      facts: { initiatorUid: c.initiatorUid, responderUid: c.responderUid, actionId: c.actionId, role, ...(read ? { mine: read.mine, theirs: read.theirs, blank: read.blank, faces: read.faces } : {}), ...(c.terminal !== undefined ? { terminal: c.terminal } : {}) },
+    };
+  }
+
+  // WHAT EACH SIDE HAS ROLLED, as each counts its own dice (its hollow faces by
+  // its own Stance, contest.ts counterOffensive), once both hands are in: this
+  // side's count and the other's, which of this side's dice count nothing, and
+  // what each face of a die rerolled would count for it. For a policy that
+  // weighs a Focus by the dice (the Tactician's `ewFocus`).
+  private dice(role: 'initiator' | 'responder', c: CounterRoll): { mine: { lightning: number; light: number }; theirs: { lightning: number; light: number }; blank: number[]; faces: { lightning: number; light: number }[] } | null {
+    const { data } = this.host;
+    const state = this.host.state();
+    const dice = data.dice as unknown as DiceData | null;
+    const init = state.tokens.find((x) => x.uid === c.initiatorUid);
+    const resp = counterResponder(data, state, c, init);
+    if (!dice?.dice?.yellow?.faces?.length || !init || !resp || !c.initRoll || !c.respRoll) return null;
+    const first = role === 'initiator';
+    const offensive = first ? counterOffensive(data, state.tokens, init, resp, 'initiator') : counterOffensive(data, state.tokens, resp, init, 'responder');
+    const other = first ? counterOffensive(data, state.tokens, resp, init, 'responder') : counterOffensive(data, state.tokens, init, resp, 'initiator');
+    const roll = first ? c.initRoll : c.respRoll;
+    const count = (f: number): { lightning: number; light: number } => tallyCounter(dice, [f], offensive);
+    return {
+      mine: tallyCounter(dice, roll, offensive),
+      theirs: tallyCounter(dice, first ? c.respRoll : c.initRoll, other),
+      blank: roll.map((f, i) => ({ n: count(f), i })).filter(({ n }) => !n.lightning && !n.light).map(({ i }) => i),
+      faces: dice.dice.yellow.faces.map((_f, i) => count(i)),
     };
   }
 

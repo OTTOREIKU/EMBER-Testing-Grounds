@@ -19,7 +19,7 @@ import { crushEscapeGrids, crushExchange, crushExchangeSpots, firingSight, inArc
 import { canBeForceMoved } from './melee';
 import { gameEndsThisRound, lowValueOf, previewScore, zoneCellsOf } from './scoring';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, type SetupState } from './setup';
-import { boxPlaceTurn, deployGrids, deployOpenGrids, gameResult, normaliseTasks, TERMINAL_UID, terminalsInReach } from './tasks';
+import { boxPlaceTurn, cellToGrid, deployGrids, deployOpenGrids, gameResult, normaliseTasks, TERMINAL_UID, terminalsInReach } from './tasks';
 import { actionIdOf, timingOf } from './ticks';
 import * as turn from './turn';
 import { gridsOf, isLineUnit, newOpportunity, PHASES, removableTokens, statusCount, STATUSES, TIMINGS, zonesOf } from './types';
@@ -32,6 +32,7 @@ import {
   detonationToken, discardSlots, envCardAt, explosionCamo, extraActivationOf, fliesToTarget, formSwitch, immediateDetonation, immediatesOwed, isGroundUnit, linkSupportOf, linkSupportTargets, manifestTargets, martyrdomOwed, maxLink, minesLayable, repairSpec,
   resupplyHolders, resupplyOf, riposteMelees, selfGrantWhy, selfStanceShift, selfRepairOptions, selfStatusGrant, smokePlacement, stabiliseAsk, STABILISE_KEEP_LABEL, stabiliseRowLabel, stanceFeedbackTargets,
   targetStatusGrant, targetStatusTargets, tokenCards, tokenCleanupOf, tokenCleanupTargets, transformOffer, unfoldsOwed, controlledMoveActions, knockbackOf,
+  interceptPayer,
 } from './units';
 
 // ---------- what a seat keeps to itself ----------
@@ -277,11 +278,37 @@ function tasksOwed(data: GameData, state: GameState, seat: Side): Decision | nul
   const boxTurn = state.noBoard ? null : boxPlaceTurn(tasks, fp);
   if (boxTurn) {
     if (boxTurn !== seat) return null;
-    // Kept where it stands: a Box may also be moved inside its zone, which a
-    // seat with a view on where it wants it will ask for.
-    const boxes = tasks.items.filter((i) => i.kind === 'blackbox' && !i.set && i.col !== undefined && i.row !== undefined).map((i) =>
-      sends(data, state, `box:${i.id}`, 'Leave the Black Box where it stands', ['box', 'keep'], [{ kind: 'placeTaskItem', seat, itemId: i.id, to: { col: i.col!, row: i.row! } }]));
-    return ask('setup.box', seat, `box:${tasks.items.filter((i) => i.set).length}`, kept(boxes), '');
+    // Kept where it stands, or put down in another Large Grid of its zone
+    // (5.2.1: anywhere in the Tactical Zone its Main Task names, at ground
+    // level and never on terrain, FAQ P9): a Small Grid of each the engine
+    // takes, the middle one first. The kept ones come first. Each answer says
+    // which Box and the Large Grid it ends in; the question, where each squad
+    // deploys (as `setup.deploy` says it), for a seat with a view on where it
+    // wants a Box.
+    const loose = tasks.items.filter((i) => i.kind === 'blackbox' && !i.set && i.col !== undefined && i.row !== undefined);
+    const gridOf = (col: number, row: number): { c: number; r: number } => ({ c: Math.floor(col / 3), r: Math.floor(row / 3) });
+    const keep = loose.map((i) => {
+      const o = sends(data, state, `box:${i.id}`, 'Leave the Black Box where it stands', ['box', 'keep'], [{ kind: 'placeTaskItem', seat, itemId: i.id, to: { col: i.col!, row: i.row! } }]);
+      return o ? { ...o, facts: { box: i.id, at: gridOf(i.col!, i.row!) } } : null;
+    });
+    const cellsOf = zoneCellsOf(data, state);
+    const SPOTS = [[1, 1], [0, 0], [2, 0], [0, 2], [2, 2], [1, 0], [0, 1], [2, 1], [1, 2]];
+    const moved = loose.flatMap((i) => {
+      const here = gridOf(i.col!, i.row!);
+      return cellsOf(i.zone).map((ref) => cellToGrid(ref)).filter((g): g is { c: number; r: number } => !!g && (g.c !== here.c || g.r !== here.r)).map((g) => {
+        for (const [dc, dr] of SPOTS) {
+          const o = sends(data, state, `box:${i.id}@${g.c},${g.r}`, `Put the Black Box in ${String.fromCharCode(65 + g.c)}${g.r + 1}`, ['box', 'place'],
+            [{ kind: 'placeTaskItem', seat, itemId: i.id, to: { col: g.c * 3 + dc, row: g.r * 3 + dr } }]);
+          if (o) return { ...o, facts: { box: i.id, at: g } };
+        }
+        return null;
+      });
+    });
+    const su = normaliseSetup(state.setup);
+    const ours = su?.edge?.[seat] ? deployGrids(data.zoneData, state, su.edge[seat]) : null;
+    const theirs = su?.edge?.[other(seat)] ? deployGrids(data.zoneData, state, su.edge[other(seat)]) : null;
+    return ask('setup.box', seat, `box:${tasks.items.filter((i) => i.set).length}`, kept([...keep, ...moved]), '',
+      { facts: { zone: ours ? [...ours].sort() : [], foeZone: theirs ? [...theirs].sort() : [] } });
   }
   if (fp !== seat) return null;
   return ask('setup.tasks', seat, 'tasks', kept([sends(data, state, 'done', 'Continue to deployment', ['setup'], [{ kind: 'finishTasks', seat }])]), 'done');
@@ -1678,6 +1705,7 @@ function launchOptions(data: GameData, state: GameState, t: Token, row: turn.Act
       if (!shot.ok || !check(data, paid, shot.cmd).ok) continue;
       const commands: Command[] = [...prefix, shot.cmd];
       let drawn = 0;
+      let tries: number[] = [];
       if (watched) {
         if (!landed) {
           const table = tableAfter(data, state, commands);
@@ -1688,13 +1716,21 @@ function launchOptions(data: GameData, state: GameState, t: Token, row: turn.Act
         const owed = landed ? turn.interceptsAfterLaunch(data, landed.table, landed.launcher, landed.born) : [];
         if (owed.length) commands.push({ kind: 'queueIntercepts', seat: t.side, items: owed });
         drawn = owed.length;
+        // How often each interceptor may try (FAQ M5: again while the
+        // Projectile stands and it has Interception Tokens left), in the
+        // order of the queue: for a seat that weighs the launch by its odds.
+        tries = owed.map((it) => {
+          const by = state.tokens.find((x) => x.uid === it.uid);
+          const payer = by ? interceptPayer(data, state.tokens, by, it.actionId) : null;
+          return Math.max(1, payer?.intercept?.[it.actionId] ?? 1);
+        });
       }
       out.push({
         id: `launch:${row.key}:${card.id}:${g.c},${g.r}`,
         label: `${name}: ${what} to ${gridName(g)}`,
         tags: ['launch', 'land', ...(underWay ? ['volley'] : []), ...(drawn ? ['intercepted'] : []), ...(smoky ? ['smoke'] : []), ...(port ? ['bit'] : [])],
         commands,
-        facts: { uid: t.uid, actionId: a.id, cardId: card.id, to: { c: g.c, r: g.r }, strike, ...(drawn ? { intercepts: drawn } : {}) },
+        facts: { uid: t.uid, actionId: a.id, cardId: card.id, to: { c: g.c, r: g.r }, strike, ...(drawn ? { intercepts: drawn, interceptTries: tries } : {}) },
       });
     }
   }

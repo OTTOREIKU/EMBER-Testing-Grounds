@@ -378,7 +378,10 @@ M.L.setLocalSeat(null);
 {
   const viewOf = (state, seat) => M.SEAT.viewOf(data, state, seat);
   const SK = { focus: false };
-  const tact = AI.makeTactician(SK);
+  // (Played and weighed as these moments were staged, `nextAfter` 0 and `press` 0: both adopted since, at 1 and
+  // 10, they change what a plan that acts counts a turn on and how a squad behind walks.)
+  const PIN = { nextAfter: 0, press: 0 };
+  const tact = AI.makeTactician(SK, PIN);
   // Two drivers at a table that has been set up, the units then stood where
   // the check wants them: the first squad along the north edge, the second in
   // the far corner.
@@ -439,7 +442,7 @@ M.L.setLocalSeat(null);
     [steps.includes(`s1:${pick.option}:coordinate_by_value`), borne(commanded), commanded.commandedBy === x.U.Tracer.uid, held(x.U.Tracer), steps.filter((y) => /^s1:coordinate:/.test(y)).length, x.t.refused], [true, 1, true, 3, 1, []]);
   x.t.close();
 
-  const off = await staged('g', fire, { s1: AI.makeTactician({ ...SK, coordinate: false }), s2: AI.eagerPolicy });
+  const off = await staged('g', fire, { s1: AI.makeTactician({ ...SK, coordinate: false }, PIN), s2: AI.eagerPolicy });
   const plainSteps = [];
   await off.t.run({ until: over(off.U.Tracer), maxSteps: off.t.steps() + 60, onStep: told(off, plainSteps) });
   check('with its skill off (`coordinate`) the same Opportunity hands out nothing: the Tokens stay on the Mech and no Drone acts; and the policies with no rule for it never take one',
@@ -466,10 +469,10 @@ M.L.setLocalSeat(null);
   // The Tactic that is a Coordination is a deed like another.
   const give = ({ U, at, turnOf }) => { at(U.Dragoon, 5, 5, 2); at(U.Ram, 4, 6, 2); at(U.Wolf, 5, 9, 0); turnOf(U.Dragoon, 'tactical'); };
   const drag = await staged('g', give);
-  const rows = AI.weighed(drag.d, viewOf(drag.s, 's1'), SK);
+  const rows = AI.weighed(drag.d, viewOf(drag.s, 's1'), SK, PIN);
   const stay = rows.find((p) => p.how === 'stay');
   const deed = tact.choose(drag.d, viewOf(drag.s, 's1'), new AI.Rng('pick'));
-  const faceGains = faces(drag.d).map((o) => { const r = AI.weighed(o.then(), viewOf(drag.s, 's1'), SK); const st = r.find((p) => p.how === 'stay'); return { id: o.id, gain: r[0].worth - (st.worth - st.now) }; });
+  const faceGains = faces(drag.d).map((o) => { const r = AI.weighed(o.then(), viewOf(drag.s, 's1'), SK, PIN); const st = r.find((p) => p.how === 'stay'); return { id: o.id, gain: r[0].worth - (st.worth - st.now) }; });
   check('THE TACTIC THAT IS A COORDINATION IS A DEED BESIDE AN ATTACK, worth what the Drone it commands gains by acting now: where the Dragoon stands it is the deed it would make, for the Drone that gains most',
     [/Command Coordination, a Command to/.test(stay.does), Math.abs(stay.now - top(faceGains).gain) < 1e-6, stay.now > 0, plain(drag.d).length], [true, true, true, 0]);
   const dragSteps = [];
@@ -485,7 +488,7 @@ M.L.setLocalSeat(null);
     for (const dr of [U.Eagle, U.Ram, U.Zealot]) dr.statuses = [...(dr.statuses ?? []), 'immobilized'];
     turnOf(U.Dragoon, 'tactical');
   });
-  const dearRows = AI.weighed(dear.d, viewOf(dear.s, 's1'), SK);
+  const dearRows = AI.weighed(dear.d, viewOf(dear.s, 's1'), SK, PIN);
   const dearStay = dearRows.find((p) => p.how === 'stay');
   const first = tact.choose(dear.d, viewOf(dear.s, 's1'), new AI.Rng('pick'));
   // (Since `restance`, M8.2q, a Stance taken first may be worth most: Defensive
@@ -494,8 +497,8 @@ M.L.setLocalSeat(null);
     [/Command Coordination, a Command to/.test(dearStay.does), dearStay.now > 0, ['move', 'stance'].includes(dearRows[0].how), ['move', 'stance'].includes(dear.d.options.find((o) => o.id === first.option).tags[0]), first.reason === 'coordinate_by_value'],
     [true, true, true, true, false]);
   dear.t.close();
-  const noDeed = await staged('g', give, { s1: AI.makeTactician({ ...SK, coordinate: false }), s2: AI.eagerPolicy });
-  const without = AI.weighed(noDeed.d, viewOf(noDeed.s, 's1'), { ...SK, coordinate: false }).find((p) => p.how === 'stay');
+  const noDeed = await staged('g', give, { s1: AI.makeTactician({ ...SK, coordinate: false }, PIN), s2: AI.eagerPolicy });
+  const without = AI.weighed(noDeed.d, viewOf(noDeed.s, 's1'), { ...SK, coordinate: false }, PIN).find((p) => p.how === 'stay');
   check('with the skill off the Tactic is no deed of its: standing there it would do nothing', [without.does, without.now], ['', 0]);
   noDeed.t.close();
 
@@ -505,12 +508,12 @@ M.L.setLocalSeat(null);
     const y = await staged('c', ({ U, at }) => place(U, at));
     const v = viewOf(y.s, 's1');
     const byDrone = y.d.options.filter((o) => o.tags.includes('designate')).map((o) => {
-      const r = AI.weighed(o.then(), v, SK);
+      const r = AI.weighed(o.then(), v, SK, PIN);
       const st = r.find((p) => p.how === 'stay');
       return { id: o.id, unit: name(y.s.tokens.find((u) => u.uid === o.then().unit)), best: r[0].how, fires: st.now > 0, gain: r[0].worth - (st.worth - st.now), moved: r[0].worth - st.worth };
     });
     const on = tact.choose(y.d, v, new AI.Rng('pick'));
-    const was = AI.makeTactician({ ...SK, orders: false }).choose(y.d, v, new AI.Rng('pick'));
+    const was = AI.makeTactician({ ...SK, orders: false }, PIN).choose(y.d, v, new AI.Rng('pick'));
     y.t.close();
     return { kind: y.d.kind, byDrone, on, was };
   };

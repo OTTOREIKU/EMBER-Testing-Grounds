@@ -253,6 +253,26 @@ export class Driver {
         let known: ReturnType<Odds['hidden']> | undefined;
         o.chance = () => (known === undefined ? (known = this.odds.hidden(state, args)) : known);
       }
+      // A launch that owes Interception (4.9): the chance the Projectile comes
+      // through it. Each interceptor must try again while the Projectile
+      // stands and it has Interception Tokens left (FAQ M5; the seam says how
+      // often, `interceptTries`), each try at the window's own odds of
+      // destroying it, on the table the launch leaves.
+      const queued = o.commands?.find((x) => x.kind === 'queueIntercepts') as { items: { uid: number; actionId: string; targetUid: number }[] } | undefined;
+      if (queued?.items.length && !o.survive) {
+        const before = o.commands!.filter((x) => x.kind !== 'queueIntercepts');
+        const tries = (o.facts?.interceptTries as number[] | undefined) ?? [];
+        let known: number | null | undefined;
+        o.survive = () => {
+          if (known !== undefined) return known;
+          let through = 1;
+          queued.items.forEach((it, i) => {
+            const f = this.odds.forecast(state, { uid: it.uid, actionId: it.actionId, targetUid: it.targetUid, mode: 'intercept', before });
+            if (f) through *= (1 - f.kill) ** Math.max(1, tries[i] ?? 1);
+          });
+          return (known = through);
+        };
+      }
       // An answer that opens an Electronic Counter-roll: the chance it is won.
       const opens = o.commands?.length ? o.commands[o.commands.length - 1] : undefined;
       if (opens?.kind === 'startCounterRoll' && !o.win) {

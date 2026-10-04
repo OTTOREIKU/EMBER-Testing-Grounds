@@ -28,8 +28,8 @@ import { normaliseSetup, type SetupStage } from './setup';
 import { boxHands, controlOf, normaliseTasks } from './tasks';
 import { canManeuver, extrasLeft, lengthOf, timingOf, type ActionLength } from './ticks';
 import { PHASES, statusCount, zonesOf } from './types';
-import type { Facing, GameState, PartState, Side, Stance, Timing, Token } from './types';
-import { freehandSlots, isGroundUnit, maneuverRange, maxLink, structureOf, tokenCards } from './units';
+import type { CardAction, Facing, GameState, PartState, Side, Stance, Timing, Token } from './types';
+import { freehandSlots, isGroundUnit, maneuverRange, maxLink, onHitRiders, structureOf, tokenCards } from './units';
 
 // ---------- the view ----------
 
@@ -70,6 +70,10 @@ export interface WeaponView {
   // A Projectile Action: how far from the Grid it lands in the Projectile it
   // launches can strike (the farthest of them, where it may launch several).
   strike?: number;
+  // The Tokens a Hit puts on the target, where the Action carries an [On Hit]
+  // rider (units.ts onHitRiders, as the combat window reads it): `fci` for a
+  // Laser Suppression, `fragile` for a Laser Weapon.
+  riders?: string[];
   // Its Part still works: not destroyed, or destroyed and Repaired.
   usable: boolean;
 }
@@ -269,6 +273,16 @@ function turnDone(state: GameState, t: Token): boolean {
   return !!sc && sc.acted.includes(t.uid) && sc.opp?.uid !== t.uid;
 }
 
+// The Tokens an Action's Hit puts on its target, read once a card Action: the
+// cards do not change while a page is open, and a view is made of every table a
+// seat thinks about.
+const RIDERS = new WeakMap<CardAction, string[]>();
+function ridersOf(a: CardAction): string[] {
+  let out = RIDERS.get(a);
+  if (!out) RIDERS.set(a, out = onHitRiders(a).filter((r) => r.kind === 'status' && !!r.statusId).map((r) => String(r.statusId)));
+  return out;
+}
+
 function unitView(data: GameData, state: GameState, t: Token, seat: Side, commander: boolean, lowValue: boolean, hands: number): UnitView {
   const cards = tokenCards(data, t);
   const repaired = new Set(t.repairedSlots ?? []);
@@ -293,6 +307,7 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
     for (const a of card.actions ?? []) {
       if (a.type === 'Passive' || a.speed === 'passive') continue;
       const part = stateOf.get(slot);
+      const riders = ridersOf(a);
       weapons.push({
         slot,
         actionId: a.id,
@@ -306,6 +321,7 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
         red: a.redDice ?? 0,
         ammo: a.id in t.ammo ? t.ammo[a.id] : undefined,
         ...(a.type === 'Projectile' ? { strike: strikeOf(data, card.projectile) } : {}),
+        ...(riders.length ? { riders } : {}),
         usable: !part || part.state !== 'destroyed' || part.repaired,
       });
     }
@@ -531,6 +547,11 @@ export interface Option {
   // has landed. Null where no reading can be made. Added, as `chance` is, by
   // whoever puts the question.
   win?: () => number | null;
+  // A launch that owes Interception (4.9): the chance the Projectile comes
+  // through it, each interceptor trying while it has Interception Tokens left
+  // (FAQ M5), each try at the window's own odds of destroying it. Null where
+  // no reading can be made. Added, as `chance` is, by whoever puts the question.
+  survive?: () => number | null;
   // An answer that splits an attack's dice between targets (a Multi-Target's
   // split, FAQ B7): each target's share and what it is likely to do there,
   // the unit named being the one the dice land on. Added, as `chance` is, by

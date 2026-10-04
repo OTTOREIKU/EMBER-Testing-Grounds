@@ -23,7 +23,9 @@ const name = (t) => (t.label.startsWith('ADK15P') ? 'Porcupine' : t.label.starts
 // Commander. The Wild Cat stands south of the Commander with a clear line.
 const staged = async (who, place) => {
   const vip = data.solo.scenarios.find((s) => /vip/.test(s.mission)) ?? data.solo.scenarios[1];
-  const t = botTable(M, data, { ...vip, map: 'none' }, { seed: 5, policies: { s1: AI.makeTactician({ focus: false }), s2: AI.eagerPolicy } });
+  // (Played and compared at `press` 0, as staged: adopted at 10 since, a squad behind counts its step toward
+  // contact eleven times, and that is not the escort's to measure.)
+  const t = botTable(M, data, { ...vip, map: 'none' }, { seed: 5, policies: { s1: AI.makeTactician({ focus: false }, { press: 0, nextAfter: 0 }), s2: AI.eagerPolicy } });
   await t.run({ until: (st) => M.SU.normaliseSetup(st.setup)?.stage === 'done' && st.round.phase === 2 });
   const s = t.state;
   const U = Object.fromEntries(s.tokens.map((x) => [name(x), x]));
@@ -42,8 +44,8 @@ const staged = async (who, place) => {
 {
   const x = await staged('Mire', (U, at) => { at(U.Dune, 4, 4, 2); at(U.Mire, 5, 4, 0); at(U['Wild Cat'], 4, 8, 0); });
   const lead = x.view.units.find((u) => u.commander && u.side === 's1');
-  const off = AI.weighed(x.d, x.view, { focus: false }, { escort: 0 });
-  const on = AI.weighed(x.d, x.view, { focus: false }, { escort: 1 });
+  const off = AI.weighed(x.d, x.view, { focus: false }, { escort: 0, press: 0, nextAfter: 0 });
+  const on = AI.weighed(x.d, x.view, { focus: false }, { escort: 1, press: 0, nextAfter: 0 });
   // E8 stands in the Wild Cat's line to the Dune (both in column E); G5 does not.
   const row = (rows, label) => rows.find((p) => p.label.includes(label));
   const inWay = [row(off, 'to E8'), row(on, 'to E8')];
@@ -56,8 +58,8 @@ const staged = async (who, place) => {
 {
   // Far from its Commander, a unit's plans are what they were.
   const y = await staged('Mire', (U, at) => { at(U.Dune, 0, 0, 2); at(U.Mire, 9, 6, 2); at(U['Wild Cat'], 1, 9, 0); });
-  const off = AI.weighed(y.d, y.view, { focus: false }, { escort: 0 });
-  const on = AI.weighed(y.d, y.view, { focus: false }, { escort: 1 });
+  const off = AI.weighed(y.d, y.view, { focus: false }, { escort: 0, press: 0, nextAfter: 0 });
+  const on = AI.weighed(y.d, y.view, { focus: false }, { escort: 1, press: 0, nextAfter: 0 });
   const same = off.every((p) => { const q = on.find((z) => z.label === p.label); return !q || Math.abs(q.worth - p.worth) < 1e-9; });
   check('FAR FROM ITS COMMANDER (more than three Grids, before and after), a unit\'s plans are worth what they were', same, true);
   y.t.close();

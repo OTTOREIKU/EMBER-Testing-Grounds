@@ -249,6 +249,15 @@ const plain = only({});
   check('the walk to a fight ends at its own Range: with the enemy inside its arm already, a step nearer is worth nothing, and with a shorter arm it is worth the step',
     [made({}, { contactStep: 0.04 }).choose(ask(fv, [closer, end()]), fv, rng).option,
       made({}, { contactStep: 0.04 }).choose(ask(viewOf([{ ...me, weapons: [gun(2)] }, far]), [closer, end()]), viewOf([{ ...me, weapons: [gun(2)] }, far]), rng).option], ['end', closer.id]);
+  // OUTRANGED (`closeIn`): a Mech with a gun of 2 that an enemy rifle of 8
+  // reaches where it stands counts its step toward contact five times over at
+  // `closeIn` 4; against a gun no longer than its own, once.
+  const shortArm = { ...me, weapons: [gun(2)] };
+  const sniper = unit(3, 's2', 'mech', 6, 0, { weapons: [gun(8)] });
+  const brawler = unit(3, 's2', 'mech', 6, 0, { weapons: [gun(2)] });
+  const pace = (foe, w) => { const v = viewOf([shortArm, foe]); return made({}, { contactStep: 0.04, ...w }).choose(ask(v, [closer, end()]), v, rng); };
+  check('OUTRANGED (`closeIn` 4): the step toward an enemy whose rifle outreaches it where it stands counts five times over; toward one whose gun is no longer, once',
+    [pace(sniper, {}).option, near(pace(sniper, { closeIn: 4 }).score, 5 * pace(sniper, {}).score), near(pace(brawler, { closeIn: 4 }).score, pace(brawler, {}).score)], [closer.id, true, true]);
 }
 {
   // A MOVE THAT OPENS AN ATTACK. Nothing to attack from where it stands; from
@@ -924,6 +933,23 @@ const plain = only({});
   let c = plain.choose(ask(v, [onNear, onFar, end()]), v, rng);
   check('a Projectile is launched where its blast is worth most: the attack it could make when its turn comes, for a little less than an attack made now',
     [c.option, c.reason, near(c.score, gainOf(odds(0.5, 0.5, 0), far1, v, W) * W.launch)], [onFar.id, 'launch_value', true]);
+  // A TARGET STILL TO MOVE (`launchMove`): the Projectile strikes in the Delay
+  // Phase, and an enemy whose turn is still to come may walk out of its strike.
+  // The far drone stands at the strike's edge (3 of 3) with a walk of 5: there
+  // still a sixth of the time; the near one has two Grids to spare: half.
+  c = only({}, { launchMove: 1 }).choose(ask(v, [onNear, onFar, end()]), v, rng);
+  check('`launchMove` 1: a Projectile aimed at an enemy still to move is worth the chance it is still in the strike, the reach to spare against its walk: the near drone now',
+    [c.option, near(c.score, gainOf(odds(0.5, 0.5, 0), near1, v, W) * W.launch * 0.5)], [onNear.id, true]);
+  const acted = viewOf([me, near1, { ...far1, done: true }]);
+  c = only({}, { launchMove: 1 }).choose(ask(acted, [onNear, onFar, end()]), acted, rng);
+  check('and an enemy that has had its turn this round is read where it stands: the far drone again', [c.option, near(c.score, gainOf(odds(0.5, 0.5, 0), far1, acted, W) * W.launch)], [onFar.id, true]);
+  // AN INTERCEPTION OWED (`interceptOdds`): the far Landing Point under an
+  // interceptor's guard, its Projectile through it a fifth of the time; the
+  // near one clear of it.
+  const guarded = { ...onFar, tags: [...onFar.tags, 'intercepted'], facts: { ...onFar.facts, intercepts: 1 }, survive: () => 0.2 };
+  c = only({}, { interceptOdds: 1 }).choose(ask(v, [onNear, guarded, end()]), v, rng);
+  check('`interceptOdds` 1: a launch that owes Interception is worth the chance its Projectile comes through, and the Landing Point clear of the guard is taken; at 0, the guarded one as before',
+    [c.option, near(c.score, gainOf(odds(0.5, 0.5, 0), near1, v, W) * W.launch), plain.choose(ask(v, [onNear, guarded, end()]), v, rng).option], [onNear.id, true, guarded.id]);
   // An Electronic Attack: on the enemy whose Firing is worth most.
   const jammer = unit(1, 's1', 'drone', 0, 0, { weapons: [gun(4, { type: 'Tactic', mode: 'auto', timing: undefined })] });
   const armed = unit(2, 's2', 'mech', 3, 0, { weapons: [gun(6)] });

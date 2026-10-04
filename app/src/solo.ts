@@ -298,7 +298,7 @@ const BECAUSE: Record<string, string> = Object.assign(Object.create(null) as Rec
   jam_value: 'to jam the enemy', support_value: 'to keep its squad going', overwatch_value: 'to lend a shot',
   stance_by_value: 'for what that Stance lets it do', preparation_unlocks_attack: 'to open an attack',
   charge_for_attack: 'to charge a Part for its attack', smoke_for_cover: 'to hide behind it',
-  cloak: 'to be hard to target', low_profile: 'to be hard to target', mode_by_value: 'for what it can do then',
+  cloak: 'to be hard to target', low_profile: 'to be hard to target', draw_fire: 'to draw the enemy\'s fire', mode_by_value: 'for what it can do then',
   tactic_by_value: 'worth more played than kept', coordinate_by_value: 'to put a Drone to work',
   tick_by_value: 'for the turn it opens', reboot: 'to get back into the fight', restore_link: 'to restore its Link',
   // A Command given.

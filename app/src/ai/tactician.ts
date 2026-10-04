@@ -32,7 +32,7 @@ import {
   apart, attacking, brawlerPolicy, couldStrike, declare, endOf, facingAt, facingOf, foesOf, hitLocation, lockedAt, percent, reaches, ready, reroll,
   same, standing, strikers, surplus, unitOf, type Grid, type Road, type Worth,
 } from './brawler';
-import { carried, gainOf, holds, marginOf, missionOf, payFrom, stride, swingOf, TACTICIAN, unitWorth, zoned, type Weights } from './evaluate';
+import { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stride, swingOf, TACTICIAN, unitWorth, zoned, type Weights } from './evaluate';
 
 export interface Skills {
   // The Main Task as a term of every plan (M7.2).
@@ -153,13 +153,36 @@ export interface Skills {
   // every card in both hands it was played twice, never to give a gun back
   // (2026-10-03, night). Without it the card is weighed for the Mech itself.
   mend: boolean;
+  // What standing in a Grid costs is kept for the facing the plan leaves it in
+  // (`harmKey`). Without it the price of a Grid was kept for the Grid alone, so
+  // a plan to stay and a plan to turn on the spot shared whichever of the two
+  // was priced first, though an enemy behind a unit hits it harder than one in
+  // front (found 2026-10-04 staging the Highlight: the Mire's stay cost 0.77,
+  // its turn's, where its own was 1.01).
+  faced: boolean;
+  // A price stopped past its budget says so (`exposure`). The asking stops once
+  // a plan cannot beat the best so far, and what it has cost by then must be
+  // more than the budget it was given, or the plan is taken as if priced in
+  // full. A VIP Commander's round after (`ahead`) was checked against the
+  // budget and left out of the cost returned: a White Dwarf's Mode change came
+  // back at 0.00 where it cost 1.23, was taken, and was undone the next Action
+  // (random game 51001, found 2026-10-04 by a census of Modes changed twice in
+  // one activation). Without it the old answer.
+  bounded: boolean;
+  // What a decision has worked out is kept while the table stands as it did
+  // (`tableOf`), and a Mode or a Bit's face changed is a table changed: the key
+  // reads which card each unit and each Part is. Without it a White Dwarf's
+  // Mode change left the key as it was, the next question read the costs and
+  // the turns worked out for the other Mode, and the Mech changed back without
+  // making the launch it had changed for (random game 51040, found 2026-10-04).
+  carded: boolean;
 }
 
 export const SKILLS: Skills = {
   mission: true, exposure: true, stance: true, charge: true, focus: true, command: true, dials: true, setup: true, screen: true, emergency: true,
   support: true, profile: true, mode: true, coordinate: true, orders: true, stalk: true, cloak: true, appear: true, shown: true, overwatch: true, grant: true,
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
-  entryDeed: true, shove: true, mend: true,
+  entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -170,6 +193,9 @@ const LIMITS = {
   // a Mech, which is asked on each Timing its weapons open.
   FUTURES: 10,
   MECH_FUTURES: 8,
+  // The Grids a plan that acts now ends in, asked what it could still do there a
+  // turn later (`nextAfter`): those of the best deeds.
+  AFTERS: 4,
   // The plans, of those some enemy could reach, whose cost is asked of the
   // engine: the ones worth most before it. A plan no enemy could reach costs
   // nothing to price, and every one of those is weighed.
@@ -218,6 +244,8 @@ interface Ctx {
   // heading for (`missionOf` without the game on top).
   mission: number;
   margin: number;
+  // The game would be lost if it ended now (`behindNow`; read only for `press`).
+  behind: boolean;
   // Its own Movement of this round is still to come, after what is being
   // decided: a unit being deployed. A walk begun from where it is put down
   // is a round sooner. (A Drone moved by a Command does NOT move again in the
@@ -240,6 +268,10 @@ interface Ctx {
   // What a Firing attack on each unit of this squad in its sights is worth to
   // each enemy, as the board stands (`aimsOf`, the `decoy` weight).
   aims: Map<number, Map<number, number>>;
+  // The table those are read on, where it is not the board as it stands: a
+  // Highlight changes whom an enemy may shoot (`tauntOf`), and `aims` is then
+  // that table's own.
+  aimsOn?: Outlook;
   // The race for each loose Black Box, by its id (`racesOf`), worked out once
   // a table.
   races: { map: Map<string, Race> | null };
@@ -298,13 +330,15 @@ export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Ma
 // The table as far as those answers depend on it: every unit, where it stands
 // and in what state. Whose activation is open is left out, and so is a Command
 // Token on a unit: neither changes what an enemy could do to it.
-function tableOf(view: SeatView): string {
+function tableOf(view: SeatView, carded = true): string {
   // Whose view it is comes first: one policy may sit in both seats of a table
   // (a game that is only watched), and what one seat worked out is not the
   // other's.
+  // (`carded`: and which card each unit and each Part is, and a Part repaired.)
   return JSON.stringify([view.seat, view.round, view.phase, view.units.map((u) => [
     u.uid, u.cell.col, u.cell.row, u.facing, u.stance, u.alive, u.deployed, u.done, u.timing ?? '', u.link ?? 0,
-    u.parts.map((p) => p.state[0]).join(''), u.statuses.filter((x) => !x.startsWith('command')).join(), u.charged.join(),
+    carded ? `${u.cardId}:${u.parts.map((p) => `${p.cardId}${p.state[0]}${p.repaired ? 'r' : ''}`).join()}` : u.parts.map((p) => p.state[0]).join(''),
+    u.statuses.filter((x) => !x.startsWith('command')).join(), u.charged.join(),
     u.weapons.map((x) => x.ammo ?? '').join(),
   ]), view.boxes.map((b) => [b.id, b.bearer, b.grid?.col, b.grid?.row])]);
 }
@@ -338,6 +372,13 @@ interface Deed { option: Option; value: number; why: string; reason: string }
 
 const said = (f: Forecast | null): string => (f ? `${percent(f.pen)} to Penetrate` : 'no odds to go by');
 
+// Whether an attack's Hit puts a Fire Control Interference Token on its target
+// (an [On Hit] rider: a Laser Suppression).
+function jamsOnHit(o: Option, c: Ctx): boolean {
+  const by = unitOf(c.view, o.facts?.uid);
+  return !!by?.weapons.some((x) => x.actionId === o.facts?.actionId && (x.riders ?? []).includes('fci'));
+}
+
 // One attack, by its odds: what it does to its target, and what the Main Task
 // gains if it destroys a unit that is holding a zone.
 function shotValue(o: Option, c: Ctx): { value: number; f: Forecast | null; target: UnitView | undefined } {
@@ -352,7 +393,10 @@ function shotValue(o: Option, c: Ctx): { value: number; f: Forecast | null; targ
   const denied = f && target && c.skills.mission && c.w.deny > 0 && target.side !== c.view.seat ? f.kill * c.w.deny * takesFirst(target, c) : 0;
   // A blow another unit of this squad could follow up this round (`gang`).
   const backed = f && target && c.w.gang > 0 && target.side !== c.view.seat ? gangOf(f, target, c) : 0;
-  const value = f && target ? gainOf(f, target, c.view, c.w, threatOf(target, c)) + f.kill * holding(target, c) + loose + denied + backed : UNKNOWN_SHOT;
+  // A Hit that jams (`suppress`): the target's Firing, as an Electronic
+  // Attack's won roll takes it, for the chance of a Hit.
+  const jammed = f && target && c.w.suppress > 0 && target.side !== c.view.seat && jamsOnHit(o, c) ? c.w.suppress * 2 * c.w.jam * f.hit * firepower(target, c) : 0;
+  const value = f && target ? gainOf(f, target, c.view, c.w, threatOf(target, c)) + f.kill * holding(target, c) + loose + denied + backed + jammed : UNKNOWN_SHOT;
   return { value: value - spent, f, target };
 }
 
@@ -466,7 +510,9 @@ function volley(options: Option[], c: Ctx, whole: boolean): Deed | null {
       if (s === shots[0] || total > best.total + EXACT) best = { s, total };
     }
   }
-  return { option: best.s.o, value: best.total, why: `${best.s.o.label} (${said(best.s.f)})`, reason: 'attack_value' };
+  // An attack that does no damage and jams is told by its chance to jam.
+  const jamming = !!best.s.f && best.s.f.pen <= 0 && c.w.suppress > 0 && jamsOnHit(best.s.o, c);
+  return { option: best.s.o, value: best.total, why: `${best.s.o.label} (${jamming ? `${percent(best.s.f!.hit)} to jam it` : said(best.s.f)})`, reason: 'attack_value' };
 }
 
 // WHAT ONE EXPLOSION COSTS THIS SQUAD when it lands on a unit of its own: what
@@ -550,7 +596,7 @@ function landed(o: Option, c: Ctx): { value: number; why: string; soon: boolean 
 function launch(options: Option[], c: Ctx): Deed | null {
   // One Landing Point for each enemy AND each card: a unit that carries a
   // Grenade, a Stun Grenade and a Pholcus is asked about all three.
-  const nearest = new Map<string, { o: Option; gap: number }>();
+  const nearest = new Map<string, { o: Option; gap: number; foe: UnitView; strike: number }>();
   for (const o of options) {
     if (kindOf(o) !== 'launch' || !o.later) continue;
     // A "White Dwarf" Bit is launched as what its turn would do, as a
@@ -563,14 +609,25 @@ function launch(options: Option[], c: Ctx): Deed | null {
       const gap = apart(at, f.grid);
       if (f.camouflaged || gap > strike) continue;
       const spot = `${f.uid}:${String(o.facts?.cardId ?? '')}`;
-      if (gap < (nearest.get(spot)?.gap ?? Infinity)) nearest.set(spot, { o, gap });
+      if (gap < (nearest.get(spot)?.gap ?? Infinity)) nearest.set(spot, { o, gap, foe: f, strike });
     }
   }
   let best: Deed | null = null;
-  for (const { o } of nearest.values()) {
+  for (const { o, gap, foe, strike } of nearest.values()) {
     const blast = landed(o, c);
     if (!blast) continue;
-    const value = blast.value * (blast.soon && !o.facts?.intercepts ? 1 : c.w.launch);
+    // A TARGET STILL TO MOVE (`launchMove`): a Projectile that strikes in the
+    // Delay Phase finds an enemy whose turn this round is still to come where
+    // that turn leaves it, and one that walks further than the strike has to
+    // spare is out of it ("finds no target and is destroyed": four Missiles of
+    // eleven in one traced game, 2026-10-04). Read as the chance it is still in
+    // reach, the reach to spare against the walk it could make.
+    const stays = !blast.soon && c.w.launchMove > 0 && !foe.done ? Math.min(1, (strike - gap + 1) / (stride(foe) + 1)) : 1;
+    // AN INTERCEPTION OWED (`interceptOdds`): the chance the Projectile comes
+    // through every attempt it draws there (`Option.survive`), so a Landing
+    // Point outside an interceptor's Range is worth more than one inside it.
+    const through = c.w.interceptOdds > 0 && o.survive ? o.survive() : null;
+    const value = blast.value * (blast.soon && !o.facts?.intercepts ? 1 : c.w.launch) * (1 - c.w.launchMove * (1 - stays)) * (through === null ? 1 : through ** c.w.interceptOdds);
     if (value > EXACT && (!best || value > best.value + EXACT)) best = { option: o, value, why: `a Projectile for ${blast.why}`, reason: 'launch_value' };
   }
   return best;
@@ -903,7 +960,7 @@ function aimsOf(e: UnitView, c: Ctx): Map<number, number> {
   const known = c.aims.get(e.uid);
   if (known) return known;
   const aims = new Map<number, number>();
-  const turn = c.d.here?.().turnOf(e.uid, ['attack'], e.kind === 'mech' ? 'firing' : undefined);
+  const turn = (c.aimsOn ?? c.d.here?.())?.turnOf(e.uid, ['attack'], e.kind === 'mech' ? 'firing' : undefined);
   for (const o of turn?.options ?? []) {
     const target = isShot(o) ? unitOf(c.view, o.facts?.targetUid) : undefined;
     const f = target && target.side === c.view.seat ? o.chance?.() : null;
@@ -1023,7 +1080,8 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
     let theirs = 0;
     let mine = 0;
     for (const e of c.hostile) {
-      if (cost + c.w.ahead * Math.max(0, theirs - c.w.riposte * mine) > budget) return { cost, risk: lost(), partial: true };
+      const owing = cost + c.w.ahead * Math.max(0, theirs - c.w.riposte * mine);
+      if (owing > budget) return { cost: c.skills.bounded ? owing : cost, risk: lost(), partial: true };
       if (e.kind !== 'mech' || e.done || struck.has(e.uid)) continue;
       const round = closing(e, out, at, c);
       theirs += round.theirs;
@@ -1117,6 +1175,17 @@ function armOf(me: UnitView): number {
     return 0;
   });
   return Math.max(0, ...arms);
+}
+
+// How near a unit must stand to strike a carrier itself (`hunt`): its longest
+// gun's Range, or beside it with only a blade. A launcher's reach counts only
+// for a unit with nothing else: a Projectile lands a turn late, on a dial of its
+// own, and may be Intercepted (a traced game: an RDL Missile Brawler reckoned
+// its Missiles reached a UN carrier from its corner, and never launched one
+// past the Porcupine's guard).
+function huntArm(me: UnitView): number {
+  const direct = Math.max(0, ...me.weapons.filter(ready).map((x) => (x.type === 'Firing' ? x.range : x.type === 'Melee' ? Math.max(1, x.range) : 0)));
+  return direct > 0 ? direct : armOf(me);
 }
 
 // THE ENEMY WORTH WALKING TO: the one whose destruction is worth most for the
@@ -1215,6 +1284,21 @@ function racesOf(c: Ctx): Map<string, Race> {
 const NONE: readonly string[] = [];
 const tookBy = (o: Option | null | undefined): readonly string[] => (Array.isArray(o?.facts?.taken) ? (o?.facts?.taken as string[]) : NONE);
 
+// A UNIT OF THE OTHER SQUAD'S, HUNTED (`hunt`): the Grids an arm this long
+// reaches it from (its Range in straight lines, and every Grid beside it), as a
+// zone to walk to worth `swing` of the Main Task's Victory Points.
+function hunted(foe: UnitView, arm: number, swing: number): Target {
+  const cells: Grid[] = [];
+  for (let dc = -arm; dc <= arm; dc++) {
+    for (let dr = -arm; dr <= arm; dr++) {
+      const g = { col: foe.grid.col + dc, row: foe.grid.row + dr };
+      if (g.col < 0 || g.row < 0 || (!dc && !dr)) continue;
+      if (Math.abs(dc) + Math.abs(dr) <= arm || (Math.abs(dc) <= 1 && Math.abs(dr) <= 1)) cells.push(g);
+    }
+  }
+  return { zone: { id: `hunt:${foe.uid}`, name: foe.label, holder: null, control: null, scoring: true, cells: cells.map(key) }, cells, swing, share: 1, held: false };
+}
+
 function targetsOf(c: Ctx, took: readonly string[] = NONE): Target[] {
   const spot = took.length ? `${c.me.uid}|${took.join(',')}` : String(c.me.uid);
   const known = c.targets.get(spot);
@@ -1267,6 +1351,33 @@ function targetsOf(c: Ctx, took: readonly string[] = NONE): Target[] {
       }
     }
     if (mine && zone) found.push({ zone, cells: zone.cells.map(cellOf), swing: mine, share: 1, held: false });
+    // A CARRIER OF THE OTHER SQUAD'S (`hunt`, M11): Penetrated, it drops what
+    // it carries (`carried`, priced on the attack), so a unit of this squad
+    // with an arm and no Box of its own walks to where its arm reaches the
+    // carrier, for `hunt` of the Boxes it carries, as it walks to a zone. At 0
+    // a Box is walked for only while it lies loose (a traced game, 2026-10-04:
+    // an RDL Missile Brawler sat in its corner all game at "worth 0.00" while a
+    // UN Mech walked off with three Boxes).
+    const arm = c.w.hunt > 0 && !mine ? huntArm(me) : 0;
+    if (arm > 0) {
+      for (const foe of view.units) {
+        if (foe.side === view.seat || !foe.alive || !foe.deployed) continue;
+        const held = view.boxes.filter((b) => b.bearer === foe.uid).length;
+        if (held) found.push(hunted(foe, arm, c.w.hunt * held));
+      }
+    }
+    c.targets.set(spot, found);
+    return found;
+  }
+  // THE OTHER SQUAD'S COMMANDER ON A VIP MISSION (`hunt`): destroyed, it is the
+  // Main Task's price (`vipKill`), so every unit of this squad with an arm but
+  // its own Commander walks to where its arm reaches it, as to a carrier (a
+  // traced game, 2026-10-04: an outranged RDL squad held its back line five
+  // rounds at worths below nothing while UN's Precision shot it from twelve).
+  if (view.task?.family === 'vip') {
+    const lead = view.units.find((u) => u.side === view.other && u.commander && u.alive && u.deployed);
+    const arm = c.w.hunt > 0 && lead && !me.commander ? huntArm(me) : 0;
+    const found = arm > 0 && lead ? [hunted(lead, arm, c.w.hunt * c.w.vipKill)] : [];
     c.targets.set(spot, found);
     return found;
   }
@@ -1308,7 +1419,8 @@ function targetsOf(c: Ctx, took: readonly string[] = NONE): Target[] {
 }
 
 // A Main Task there is somewhere to walk to for: its zones, or its Boxes.
-const walked = (view: SeatView): boolean => zoned(view) || view.task?.family === 'blackbox';
+// (On a VIP mission there is only the hunt, `targetsOf`: nothing at `hunt` 0.)
+const walked = (view: SeatView): boolean => zoned(view) || view.task?.family === 'blackbox' || view.task?.family === 'vip';
 
 // THE WALK TO A ZONE. A unit that can hold a zone, standing outside every zone
 // worth taking: what the best of them will have paid by the end of the game
@@ -1338,7 +1450,12 @@ function zoneWalk(at: Grid, c: Ctx, left?: number[], took: readonly string[] = N
     const lever = c.w.stakes && c.w.stakesWalk && brings > 0 ? swingOf(c.view, c.w, c.margin, brings) / brings : 1;
     // A loose Box is a race the other squad may win (M11, `boxContest`).
     const contest = boxContest(t, at, c, away, left);
-    const worth = t.swing * t.share * (t.held ? c.w.zoneHeld : 1) * task.vp * payFrom(arrives, c.view, c.w) * c.w.zonePull * sure * lever * contest - c.w.zoneStep * walk.grids;
+    // A carrier walked to (`hunt`) is a chase: it walks on, and each activation
+    // the walk still takes is a chance less of catching it (`huntTurn`). A Box
+    // pays the same whenever it is reached, and without this a Grid nearer the
+    // carrier was worth no more than one further off.
+    const chase = t.zone.id.startsWith('hunt:') ? c.w.huntTurn ** Math.max(0, away) : 1;
+    const worth = t.swing * t.share * (t.held ? c.w.zoneHeld : 1) * task.vp * payFrom(arrives, c.view, c.w) * c.w.zonePull * sure * lever * contest * chase - c.w.zoneStep * walk.grids;
     if (worth > best) best = worth;
   }
   // With no zone left to walk to, the walk is worth nothing either way.
@@ -1408,7 +1525,8 @@ function takesFirst(u: UnitView, c: Ctx): number {
 // own Range of the enemy worth walking to, along the road to it (the walk
 // round a wall), no closer than its arm is long.
 function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took: readonly string[] = NONE): number {
-  let pull = zoneWalk(at, c, left, took);
+  const walk = zoneWalk(at, c, left, took);
+  let pull = walk;
   if (quarry) {
     let far: number;
     if (quarry.road) {
@@ -1418,9 +1536,25 @@ function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took:
     } else {
       far = apart(at, quarry.foe.grid);
     }
-    pull -= (c.w.contactStep + c.w.approach * quarry.prize) * Math.max(0, far - armOf(c.me));
+    // OUTRANGED (`closeIn`): with nothing to walk to for the Main Task, a unit
+    // an enemy shoots from beyond its own reach gains nothing by standing off,
+    // and its step toward contact counts `closeIn` times over.
+    const out = c.w.closeIn > 0 && walk <= EXACT && outranged(c) ? c.w.closeIn : 0;
+    // BEHIND AS THE BOARD STANDS (`press`): nor does one of a squad that would
+    // lose the game if it ended now (the more so the later the round, at
+    // `pressLate`).
+    const press = c.behind && walk <= EXACT ? c.w.press * (1 - c.w.pressLate * (1 - c.view.round / Math.max(1, c.view.roundLimit))) : 0;
+    const step = c.w.contactStep * (out || press ? 1 + out + press : 1);
+    pull -= (step + c.w.approach * quarry.prize) * Math.max(0, far - armOf(c.me));
   }
   return pull;
+}
+
+// Whether an enemy that could reach the unit where it stands has a gun that
+// outreaches its own longest arm by more than a Grid (`closeIn`).
+function outranged(c: Ctx): boolean {
+  const arm = armOf(c.me);
+  return c.hostile.some((e) => inReachOf(e, c.me.grid) && e.weapons.some((x) => ready(x) && x.type === 'Firing' && x.range > arm + 1));
 }
 
 // WHAT A MOVEMENT LEAVES UNSPENT of the activation under way, as Ranges. A
@@ -1798,6 +1932,43 @@ function escortOf(o: Option, at: Grid, c: Ctx): number {
   return c.w.escort * (is.cost - was.cost);
 }
 
+// A HIGHLIGHT PUT ON A UNIT OF THIS SQUAD (`taunt`, M12). An enemy's Firing
+// Action that can target a unit with Highlight must target it and no other
+// (6.2.1; FAQ J18), so an enemy with the Highlighted unit in its sights shoots
+// it: the rest of the squad is spared that enemy's fire, and the unit
+// Highlighted takes it whatever it would rather have shot (`decoy` no longer
+// shares it out). For each unit of the squad but the one acting (whose own Grid
+// is its plan's price, read on the same table), what the enemies that could
+// reach the Highlighted unit could do to it as the board stands, less on the
+// table the Highlight leaves, with whom each would rather shoot read on that
+// table (`aimsOn`). A Highlight on a unit tougher than what it covers spares
+// the squad; on its most fragile unit it costs it.
+function tauntOf(o: Option, c: Ctx): number {
+  const x = unitOf(c.view, o.facts?.targetUid);
+  const after = o.after?.();
+  const now = c.d.here?.();
+  if (!x || x.side !== c.view.seat || !after || !now) return 0;
+  const lines = c.hostile.filter((e) => inReachOf(e, x.grid));
+  if (!lines.length) return 0;
+  const aims = new Map<number, Map<number, number>>();
+  let spared = 0;
+  for (const u of c.view.units) {
+    if (u.side !== c.view.seat || !u.alive || !u.deployed || u.uid === c.me.uid) continue;
+    const near = lines.filter((e) => inReachOf(e, u.grid));
+    if (!near.length) continue;
+    const as: Ctx = { ...c, me: u, hostile: near };
+    const spot = `${u.uid}|${key(u.grid)}|stays|${near.map((e) => e.uid).join(',')}`;
+    let was = c.harms.get(spot);
+    if (!was) {
+      was = exposure(now, u.grid, as);
+      if (!was.partial) c.harms.set(spot, was);
+    }
+    spared += was.cost - exposure(after, u.grid, { ...as, aims, aimsOn: after }).cost;
+  }
+  return c.w.taunt * spared;
+}
+const highlights = (o: Option | null | undefined): boolean => !!o && kindOf(o) === 'token' && o.tags.includes('token:highlight') && !o.tags.includes('enemy');
+
 function* plansSteps(c: Ctx): Steps<Plan[]> {
   const { d, view, me, w } = c;
   const led = quarryOf(c);
@@ -1814,7 +1985,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     const faces = d.options.filter((o) => handed(o, c) && !c.handed.has(handKey(c, o)));
     if (faces.length) {
       // What this table has been asked already is this decision's own to keep.
-      const kept: Memo = { table: tableOf(view), harms: c.harms, nexts: c.nexts, firepower: c.firepower, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs };
+      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs };
       for (const o of faces) {
         c.handed.set(handKey(c, o), yield* commandGain(o, view, w, c.skills, kept));
         yield;
@@ -1826,10 +1997,12 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
   yield;
   // Ending here with a Box underfoot picks it up: what the Task gains by that.
   const pickup = c.skills.mission ? d.options.find((o) => o.tags.includes('end') && o.tags.includes('take')) : undefined;
+  // (Doing it, `nextAfter` of what it could do there a turn later besides.)
+  const after = (o: Option | undefined, at: Grid): number => (w.nextAfter > 0 && o ? w.nextAfter * nextTurn(o, at, c) : 0);
   const plans: Plan[] = [{
     option: null, how: 'stay', at: me.grid, deed: here,
     now: here?.value ?? 0,
-    next: (here || !end ? 0 : nextTurn(end, me.grid, c)) + (loan ? loan(d.here?.(), me.grid) : 0),
+    next: (here ? after(end, me.grid) : !end ? 0 : nextTurn(end, me.grid, c)) + (loan ? loan(d.here?.(), me.grid) : 0),
     mission: pickup ? missionOf(pickup.after?.()?.view() ?? view, w) - c.mission + stealOf(pickup, c) : 0,
     shape: shapeAt(me.grid, c, led, undefined, tookBy(pickup)) + w.better,
     cost: 0, risk: 0,
@@ -1904,6 +2077,16 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     nexts.set(l.o, nextTurn(l.o, l.at, c));
     yield;
   }
+  // And for the Grids with the best deeds now, what could still be done there a
+  // turn later (`nextAfter`).
+  const afters = new Map<Option, number>();
+  if (w.nextAfter > 0) {
+    const acting = ranked.filter((x) => !!deeds.get(x.o)).sort((a, b) => (deeds.get(b.o)?.value ?? 0) - (deeds.get(a.o)?.value ?? 0)).slice(0, LIMITS.AFTERS);
+    for (const l of acting) {
+      afters.set(l.o, after(l.o, l.at));
+      yield;
+    }
+  }
   // The Grids weighed for the Commander (`escort`): at most a few, the best
   // claims first.
   const guard = escortGrids(c);
@@ -1922,7 +2105,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     plans.push({
       option: l.o, how: 'move', at: l.at, deed,
       now: (deed?.value ?? 0) - mineCost(l.o, c) + (drag?.value ?? 0) + shield,
-      next: (nexts.get(l.o) ?? 0) + (loan ? loan(l.o.after?.(), l.at) : 0),
+      next: (deed ? afters.get(l.o) ?? 0 : nexts.get(l.o) ?? 0) + (loan ? loan(l.o.after?.(), l.at) : 0),
       mission: (scores ? missionOf(l.o.after?.()?.view() ?? view, w) - c.mission : 0) + (l.take ? stealOf(l.o, c) : 0),
       // With nothing to do there, what is left of the activation goes on the
       // walk: a Movement still unspent is counted before the walk is.
@@ -1955,15 +2138,18 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
       // And System Repair on another unit of the squad (`mend`): the Mech goes
       // on with its Opportunity, and the unit repaired gets back what the
       // Token took (`mended`).
-      || (what === 'tactic' && c.skills.tactics && c.skills.mend && o.facts?.uid !== me.uid && o.tags.includes('card:277'));
+      || (what === 'tactic' && c.skills.tactics && c.skills.mend && o.facts?.uid !== me.uid && o.tags.includes('card:277'))
+      // And a Highlight put on a unit of the squad, this one (Amplify Profile)
+      // or another (Target Tag): whom the other squad may shoot (`taunt`).
+      || (highlights(o) && w.taunt > 0);
     if (!prepares || !o.then) continue;
     const deed = deedAt(o.then(DEEDS)?.options ?? [], c, false);
-    const back = what === 'tactic' && o.facts?.uid !== me.uid ? mended(o, c) : 0;
+    const back = what === 'tactic' && o.facts?.uid !== me.uid ? mended(o, c) : highlights(o) ? tauntOf(o, c) : 0;
     yield;
     plans.push({
       option: o, how: what, at: me.grid, deed,
       now: (deed?.value ?? 0) + back,
-      next: deed ? 0 : nextTurn(o, me.grid, c),
+      next: deed ? after(o, me.grid) : nextTurn(o, me.grid, c),
       mission: 0,
       // A card is used once a game: it must do more than keeping it is worth.
       shape: shapeAt(me.grid, c, led) - (what === 'tactic' ? w.card : 0),
@@ -1995,6 +2181,14 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
   return plans;
 }
 
+// The key what standing in a Grid costs is kept under (`harms`): the unit, the
+// Grid, what the plan does there that changes what a hit costs it (`tail`), and
+// the facing the plan leaves it in (`faced`): an answer's own where it says one,
+// else the unit's as it stands.
+function harmKey(c: Ctx, at: Grid, tail: string, o?: Option | null): string {
+  return `${c.me.uid}|${key(at)}|${tail}${c.skills.faced ? `@${(o ? facingOf(o) : null) ?? c.me.facing}` : ''}`;
+}
+
 // THE PLAN WORTH MOST, what standing there would cost taken off. The cost is
 // only ever a loss, so the plans are asked in order of everything else, and
 // the asking stops at the first plan that could not beat the best so far.
@@ -2021,12 +2215,22 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
     const face = p.option?.facts?.into ? `>${String(p.option.facts.into)}` : '';
     // And an Ally towed beside it changes what the other squad shoots at.
     const tow = p.option?.tags.includes('tow') ? `+tow:${String(p.option.facts?.towed ?? '')}` : '';
-    const spot = `${c.me.uid}|${key(p.at)}|${p.how === 'stance' || p.how === 'screen' || p.how === 'token' || p.how === 'mode' || p.how === 'form' || p.how === 'tactic' ? p.option?.id : ''}${face}${tow}${mark}`;
+    // The answers that change the unit itself where it stands.
+    const self = p.how === 'stance' || p.how === 'token' || p.how === 'mode' || p.how === 'form' || p.how === 'tactic';
+    const spot = harmKey(c, p.at, `${self || p.how === 'screen' ? p.option?.id : ''}${face}${tow}${mark}`, p.option);
     let harm = c.harms.get(spot);
     if (!harm) {
       const acted = hiding && p.deed ? p.deed.option.after?.() ?? p.deed.option.then?.(['end'])?.here?.() : undefined;
       const stands = acted ?? c.d.here?.();
-      harm = exposure(p.via ? p.via.after?.() : p.option ? p.option.after?.() : stands, p.at, c, budget);
+      const table = p.via ? p.via.after?.() : p.option ? p.option.after?.() : stands;
+      // THE UNIT AS THE PLAN LEAVES IT (`reshape`): a Mode, a Stance, a Token,
+      // a Bit's face changed is a different unit to shoot at and to shoot back
+      // with, read off the table the plan leaves; at 0 it is read as it stands.
+      const reshaped = c.w.reshape > 0 && table && (self || face.length > 0) ? unitOf(table.view(), c.me.uid) : undefined;
+      const as: Ctx = reshaped ? { ...c, me: reshaped } : c;
+      // A Highlight on this unit draws every enemy that has it in its sights,
+      // whatever each would rather shoot: read on the table it leaves.
+      harm = exposure(table, p.at, highlights(p.option) && table ? { ...as, aims: new Map(), aimsOn: table } : as, budget);
       if (!harm.partial) c.harms.set(spot, harm);
     }
     // The Ally a tow sets down pays for where it is set down (`towHarm`).
@@ -2094,6 +2298,17 @@ export function races(d: Decision, view: SeatView, weights: Partial<Weights> = {
   return Object.fromEntries([...racesOf(c)].map(([id, r]) => [id, { ours: fin(r.ours), theirs: fin(r.theirs), by: r.by }]));
 }
 
+// WHAT STANDING WHERE AN ANSWER LEAVES THE UNIT WOULD COST, asked with a
+// budget as a plan is (`exposure`); null for staying where it stands. For the
+// tests.
+export function exposureAt(d: Decision, view: SeatView, optionId: string | null, budget = Infinity, skills: Partial<Skills> = {}, weights: Partial<Weights> = {}): { cost: number; partial: boolean } | null {
+  const c = context(d, view, { ...TACTICIAN, ...weights }, { ...SKILLS, ...skills }, newMemo());
+  if (!c) return null;
+  const o = optionId ? d.options.find((x) => x.id === optionId) : undefined;
+  const harm = exposure(o ? o.after?.() : d.here?.(), (o ? endOf(o) : null) ?? c.me.grid, c, budget);
+  return { cost: harm.cost, partial: !!harm.partial };
+}
+
 export function weighed(d: Decision, view: SeatView, skills: Partial<Skills> = {}, weights: Partial<Weights> = {}): Weighed[] {
   const c = context(d, view, { ...TACTICIAN, ...weights }, { ...SKILLS, ...skills }, newMemo());
   // A Reveal: each Grid the unit may appear in, as it was weighed.
@@ -2121,7 +2336,7 @@ function reasonOf(p: Plan, stay: Plan): string {
   if (!p.option) return p.deed?.reason ?? 'end_activation';
   if (p.how !== 'move') {
     return p.how === 'stance' ? 'stance_by_value' : p.how === 'charge' ? 'charge_for_attack' : p.how === 'screen' ? 'smoke_for_cover'
-      : p.how === 'token' ? (p.option?.tags.includes('token:camouflage') ? 'cloak' : 'low_profile') : p.how === 'mode' ? 'mode_by_value'
+      : p.how === 'token' ? (p.option?.tags.includes('token:camouflage') ? 'cloak' : highlights(p.option) ? 'draw_fire' : 'low_profile') : p.how === 'mode' ? 'mode_by_value'
         : p.how === 'tactic' ? 'tactic_by_value' : 'clear_token';
   }
   const safer = stay.cost - p.cost;
@@ -2137,7 +2352,7 @@ const told = (p: Plan): string =>
 function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Memo): Ctx | null {
   const me = unitOf(view, d.unit);
   if (!me) return null;
-  const table = tableOf(view);
+  const table = tableOf(view, skills.carded);
   if (memo.table !== table) {
     memo.table = table;
     memo.harms.clear();
@@ -2159,6 +2374,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     hidden: skills.stalk ? foesOf(view).filter((f) => f.camouflaged).map((f) => ({ ...f, camouflaged: false })) : [],
     mission: skills.mission ? missionOf(view, w) : 0,
     margin: skills.mission && w.stakes ? marginOf(view, w) : 0,
+    behind: skills.mission && w.press > 0 ? behindNow(view, w) : false,
     soon: d.kind === 'setup.deploy',
     firepower: memo.firepower,
     harms: memo.harms,
@@ -2444,6 +2660,7 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
     'melee', 'movement', ...(view.task?.family === 'terminal' ? ['tactical'] : []), ...me.weapons.filter(ready).map((x) => x.timing ?? ''),
   ]);
   let best: { o: Option; value: number; plan: Plan } | null = null;
+  const holding: { o: Option; value: number; plan: Plan; timing: string; c: Ctx }[] = [];
   for (const [i, o] of d.options.entries()) {
     const timing = o.tags.find((t) => t.startsWith('timing:'))?.slice(7);
     if (!timing || !o.then || (played && !played.has(timing))) continue;
@@ -2454,13 +2671,13 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
     if (!found || !c) continue;
     // What standing where it is costs, by the enemy it is owed to: those that
     // would act first are paid before this dial's plan begins.
-    const here = c.harms.get(`${me.uid}|${key(me.grid)}|`);
+    const here = c.harms.get(harmKey(c, me.grid, ''));
     const sooner = (x: { timing: string }): boolean => (order.get(x.timing) ?? Infinity) <= i;
     const first = (here?.by ?? []).filter(sooner).reduce((n, x) => n + x.cost, 0);
     // And where the plan ends, an enemy that has already acted is a round
     // away: what the plan was charged for it in full is given back in part,
     // so that each enemy is charged for acting once.
-    const there = c.harms.get(`${me.uid}|${key(found.best.at)}|${found.best.how === 'stance' ? found.best.option?.id : ''}`);
+    const there = c.harms.get(harmKey(c, found.best.at, found.best.how === 'stance' ? String(found.best.option?.id) : '', found.best.option));
     const again = (there?.by ?? []).filter(sooner).reduce((n, x) => n + x.cost, 0);
     const back = w.exposure > 0 ? again * (1 - w.exposureLater / w.exposure) : 0;
     // A PLAN THAT BORROWS ITS TIMING. The first Action of an Opportunity must
@@ -2474,12 +2691,40 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
     const opens = startOf(found.best);
     const own = opens ? me.weapons.find((x) => x.actionId === opens.facts?.actionId)?.timing : undefined;
     const lent = own !== undefined && own !== timing ? w.borrowed : 0;
-    const value = worthOf(found.best) - first + back + w.tempo * (d.options.length - i) - lent;
+    // AN ATTACK ON A MECH THAT MAY ACT FIRST (`dialDoubt`): it may walk out of
+    // the line before this Timing comes, the more likely the more Timings come
+    // before this one.
+    const aim = w.dialDoubt > 0 ? found.best.deed : null;
+    const prey = aim ? unitOf(view, aim.option.facts?.targetUid) : undefined;
+    const doubt = aim && prey?.kind === 'mech' && prey.side !== view.seat && !prey.done && stride(prey) > 0 ? w.dialDoubt * (i / d.options.length) * Math.max(0, aim.value) : 0;
+    const value = worthOf(found.best) - first + back + w.tempo * (d.options.length - i) - lent - doubt;
     if (!best || value > best.value + EXACT) best = { o, value, plan: found.best };
+    if (w.cover > 0 && !found.best.option && !found.best.deed) holding.push({ o, value, plan: found.best, timing, c });
   }
   if (!best) return null;
+  // A DIAL FOR HOLDING (`cover`): where the plan worth most holds and does
+  // nothing, of the Timings whose plans hold too, the one whose weapons are
+  // kept for most of the enemies that could walk into them this round.
+  if (w.cover > 0 && !best.plan.option && !best.plan.deed) {
+    let top: typeof best | null = null;
+    for (const h of holding) {
+      const value = h.value + w.cover * coverOf(me, h.timing, h.c);
+      if (!top || value > top.value + EXACT) top = { o: h.o, value, plan: h.plan };
+    }
+    if (top) best = top;
+  }
   const opens = best.plan.option ? best.plan.option.label : best.plan.deed ? best.plan.deed.option.label : 'holding where it is';
   return { option: best.o.id, reason: 'dial_by_plan', score: best.value, why: `it opens with ${opens}; ${told(best.plan)}` };
+}
+
+// The enemies a Timing would keep a weapon for (`cover`): each one out of the
+// Range of every ready gun or blade of the Mech's played on that Timing, that
+// could walk into one of them this round (its stride, `stride`).
+function coverOf(me: UnitView, timing: string, c: Ctx): number {
+  const arms = me.weapons.filter((x) => ready(x) && x.timing === timing && (x.type === 'Firing' || x.type === 'Melee'));
+  if (!arms.length) return 0;
+  return c.foes.filter((f) => !f.done && !arms.some((x) => reaches(x, me.grid, f.grid))
+    && arms.some((x) => apart(me.grid, f.grid) - stride(f) <= Math.max(1, x.range))).length;
 }
 
 // THE COMMANDER (a VIP mission): the Mech that can do most from furthest
@@ -2614,6 +2859,99 @@ function focus(d: Decision, view: SeatView, w: Weights, worth: Worth | undefined
     return { option: paid.id, reason: 'focus_by_value', score: adds(paid), why: `a reroll worth ${adds(paid).toFixed(2)}, for a Link` };
   }
   return { option: pass.id, reason: 'skip_reroll', score: adds(paid), why: 'no reroll worth a Link' };
+}
+
+// A FOCUS IN AN ELECTRONIC COUNTER-ROLL (`ewFocus`). Both hands are in when
+// it is declared (FAQ G4), and the question says what each side has rolled
+// (`botcontest.ts`). Rerolling the dice that count nothing for this side can
+// only better its hand: declared where those dice, thrown again, would turn a
+// roll this side is losing into one it wins at least 0.25 / `ewFocus` of the
+// time (the other side's hand as it lies: it may Focus too, which this does
+// not try to read). Paid in Link where the pilot keeps two (as an attack's
+// Focus is), else on a Whistle's Command Token; a free one wherever it helps.
+// A roll already won is let lie.
+type Count = { lightning: number; light: number };
+function counterWins(mine: Count, theirs: Count, initiator: boolean): boolean {
+  const init = initiator ? mine : theirs;
+  const resp = initiator ? theirs : mine;
+  const initWins = init.lightning !== resp.lightning ? init.lightning > resp.lightning : init.light !== resp.light ? init.light > resp.light : true;
+  return initiator ? initWins : !initWins;
+}
+// The chance this side wins with its blank dice thrown again: each die one of
+// the faces, alike likely, adding what that face counts for it.
+function rerollWins(mine: Count, theirs: Count, initiator: boolean, blanks: number, faces: Count[]): number {
+  let spread = new Map<string, number>([['0,0', 1]]);
+  for (let i = 0; i < blanks; i++) {
+    const next = new Map<string, number>();
+    for (const [k, p] of spread) {
+      const [l, h] = k.split(',').map(Number);
+      for (const f of faces) {
+        const key2 = `${l + f.lightning},${h + f.light}`;
+        next.set(key2, (next.get(key2) ?? 0) + p / faces.length);
+      }
+    }
+    spread = next;
+  }
+  let won = 0;
+  for (const [k, p] of spread) {
+    const [l, h] = k.split(',').map(Number);
+    if (counterWins({ lightning: mine.lightning + l, light: mine.light + h }, theirs, initiator)) won += p;
+  }
+  return won;
+}
+function counterFocus(d: Decision, view: SeatView, w: Weights): Choice | null {
+  const pass = d.options.find((o) => o.id === 'focus.pass');
+  const mine = d.facts.mine as Count | undefined;
+  const theirs = d.facts.theirs as Count | undefined;
+  const blank = d.facts.blank as number[] | undefined;
+  const faces = d.facts.faces as Count[] | undefined;
+  if (!pass || !mine || !theirs || !blank || !faces?.length) return null;
+  const initiator = d.facts.role === 'initiator';
+  if (counterWins(mine, theirs, initiator)) return { option: pass.id, reason: 'skip_reroll', why: 'the roll is won as it lies' };
+  const turns = blank.length ? rerollWins(mine, theirs, initiator, blank.length, faces) : 0;
+  const use = d.options.find((o) => o.id === 'focus.use');
+  const whistle = d.options.find((o) => o.id === 'focus.whistle');
+  const link = unitOf(view, d.unit)?.link ?? 0;
+  const free = use && /free/i.test(use.label);
+  const why = `rerolling ${blank.length === 1 ? 'the die that counts' : `the ${blank.length} dice that count`} nothing wins ${percent(turns)} of the time`;
+  if (turns * w.ewFocus >= 0.25 - EXACT || (free && turns > EXACT)) {
+    if (use && (free || link >= 2)) return { option: use.id, reason: 'focus_by_value', score: turns, why: `${why}, for a Link` };
+    if (whistle) return { option: whistle.id, reason: 'focus_by_value', score: turns, why: `${why}, on a Whistle's Command Token` };
+  }
+  return { option: pass.id, reason: 'skip_reroll', score: turns, why: `${why}: not worth a Link` };
+}
+// Its reroll, once declared: the dice that count nothing, and none else.
+function counterReroll(d: Decision): Choice | null {
+  const blanks = d.options.find((o) => o.id === 'reroll.blanks');
+  if (blanks) return { option: blanks.id, reason: 'reroll_blanks', why: 'the dice that count nothing' };
+  return null;
+}
+
+// WHERE A BLACK BOX IS PUT DOWN AT SETUP (`boxPlace`; 5.2.1: the squads take
+// turns placing each Box anywhere in the Tactical Zone its Main Task names). A
+// Box is a race to whoever reaches it first (M11), so of the Boxes this squad
+// may place now and the Grids of their zones, the one furthest from where the
+// other squad deploys for how near it is to where this one does (the seam says
+// both, as it does for a deployment). Where none is better than another, where
+// it stands. NOT where the Task pays only for a Box carried into one zone
+// (Asset Preservation, Echo): a Box pulled toward this squad's edge is then
+// further for anybody to carry home in time (measured: Key Facility 106 of 200
+// head to head, Asset Preservation 93), and it is left where it stands.
+function placeBox(d: Decision, view: SeatView): Choice | null {
+  if (view.task?.scoringZone) return null;
+  const ours = ((d.facts.zone as string[] | undefined) ?? []).map(cellOf);
+  const theirs = ((d.facts.foeZone as string[] | undefined) ?? []).map(cellOf);
+  if (!ours.length || !theirs.length) return null;
+  const near = (g: Grid, zone: Grid[]): number => Math.min(...zone.map((z) => apart(g, z)));
+  let best: { o: Option; score: number } | null = null;
+  for (const o of d.options) {
+    const at = o.facts?.at as { c: number; r: number } | undefined;
+    if (!at) continue;
+    const g = { col: at.c, row: at.r };
+    const score = near(g, theirs) - near(g, ours);
+    if (!best || score > best.score + EXACT) best = { o, score };
+  }
+  return best ? { option: best.o.id, reason: 'box_place', score: best.score, why: `${best.o.label}: ${best.score} Grids nearer this squad's Deployment Zone than the other's` } : null;
 }
 
 // WHERE A MINE IS LAID (006_A). A Mine goes off under the first Ground unit
@@ -3001,6 +3339,12 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
       case 'attack.focus':
       case 'defence.focus':
         return s.focus ? focus(d, view, w, worthIn(d, view)) : null;
+      case 'setup.box':
+        return w.boxPlace > 0 ? placeBox(d, view) : null;
+      case 'contest.focus':
+        return w.ewFocus > 0 ? counterFocus(d, view, w) : null;
+      case 'contest.reroll':
+        return w.ewFocus > 0 ? counterReroll(d) : null;
       default:
         return null;
     }

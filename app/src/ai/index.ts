@@ -3,9 +3,9 @@
 export { attackWorth, BRAWLER, brawlerPolicy, targetScore } from './brawler';
 export { Driver, type DriverOptions, type Host, type LogEntry, type Step } from './driver';
 export { eagerPolicy } from './eager';
-export { carried, gainOf, holds, marginOf, missionOf, payFrom, stakesOf, standingFor, swingOf, TACTICIAN, tieWorth, unitWorth, zoned, type Weights } from './evaluate';
+export { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stakesOf, standingFor, swingOf, TACTICIAN, tieWorth, unitWorth, zoned, type Weights } from './evaluate';
 export { legalPolicy } from './legal';
 export { blundering, RECRUIT_RATE, recruitPolicy, VETERAN_SKILLS, VETERAN_WEIGHTS, veteranPolicy } from './levels';
-export { makeTactician, races, SKILLS, TACTICIAN_LIMITS, tacticianPolicy, weighed, type Skills, type Weighed } from './tactician';
+export { exposureAt, makeTactician, races, SKILLS, TACTICIAN_LIMITS, tacticianPolicy, weighed, type Skills, type Weighed } from './tactician';
 export { safePolicy, type Choice, type Policy } from './policy';
 export { Rng, seedOf } from './rng';

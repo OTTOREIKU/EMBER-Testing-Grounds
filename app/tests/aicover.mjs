@@ -27,7 +27,7 @@ export const COMMANDS = {
   pickEdge: ['seat', 'the First Player\'s table edge'],
   pickSecondary: ['seat', 'offered when the table plays Secondary Tasks (the copied setup plays none)'],
   designateTask: ['seat', 'the Commander, a Tactical Zone, whatever a Task names'],
-  placeTaskItem: ['seat', 'a Black Box, kept where it stands (moving it inside its zone: later)'],
+  placeTaskItem: ['seat', 'a Black Box, kept where it stands or put down in another Large Grid of its zone'],
   finishTasks: ['seat', 'the First Player closes the Tasks step'],
   deployUnit: ['seat', 'one option per unit, open Grid and Stance; in Optical Camouflage for a unit with a Part that Activates it'],
   finishDeployment: ['seat', 'with the second ready'],

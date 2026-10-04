@@ -306,6 +306,109 @@ export interface Weights {
   // Commander more open to, and credited what it spares it by standing in the
   // way (`escortOf`). At 0 a unit's own Grid is all it weighs.
   escort: number;
+  // A HIGHLIGHT PUT ON A UNIT OF THIS SQUAD (M12, the census's Target Tag 0 of
+  // 59 and Amplify Profile 0 of 16): an enemy's Firing Action that can target
+  // it must (6.2.1), so it draws the fire of every enemy that has it in its
+  // sights. Planned at `taunt` of what that spares the rest of the squad, less
+  // what it costs the unit Highlighted (`tauntOf`). At 0 it is never planned.
+  taunt: number;
+  // AN ATTACK WHOSE HIT JAMS (M12, the census's Laser Suppression 0 of 54: "[On
+  // Hit] the target gains 1 Fire Control Interference Token; no damage"): worth
+  // `suppress` x what a jam is worth (`jam`, at even odds, as an Electronic
+  // Attack's) x the chance of a Hit. At 0 such an attack is worth its damage,
+  // which is none.
+  suppress: number;
+  // A CARRIER OF THE OTHER SQUAD'S (M11): a unit with an arm and no Box of its
+  // own walks to where its arm reaches an enemy carrying Black Boxes, as it
+  // walks to a zone, for `hunt` of the Boxes carried (`targetsOf`); and on a
+  // VIP mission every unit but the Commander to where its arm reaches the
+  // other squad's Commander, for `hunt` of the kill's price (`vipKill`). At 0 a
+  // Box is walked for only while it lies loose, and on a VIP mission nothing.
+  hunt: number;
+  // Such a walk is a chase: each activation it still takes keeps `huntTurn` of
+  // its worth (a carrier walks on).
+  huntTurn: number;
+  // A FOCUS IN AN ELECTRONIC COUNTER-ROLL (a trace, 2026-10-04: never taken,
+  // the window's safe answer every time): declared where rerolling the dice
+  // that count nothing for this side would turn a lost roll into a won one at
+  // least 0.25 / `ewFocus` of the time, paid in Link (never the last but one)
+  // or a Whistle's Command Token, and the reroll then made of those dice alone
+  // (`counterFocus`). At 0 the window's safe answers stand. ADOPTED at 1
+  // (2026-10-04): on Terminals 141 of 300 against 139, the two games it
+  // changed both turned to a win: rare, and what a player does.
+  ewFocus: number;
+  // WHERE A BLACK BOX IS PUT DOWN AT SETUP (5.2.1): above 0, the Box and Grid of
+  // its zone furthest from the other squad's Deployment Zone for how near it is
+  // to this squad's (`placeBox`). At 0 each Box is left where it stands.
+  boxPlace: number;
+  // A PROJECTILE THAT STRIKES IN THE DELAY PHASE, AT AN ENEMY STILL TO MOVE this
+  // round: worth less by `launchMove` of the chance it walks out of the strike
+  // (the reach the strike has to spare against the walk it could make,
+  // `launch`). At 0 the target is read where it stands.
+  launchMove: number;
+  // OUTRANGED (M12's squad read, the narrow form): a unit with nothing to walk
+  // to for the Main Task, that an enemy able to reach it where it stands
+  // outreaches by more than a Grid, counts its step toward contact
+  // (`contactStep`) `closeIn` times over besides (`shapeAt`; a traced VIP game
+  // where an outranged squad held its back line five rounds and was shot). At 0
+  // the step counts once. (`approach`, a pull toward every enemy by its worth,
+  // was measured and rejected in M7: it took RDL off the zones.)
+  closeIn: number;
+  // A LAUNCH THAT OWES INTERCEPTION: worth the chance the Projectile comes
+  // through every attempt (`Option.survive`, each interceptor trying while it
+  // has Tokens left), to the power `interceptOdds`. At 0 any Interception
+  // owed is the flat `launch` discount, and for a Missile none at all.
+  interceptOdds: number;
+  // BEHIND AS THE BOARD STANDS (`behindNow`): a squad that would lose the game
+  // if it ended now gains nothing by holding back, and each of its units with
+  // nothing to walk to for the Main Task counts its step toward contact
+  // (`contactStep`) `press` times over besides; at `pressLate` 1 the more so
+  // the later the round (a fifth of it in the first of five, all of it in the
+  // last), at 0 alike in every round. (A traced VIP game on the Intersection,
+  // the Ace on both sides: both squads stood still from the second round, and
+  // the one with fewer Mech Parts and Drones lost it 0 to 0 on them.) At 0 the
+  // step counts once. ADOPTED at 10 (2026-10-04): random VIP squads 147 of 300
+  // against 147, every Main Task 96 of 200 against 94, and on that VIP game UN
+  // won 3 of 50 where it won none; `pressLate` 1 measured 145 and stays 0.
+  press: number;
+  pressLate: number;
+  // A DIAL FOR HOLDING: where the plan worth most on any Timing Dial holds and
+  // does nothing, the Timings whose plans hold too are told apart by the
+  // weapons each keeps: one of the Mech's own ready guns or blades played on
+  // it is kept for an enemy that walks into its Range before the Opportunity
+  // comes, `cover` for each enemy that could this round. A plan that does
+  // something is never outweighed by it. At 0 such a tie goes to the earliest
+  // Timing (`tempo`), and a railgun Mech holding a line set Melee round after
+  // round (the standoff on the Intersection).
+  cover: number;
+  // WHAT A PLAN THAT ACTS NOW COULD STILL DO A TURN LATER: a plan with a deed
+  // this activation counts `nextAfter` of what it could do at its next turn from
+  // where it ends (`nextTurn`), as a plan with nothing to do now counts all of
+  // it. At 0 a plan that acts now counts nothing a turn later, and a Mech with a
+  // Rail Gun shot to make Maneuvered instead toward a better one a turn on (a
+  // random Asset Preservation game read, seed 48056: the shot now 1.20 against
+  // the walk's 1.24 a turn later), as if firing now gave that up. ADOPTED at 1
+  // (2026-10-04): random squads on every Main Task 156 of 300 against 146 (23
+  // turned to a win, 12 from one; sign test p 0.09), at 0.5 152; head to head
+  // on the copied games 100 of 200; about 6% more time a game.
+  nextAfter: number;
+  // A DIAL SET FOR AN ATTACK ON A MECH THAT MAY ACT FIRST: a Timing Dial is set
+  // on the board as it stands, and a target Mech whose own Timing comes sooner
+  // may walk out of the attack before this one's Opportunity (a census of 40
+  // random games: 13 of 45 dials set for an attack found it gone, and 9 of
+  // those Mechs walked instead). The attack is worth less to the dial by
+  // `dialDoubt` x the share of the Timings that come before its own. At 0 a
+  // dial takes the attack as certain.
+  dialDoubt: number;
+  // THE UNIT AS A PLAN LEAVES IT (1 on, 0 off): what standing somewhere costs
+  // a plan that changes the unit itself (a Mode, a Stance, a Token, a Bit's
+  // face) is read with the unit as that plan's table has it, its guns and its
+  // Parts with it. At 0 it is read with the unit as it stands: a VIP
+  // Commander's White Dwarf priced its Cruise Mode at 0.00 from Assault Mode
+  // (what it could do back came from its Assault guns) and at 1.23 once in it,
+  // and changed Mode twice in one activation to end where it began (random game
+  // 51001).
+  reshape: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -373,6 +476,21 @@ export const TACTICIAN: Weights = {
   tieCount: 3,
   ewOdds: 1,
   escort: 0,
+  taunt: 0,
+  suppress: 0,
+  hunt: 0,
+  huntTurn: 0.5,
+  ewFocus: 1,
+  boxPlace: 0,
+  launchMove: 0,
+  closeIn: 0,
+  interceptOdds: 0,
+  press: 10,
+  pressLate: 0,
+  cover: 0,
+  nextAfter: 1,
+  dialDoubt: 0,
+  reshape: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
@@ -481,6 +599,16 @@ export function tieWorth(view: SeatView, w: Weights): number {
 export function missionOf(view: SeatView, w: Weights): number {
   const margin = marginOf(view, w);
   return margin + stakesOf(view, w, margin);
+}
+
+// WHETHER THE GAME WOULD BE LOST IF IT ENDED NOW (`press`): on the margin the
+// Main Task is heading for, or level on it (within half a Victory Point) on the
+// Mech Parts and Drones each squad has left (5.2.4, as tasks.ts gameResult
+// decides it). Level on both is a draw, not a loss.
+export function behindNow(view: SeatView, w: Weights): boolean {
+  const margin = marginOf(view, w);
+  if (Math.abs(margin) >= 0.5) return margin < 0;
+  return standingFor(view, view.seat) < standingFor(view, view.other);
 }
 
 // What a side has standing for the tiebreak (5.2.4): its Mech Parts not
