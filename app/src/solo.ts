@@ -28,7 +28,7 @@ import { handCommand, type HeldCard } from './tactichand';
 import { RIVAL, SOLO_OWN, SPEEDS, type SoloOwn, type Speed } from './soloask';
 import type { Decision, Option } from './seat';
 import { mapConfig, missionConfig } from './tableconfig';
-import type { GameState, Side } from './types';
+import { PHASES, type GameState, type Side } from './types';
 
 // ---------- what the address asks for ----------
 
@@ -316,6 +316,25 @@ export function whyLine(d: Decision, o: Option, reason: string | undefined, who?
   if (!because) return null;
   const named = !who || o.label.startsWith(`${who}:`) || o.label.startsWith(`${who} `);
   return `${named ? '' : `${who}: `}${o.label} (${because})`;
+}
+
+// WHAT OF THE COMPUTER'S DECISIONS A REPORT MAY CARRY (M15, a game log kept on
+// the player's own device): what it did on the table, which the player has
+// seen happen; never what is still hidden from them. A Timing Dial only once
+// both are revealed (the Planning Phase of its round is over), no Secondary
+// Task and no designation made at setup, and a Tactics Card only where it was
+// played: a question about a card that ended in a pass would tell which card
+// the computer holds.
+export function publicDecisions(log: readonly LogEntry[], state: GameState): LogEntry[] {
+  const round = state.round?.n ?? 0;
+  const phase = state.round?.phase ?? 0;
+  const planning = PHASES.indexOf('Planning');
+  return log.filter((e) => {
+    if (e.kind === 'planning.dial') return e.round < round || (e.round === round && phase > planning);
+    if (e.kind === 'planning.commit' || e.kind === 'setup.secondary' || e.kind.startsWith('setup.designate')) return false;
+    if (e.kind === 'tactic.after' || e.kind === 'tactic.end') return e.option.startsWith('tactic:');
+    return true;
+  }).map((e) => ({ ...e }));
 }
 
 // How long the computer may hold the page's thread before it hands it back in

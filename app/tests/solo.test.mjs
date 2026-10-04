@@ -498,6 +498,24 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
     ['over', [], true, true, 0, [], []]);
   p.close();
 }
+// ---------- what a report may carry of the computer's decisions (M15) ----------
+{
+  const P = M.SOLO.publicDecisions;
+  const e = (round, phase, kind, option, label = option) => ({ n: 0, round, phase, kind, decision: kind, option, label, why: 'w', reason: 'r', options: 2, ms: 1 });
+  const log = [
+    e(1, 0, 'setup.secondary', 'secondary:3'), e(1, 0, 'setup.designate.leader', 'leader:4'), e(1, 0, 'setup.deploy', 'deploy:4:3,3'),
+    e(1, 1, 'planning.commit', 'commit'), e(1, 1, 'planning.dial', 'dial:firing'), e(1, 2, 'opp.act', 'attack:x', 'Single Shot at Mire'),
+    e(1, 5, 'tactic.end', 'forget', 'Keep Battlefield Recovery'), e(1, 5, 'tactic.end', 'tactic:275:4', 'Battlefield Recovery: Wild Cat'),
+    e(2, 1, 'planning.dial', 'dial:movement'), e(2, 2, 'defence.roll', 'defense.roll'),
+  ];
+  const at = (n, phase) => P(log, { round: { n, phase } }).map((x) => x.option);
+  check('A REPORT CARRIES WHAT THE COMPUTER DID ON THE TABLE, and nothing still hidden from the player: no Secondary Task, no designation at setup, no commitment, no Tactics Card held, and a dial only once both are revealed',
+    [at(2, 1), at(2, 2)],
+    [['deploy:4:3,3', 'dial:firing', 'attack:x', 'tactic:275:4', 'defense.roll'], ['deploy:4:3,3', 'dial:firing', 'attack:x', 'tactic:275:4', 'dial:movement', 'defense.roll']]);
+  check('a copy of each, not the log itself', P(log, { round: { n: 9, phase: 5 } })[0] !== log[2], true);
+  check('THE MATCH CENTRE\'S REPORT puts them in, for a game against the computer and no other',
+    /computer: solo\s*\n\s*\? \(\) => \(solo \? \{/.test(src('match.ts')) && /publicDecisions\(solo\.table\.log, state\)/.test(src('match.ts')), true);
+}
 {
   // A GAME OF THE PLAYER'S OWN, played out: the two shipped starters on the
   // Steelworks, a Black Box Main Task and Secondary Tasks on, the Tactician in

@@ -6,7 +6,7 @@ import { Relay, type NetHooks, type RolledDie, type RollKind, type TableRelay } 
 import { LoopbackRelay } from './loopback';
 import { Rng } from './ai/rng';
 import { forecastOf } from './ai/odds';
-import { OPPONENTS, ownGame, SOLO_OWN, SOLO_OWN_KEY, SOLO_ROOM, SoloTable, soloAsk, soloHands, soloQuery, soloSetup, soloSpec, SPEEDS, type SoloOwn, type SoloSpec, type Speed } from './solo';
+import { OPPONENTS, ownGame, publicDecisions, SOLO_OWN, SOLO_OWN_KEY, SOLO_ROOM, SoloTable, soloAsk, soloHands, soloQuery, soloSetup, soloSpec, SPEEDS, type SoloOwn, type SoloSpec, type Speed } from './solo';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { diagErrors, diagRefusals, installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
 import { openBoardReport } from './reportui';
@@ -3205,6 +3205,15 @@ function wire(): void {
       // that is not on screen is a checkbox that quietly does nothing.
       boardSvg: document.querySelector('#mc-board svg')
         ? () => new XMLSerializer().serializeToString(document.querySelector('#mc-board svg')!)
+        : undefined,
+      // A game against the computer: what it has done so far, and why, for a
+      // report about something it did (M15).
+      computer: solo
+        ? () => (solo ? {
+          opponent: solo.spec.opponent,
+          seed: solo.spec.seed,
+          decisions: publicDecisions(solo.table.log, state).map((e) => ({ round: e.round, phase: e.phase, kind: e.kind, label: e.label, why: e.why, reason: e.reason })),
+        } : null)
         : undefined,
     });
   });

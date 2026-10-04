@@ -207,6 +207,12 @@ ok('the manifest is rebuilt from the same call that saves',
 // A stale manifest is worse than none: it tells somebody they are sending one
 // thing while they send another.
 ok('and rebuilt on every edit', /dlg\.addEventListener\('input', refresh\)/.test(ui));
+// A game against the computer (M15): what it did, and why, rides in the report
+// when the page hands it over, and the manifest says so. What is handed over
+// is the page's to filter (solo.ts publicDecisions, held in solo.test).
+ok('the computer\'s decisions ride only when the page hands them over',
+  /\.\.\.\(o\.computer \? \{ computer: o\.computer \} : \{\}\)/.test(rep) && /computer: o\.computer\?\.\(\) \?\? null/.test(ui));
+ok('and the manifest says they are there', /What the computer did, and why/.test(rep));
 ok('a click inside the panel does not throw the form away',
   /if \(ev\.target === dlg\) close\(\)/.test(ui));
 

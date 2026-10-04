@@ -13,7 +13,7 @@
 import {
   buildBoardReport, buildReferenceReport, CATEGORY_LABEL, copyReport, manifestOf,
   reportFilename, saveReport,
-  type BoardReport, type ReferenceReport, type ReportCategory, type ReportKind, type ReportSubject,
+  type BoardReport, type ComputerLog, type ReferenceReport, type ReportCategory, type ReportKind, type ReportSubject,
 } from './report';
 import './report.css';
 import type { GameState } from './types';
@@ -143,6 +143,8 @@ export function openBoardReport(o: {
   seat: string | null;
   net?: unknown;
   boardSvg?: () => string;
+  // In a game against the computer: its decisions so far (M15).
+  computer?: () => ComputerLog | null;
 }): void {
   const dlg = shell('Report a problem', o.lead, `
     <label class="rp-label">What went wrong?</label>
@@ -179,6 +181,7 @@ export function openBoardReport(o: {
     // is the case where the PATH is the bug and a single frozen position says
     // almost nothing; everywhere else it is 10KB nobody reads.
     includeBefore: kind === 'stuck',
+    computer: o.computer?.() ?? null,
   }));
 
   area.focus();

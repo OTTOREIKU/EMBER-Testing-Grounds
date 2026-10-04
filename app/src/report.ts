@@ -53,6 +53,16 @@ export interface BoardReport extends ReportEnvelope {
   refusals: DiagEntry[];
   net?: unknown;
   boardSvg?: string;
+  // A game against the computer (M15): who it was, the game's seed, and what
+  // it did, each with the reason it gave. Only what the player has seen it do
+  // (solo.ts publicDecisions): never a hidden dial or a card it holds.
+  computer?: ComputerLog;
+}
+
+export interface ComputerLog {
+  opponent: string;
+  seed: number;
+  decisions: { round: number; phase: number; kind: string; label: string; why: string; reason: string }[];
 }
 
 // Whatever the reference had open. `kind` is the detail sheet's own vocabulary,
@@ -102,6 +112,7 @@ export function buildBoardReport(o: {
   net?: unknown;
   boardSvg?: string;
   includeBefore: boolean;
+  computer?: ComputerLog | null;
 }): BoardReport {
   const back = o.includeBefore ? snapshotBack(SNAPSHOT_BACK - 1) : null;
   return {
@@ -124,6 +135,7 @@ export function buildBoardReport(o: {
     refusals: diagRefusals(),
     net: o.net ?? null,
     boardSvg: o.boardSvg,
+    ...(o.computer ? { computer: o.computer } : {}),
   };
 }
 
@@ -176,6 +188,7 @@ export function manifestOf(r: BoardReport | ReferenceReport): ManifestLine[] {
       detail: net?.room ? `${net.room} · ${net.desynced ? 'out of sync' : 'in sync'}` : 'not in a room',
     });
     if (r.boardSvg) out.push({ what: 'A picture of the board', detail: kb(r.boardSvg) });
+    if (r.computer) out.push({ what: 'What the computer did, and why', detail: `${r.computer.decisions.length} decisions` });
   } else {
     out.push({ what: 'About', detail: CATEGORY_LABEL[r.category] });
     out.push({
