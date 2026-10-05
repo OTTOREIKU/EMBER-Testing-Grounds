@@ -37,7 +37,7 @@ import {
   guidedActions, highlightTargets, ignoresProtection, immobilizedStop, interceptHeld, interceptOwedAt, interceptsOwed, isAirborneAction, isChargeAction, isElectronicAttack, isPositionSwap,
   isRwsAction, isScanAction, linkShockOf, linkSupportOf, loanedParts, maneuverRange, mineStopIndex, needsSightToLanding, nonHumanoidCost,
   nonHumanoidStop, overwatchOf, ownCards, phasesThroughUnits, projectileReach, providesUnitProtectionToAllies, repairSpec, resupplyOf,
-  riderOnDrone, selfStatusGrant, stanceFeedbackOf, stanceShaped, startOpts, stationaryAdjusted, straightLineBonus,
+  riderOnDrone, selfStatusGrant, shockAttackOf, shockMoveAllowed, stanceFeedbackOf, stanceShaped, startOpts, stationaryAdjusted, straightLineBonus,
   targetStatusGrant, tetheredBy, tokenCleanupOf, transformOffer, twoHandedUse, unfoldsOwed,
   type Knockback, type MultiTarget, minesLayable, minesOwed, type MineLaying,
 } from './units';
@@ -256,6 +256,19 @@ export function actionMove(a: CardAction): { actionId: string; range: number | u
     // no choice in it - unlike the Ojs200's optional Maneuver.
     airborne: isAirborneAction(a),
   };
+}
+
+// SHOCK ATTACK X (冲锋X; Supplementary Rules 1.04, 3.8): "Before performing
+// this Action, may move X grids." How far the walk before the attack may go,
+// as the Match Centre's attack door offers it (matchhud.ts openAttackPick):
+// the keyword as the Stance and the Opportunity grant it (the Spear, the
+// Lance and the Halberd gain it in Offensive Stance), for a Mech with its
+// Chassis, and not for a unit that is Immobilized (6.3.2). 0 for none.
+export function shockWalk(state: GameState, t: Token, a: CardAction): number {
+  const opp0 = state.script?.opp;
+  const opp = opp0?.uid === t.uid ? opp0 : null;
+  const x = shockAttackOf(grantAdjusted(stationaryAdjusted(a, opp), t, opp));
+  return x > 0 && shockMoveAllowed(t) && !immobilizedStop(t, null) ? x : 0;
 }
 
 // One leg of a route: from the end of the route drawn so far to a Grid, by the
