@@ -47,13 +47,15 @@ check('every Grid listed is on the board, and none twice',
 const flier = { ...mire, aerial: true };
 check('a unit in the air sees past the wall', find(look(flier), 5, 1) !== null, true);
 
-// The page: the control on the board's rail, drawn for the unit whose card is
-// open, on a layer of its own that no pick or highlight clears.
+// The page: the control on the board's rail, drawn for the unit the player
+// picked and that one only (OTTO, 2026-10-05: following whichever unit acted
+// drew one sight after another over the board on the other squad's turn), on
+// a layer of its own that no pick or highlight clears.
 const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
 const board = readFileSync(new URL('../src/board.ts', import.meta.url), 'utf8');
-check('THE PAGE: the Line of Sight button sits beside Zones; on, the board draws what the card\'s unit (or the active unit) can see',
+check('THE PAGE: the Line of Sight button sits beside Zones; on, the board draws what the picked unit can see, and with none picked the player\'s own unit whose turn it is, never the other squad\'s as it acts',
   [/<button id="btn-los"[^>]*aria-pressed="false">Line of Sight<\/button>/.test(hud), /board\.showSight\(eyes \? turn\.sightOf\(ctx\.data, s, eyes\) : null\)/.test(hud),
-    /inspectUid \?\? ensureScript\(s\)\.opp\?\.uid/.test(hud)], [true, true, true]);
+    /const sightUid = inspectUid \?\? \(actor && mine\(ctx, actor\.side\) \? actor\.uid : null\);/.test(hud)], [true, true, true]);
 check('and the sight has its own layer, under the highlights, which clearHighlights does not touch',
   [/this\.gWorld\.appendChild\(this\.gSight\);\s*\n\s*this\.gWorld\.appendChild\(this\.gHighlight\);/.test(board), /clearHighlights\(\): void \{\s*\n\s*this\.gHighlight\.replaceChildren\(\);\s*\n\s*this\.gPick\.replaceChildren\(\);\s*\n\s*\}/.test(board)],
   [true, true]);

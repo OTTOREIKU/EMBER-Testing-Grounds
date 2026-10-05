@@ -17,7 +17,7 @@ const start = src.indexOf('let GRIDS');
 if (start < 0) throw new Error('could not locate the sight rules in rules.ts');
 const tmp = new URL('./_protection.slice.ts', import.meta.url);
 writeFileSync(tmp, FOOTPRINT + 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + src.slice(start));
-const { inArc, losBetween, losNote, protectionFor, rangeBetween } = await import(tmp.href);
+const { inArc, losBetween, losNote, obstructorsOf, protectionFor, rangeBetween } = await import(tmp.href);
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -264,7 +264,7 @@ for (const [file, callee] of [['combat.ts', 'protectionFor'], ['main.ts', 'prote
 
   const low = protectionFor(a, d, firing, [crate('c', [[1, 6], [1, 7], [1, 8]])], [], []);
   check('but a 1-inch Container in the same line pays nothing', low.white, 0);
-  check('and does not claim to', /Terrain Protection/.test(low.note), false);
+  check('and does not claim to', /Terrain Protection \(obstructed/.test(low.note) || low.white > 0, false);
 
   // It still OBSTRUCTS: the rule says 1-inch terrain can obstruct and simply
   // grants nothing for it, so the geometry must be unchanged and only the
@@ -278,6 +278,23 @@ for (const [file, callee] of [['combat.ts', 'protectionFor'], ['main.ts', 'prote
   const both = protectionFor(a, d, firing,
     [crate('c', [[1, 4], [1, 5]]), wall('w', [[1, 6], [1, 7], [1, 8]])], [], []);
   check('and a real wall behind it is unaffected', both.white, 2);
+
+  // OTTO again (2026-10-05): "it's saying it's obstructed" beside a 1-inch box,
+  // and "obstructed on a unit when they werent near something". The sight note
+  // now names what is in the line, and the zero says why the box pays nothing.
+  const box = crate('c', [[1, 6], [1, 7], [1, 8]]);
+  const aside = crate('x', [[8, 6]]);
+  check('WHAT IS IN THE WAY: the crate in the line is named, the one off to the side is not',
+    obstructorsOf(a, d, [box, aside], []).terrain.map((p) => p.id), ['c']);
+  check('the sight note names it by height and Grid, and claims no dice',
+    [losNote(a, d, firing, [box, aside], [], []).endsWith(' · ⚠ LOS obstructed by 1" terrain (A3)'), /White/.test(losNote(a, d, firing, [box, aside], [], []))], [true, false]);
+  check('and the Protection\'s zero says why: under 2 inches tall (4.5)',
+    low.note, 'Obstructed, but the terrain in the way is under 2" or touches the attacker, so there is no Terrain Protection (4.5, FAQ A1)');
+  const mid = unit(1, 7, { uid: 9, side: 's2', size: 1, label: 'Raven' });
+  check('a unit in the line is named too, by name',
+    [obstructorsOf(a, d, [], [a, d, mid]).units.map((t) => t.label), / by Raven$/.test(losNote(a, d, firing, [], [a, d, mid], []))], [['Raven'], true]);
+  check('and with nothing in the way the line is clear and nothing is named',
+    [losNote(a, d, firing, [aside], [], []).endsWith('LOS clear ✓'), obstructorsOf(a, d, [aside], []).terrain.length], [true, 0]);
 }
 
 // ---------- RANGE IS A REFUSAL ONLINE AND A WARNING AT THE TABLE ----------

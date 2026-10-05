@@ -1138,6 +1138,32 @@ export function firingSightNow(a: Token, b: Token, terrain: TerrainPiece[], toke
   return walkLinesNow(a, b, terrain, tokens, grids);
 }
 
+// WHAT IS IN THE WAY (OTTO, 2026-10-05: "showing obstructed on a unit when
+// they werent near something"): each piece of terrain and each unit that one
+// of the lines between the two bases crosses (4.2.4: an edge or a corner
+// counts), each asked on the very lines the sight is judged on. A unit in the
+// air is in nobody's way, and nothing is in the way of a line to or from one.
+export function obstructorsOf(a: Token, b: Token, terrain: TerrainPiece[], tokens: Token[]): { terrain: TerrainPiece[]; units: Token[] } {
+  if ((a.aerial && !a.mine) || (b.aerial && !b.mine)) return { terrain: [], units: [] };
+  return {
+    terrain: terrain.filter((p) => walkLinesNow(a, b, [p], [], null) !== 'clear'),
+    units: tokens.filter((t) => t.uid !== a.uid && t.uid !== b.uid && !t.aerial && walkLinesNow(a, b, [], [t], null) !== 'clear'),
+  };
+}
+
+// The same, said: the terrain by its height and the Grid it stands in, the
+// units by name, at most four.
+function obstructorNames(a: Token, b: Token, terrain: TerrainPiece[], tokens: Token[]): string {
+  const { terrain: pieces, units } = obstructorsOf(a, b, terrain, tokens);
+  const at = (p: TerrainPiece): string => {
+    const c = p.subCells[0];
+    return c ? ` (${String.fromCharCode(65 + Math.floor(c.col / 3))}${Math.floor(c.row / 3) + 1})` : '';
+  };
+  const names = [...pieces.map((p) => `${p.height}" terrain${at(p)}`), ...units.map((t) => t.label)];
+  if (!names.length) return '';
+  return names.length > 4 ? `${names.slice(0, 4).join(', ')} and ${names.length - 4} more` : names.join(', ');
+}
+
 // `first` stops the walk at the first line that is sight, for a reader that
 // asks only whether there is one (sightBetween): the answer is then 'clear'
 // for "some line is", and says nothing of what obstructs the others.
@@ -1447,15 +1473,17 @@ export function losNote(
     // Terrain and smoke on the same lines: any one line clear of both is sight
     // (4.2.4, 4.16; audit Phase 4, G1/G3).
     const sight = firingSight(attacker, defender, terrain, tokens, smoke);
-    // Obstruction is only the trigger, so this says what pays and not that the
-    // defender is paid: a medium unit in the way obstructs and pays nothing
-    // (4.5.3), and so does 1-inch terrain (4.5.2; Supplementary Rules 1.04,
-    // 1.1.1). The number is protectionFor's to say. This read "the defender may
-    // claim +2 White" until then, which a 1-inch Container never pays.
+    // Obstruction is only the trigger, so this says WHAT is in the way and not
+    // that the defender is paid: a medium unit in the way obstructs and pays
+    // nothing (4.5.3), and so does 1-inch terrain (4.5.2; Supplementary Rules
+    // 1.04, 1.1.1). The number is protectionFor's to say. This read "the
+    // defender may claim +2 White" once, and then named what WOULD pay, both
+    // read as the defender being paid for a 1-inch Container (OTTO, 2026-10-05).
+    const by = sight === 'obstructed' ? obstructorNames(attacker, defender, terrain, tokens) : '';
     bits.push(sight === 'smoked'
       ? '✕ no line of sight clear of the Smoke Screen (4.16)'
       : sight === 'clear' ? 'LOS clear ✓'
-        : sight === 'obstructed' ? '⚠ obstructed: 2" or taller terrain, or a Large unit, in the line gives the defender +2 White (4.5)'
+        : sight === 'obstructed' ? `⚠ LOS obstructed${by ? ` by ${by}` : ''}`
           : '✕ LOS blocked (3" terrain)');
   }
   // EVERY Melee Action needs line of sight to its target: "Melee Actions
@@ -1550,7 +1578,14 @@ export function protectionFor(
   const idle = unitsOnly === 'clear' && losBetween(attacker, defender, [], tokens.filter((t) => !standsAsTerrain(t))) !== 'clear';
   const IDLE = 'the unit in the way is not Large, so there is no Unit Protection (4.5.3)';
   if (losBetween(attacker, defender, cover, protectors) === 'clear') {
-    return { white: 0, note: idle ? `Obstructed, but ${IDLE}` : '' };
+    // And terrain that is in the way and pays nothing says so, as a unit that
+    // is not Large does: a 1-inch Container, or a piece the attacker stands
+    // against (4.5, FAQ A1). Without it the line above read "obstructed" and
+    // the dice beside it said nothing (OTTO, 2026-10-05).
+    const low = losBetween(attacker, defender, terrain.filter((p) => !cover.includes(p)), []) !== 'clear';
+    const LOW = 'the terrain in the way is under 2" or touches the attacker, so there is no Terrain Protection (4.5, FAQ A1)';
+    const why = [low ? LOW : '', idle ? IDLE : ''].filter(Boolean).join(', and ');
+    return { white: 0, note: why ? `Obstructed, but ${why}` : '' };
   }
   const terrainOnly = losBetween(attacker, defender, cover, []);
   let white = 0;

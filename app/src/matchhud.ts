@@ -1164,9 +1164,16 @@ function renderBoard(ctx: HudCtx): void {
   board.renderSmoke(s.smoke ?? []);
   board.renderMarkers(s.markers ?? []);
   board.setSelected(ensureScript(s).opp?.uid ?? null);
-  // What one unit can see, with the Line of Sight control on: the unit whose
-  // card is open, or the one whose turn it is.
-  const eyes = sightOn ? s.tokens.find((x) => x.uid === (inspectUid ?? ensureScript(s).opp?.uid) && x.deployed !== false) : undefined;
+  // What one unit can see, with the Line of Sight control on: the unit the
+  // player picked (its card open), and that one only; with none picked, the
+  // unit whose turn it is if it is the player's own. It used to follow
+  // whichever unit was acting, so the other squad's turn drew one sight after
+  // another over the board (OTTO, 2026-10-05: "if you select a mech/unit ...
+  // it should only show LOS for that unit").
+  const acting = ensureScript(s).opp?.uid;
+  const actor = acting !== undefined ? s.tokens.find((x) => x.uid === acting) : undefined;
+  const sightUid = inspectUid ?? (actor && mine(ctx, actor.side) ? actor.uid : null);
+  const eyes = sightOn && sightUid !== null ? s.tokens.find((x) => x.uid === sightUid && x.deployed !== false) : undefined;
   board.showSight(eyes ? turn.sightOf(ctx.data, s, eyes) : null);
   const lb = document.getElementById('btn-los');
   if (lb) {
@@ -5773,7 +5780,7 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     // The Line of Sight control rides it too (OTTO's playtest, 2026-10-03:
     // "maybe above or next to the zone button").
     zc.innerHTML = '<button id="btn-zones" title="Shows or hides the tactical zone and deployment overlay drawn on the board." aria-pressed="true">Zones</button>'
-      + '<button id="btn-los" title="Shows what the unit whose card is open can see, or failing one the unit whose turn it is: the Grids in its Forward Arc in the stronger tint, the Grids it would have to turn to see in the fainter one, and a Grid seen through cover lighter than one seen clear." aria-pressed="false">Line of Sight</button>'
+      + '<button id="btn-los" title="Shows what the unit you picked can see (click a unit to open its card), and that unit only; with none picked, your unit whose turn it is: the Grids in its Forward Arc in the stronger tint, the Grids it would have to turn to see in the fainter one, and a Grid seen through cover lighter than one seen clear." aria-pressed="false">Line of Sight</button>'
       + '<button id="btn-envs" title="Lays Environment Cards on the battlefield. Both players place them alternately while setting up (5.4.1)." hidden>Environments</button>';
     host.querySelector('#mc-board')!.appendChild(zc);
     zc.querySelector('#btn-zones')!.addEventListener('click', () => hudRef?.toggleZones());

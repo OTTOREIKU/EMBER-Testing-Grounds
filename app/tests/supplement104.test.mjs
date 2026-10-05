@@ -181,8 +181,10 @@ console.log('\n1.1.1 Terrain');
   check('a 3-inch one hides the target', [U.Ru.losBetween(observer, target, high, s.tokens), guides(high)], ['blocked', []]);
   // The observer's own shot crosses the wall.
   const note = U.Ru.losNote(observer, target, shot, low, s.tokens, []);
-  check('the sight note says what pays, not that the defender is paid',
-    [/obstructed: 2" or taller terrain, or a Large unit/.test(note), /may claim/.test(note)], [true, false]);
+  // (It names what is in the line, OTTO 2026-10-05; what that pays is the
+  // Protection's line, protectionFor.)
+  check('the sight note says what is in the way, not that the defender is paid',
+    [/LOS obstructed by 2" terrain \([A-L]\d+\)/.test(note), /may claim|\+2 White/.test(note)], [true, false]);
 }
 
 // ---------- 1.3 Mines ----------
