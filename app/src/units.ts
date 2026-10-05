@@ -3353,6 +3353,28 @@ export function isElectronicSupport(a: CardAction): boolean {
 // Mech-only aura is untouched by it.
 // `anywhere`: every aura that WOULD reach it with its source in Range, for a
 // table with no board, which judges the Range itself (the pad).
+// The aura rules a card prints, in the order it prints them, read off the card
+// once: the cards never change in play, and aurasOn is asked of every unit on
+// every table a seat thinks about.
+type AuraRule = { type?: string; effectTypes?: string[]; targetSide?: string; targetUnitType?: string; value?: number; label?: string };
+const AURA_RULES = new WeakMap<Card, { a: CardAction; eff: AuraRule }[]>();
+function auraRulesOf(card: Card): { a: CardAction; eff: AuraRule }[] {
+  let rules = AURA_RULES.get(card);
+  if (!rules) {
+    rules = [];
+    for (const a of card.actions ?? []) {
+      for (const g of a.gameRules ?? []) {
+        for (const e of g.effects ?? []) {
+          const eff = e as AuraRule;
+          if (eff.type === 'aura' && eff.effectTypes?.length) rules.push({ a, eff });
+        }
+      }
+    }
+    AURA_RULES.set(card, rules);
+  }
+  return rules;
+}
+
 export function aurasOn(data: GameData, tokens: Token[], t: Token, opts: { anywhere?: boolean } = {}): AuraSource[] {
   const out: AuraSource[] = [];
   for (const src of tokens) {
@@ -3364,34 +3386,25 @@ export function aurasOn(data: GameData, tokens: Token[], t: Token, opts: { anywh
     if (src.kind === 'mech' && src.stance === 'shutdown') continue;
     for (const { slot, card } of tokenCards(data, src)) {
       if ((src.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
-      for (const a of card.actions ?? []) {
-        for (const g of a.gameRules ?? []) {
-          for (const e of g.effects ?? []) {
-            const eff = e as {
-              type?: string; effectTypes?: string[]; targetSide?: string;
-              targetUnitType?: string; value?: number; label?: string;
-            };
-            if (eff.type !== 'aura' || !eff.effectTypes?.length) continue;
-            const allies = eff.targetSide !== 'enemy';
-            if (allies !== (src.side === t.side)) continue;
-            const want = eff.targetUnitType;
-            if (want && want !== 'unit' && want !== t.kind) continue;
-            // With no board the table's record stands in for the Range (the
-            // block below); the source is always inside its own.
-            const rec = src.auraReaches;
-            if (!opts.anywhere && (rec
-              ? src.uid !== t.uid && !(rec[a.id] ?? []).includes(t.uid)
-              : rangeBetween(src, t).range > auraReach(data, src, a))) continue;
-            out.push({
-              kinds: [...eff.effectTypes],
-              value: eff.value ?? 0,
-              firingOnly: /Firing Actions?\b/i.test(a.description?.en ?? ''),
-              label: a.name?.en || a.name?.zh || eff.label || a.id,
-              actionId: a.id,
-              source: src,
-            });
-          }
-        }
+      for (const { a, eff } of auraRulesOf(card)) {
+        const allies = eff.targetSide !== 'enemy';
+        if (allies !== (src.side === t.side)) continue;
+        const want = eff.targetUnitType;
+        if (want && want !== 'unit' && want !== t.kind) continue;
+        // With no board the table's record stands in for the Range (the
+        // block below); the source is always inside its own.
+        const rec = src.auraReaches;
+        if (!opts.anywhere && (rec
+          ? src.uid !== t.uid && !(rec[a.id] ?? []).includes(t.uid)
+          : rangeBetween(src, t).range > auraReach(data, src, a))) continue;
+        out.push({
+          kinds: [...(eff.effectTypes ?? [])],
+          value: eff.value ?? 0,
+          firingOnly: /Firing Actions?\b/i.test(a.description?.en ?? ''),
+          label: a.name?.en || a.name?.zh || eff.label || a.id,
+          actionId: a.id,
+          source: src,
+        });
       }
     }
   }

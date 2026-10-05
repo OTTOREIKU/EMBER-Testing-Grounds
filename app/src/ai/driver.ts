@@ -45,7 +45,9 @@ export interface Host {
   // has ended on the player's board, the dice have landed, the combat window
   // has shown the step. A host that leaves both out (the test suite's) is
   // answered at once, so a game there runs as fast as the engine does.
-  pace?(decision: Decision, option: Option): Promise<void>;
+  // `think` is how long the answer took to choose (ms), already spent of the
+  // moment: a slow machine's thought is not waited out a second time.
+  pace?(decision: Decision, option: Option, think?: number): Promise<void>;
   settled?(decision: Decision, option: Option): Promise<void>;
   // A pause in the middle of a decision: a page hands its thread to whatever
   // else is waiting on it (a frame to draw, a click) and comes back. A policy
@@ -458,7 +460,7 @@ export class Driver {
     // after it. Nothing is sent while either is pending.
     let chosen = option;
     if (this.host.pace) {
-      await this.host.pace(d, option);
+      await this.host.pace(d, option, think);
       // The table may have moved on meanwhile, so the question is asked again
       // and the answer is sent only if it is the same question and the answer
       // is still on offer, AS IT IS OFFERED NOW: an answer's commands are made
