@@ -648,7 +648,13 @@ let duelGen = 0;
 // snapped to its settled state meant the animation was lost for good: a
 // player whose tab was in the background during a resolution came back to a
 // finished strip that would never replay.
-export function playDuel(wrap: HTMLElement): boolean {
+// Answers how long the strip runs, in ms, or 0 where it was put straight down
+// settled. `from` is how far into it to begin: a window drawn again while its
+// strip is still playing takes it up where it had got to (OTTO, 2026-10-05,
+// watching two computers: the attack window "should play out as if it was a
+// player vs the CPU or two players"), and what had already happened is shown
+// at once.
+export function playDuel(wrap: HTMLElement, from = 0): number {
   const gen = ++duelGen;
   const cols = [...wrap.querySelectorAll<HTMLElement>('.duel-col')];
   const spares = [...wrap.querySelectorAll<HTMLElement>('.duel-spare .duel-icon')];
@@ -659,18 +665,20 @@ export function playDuel(wrap: HTMLElement): boolean {
   };
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.hidden) {
     done();
-    return false;
+    return 0;
   }
 
   wrap.classList.remove('duel-done');
   cols.forEach((c) => c.classList.remove('shown', 'resolved'));
   spares.forEach((s) => s.classList.remove('shown'));
 
-  const step = (fn: () => void, at: number) =>
+  const step = (fn: () => void, at: number) => {
+    if (at <= from) { fn(); return; }
     window.setTimeout(() => {
       if (gen !== duelGen || !wrap.isConnected) return;
       fn();
-    }, at);
+    }, at - from);
+  };
 
   let t = 60;
   cols.forEach((col) => { step(() => col.classList.add('shown'), t); t += 90; });
@@ -678,7 +686,7 @@ export function playDuel(wrap: HTMLElement): boolean {
   cols.forEach((col) => { step(() => col.classList.add('resolved'), t); t += 220; });
   spares.forEach((s) => { step(() => s.classList.add('shown'), t); t += 120; });
   step(() => wrap.classList.add('duel-done'), t + 120);
-  return true;
+  return t + 120;
 }
 
 // Find the strip inside markup that was just pasted in and wire its Replay
@@ -773,6 +781,10 @@ export class DiceSpinner {
   // the timer meant to take it off again. Leaving it behind is what left OTTO
   // watching a hand rattle on frozen faces.
   private els: HTMLElement[] = [];
+  // The spin in hand: which hand it throws (`tag`), which of its dice, and how
+  // many of its ticks have run, so a window drawn again in the middle of it can
+  // take it up where it had got to (AttackHelper.showMirror).
+  private hand: { tag: string; only: number[] | null; ticks: number } | null = null;
 
   constructor(dice: DiceData) {
     this.dice = dice;
@@ -782,11 +794,17 @@ export class DiceSpinner {
     return this.timer !== undefined;
   }
 
+  // The spin still running, or null.
+  get inHand(): { tag: string; only: number[] | null; ticks: number } | null {
+    return this.timer !== undefined && this.hand ? { ...this.hand } : null;
+  }
+
   stop(): void {
     if (this.timer) window.clearInterval(this.timer);
     this.timer = undefined;
     for (const el of this.els) el.classList.remove('rolling');
     this.els = [];
+    this.hand = null;
   }
 
   // `only` is the indices being thrown, or null for the whole hand. A REROLL
@@ -797,7 +815,9 @@ export class DiceSpinner {
   // The class goes on the DICE rather than the row so a partial throw is
   // possible at all. The row form still exists in the stylesheet because the
   // Black Die stage shakes a whole stage.
-  spin(container: HTMLElement, roll: { color: DieColor; face: number }[], only?: number[] | null): void {
+  // `tag` names the hand for a window that may take the spin up again, and
+  // `from` is how many ticks of it have already run.
+  spin(container: HTMLElement, roll: { color: DieColor; face: number }[], only?: number[] | null, tag = '', from = 0): void {
     this.stop();
     const dice = [...container.querySelectorAll<HTMLElement>('.die')];
     if (!dice.length) return;
@@ -805,9 +825,12 @@ export class DiceSpinner {
     if (!which.length) return;
     this.els = which.map((i) => dice[i]);
     for (const el of this.els) el.classList.add('rolling');
-    let ticks = 0;
+    let ticks = Math.max(0, Math.min(7, from));
+    const hand = { tag, only: only ?? null, ticks };
+    this.hand = hand;
     this.timer = window.setInterval(() => {
       ticks++;
+      hand.ticks = ticks;
       const done = ticks >= 8;
       for (const i of which) {
         const d = roll[i];
@@ -1203,12 +1226,20 @@ export class AttackHelper {
   // WHICH dice, by index into the roll. null means the whole hand, which is a
   // fresh roll; a list means a reroll, and only those were thrown again.
   private spinOnly: number[] | null = null;
+  // How far into it the spin already is: a hand still rolling when a mirror is
+  // drawn again goes on from there (showMirror). And the spin drawn but not
+  // yet begun (it starts once its dice are in the document).
+  private spinFrom = 0;
+  private spinPending: { tag: string; only: number[] | null; ticks: number } | null = null;
   // The duel markup this window last ANIMATED. The resolution step is built
   // again for reasons that have nothing to do with the offsetting (a log line
   // arriving on a mirror is enough), and replaying the strip mid-flight makes
   // the same icons resolve twice on screen. Cleared at every sequence boundary,
   // so a second resolution that happens to look identical still plays.
   private duelPlayed = '';
+  // When the strip last began to play and how long it runs, so a window drawn
+  // again while it plays takes it up where it had got to (playDuel `from`).
+  private duelPlaying: { at: number; ms: number } | null = null;
 
   constructor(
     data: GameData,
@@ -1356,6 +1387,9 @@ export class AttackHelper {
     const defense = this.mirrorFaces(view.defense, same ? had!.defenseRoll : null);
     const board = this.readBoard(attacker, defender, action);
     const explosion = view.mode === 'explosion';
+    // A HAND STILL ROLLING when the window is drawn again (below), or about to
+    // begin. Read before the stop that every drawing begins with.
+    const rolling = same ? this.spinner.inHand ?? this.spinPending : null;
     this.stopBlack();
     if (!same) this.duelPlayed = '';
     this.mirroring = view;
@@ -1454,6 +1488,19 @@ export class AttackHelper {
     // rather than as the whole hand being thrown again.
     if (defense.rolled) { this.spinFor = 'defense'; this.spinOnly = defense.changed; }
     else if (attack.rolled) { this.spinFor = 'attack'; this.spinOnly = attack.changed; }
+    // ... AND A HAND THAT IS STILL ROLLING GOES ON ROLLING. syncCombatMirror
+    // calls this on every render of the page, and a page renders on every
+    // command that lands, so the dice of a roll that had only just begun were
+    // rebuilt on their faces by the next command (the roll's own noteRoll, a
+    // moment later), and a watcher saw them appear rather than roll (OTTO,
+    // 2026-10-05, watching two computers: "the attackers die instantly appears
+    // (no animation for roll)"). The same faces drawn again take the spin up
+    // where it had got to, as the board takes up a walk (board.ts resumeWalk).
+    else if (rolling && (rolling.tag === 'attack' || rolling.tag === 'defense')) {
+      this.spinFor = rolling.tag;
+      this.spinOnly = rolling.only;
+      this.spinFrom = rolling.ticks;
+    }
     this.render();
   }
 
@@ -1530,9 +1577,11 @@ export class AttackHelper {
     // Through stopSpin, or the row keeps the shake it was given. showMirror
     // calls this on every published view, so a defender who rolled and then
     // received one more frame -- the attacker's Focus prompt, say -- had their
-    // dice stopped mid-spin and left rattling.
+    // dice stopped mid-spin and left rattling. (A mirror drawn again takes a
+    // hand still rolling up again on its new dice: showMirror.)
     this.spinner.stop();
     this.spinFor = null;
+    this.spinPending = null;
   }
 
 
@@ -5087,9 +5136,21 @@ export class AttackHelper {
     // Runs after this element is in the document, so the shake is visible.
     if (this.spinFor === which) {
       const only = this.spinOnly;
+      const from = this.spinFrom;
       this.spinFor = null;
       this.spinOnly = null;
-      if (!this.instant) window.setTimeout(() => this.spinner.spin(div, roll, only), 0);
+      this.spinFrom = 0;
+      if (!this.instant) {
+        const pending = { tag: which, only, ticks: from };
+        this.spinPending = pending;
+        window.setTimeout(() => {
+          // A drawing made since took this spin over (showMirror): the dice on
+          // screen are its own, and these are gone.
+          if (this.spinPending !== pending) return;
+          this.spinPending = null;
+          this.spinner.spin(div, roll, only, which, from);
+        }, 0);
+      }
       // One column: the dice land below the fold on a phone, so the hand
       // that just rolled is brought into view.
       if (this.root.clientWidth < 560) window.setTimeout(() => div.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
@@ -5781,7 +5842,15 @@ export class AttackHelper {
     // attack resolved came back to a finished strip that could never replay.
     // Left unrecorded, the next render plays it once they are looking.
     if (duelEl && key !== this.duelPlayed && !this.instant) {
-      window.setTimeout(() => { if (playDuel(duelEl)) this.duelPlayed = key; }, 0);
+      window.setTimeout(() => {
+        const ms = playDuel(duelEl);
+        if (ms) { this.duelPlayed = key; this.duelPlaying = { at: performance.now(), ms }; }
+      }, 0);
+    } else if (duelEl && key === this.duelPlayed && !this.instant && this.duelPlaying && performance.now() - this.duelPlaying.at < this.duelPlaying.ms) {
+      // Drawn again while the strip is still playing: a mirror is drawn on every
+      // render of the page, so the strip goes on where it had got to.
+      const from = performance.now() - this.duelPlaying.at;
+      window.setTimeout(() => { playDuel(duelEl, from); }, 0);
     } else {
       this.duelPlayed = key;
     }
@@ -6615,6 +6684,9 @@ export class ElectronicHelper {
   private pending: { init?: number[] | null; resp?: number[] | null } = {};
   // The strip that has already animated, so a redraw does not resolve it twice.
   private duelPlayed = '';
+  // When the strip last began to play and how long it runs, so a window drawn
+  // again while it plays takes it up where it had got to (playDuel `from`).
+  private duelPlaying: { at: number; ms: number } | null = null;
   // SHARED MODE. Set when this window is drawing a Counter-roll that lives in
   // the game state rather than one it is running itself, which is how the Match
   // Centre uses it: the exchange is on the wire, both clients draw the same
@@ -7011,7 +7083,16 @@ export class ElectronicHelper {
       if (who in this.pending) {
         const only = this.pending[who];
         delete this.pending[who];
-        if (!this.instant) window.setTimeout(() => this.spins[who].spin(row, roll, only), 0);
+        if (!this.instant) window.setTimeout(() => this.spins[who].spin(row, roll, only, who), 0);
+      } else {
+        // Drawn again while this hand is still rolling (the page draws the
+        // window on every render): the new dice take the spin up where it had
+        // got to, as the attack window's do (AttackHelper.showMirror).
+        const rolling = this.spins[who].inHand;
+        if (rolling && !this.instant) {
+          this.spins[who].stop();
+          window.setTimeout(() => this.spins[who].spin(row, roll, rolling.only, who, rolling.ticks), 0);
+        }
       }
       const n = this.tally(roll, this.offensive(who));
       const sum = document.createElement('p');
@@ -7303,7 +7384,15 @@ export class ElectronicHelper {
       // lose the animation for anyone who was looking elsewhere.
       const key = duel?.innerHTML ?? '';
       if (duel && key !== this.duelPlayed && !this.instant) {
-        window.setTimeout(() => { if (playDuel(duel)) this.duelPlayed = key; }, 0);
+        window.setTimeout(() => {
+          const ms = playDuel(duel);
+          if (ms) { this.duelPlayed = key; this.duelPlaying = { at: performance.now(), ms }; }
+        }, 0);
+      } else if (duel && key === this.duelPlayed && !this.instant && this.duelPlaying && performance.now() - this.duelPlaying.at < this.duelPlaying.ms) {
+        // Drawn again while the strip is still playing: it goes on where it
+        // had got to, as the attack's does.
+        const from = performance.now() - this.duelPlaying.at;
+        window.setTimeout(() => { playDuel(duel, from); }, 0);
       } else {
         this.duelPlayed = key;
       }

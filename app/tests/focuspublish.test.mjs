@@ -152,16 +152,18 @@ check('a hidden tab skips the animation and settles instead',
 // cannot restart it mid-flight, and recording one that merely snapped to its
 // settled state lost the animation for good: a player whose tab was in the
 // background during a resolution came back to a finished strip that would never
-// replay. That is why the bail-out returns false rather than nothing.
-check('and reports that it did not animate', /document\.hidden\)[\s\S]{0,60}?return false;/.test(src), true);
-check('while the animated path reports that it did', /step\(\(\) => wrap\.classList\.add\('duel-done'\)[\s\S]{0,40}?return true;/.test(src), true);
+// replay. That is why the bail-out returns 0 (no time played) rather than
+// nothing. Since 2026-10-05 the animated path answers how long it runs, so a
+// mirror drawn again mid-flight can take the strip up where it had got to.
+check('and reports that it did not animate', /document\.hidden\)[\s\S]{0,60}?return 0;/.test(src), true);
+check('while the animated path reports that it did, and for how long', /step\(\(\) => wrap\.classList\.add\('duel-done'\), t \+ 120\);\n\s*return t \+ 120;/.test(src), true);
 // requestAnimationFrame does not fire on a page that is not compositing, which
 // is why both callers kick the strip with a timeout instead.
-check('the attacker kicks it with a timeout', /window\.setTimeout\(\(\) => \{ if \(playDuel\(duelEl\)\)/.test(src), true);
+check('the attacker kicks it with a timeout', /window\.setTimeout\(\(\) => \{\n\s*const ms = playDuel\(duelEl\);/.test(src), true);
 // ONE kick per contest, each in the one renderer for it, so a mirror gets the
 // animation by being the same code rather than by a second implementation.
 check('and there is exactly one kick per contest',
-  (src.match(/setTimeout\(\(\) => \{ if \(playDuel\(/g) ?? []).length, 2);
+  (src.match(/setTimeout\(\(\) => \{\n\s*const ms = playDuel\(/g) ?? []).length, 2);
 // Both contests do the bookkeeping the SAME way: record inside the branch that
 // saw playDuel return true, and bank the key when there was nothing to play.
 // Two assignments each. The Counter-roll panel redraws on a Provoke answer and
@@ -176,7 +178,12 @@ check('and both key it on the markup, so a changed strip replays',
 // than spelling: whatever the caller looks like, `duelPlayed` must be assigned
 // inside the branch that saw playDuel return true.
 check('and only records a strip once it really animated',
-  /if \(playDuel\(duelEl\)\) this\.duelPlayed = key;/.test(src), true);
+  /const ms = playDuel\(duelEl\);\n\s*if \(ms\) \{ this\.duelPlayed = key; this\.duelPlaying = \{ at: performance\.now\(\), ms \}; \}/.test(src), true);
+// A strip drawn again while it is still playing is taken up where it had got to
+// (OTTO, 2026-10-05: the attack window should "play out as if it was a player vs
+// the CPU"), in both contests, and never restarted from the beginning.
+check('and a strip drawn again mid-flight goes on from where it had got to, in both contests',
+  (src.match(/const from = performance\.now\(\) - this\.duelPlaying\.at;\n\s*window\.setTimeout\(\(\) => \{ playDuel\(duel(El)?, from\); \}, 0\);/g) ?? []).length, 2);
 // The resolution step is rebuilt whenever ANY part of the view changes, and a
 // log line is enough, so the replay is keyed on the STRIP rather than on the
 // rebuild: restarting it mid-flight makes the same icons resolve twice.

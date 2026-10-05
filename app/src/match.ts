@@ -2642,8 +2642,11 @@ function syncCombatMirror(): boolean {
   // seat. It reads the same as the old "am I the target's side" test at two
   // seats and keeps reading correctly at four, where "not me" stops implying
   // "the other player" (COMBAT-PANEL-REDESIGN.md). A viewer with no seat, which
-  // is the dev harness and anyone watching, comes out a spectator.
-  attackHelper.showMirror(view, at, df, action, combatRoleFor(mySeat(), { attacker: at, defender: df }));
+  // is the dev harness and anyone watching, comes out a spectator; and so does
+  // the player of a game two computers play, whose seat is a computer's: the
+  // window says "Mire is rolling the Defense Dice", never "You are".
+  const watching = !!solo?.spec.watch && !soloTaken;
+  attackHelper.showMirror(view, at, df, action, watching ? 'spectator' : combatRoleFor(mySeat(), { attacker: at, defender: df }));
   return true;
 }
 

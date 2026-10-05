@@ -237,14 +237,37 @@ const spinning = (root) => shakingDice(root).length > 0;
 
   // Re-showing the SAME faces must not re-roll them on screen. This is what
   // lets a mirror repaint for an unrelated reason (a log line arriving) without
-  // the dice looking as though they were rolled a second time.
+  // the dice looking as though they were rolled a second time. Asked once the
+  // first roll has landed (8 ticks of 55 ms): while it is still rolling, the
+  // repaint carries it on (below).
   const again = watcher(b.all, []);
   again.h.showMirror(rolled, b.atk, b.def, firing, 'defender');
   await settle();
   check('the first sight of a roll is a roll', spinning(again.root), true);
+  await new Promise((r) => { setTimeout(r, 600); });
   again.h.showMirror(rolled, b.atk, b.def, firing, 'defender');
   await settle();
   check('and showing the same faces again does not roll them twice', spinning(again.root), false);
+
+  // A REPAINT IN THE MIDDLE OF A ROLL CARRIES IT ON (OTTO, 2026-10-05, watching
+  // two computers: "the attackers die instantly appears (no animation for
+  // roll)"). syncCombatMirror draws the mirror on every render of the page, and
+  // the roll's own noteRoll lands a moment after the faces: drawn afresh, the
+  // dice were put down on their faces at once. The new dice take the spin up
+  // where it had got to, and it still ends on time.
+  const mid = watcher(b.all, []);
+  mid.h.showMirror(atStep('attack'), b.atk, b.def, firing, 'defender');
+  mid.h.showMirror(rolled, b.atk, b.def, firing, 'defender');
+  await settle();
+  const first = shakingDice(mid.root);
+  await new Promise((r) => { setTimeout(r, 120); });
+  mid.h.showMirror(rolled, b.atk, b.def, firing, 'defender');
+  await settle();
+  const carried = shakingDice(mid.root).filter((d) => !first.includes(d));
+  check('a repaint mid-roll lets go of the old dice and rolls the new ones on',
+    [first.length > 0, first.filter((d) => d._cls?.has('rolling')).length, carried.length === first.length], [true, 0, true]);
+  await new Promise((r) => { setTimeout(r, 450); });
+  check('and the carried roll ends when the first would have: it is not begun again', shakingDice(mid.root).length, 0);
 }
 
 // ---------- WIN 2: the whole log ----------
@@ -593,7 +616,9 @@ const spinning = (root) => shakingDice(root).length > 0;
 
   // A frame that changes nothing shakes nothing, or every repaint would look
   // like a roll. This is the same test the live-die ring's `same` short-circuit
-  // rests on, asserted from the animation side.
+  // rests on, asserted from the animation side, once the reroll has landed
+  // (a repaint while it is still rolling carries it on: the block above).
+  await new Promise((r) => { setTimeout(r, 600); });
   w.h.showMirror({ ...base, defense: moved }, b3.atk, b3.def, firing, 'defender');
   await settle();
   check('and a frame where nothing moved shakes nothing at all', shakingDice(w.root).length, 0);

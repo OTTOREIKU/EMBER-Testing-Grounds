@@ -1846,6 +1846,34 @@ for (const whose of ['s1', 's2']) {
   const mine = drawn('initiator', record(null, null));
   mine.x?.click();
   check('R3 the Initiator\'s ✕ closes it at any stage', [/aria-disabled/.test(mine.head), mine.acts], [false, ['close']]);
+
+  // A HAND STILL ROLLING GOES ON ROLLING THROUGH A REDRAW (OTTO, 2026-10-05,
+  // watching two computers): the page draws the window on every render, and a
+  // redraw rebuilt the dice on their faces in the middle of the roll. The new
+  // dice take the spin up; the old ones are let go of.
+  {
+    const root = makeEl('div');
+    const h = new P2.M.ElectronicHelper(P2.data, diceData, root, () => {}, () => {});
+    h.tokens = () => s.tokens;
+    h.contestAct = () => {};
+    const shaking = () => {
+      const out = new Set();
+      const walk = (el) => { if (/^die die-/.test(String(el.className ?? '')) && el._cls?.has('rolling')) out.add(el); for (const c of el.children ?? []) walk(c); };
+      walk(root);
+      return [...out];
+    };
+    h.showContest(record(null, null), me, foe, action, 'spectator');
+    h.redraw();
+    h.showContest(record([5, 5], null), me, foe, action, 'spectator');
+    h.redraw();
+    await pause();
+    const first = shaking();
+    h.redraw();
+    await pause();
+    const carried = shaking().filter((d) => !first.includes(d));
+    check('the Counter-roll\'s dice roll as they land, and a redraw mid-roll lets go of the old dice and rolls the new ones on',
+      [first.length, first.filter((d) => d._cls?.has('rolling')).length, carried.length], [2, 0, 2]);
+  }
 }
 
 // ---------- the tabletop's Red Shoes (P7D, "for other passes") ----------
