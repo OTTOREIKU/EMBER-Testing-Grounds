@@ -27,6 +27,7 @@ import { lowValueOf, missionScoring, zoneCellsOf } from './scoring';
 import { normaliseSetup, type SetupStage } from './setup';
 import { boxHands, controlOf, normaliseTasks } from './tasks';
 import { canManeuver, extrasLeft, lengthOf, timingOf, type ActionLength } from './ticks';
+import { actionRoute, type ActionRoute } from './turn';
 import { PHASES, statusCount, zonesOf } from './types';
 import type { CardAction, Facing, GameState, PartState, Side, Stance, Timing, Token } from './types';
 import { freehandSlots, isGroundUnit, maneuverRange, maxLink, onHitRiders, structureOf, tokenCards } from './units';
@@ -74,9 +75,17 @@ export interface WeaponView {
   // rider (units.ts onHitRiders, as the combat window reads it): `fci` for a
   // Laser Suppression, `fragile` for a Laser Weapon.
   riders?: string[];
+  // A Tactic made at a Range that serves its own squad alone: a Part mended,
+  // Link or Ammo given back, a Token cleaned off an ally, a Stance fed back,
+  // or a change to the unit itself (turn.ts actionRoute). Its Range is no reach
+  // on an enemy.
+  own?: boolean;
   // Its Part still works: not destroyed, or destroyed and Repaired.
   usable: boolean;
 }
+
+// The Action Routes of a Tactic that serves its own squad alone (`own`).
+const OWN_ROUTES = new Set<ActionRoute>(['resupply', 'link', 'stanceFeedback', 'cleanup', 'repair', 'charge', 'form', 'camo', 'transform', 'selfStatus', 'discard', 'stabilise']);
 
 export interface UnitView {
   uid: number;
@@ -322,6 +331,7 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
         ammo: a.id in t.ammo ? t.ammo[a.id] : undefined,
         ...(a.type === 'Projectile' ? { strike: strikeOf(data, card.projectile) } : {}),
         ...(riders.length ? { riders } : {}),
+        ...(a.type === 'Tactic' && (a.range ?? 0) > 0 && OWN_ROUTES.has(actionRoute(data, t, a)) ? { own: true } : {}),
         usable: !part || part.state !== 'destroyed' || part.repaired,
       });
     }

@@ -32,7 +32,7 @@ import {
   detonationToken, discardSlots, envCardAt, explosionCamo, extraActivationOf, fliesToTarget, formSwitch, immediateDetonation, immediatesOwed, isGroundUnit, linkSupportOf, linkSupportTargets, manifestTargets, martyrdomOwed, maxLink, minesLayable, repairSpec,
   resupplyHolders, resupplyOf, riposteMelees, selfGrantWhy, selfStanceShift, selfRepairOptions, selfStatusGrant, smokePlacement, stabiliseAsk, STABILISE_KEEP_LABEL, stabiliseRowLabel, stanceFeedbackTargets,
   targetStatusGrant, targetStatusTargets, tokenCards, tokenCleanupOf, tokenCleanupTargets, transformOffer, unfoldsOwed, controlledMoveActions, knockbackOf,
-  interceptPayer,
+  interceptPayer, overwatchOf,
 } from './units';
 
 // ---------- what a seat keeps to itself ----------
@@ -1665,6 +1665,10 @@ function launchOptions(data: GameData, state: GameState, t: Token, row: turn.Act
   const watched = turn.interceptorsAgainst(state, t.side) && turn.launchTriggersInterception(data, t, a.id);
   const before = new Set(state.tokens.map((x) => x.uid));
   const foes = ahead ? state.tokens.filter((x) => x.side !== t.side && x.deployed !== false).map((x) => largeGridOf(x)) : [];
+  // And the units of its own squad with a Damaged Part, for a Drone that mends
+  // one (`mends`, below).
+  const hurt = ahead ? state.tokens.filter((x) => x.side === t.side && x.deployed !== false && alive(x)
+    && Object.entries(x.partStates).some(([slot, st]) => slot !== 'pilot' && st === 'damaged')).map((x) => largeGridOf(x)) : [];
   // Where the Action may land is the same for every card it launches.
   let anywhere: ReturnType<typeof turn.landingGrids> | undefined;
   const out: Option[] = [];
@@ -1687,8 +1691,24 @@ function launchOptions(data: GameData, state: GameState, t: Token, row: turn.Act
     // a Pholcus, the Action of the Drone it Unfolds into.
     const form = unfoldsInto(card);
     const strike = Math.max(0, ...[...(card.actions ?? []), ...((form ? data.byId.get(form)?.actions : undefined) ?? [])].map((x) => x.range ?? 0));
+    // A DRONE THAT MENDS AN ALLY (the SU1 a Nest Guardian Swarm puts down:
+    // "Remove 1 Damaged Token from an Ally Unit, then remove this Unit"). It
+    // mends nobody as it lands: its Action is a Command Action, and a Command
+    // buys a Movement OR one such Action (3.2.2 ②), so the ally it could mend
+    // at its next Command is one within that Action's Range of its Landing
+    // Point. An asker looking ahead is given the Landing Points within that
+    // reach of an ally with a Damaged Part as well.
+    const mender = (card.actions ?? []).find((x) => { const r = repairSpec(x); return !!r?.mend && r.ally; });
+    const mends = mender ? mender.range ?? 0 : 0;
+    // A DRONE THAT CALLS IN A SHOT (the KK9 Snake Eyes a Cobra core puts down:
+    // its Overwatch Strike designates an enemy in Range for an Ally Mech to fire
+    // on at once, then it leaves): the Range it calls a shot in. A look ahead
+    // is given the Landing Points within it of an enemy already (`strike`).
+    const caller = (card.actions ?? []).find((x) => overwatchOf(x));
+    const calls = caller ? caller.range ?? 0 : 0;
     const grids = ahead
-      ? turn.landingGrids(data, state, t, a, (c, r) => foes.some((f) => Math.abs(f.c - c) + Math.abs(f.r - r) <= strike))
+      ? turn.landingGrids(data, state, t, a, (c, r) => foes.some((f) => Math.abs(f.c - c) + Math.abs(f.r - r) <= strike)
+        || (mends > 0 && hurt.some((f) => Math.abs(f.c - c) + Math.abs(f.r - r) <= mends)))
       : (anywhere ??= turn.landingGrids(data, state, t, a));
     // THE INTERCEPTION A LAUNCH WOULD OWE is read off the table it leaves
     // (turn.ts interceptsAfterLaunch): the units it put down, where they
@@ -1730,7 +1750,7 @@ function launchOptions(data: GameData, state: GameState, t: Token, row: turn.Act
         label: `${name}: ${what} to ${gridName(g)}`,
         tags: ['launch', 'land', ...(underWay ? ['volley'] : []), ...(drawn ? ['intercepted'] : []), ...(smoky ? ['smoke'] : []), ...(port ? ['bit'] : [])],
         commands,
-        facts: { uid: t.uid, actionId: a.id, cardId: card.id, to: { c: g.c, r: g.r }, strike, ...(drawn ? { intercepts: drawn, interceptTries: tries } : {}) },
+        facts: { uid: t.uid, actionId: a.id, cardId: card.id, to: { c: g.c, r: g.r }, strike, ...(mends ? { mends } : {}), ...(calls ? { calls } : {}), ...(drawn ? { intercepts: drawn, interceptTries: tries } : {}) },
       });
     }
   }

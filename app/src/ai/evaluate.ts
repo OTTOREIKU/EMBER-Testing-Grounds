@@ -372,6 +372,16 @@ export interface Weights {
   // won 3 of 50 where it won none; `pressLate` 1 measured 145 and stays 0.
   press: number;
   pressLate: number;
+  // THE TIEBREAK AS IT IS GOING (`erode`, for `press`): level on Victory
+  // Points, each squad's Mech Parts and Drones as they would stand at the end,
+  // each unit with an enemy within its arm and its stride taking `erode` of
+  // one from the other squad in each round still to play. A squad ahead on the
+  // Parts that the other outguns from where both stand is losing them, and is
+  // behind. (A traced VIP game, community squads: RDL_Melee1's four melee
+  // Mechs, ahead 20 Parts to 15, stood in their zone for three rounds under
+  // UN's guns and lost 0 to 0 on the Parts left.) At 0 the standing is read as
+  // it is.
+  erode: number;
   // A DIAL FOR HOLDING: where the plan worth most on any Timing Dial holds and
   // does nothing, the Timings whose plans hold too are told apart by the
   // weapons each keeps: one of the Mech's own ready guns or blades played on
@@ -409,6 +419,30 @@ export interface Weights {
   // and changed Mode twice in one activation to end where it began (random game
   // 51001).
   reshape: number;
+  // A DRONE LAUNCHED TO MEND AN ALLY: the SU1 a Nest Guardian Swarm puts down
+  // mends nothing as it lands, and was launched by nobody (a census of 21
+  // random games with one aboard: never), since a launch was worth only what
+  // the Projectile's own turn would do to an enemy. Its Landing Point is worth
+  // `patch` x `future` x the Damaged Part it could mend a round on, given a
+  // Command, of the ally worth most to mend within the Action's Range of there
+  // (a Command buys the Action or a Movement, not both). At 0 it is worth
+  // nothing. ADOPTED at 1 (2026-10-04, night): GoF squads with the pack against
+  // the Ace 109 of 199 against 102 (11 turned to a win, 4 from one; p 0.12),
+  // the Swarm launched 82 times and its Armor Patch made at all 53 of its
+  // chances.
+  patch: number;
+  // A DRONE LAUNCHED TO CALL IN A SHOT: the KK9 Snake Eyes a Cobra core puts
+  // down strikes nothing itself, and was launched by nobody (the community
+  // squads' census: 60 offers, never). Given a Command, or handed one at once,
+  // its Overwatch Strike has an Ally Mech fire on an enemy within its Range.
+  // Its Landing Point is worth `spotter` x `future` x the best Firing Action a
+  // Mech of the squad could make from where it stands at an enemy within that
+  // Range of there. At 0 it is worth nothing. ADOPTED at 1 (2026-10-04,
+  // night): UN squads whose first UN Mech carries the Cobra core against the
+  // Ace 100 of 200 against 97 (12 turned to a win, 9 from one; p 0.66): level,
+  // and the KK9 is used where it never was (launched 176 times of 643 offers,
+  // its Strike called at all 71 of its chances).
+  spotter: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -487,10 +521,13 @@ export const TACTICIAN: Weights = {
   interceptOdds: 0,
   press: 10,
   pressLate: 0,
+  erode: 0,
   cover: 0,
   nextAfter: 1,
   dialDoubt: 0,
   reshape: 0,
+  patch: 1,
+  spotter: 1,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
@@ -605,10 +642,11 @@ export function missionOf(view: SeatView, w: Weights): number {
 // Main Task is heading for, or level on it (within half a Victory Point) on the
 // Mech Parts and Drones each squad has left (5.2.4, as tasks.ts gameResult
 // decides it). Level on both is a draw, not a loss.
-export function behindNow(view: SeatView, w: Weights): boolean {
+export function behindNow(view: SeatView, w: Weights, drift = 0): boolean {
   const margin = marginOf(view, w);
   if (Math.abs(margin) >= 0.5) return margin < 0;
-  return standingFor(view, view.seat) < standingFor(view, view.other);
+  // (`drift`: how the Parts would go between now and the end, `erode`.)
+  return standingFor(view, view.seat) + drift < standingFor(view, view.other);
 }
 
 // What a side has standing for the tiebreak (5.2.4): its Mech Parts not

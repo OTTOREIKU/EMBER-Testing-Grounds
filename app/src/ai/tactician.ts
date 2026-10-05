@@ -176,13 +176,21 @@ export interface Skills {
   // the turns worked out for the other Mode, and the Mech changed back without
   // making the launch it had changed for (random game 51040, found 2026-10-04).
   carded: boolean;
+  // A TACTIC THAT SERVES ITS OWN SQUAD IS NO ARM (the seam's `own`): a unit's
+  // reach on an enemy, the Range it walks to and the enemy it walks at, is read
+  // off its guns and the Tactics it makes on an enemy, and not off one that
+  // mends a Part, gives back Link or Ammo, cleans a Token off an ally or feeds
+  // back a Stance. Without it the SU1 a Nest Guardian Swarm puts down (Armor
+  // Patch, Range 2, and no gun) walked at the enemy given a Command, and a Mech
+  // with Strengthen Link (Range 8) stood off at 8 with guns of 5.
+  aimed: boolean;
 }
 
 export const SKILLS: Skills = {
   mission: true, exposure: true, stance: true, charge: true, focus: true, command: true, dials: true, setup: true, screen: true, emergency: true,
   support: true, profile: true, mode: true, coordinate: true, orders: true, stalk: true, cloak: true, appear: true, shown: true, overwatch: true, grant: true,
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
-  entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true,
+  entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -279,6 +287,9 @@ interface Ctx {
   // do to each enemy it has in its sights (`backsOf`, focus fire), worked out
   // once a table.
   backs: { map: Map<number, Back> | null };
+  // The best Firing Action a Mech of this squad could make at each enemy from
+  // where it stands (`calledOn`, the weight `spotter`), worked out once a table.
+  calls: Map<number, number>;
 }
 
 // FOCUS FIRE (M13): an enemy, as the units of this squad whose turn is still
@@ -323,9 +334,9 @@ export interface Memo {
   table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>;
   walks: Map<string, Stroll | null>; targets: Map<string, Target[]>; holdings: Map<number, number>;
   handed: Map<string, number | null>; aims: Map<number, Map<number, number>>; races: { map: Map<string, Race> | null };
-  backs: { map: Map<number, Back> | null };
+  backs: { map: Map<number, Back> | null }; calls: Map<number, number>;
 }
-export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null } });
+export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map() });
 
 // The table as far as those answers depend on it: every unit, where it stands
 // and in what state. Whose activation is open is left out, and so is a Command
@@ -334,10 +345,12 @@ function tableOf(view: SeatView, carded = true): string {
   // Whose view it is comes first: one policy may sit in both seats of a table
   // (a game that is only watched), and what one seat worked out is not the
   // other's.
-  // (`carded`: and which card each unit and each Part is, and a Part repaired.)
+  // (`carded`: and which card each unit and each Part is, and a Part repaired;
+  // and a destroyed Part told from a Damaged one, which the first letter of
+  // each did not.)
   return JSON.stringify([view.seat, view.round, view.phase, view.units.map((u) => [
     u.uid, u.cell.col, u.cell.row, u.facing, u.stance, u.alive, u.deployed, u.done, u.timing ?? '', u.link ?? 0,
-    carded ? `${u.cardId}:${u.parts.map((p) => `${p.cardId}${p.state[0]}${p.repaired ? 'r' : ''}`).join()}` : u.parts.map((p) => p.state[0]).join(''),
+    carded ? `${u.cardId}:${u.parts.map((p) => `${p.cardId}${p.state === 'destroyed' ? 'x' : p.state[0]}${p.repaired ? 'r' : ''}`).join()}` : u.parts.map((p) => p.state[0]).join(''),
     u.statuses.filter((x) => !x.startsWith('command')).join(), u.charged.join(),
     u.weapons.map((x) => x.ammo ?? '').join(),
   ]), view.boxes.map((b) => [b.id, b.bearer, b.grid?.col, b.grid?.row])]);
@@ -630,7 +643,94 @@ function launch(options: Option[], c: Ctx): Deed | null {
     const value = blast.value * (blast.soon && !o.facts?.intercepts ? 1 : c.w.launch) * (1 - c.w.launchMove * (1 - stays)) * (through === null ? 1 : through ** c.w.interceptOdds);
     if (value > EXACT && (!best || value > best.value + EXACT)) best = { option: o, value, why: `a Projectile for ${blast.why}`, reason: 'launch_value' };
   }
+  if (c.w.patch > 0) {
+    // Of the Landing Points that would mend the same, the nearest the ally: an
+    // ally still to move this round may not go far.
+    let near: { o: Option; value: number; why: string; gap: number } | null = null;
+    for (const o of options) {
+      const m = kindOf(o) === 'launch' ? mendOf(o, c) : null;
+      if (m && (!near || m.value > near.value + EXACT || (m.value > near.value - EXACT && m.gap < near.gap))) near = { o, ...m };
+    }
+    if (near && (!best || near.value > best.value + EXACT)) best = { option: near.o, value: near.value, why: near.why, reason: 'patch_value' };
+  }
+  if (c.w.spotter > 0) {
+    for (const o of options) {
+      const s = kindOf(o) === 'launch' ? spotterOf(o, c) : null;
+      if (s && (!best || s.value > best.value + EXACT)) best = { option: o, value: s.value, why: s.why, reason: 'spotter_value' };
+    }
+  }
   return best;
+}
+
+// A DRONE THAT CALLS IN A SHOT (`spotter`): the KK9 Snake Eyes a Cobra core puts
+// down strikes nothing itself. Given a Command a round on (or handed one at
+// once, a Coordination), its Overwatch Strike has a Mech of the squad fire on
+// an enemy within its Range (the seam's `calls`), and then it leaves the board
+// (`strike` prices that, the Drone's loss with it). Its Landing Point is worth
+// the best Firing Action a Mech of the squad could make from where it stands at
+// an enemy within that Range of there: whole where the Mech launching it holds
+// a Command Token to hand it at once (4.15.3), at `future` where it waits for
+// a Command Phase, and nothing in the last round with no Token to hand.
+function spotterOf(o: Option, c: Ctx): { value: number; why: string } | null {
+  const reach = typeof o.facts?.calls === 'number' ? o.facts.calls : 0;
+  const at = endOf(o);
+  const now = c.me.statuses.includes('command');
+  if (!at || reach <= 0 || (!now && c.view.round >= c.view.roundLimit)) return null;
+  let best: { value: number; foe: UnitView } | null = null;
+  for (const f of c.foes) {
+    if (f.camouflaged || apart(at, f.grid) > reach) continue;
+    const shot = calledOn(f, c);
+    if (shot > EXACT && (!best || shot > best.value + EXACT)) best = { value: shot, foe: f };
+  }
+  return best ? { value: c.w.spotter * (now ? 1 : c.w.future) * best.value, why: `a Drone to call a shot on ${best.foe.label}${now ? '' : ' a round on'}` } : null;
+}
+
+// The best Firing Action a Mech of this squad could make at an enemy from where
+// it stands, on its Firing Timing: the engine's question for each Mech, and the
+// odds on its answers. Worked out once a table.
+function calledOn(f: UnitView, c: Ctx): number {
+  const known = c.calls.get(f.uid);
+  if (known !== undefined) return known;
+  let best = 0;
+  const here = c.d.here?.();
+  for (const m of c.view.units) {
+    if (m.side !== c.view.seat || m.kind !== 'mech' || !m.alive || !m.deployed) continue;
+    for (const o of shotsOn(here?.turnOf(m.uid, [`strike:${f.uid}`], 'firing'), f.uid)) if (o.tags.includes('firing')) best = Math.max(best, shotValue(o, c).value);
+  }
+  c.calls.set(f.uid, best);
+  return best;
+}
+
+// A DRONE THAT MENDS AN ALLY (`patch`): what the SU1 a Nest Guardian Swarm puts
+// down could give back. Nothing as it lands; a round on, given a Command, a
+// Damaged Token taken off an ally within the Action's Range of the Landing
+// Point (the seam's `mends`), priced as `support` prices a mend made now. Of
+// the allies in reach, the one worth most to mend; and a Damaged Part another
+// Drone of the same card already out could mend from where it stands (the
+// dearest it could reach) is left to that one, so a Volley does not send two
+// for one Part. Nothing in the last round, which has no Command Phase after it.
+function mendOf(o: Option, c: Ctx): { value: number; why: string; gap: number } | null {
+  const reach = typeof o.facts?.mends === 'number' ? o.facts.mends : 0;
+  const at = endOf(o);
+  if (!at || reach <= 0 || c.view.round >= c.view.roundLimit) return null;
+  const mine = c.view.units.filter((u) => u.side === c.view.seat && u.alive && u.deployed);
+  const left = new Map(mine.map((u) => [u.uid, u.parts.filter((p) => p.state === 'damaged').length]));
+  const dearest = (from: Grid): { u: UnitView; value: number } | null => {
+    let top: { u: UnitView; value: number } | null = null;
+    for (const u of mine) {
+      if (!(left.get(u.uid) ?? 0) || apart(from, u.grid) > reach) continue;
+      const value = gainOf(A_PART_DAMAGED, u, c.view, c.w);
+      if (value > EXACT && (!top || value > top.value + EXACT)) top = { u, value };
+    }
+    return top;
+  };
+  for (const m of mine) {
+    if (m.cardId !== o.facts?.cardId) continue;
+    const took = dearest(m.grid);
+    if (took) left.set(took.u.uid, (left.get(took.u.uid) ?? 1) - 1);
+  }
+  const top = dearest(at);
+  return top ? { value: c.w.patch * c.w.future * top.value, why: `a Drone to mend ${top.u.label} a round on`, gap: apart(at, top.u.grid) } : null;
 }
 
 // WHAT AN ENEMY'S FIRING IS WORTH TO IT, as the board stands: the best attack
@@ -655,7 +755,7 @@ function firepower(e: UnitView, c: Ctx): number {
   // have done with the Firing it loses, for the chance the Counter-roll is
   // won: priced as this squad prices its own jamming (jam). It need not be in
   // Range now: it is where it will go.
-  if (c.w.jammer > 0 && e.side !== c.view.seat && jams(e)) {
+  if (c.w.jammer > 0 && e.side !== c.view.seat && jams(e, c.skills.aimed)) {
     const guns = c.view.units.filter((u) => u.side === c.view.seat && u.alive && u.deployed && strikers(u).some((x) => x.type === 'Firing'));
     best = Math.max(best, c.w.jammer * c.w.jam * Math.max(0, ...guns.map((u) => ownFire(u, c))));
   }
@@ -663,8 +763,9 @@ function firepower(e: UnitView, c: Ctx): number {
   return best;
 }
 
-// Whether a unit carries an Electronic Attack: a Tactic it makes at a Range.
-const jams = (u: UnitView): boolean => u.weapons.some((x) => ready(x) && x.type === 'Tactic' && x.range > 0);
+// Whether a unit carries an Electronic Attack: a Tactic it makes at a Range
+// (with `aimed`, on an enemy).
+const jams = (u: UnitView, aimed: boolean): boolean => u.weapons.some((x) => ready(x) && x.type === 'Tactic' && x.range > 0 && !(aimed && x.own));
 
 // WHAT ONE OF THIS SQUAD'S OWN GUNS IS WORTH, as the board stands: the best
 // Firing attack it could make if its turn came now, and for one with nobody
@@ -1136,7 +1237,7 @@ function closing(e: UnitView, out: Outlook, at: Grid, c: Ctx): { theirs: number;
   }
   // Of those Grids, the ones inside its arm of the unit that would SEE it (the
   // board's own sight, asked once for them all): the nearest few are asked.
-  const arm = armOf(e);
+  const arm = armOf(e, c.skills.aimed);
   const inArm = [...ends.values()].filter((x) => x.gap <= arm).sort((a, b) => a.gap - b.gap);
   const none = { theirs: 0, mine: 0 };
   if (!inArm.length) return none;
@@ -1165,9 +1266,10 @@ function closing(e: UnitView, out: Outlook, at: Grid, c: Ctx): { theirs: number;
 
 // ---------- which way to walk ----------
 
-// How far its longest arm reaches: the Range it wants to be at.
-function armOf(me: UnitView): number {
-  const arms = me.weapons.filter(ready).map((x) => {
+// How far its longest arm reaches: the Range it wants to be at. (With
+// `aimed`, a Tactic that serves its own squad is no arm.)
+function armOf(me: UnitView, aimed: boolean): number {
+  const arms = me.weapons.filter((x) => ready(x) && !(aimed && x.own)).map((x) => {
     if (x.type === 'Firing') return x.range;
     if (x.type === 'Melee') return Math.max(1, x.range);
     if (x.type === 'Projectile') return x.range + (x.strike ?? 0);
@@ -1183,9 +1285,9 @@ function armOf(me: UnitView): number {
 // own, and may be Intercepted (a traced game: an RDL Missile Brawler reckoned
 // its Missiles reached a UN carrier from its corner, and never launched one
 // past the Porcupine's guard).
-function huntArm(me: UnitView): number {
+function huntArm(me: UnitView, aimed: boolean): number {
   const direct = Math.max(0, ...me.weapons.filter(ready).map((x) => (x.type === 'Firing' ? x.range : x.type === 'Melee' ? Math.max(1, x.range) : 0)));
-  return direct > 0 ? direct : armOf(me);
+  return direct > 0 ? direct : armOf(me, aimed);
 }
 
 // THE ENEMY WORTH WALKING TO: the one whose destruction is worth most for the
@@ -1196,7 +1298,7 @@ function huntArm(me: UnitView): number {
 interface Quarry { foe: UnitView; road: Road | null; prize: number }
 
 function quarryOf(c: Ctx): Quarry | null {
-  const arm = armOf(c.me);
+  const arm = armOf(c.me, c.skills.aimed);
   if (arm <= 0) return null;
   const roads = c.d.facts.roads as Record<string, Road> | undefined;
   let best: (Quarry & { score: number }) | null = null;
@@ -1358,7 +1460,7 @@ function targetsOf(c: Ctx, took: readonly string[] = NONE): Target[] {
     // a Box is walked for only while it lies loose (a traced game, 2026-10-04:
     // an RDL Missile Brawler sat in its corner all game at "worth 0.00" while a
     // UN Mech walked off with three Boxes).
-    const arm = c.w.hunt > 0 && !mine ? huntArm(me) : 0;
+    const arm = c.w.hunt > 0 && !mine ? huntArm(me, c.skills.aimed) : 0;
     if (arm > 0) {
       for (const foe of view.units) {
         if (foe.side === view.seat || !foe.alive || !foe.deployed) continue;
@@ -1376,7 +1478,7 @@ function targetsOf(c: Ctx, took: readonly string[] = NONE): Target[] {
   // rounds at worths below nothing while UN's Precision shot it from twelve).
   if (view.task?.family === 'vip') {
     const lead = view.units.find((u) => u.side === view.other && u.commander && u.alive && u.deployed);
-    const arm = c.w.hunt > 0 && lead && !me.commander ? huntArm(me) : 0;
+    const arm = c.w.hunt > 0 && lead && !me.commander ? huntArm(me, c.skills.aimed) : 0;
     const found = arm > 0 && lead ? [hunted(lead, arm, c.w.hunt * c.w.vipKill)] : [];
     c.targets.set(spot, found);
     return found;
@@ -1545,15 +1647,33 @@ function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took:
     // `pressLate`).
     const press = c.behind && walk <= EXACT ? c.w.press * (1 - c.w.pressLate * (1 - c.view.round / Math.max(1, c.view.roundLimit))) : 0;
     const step = c.w.contactStep * (out || press ? 1 + out + press : 1);
-    pull -= (step + c.w.approach * quarry.prize) * Math.max(0, far - armOf(c.me));
+    pull -= (step + c.w.approach * quarry.prize) * Math.max(0, far - armOf(c.me, c.skills.aimed));
   }
   return pull;
+}
+
+// HOW THE PARTS ARE GOING (`erode`): for each squad, its units on the board
+// with an enemy within their arm and the step a Mech takes before it strikes
+// (its Maneuver: a Sprint is an Action of its own, and a blade eight Grids off
+// strikes nothing this round or the next), each taking `erode` of a Part or a
+// Drone from the other squad in each round still to play; this squad's share
+// less the other's.
+function drift(view: SeatView, w: Weights, aimed: boolean): number {
+  const live = view.units.filter((u) => u.alive && u.deployed && u.kind !== 'projectile');
+  const reaching = (side: SeatView['seat']): number => live.filter((u) => {
+    if (u.side !== side) return false;
+    const arm = armOf(u, aimed);
+    const step = u.kind === 'mech' ? u.maneuver : 0;
+    return arm > 0 && live.some((e) => e.side !== side && !e.camouflaged && apart(u.grid, e.grid) <= arm + step);
+  }).length;
+  const rounds = Math.max(0, view.roundLimit - view.round) + 1;
+  return w.erode * rounds * (reaching(view.seat) - reaching(view.other));
 }
 
 // Whether an enemy that could reach the unit where it stands has a gun that
 // outreaches its own longest arm by more than a Grid (`closeIn`).
 function outranged(c: Ctx): boolean {
-  const arm = armOf(c.me);
+  const arm = armOf(c.me, c.skills.aimed);
   return c.hostile.some((e) => inReachOf(e, c.me.grid) && e.weapons.some((x) => ready(x) && x.type === 'Firing' && x.range > arm + 1));
 }
 
@@ -1660,7 +1780,7 @@ function claimAt(at: Grid, facing: number, c: Ctx): number {
     if (c.hidden.some((f) => couldStrike(c.me, at, facing, f, locked))) return 1;
   }
   // A jammer or a launcher: an enemy inside its arm.
-  const arm = Math.max(0, ...c.me.weapons.filter((x) => ready(x) && (x.type === 'Tactic' || x.type === 'Projectile')).map((x) => x.range + (x.strike ?? 0)));
+  const arm = Math.max(0, ...c.me.weapons.filter((x) => ready(x) && !(c.skills.aimed && x.own) && (x.type === 'Tactic' || x.type === 'Projectile')).map((x) => x.range + (x.strike ?? 0)));
   if (arm > 0 && c.foes.some((f) => !f.camouflaged && apart(at, f.grid) <= arm)) return 1;
   // A Mech within a Remote Access of a Terminal still open that is not its
   // squad's to have anyway.
@@ -1985,7 +2105,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     const faces = d.options.filter((o) => handed(o, c) && !c.handed.has(handKey(c, o)));
     if (faces.length) {
       // What this table has been asked already is this decision's own to keep.
-      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs };
+      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls };
       for (const o of faces) {
         c.handed.set(handKey(c, o), yield* commandGain(o, view, w, c.skills, kept));
         yield;
@@ -2365,6 +2485,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     memo.aims.clear();
     memo.races.map = null;
     memo.backs.map = null;
+    memo.calls.clear();
   }
   return {
     // A Projectile is there to be spent: nothing done to it is a loss.
@@ -2374,7 +2495,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     hidden: skills.stalk ? foesOf(view).filter((f) => f.camouflaged).map((f) => ({ ...f, camouflaged: false })) : [],
     mission: skills.mission ? missionOf(view, w) : 0,
     margin: skills.mission && w.stakes ? marginOf(view, w) : 0,
-    behind: skills.mission && w.press > 0 ? behindNow(view, w) : false,
+    behind: skills.mission && w.press > 0 ? behindNow(view, w, w.erode > 0 ? drift(view, w, skills.aimed) : 0) : false,
     soon: d.kind === 'setup.deploy',
     firepower: memo.firepower,
     harms: memo.harms,
@@ -2386,6 +2507,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     aims: memo.aims,
     races: memo.races,
     backs: memo.backs,
+    calls: memo.calls,
   };
 }
 
@@ -2730,13 +2852,13 @@ function coverOf(me: UnitView, timing: string, c: Ctx): number {
 // THE COMMANDER (a VIP mission): the Mech that can do most from furthest
 // back, which is the one with the longest arm; and of two that reach as far,
 // the one whose Torso is hardest to destroy, since the Torso is the Commander.
-function leader(d: Decision, view: SeatView): Choice | null {
+function leader(d: Decision, view: SeatView, aimed: boolean): Choice | null {
   let best: { o: Option; arm: number; torso: number } | null = null;
   for (const o of d.options) {
     const u = o.id.startsWith('mech:') ? unitOf(view, Number(o.id.slice(5))) : undefined;
     if (!u) continue;
     const torso = u.parts.find((p) => p.slot === 'torso');
-    const mine = { o, arm: armOf(u), torso: (torso?.armor ?? 0) + (torso?.structure ?? 0) };
+    const mine = { o, arm: armOf(u, aimed), torso: (torso?.armor ?? 0) + (torso?.structure ?? 0) };
     if (!best || mine.arm > best.arm || (mine.arm === best.arm && mine.torso > best.torso)) best = mine;
   }
   return best ? { option: best.o.id, reason: 'commander_by_reach', why: `the longest arm (${best.arm}) and the hardest Torso to destroy` } : null;
@@ -3283,7 +3405,7 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
       case 'activation.act':
         return yield* activation(d, view, w, s, memo);
       case 'setup.designate.leader':
-        return s.setup ? leader(d, view) : null;
+        return s.setup ? leader(d, view, s.aimed) : null;
       case 'setup.deploy':
         return s.setup ? yield* deploy(d, view, w, s, memo) : null;
       case 'planning.dial':
