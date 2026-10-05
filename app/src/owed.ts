@@ -111,10 +111,19 @@ export interface Want {
 }
 const wants = (want: Want | undefined, kind: string): boolean => !want?.only || want.only.includes(kind);
 // The enemy a 'reach:<uid>' names, or null: every other kind is asked for.
+// 'reachAll:<uid>' is the same with the Movement Actions' moves besides (a
+// Sprint as the Starting Action of a Movement dial, after which any Action
+// may follow, 3.4.3): the moves of either after which the unit could attack
+// that enemy, the nearest to it first and three at most of each.
 function reachOf(want: Want | undefined): number | null {
   if (!want?.only || want.only.includes('move') || want.only.includes('maneuver')) return null;
-  const kind = want.only.find((k) => k.startsWith('reach:'));
-  return kind ? Number(kind.slice(6)) : null;
+  const kind = want.only.find((k) => k.startsWith('reach:') || k.startsWith('reachAll:'));
+  return kind ? Number(kind.slice(kind.indexOf(':') + 1)) : null;
+}
+function reachAllOf(want: Want | undefined): number | null {
+  if (!want?.only || want.only.includes('move') || want.only.includes('maneuver')) return null;
+  const kind = want.only.find((k) => k.startsWith('reachAll:'));
+  return kind ? Number(kind.slice(9)) : null;
 }
 const REACH_LIMIT = 3;
 // The enemy a 'strike:<uid>' names, or null.
@@ -998,11 +1007,15 @@ function movementOptions(data: GameData, state: GameState, t: Token, spec: MoveS
 // wants to know whether there is such a step, not every one. A move that ends
 // out of every attack's Range, or with the target behind it, is passed over
 // before the table is worked out.
-function reaching(data: GameData, state: GameState, t: Token, o: Opportunity, moves: Option[], targetUid: number): Option[] {
+function reaching(data: GameData, state: GameState, t: Token, o: Opportunity, moves: Option[], targetUid: number, starting = false): Option[] {
   const target = state.tokens.find((x) => x.uid === targetUid);
   if (!target || target.deployed === false || !alive(target)) return [];
   const at = largeGridOf(target);
-  const attacks = turn.actionRows(data, state, t, o).filter((row) => row.v.ok && turn.actionRoute(data, t, row.a) === 'attack');
+  // (`starting`: the moves are a Movement Action's, the Starting Action of a
+  // Movement dial, before which no attack is live: every attack the unit
+  // carries is read for how far it reaches, and the table each move leaves
+  // says whether one is live then, a few moves asked at most.)
+  const attacks = turn.actionRows(data, state, t, o).filter((row) => (starting || row.v.ok) && turn.actionRoute(data, t, row.a) === 'attack');
   if (!attacks.length) return [];
   // How far the longest of them reaches: a Range of none is a Grid beside it.
   // As the attack would be built (turn.ts attackActionBuilt: a [Two-Handed]
@@ -1020,8 +1033,10 @@ function reaching(data: GameData, state: GameState, t: Token, o: Opportunity, mo
     .filter((x) => (x.apart <= far || x.beside) && inArc({ ...t, col: x.to.c * 3, row: x.to.r * 3, facing: x.facing }, target, 'forward'))
     .sort((a, b) => a.apart - b.apart);
   const out: Option[] = [];
+  let tried = 0;
   for (const { move } of ends) {
-    if (out.length >= REACH_LIMIT) break;
+    if (out.length >= REACH_LIMIT || (starting && tried >= 2 * REACH_LIMIT)) break;
+    tried += 1;
     const table = move.commands ? tableAfter(data, state, move.commands) : null;
     const mover = table?.tokens.find((x) => x.uid === t.uid);
     const opp = table?.script?.opp;
@@ -1232,10 +1247,12 @@ function actionOptions(data: GameData, state: GameState, seat: Side, t: Token, w
   // One enemy named: the attacks on it alone, an Explosion on it among them.
   const struck = strikeOf(want);
   const strikes = (route: string): boolean => struck !== null && (route === 'attack' || route === 'detonate');
+  // One enemy to step out at by a Movement Action besides the Maneuver.
+  const reachAll = reachAllOf(want);
   for (const row of turn.actionRows(data, state, t, o)) {
     const name = row.a.name?.en || row.a.id;
     const route = turn.actionRoute(data, t, row.a);
-    if (want?.only && !(KIND[route] ?? []).some((kind) => wants(want, kind)) && !strikes(route)) continue;
+    if (want?.only && !(KIND[route] ?? []).some((kind) => wants(want, kind)) && !strikes(route) && !(route === 'move' && reachAll !== null)) continue;
     // A Volley under way: the Action is paid and performed, so its row is no
     // longer live, and the shots it has left ride on that payment (4.7.3).
     if (route === 'launch' && !row.v.ok && (o.launched ?? []).some((x) => x.actionId === row.a.id)) {
@@ -1374,9 +1391,10 @@ function actionOptions(data: GameData, state: GameState, seat: Side, t: Token, w
     // A Movement Action: its own Range, paid for with its Ticks, and the move
     // it buys rides on the payment.
     if (route === 'move') {
-      out.push(...movementOptions(data, state, t, {
+      const moves = movementOptions(data, state, t, {
         key: row.key, name: `${t.label}: ${name}`, tags: ['action', 'moving'], prefix: pay.cmd ? [pay.cmd] : [], ...turn.actionMove(row.a),
-      }));
+      });
+      out.push(...(reachAll !== null && !wants(want, 'move') ? reaching(data, state, t, o, moves, reachAll, true) : moves));
     }
     // The Bit's Stance Change: the card turned over, and the walk it owes.
     if (route === 'form') out.push(...formOptions(data, state, t, row, pay.cmd, name));

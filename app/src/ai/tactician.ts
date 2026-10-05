@@ -184,13 +184,31 @@ export interface Skills {
   // Patch, Range 2, and no gun) walked at the enemy given a Command, and a Mech
   // with Strengthen Link (Range 8) stood off at 8 with guns of 5.
   aimed: boolean;
+  // AN ENEMY ON A MOVEMENT DIAL STILL TO ACT (`sprints`): its Starting Action is
+  // a Movement Action (3.4.3), and any Action may follow it with the Ticks
+  // left, so it may Sprint up to a unit and strike it this round. Without it
+  // such an enemy was read as no danger this round: a GoF Box carrier walked
+  // onto two Boxes beside a Movement-dialled Warfare Core at "cost 0.00" in
+  // the last round, was Sprinted at, Chopped and Penetrated, and the 16
+  // Victory Points went with the Boxes (random game 71010, Key Facility).
+  // KEPT ON (2026-10-05): level against the Ace (every Main Task 105 of 200
+  // against 106, 197 the very same), the threat read right; 3% more time.
+  sprints: boolean;
+  // THE BOXES A PLAN PICKS UP ARE CARRIED WHERE IT LEAVES THE UNIT (`held`):
+  // what standing there costs is read off the unit as the plan leaves it,
+  // holding them, so a Penetration there loses them (`barrage`, `carried`).
+  // Without it the unit was priced as it stood, empty-handed: the GoF carrier
+  // of random game 71010 priced two Boxes worth 16 Victory Points beside a
+  // Warfare Core at 0.83 with `sprints`, took them, and lost them. KEPT ON
+  // (2026-10-05): with `sprints`, Black Box 115 of 200 against 114.
+  held: boolean;
 }
 
 export const SKILLS: Skills = {
   mission: true, exposure: true, stance: true, charge: true, focus: true, command: true, dials: true, setup: true, screen: true, emergency: true,
   support: true, profile: true, mode: true, coordinate: true, orders: true, stalk: true, cloak: true, appear: true, shown: true, overwatch: true, grant: true,
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
-  entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true,
+  entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -961,8 +979,8 @@ const OFFENSIVE = 'stance:offensive';
 
 // Whether an enemy unit is worth asking about a Grid at all: by its Range,
 // the step it could take first, and some slack for what a card adds.
-function inReachOf(e: UnitView, at: Grid): boolean {
-  const step = e.kind === 'mech' ? e.maneuver : 0;
+function inReachOf(e: UnitView, at: Grid, more = 0): boolean {
+  const step = (e.kind === 'mech' ? e.maneuver : 0) + more;
   if (chebyshev(e.grid, at) <= 1 + step) return true;
   const far = Math.max(0, ...e.weapons.filter((x) => ready(x) && (x.type === 'Firing' || e.kind === 'projectile')).map((x) => x.range));
   return far > 0 && apart(e.grid, at) <= far + step + LIMITS.SLACK;
@@ -1097,7 +1115,7 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
   const struck = new Set<number>();
   // Those whose turn is still to come first, and of them the nearest: the
   // ones most likely to settle it.
-  const order = c.hostile.filter((e) => inReachOf(e, at)).sort((a, b) => Number(a.done) - Number(b.done) || apart(a.grid, at) - apart(b.grid, at));
+  const order = c.hostile.filter((e) => threatens(e, at, c)).sort((a, b) => Number(a.done) - Number(b.done) || apart(a.grid, at) - apart(b.grid, at));
   // What an enemy could do to the unit on each of some Timings: the worst.
   const read = (e: UnitView, timings: (string | undefined)[]): { worst: Barrage; on: string } => {
     let worst: Barrage = NO_BARRAGE;
@@ -1108,6 +1126,13 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
       let shots = shotsOn(out.turnOf(e.uid, [`strike:${c.me.uid}`], timing), c.me.uid);
       if (!shots.length && e.kind === 'mech' && e.maneuver > 0) {
         for (const step of out.turnOf(e.uid, [`reach:${c.me.uid}`], timing)?.options ?? []) {
+          shots = shotsOn(step.then?.([`strike:${c.me.uid}`]), c.me.uid);
+          if (shots.length) break;
+        }
+      }
+      // A Sprint first, on a Movement dial (`sprints`).
+      if (!shots.length && e.kind === 'mech' && c.skills.sprints && timing === 'movement' && !e.done) {
+        for (const step of out.turnOf(e.uid, [`reachAll:${c.me.uid}`], timing)?.options ?? []) {
           shots = shotsOn(step.then?.([`strike:${c.me.uid}`]), c.me.uid);
           if (shots.length) break;
         }
@@ -1669,6 +1694,12 @@ function drift(view: SeatView, w: Weights, aimed: boolean): number {
   const rounds = Math.max(0, view.roundLimit - view.round) + 1;
   return w.erode * rounds * (reaching(view.seat) - reaching(view.other));
 }
+
+// Whether an enemy could reach a Grid this round: by its Maneuver, and with
+// `sprints`, a Mech whose dial is shown on Movement and whose turn is still to
+// come by the Movement Action it would start with as well.
+const threatens = (e: UnitView, at: Grid, c: Ctx): boolean => inReachOf(e, at)
+  || (c.skills.sprints && e.kind === 'mech' && !e.done && e.timing === 'movement' && inReachOf(e, at, Math.max(0, stride(e) - e.maneuver)));
 
 // Whether an enemy that could reach the unit where it stands has a gun that
 // outreaches its own longest arm by more than a Grid (`closeIn`).
@@ -2337,7 +2368,9 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
     const tow = p.option?.tags.includes('tow') ? `+tow:${String(p.option.facts?.towed ?? '')}` : '';
     // The answers that change the unit itself where it stands.
     const self = p.how === 'stance' || p.how === 'token' || p.how === 'mode' || p.how === 'form' || p.how === 'tactic';
-    const spot = harmKey(c, p.at, `${self || p.how === 'screen' ? p.option?.id : ''}${face}${tow}${mark}`, p.option);
+    // And the Boxes it picks up on the way (`held`).
+    const taking = c.skills.held && c.skills.mission && (tookBy(p.option).length > 0 || tookBy(p.via).length > 0) ? `+held:${[...tookBy(p.option), ...tookBy(p.via)].join(',')}` : '';
+    const spot = harmKey(c, p.at, `${self || p.how === 'screen' ? p.option?.id : ''}${face}${tow}${mark}${taking}`, p.option);
     let harm = c.harms.get(spot);
     if (!harm) {
       const acted = hiding && p.deed ? p.deed.option.after?.() ?? p.deed.option.then?.(['end'])?.here?.() : undefined;
@@ -2346,8 +2379,9 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
       // THE UNIT AS THE PLAN LEAVES IT (`reshape`): a Mode, a Stance, a Token,
       // a Bit's face changed is a different unit to shoot at and to shoot back
       // with, read off the table the plan leaves; at 0 it is read as it stands.
-      const reshaped = c.w.reshape > 0 && table && (self || face.length > 0) ? unitOf(table.view(), c.me.uid) : undefined;
-      const as: Ctx = reshaped ? { ...c, me: reshaped } : c;
+      const reshaped = table && ((c.w.reshape > 0 && (self || face.length > 0)) || taking) ? unitOf(table.view(), c.me.uid) : undefined;
+      // (Holding the Boxes is the table's to say: the view it leaves, `held`.)
+      const as: Ctx = reshaped ? { ...c, me: reshaped, ...(taking && table ? { view: table.view() } : {}) } : c;
       // A Highlight on this unit draws every enemy that has it in its sights,
       // whatever each would rather shoot: read on the table it leaves.
       harm = exposure(table, p.at, highlights(p.option) && table ? { ...as, aims: new Map(), aimsOn: table } : as, budget);
@@ -2357,7 +2391,7 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
     p.cost = harm.cost + (tow && p.option ? towHarm(p.option, c) : 0);
     p.risk = harm.risk;
   };
-  const reachable = (p: Plan): boolean => c.hostile.some((e) => inReachOf(e, p.at));
+  const reachable = (p: Plan): boolean => c.hostile.some((e) => threatens(e, p.at, c));
   let best: Plan | null = null;
   let asked = 0;
   for (const p of plans) {
