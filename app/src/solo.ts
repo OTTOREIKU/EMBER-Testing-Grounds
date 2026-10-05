@@ -73,6 +73,10 @@ export interface SoloSpec {
   // to fight it").
   watch: boolean;
   opponent2: string;
+  // The Season Rules the game is played with (Supplementary Rules 1.04,
+  // section 8), or none for the main rules (OTTO, 2026-10-05: "a toggle to
+  // turn these seasonal rules on or off when choosing the AI settings").
+  season: string | null;
 }
 
 const other = (s: Side): Side => (s === 's1' ? 's2' : 's1');
@@ -112,7 +116,9 @@ export function soloSpec(data: GameData, ask: Record<string, string>, newSeed: (
   const speed = SPEEDS.find((x) => x.id === ask.pace)?.id ?? 'normal';
   const opponent = ask.ai && OPPONENTS[ask.ai] ? ask.ai : OPPONENT;
   const opponent2 = ask.ai2 && OPPONENTS[ask.ai2] ? ask.ai2 : OPPONENT;
-  return { scenario, squads, human, bot: other(human), seed, speed, opponent, watch: ask.watch === '1', opponent2 };
+  // Only a season the data holds.
+  const season = ask.season && (data.seasons ?? []).some((s) => s.id === ask.season) ? ask.season : null;
+  return { scenario, squads, human, bot: other(human), seed, speed, opponent, watch: ask.watch === '1', opponent2, season };
 }
 
 // What the host sends to set the table before either seat is taken: the
@@ -121,11 +127,14 @@ export function soloSpec(data: GameData, ask: Record<string, string>, newSeed: (
 // bring (`soloHands`), the start, and the battlefield locked, since the
 // scenario chose it (3.1.2). The squads are the spec's: a shipped game's by
 // default.
-export function soloSetup(data: GameData, scenario: SoloScenario, squads?: Record<Side, SoloSquad>, hands: Command[] = []): Command[] {
+export function soloSetup(data: GameData, scenario: SoloScenario, squads?: Record<Side, SoloSquad>, hands: Command[] = [], season: string | null = null): Command[] {
   const out: Command[] = [
     { kind: 'configureTable', seat: 's1', ...mapConfig(data, scenario.map, null) },
     { kind: 'configureTable', seat: 's1', ...missionConfig(data, scenario.map, scenario.mission) },
     { kind: 'configureTable', seat: 's1', roundLimit: scenario.rounds, ...(scenario.secondaries === false ? { noSecondary: true } : {}) },
+    // The Season Rules, set while the table may still be set (a house setting,
+    // fixed once setup is done: commands.ts configureTable).
+    ...(season ? [{ kind: 'configureTable', seat: 's1', season } as Command] : []),
   ];
   for (const seat of ['s1', 's2'] as Side[]) {
     const sq = squads?.[seat] ?? data.solo.squads[scenario.seats[seat]];

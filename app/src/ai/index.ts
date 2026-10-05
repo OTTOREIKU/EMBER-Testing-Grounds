@@ -1,6 +1,6 @@
 // A computer player: a driver in a seat, a policy for its judgement, a seeded
 // generator for its dice and its coin.
-export { attackWorth, BRAWLER, brawlerPolicy, targetScore } from './brawler';
+export { attackWorth, BRAWLER, brawlerPolicy, COPY as BRAWLER_COPY, makeBrawler, targetScore, type BrawlerSkills } from './brawler';
 export { Driver, type DriverOptions, type Host, type LogEntry, type Step } from './driver';
 export { eagerPolicy } from './eager';
 export { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stakesOf, standingFor, swingOf, TACTICIAN, tieWorth, unitWorth, zoned, type Weights } from './evaluate';

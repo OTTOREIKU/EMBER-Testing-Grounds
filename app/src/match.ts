@@ -36,7 +36,8 @@ import { choiceDialog } from './dialog';
 import { clearNotice, configureNotices, explainOnHold, notify, speakInPlace, type NoticeKind } from './notices';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { animateRemoteMove, clearRangeOverlayFor, detonationHit, ensureHud, offerCoordinationAfterManeuver, glueAfter, paintThinking, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, walking, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, clearRangeOverlayFor, detonationHit, ensureHud, inMotion, offerCoordinationAfterManeuver, glueAfter, paintThinking, queueFlight, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, walking, whenStill, type DiceLine, type HudCtx } from './matchhud';
+import { straightStops } from './board';
 import { AttackHelper, combatRoleFor, type MirrorAct } from './combat';
 import { spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
@@ -373,10 +374,55 @@ function walkMove(cmd: Command, start: { uid: number; from: { col: number; row: 
   if (now) animateRemoteMove(start.uid, start.from, { col: now.col ?? 0, row: now.row ?? 0 }, via);
 }
 
+// WHAT IS FIRED AWAY FROM A UNIT FLIES (OTTO, 2026-10-05: "the missile will
+// move in a path towards the unit and then the combat popup will happen ... it
+// helps the user/spectator understand who exactly the missile is attacking ...
+// any projectiles or deployable or anything that is fired away from a unit").
+// Two flights, on every screen, whoever sent the command:
+//  - A LAUNCH: each unit it puts down (a Missile Group puts down several)
+//    starts in the middle of the unit that fired it and flies to where it
+//    landed; the board draws the new token first (matchhud.ts queueFlight).
+//  - A FLIGHT AT A TARGET: a Guided Projectile, and a Pholcus jumping, moves
+//    into its target's Grid on the table before its blast (`flyToTarget`), and
+//    is walked there in a straight line.
+// The attack's window waits for either to land (`syncCombatMirror`,
+// `startAttack`).
+type Flight = { uid: number; from: { col: number; row: number } } | { launcher: number; before: Set<number> } | null;
+function flyStart(cmd: Command): Flight {
+  if (cmd.kind === 'launch') return { launcher: cmd.uid, before: new Set(state.tokens.map((t) => t.uid)) };
+  if (cmd.kind !== 'flyToTarget') return null;
+  const p = state.tokens.find((t) => t.uid === cmd.uid);
+  return p ? { uid: p.uid, from: { col: p.col ?? 0, row: p.row ?? 0 } } : null;
+}
+function flyMove(start: Flight): void {
+  if (!start) return;
+  if ('launcher' in start) {
+    const from = state.tokens.find((t) => t.uid === start.launcher);
+    if (!from) return;
+    for (const shot of state.tokens.filter((t) => !start.before.has(t.uid) && t.parentUid === start.launcher)) {
+      const inset = Math.max(0, Math.floor((from.size - shot.size) / 2));
+      // Drawn again as it lands: an attack on it waits for that.
+      queueFlight(shot.uid, { col: (from.col ?? 0) + inset, row: (from.row ?? 0) + inset }, { col: shot.col ?? 0, row: shot.row ?? 0 }, () => render());
+    }
+    return;
+  }
+  const now = state.tokens.find((t) => t.uid === start.uid);
+  if (!now) return;
+  const to = { col: now.col ?? 0, row: now.row ?? 0 };
+  animateRemoteMove(start.uid, start.from, to, straightStops(start.from, to).slice(1), () => render());
+}
+
+// A Projectile in this attack, its own or its target, still in flight on this
+// board: the attack's window opens once it has landed.
+function inFlight(...uids: number[]): number | undefined {
+  return uids.find((u) => inMotion(u) && state.tokens.find((t) => t.uid === u)?.kind === 'projectile');
+}
+
 const hooks: NetHooks = {
   onCommand(cmd) {
     if (!data || boardBroken) return;
     const start = moveStart(cmd);
+    const fly = flyStart(cmd);
     const verdict = applyRemote(data, state, cmd);
     if (!verdict.ok) {
       // The reason a remote command was refused is the whole diagnosis of a
@@ -399,6 +445,7 @@ const hooks: NetHooks = {
     announceRemote(cmd);
     advanceIfBothReady(cmd);
     walkMove(cmd, start);
+    flyMove(fly);
     // Their commitment may be the second one, which releases our reveal; and
     // their reveal is checked against the hash they promised.
     if (cmd.kind === 'commitTimings') maybeReveal();
@@ -639,6 +686,7 @@ function send(cmd: Command): CheckResult {
   }
   const p = paused();
   if (p) return { ok: false, why: `Paused. Waiting for ${squadLabel(p.side)}'s player.` };
+  const fly = flyStart(cmd);
   const v = perform(data, state, cmd);
   if (v.ok) {
     glueAfter(data, state, cmd);
@@ -648,6 +696,7 @@ function send(cmd: Command): CheckResult {
     advanceIfBothReady(cmd);
     publishCatalog();
     offerCoordinationAfterManeuver(cmd);
+    flyMove(fly);
   }
   return v;
 }
@@ -991,6 +1040,13 @@ function attackActionOf(t: Token | undefined, actionId: string, twoHandedDecline
 
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack', opts: { twoHandedDeclined?: boolean; charged?: boolean; chargeChoice?: string } = {}): void {
   if (!data || !attackHelper) return;
+  // A Projectile still in flight, flying at its target or being shot at as it
+  // flies, opens the window as it lands.
+  const flying = inFlight(uid, targetUid);
+  if (flying !== undefined) {
+    whenStill(flying, () => startAttack(uid, actionId, targetUid, mode, opts));
+    return;
+  }
   const open = attackOpening(data, state, uid, actionId, targetUid, mode, opts);
   if (!open) return;
   attackHelper.roller = combatRoller();
@@ -2638,6 +2694,11 @@ function syncCombatMirror(): boolean {
     attackHelper.closeMirror();
     return false;
   }
+  // A Projectile's attack, or one on a Projectile, opens once it has landed.
+  if (inFlight(at.uid, df.uid) !== undefined) {
+    attackHelper.closeMirror();
+    return false;
+  }
   // What this viewer is TO THIS ATTACK, asked of the combat rather than of the
   // seat. It reads the same as the old "am I the target's side" test at two
   // seats and keeps reading correctly at four, where "not me" stops implying
@@ -2890,7 +2951,7 @@ async function startSolo(): Promise<void> {
   // Launch. Nothing here is published: there is no room yet. Each squad's
   // Tactics Cards are dealt sealed, the computer's salts to its seat alone.
   const hands = soloHands(spec);
-  for (const cmd of soloSetup(data, spec.scenario, spec.squads, hands.commands)) {
+  for (const cmd of soloSetup(data, spec.scenario, spec.squads, hands.commands, spec.season)) {
     const v = send(cmd);
     if (!v.ok) { soloErr = `The table could not be set: ${v.why}`; return; }
   }
@@ -3071,7 +3132,7 @@ function setSoloSpeed(speed: Speed): void {
   // Kept in the address, so a reload and a rematch play at the same speed.
   const { spec } = solo;
   try {
-    history.replaceState(null, '', `./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: spec.seed, speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2 })}`);
+    history.replaceState(null, '', `./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: spec.seed, speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2, season: spec.season ?? undefined })}`);
   } catch { /* an address that cannot be rewritten costs only that */ }
   render();
 }
@@ -3094,7 +3155,7 @@ async function soloRestart(ask = true): Promise<void> {
   }
   const { spec, table } = solo;
   table.stop();
-  location.assign(`./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: Math.floor(Math.random() * 1e9), speed: table.speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2 })}`);
+  location.assign(`./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: Math.floor(Math.random() * 1e9), speed: table.speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2, season: spec.season ?? undefined })}`);
 }
 
 // The computer has stopped and cannot go on by itself: said in plain words,

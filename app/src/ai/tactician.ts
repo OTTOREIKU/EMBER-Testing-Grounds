@@ -248,6 +248,16 @@ export interface Skills {
   // MEASURED LEVEL and kept ON (2026-10-05): squads carrying a Spear or a Lance
   // 95 of 200 against 94, six games of the 200 different.
   shock: boolean;
+  // A DIAL FOR A TURN WITH NOTHING TO DO NOW (`holdLate`; OTTO, 2026-10-05,
+  // watching two computers: "if both CPU are not in range of eachother they
+  // seem to default setting their timings to melee"). Acting sooner is worth
+  // something to an attack, made before the Part it would destroy has fired,
+  // and to nothing else: a Mech that holds or walks does better acting late,
+  // once the other squad has moved, with its own weapons to answer whoever
+  // walked into them. With the skill such a plan is told from its equals by
+  // the Timing of its own weapons that comes last; without it by the earliest
+  // Timing, and a Mech holding a line set Melee round after round.
+  holdLate: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -255,7 +265,7 @@ export const SKILLS: Skills = {
   support: true, profile: true, mode: true, coordinate: true, orders: true, stalk: true, cloak: true, appear: true, shown: true, overwatch: true, grant: true,
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
-  lastRound: true, boxOnce: true, shock: true,
+  lastRound: true, boxOnce: true, shock: true, holdLate: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -291,6 +301,9 @@ const LIMITS = {
 } as const;
 
 const EXACT = 1e-9;
+// The Action Types that attack, by which a Mech's Timings of its own weapons
+// are known (`holdLate`).
+const ARMS = new Set(['Firing', 'Melee', 'Projectile']);
 // What standing somewhere must cost before cover is looked for.
 const DANGER = 0.5;
 // What an attack nobody could put odds on is taken to be worth: something.
@@ -3062,6 +3075,8 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
   ]);
   let best: { o: Option; value: number; plan: Plan } | null = null;
   const holding: { o: Option; value: number; plan: Plan; timing: string; c: Ctx }[] = [];
+  // The Timings its own weapons are played on (`holdLate`).
+  const armed = new Set<string>(me.weapons.filter((x) => ready(x) && ARMS.has(x.type)).map((x) => x.timing ?? ''));
   for (const [i, o] of d.options.entries()) {
     const timing = o.tags.find((t) => t.startsWith('timing:'))?.slice(7);
     if (!timing || !o.then || (played && !played.has(timing))) continue;
@@ -3098,7 +3113,10 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
     const aim = w.dialDoubt > 0 ? found.best.deed : null;
     const prey = aim ? unitOf(view, aim.option.facts?.targetUid) : undefined;
     const doubt = aim && prey?.kind === 'mech' && prey.side !== view.seat && !prey.done && stride(prey) > 0 ? w.dialDoubt * (i / d.options.length) * Math.max(0, aim.value) : 0;
-    const value = worthOf(found.best) - first + back + w.tempo * (d.options.length - i) - lent - doubt;
+    // Sooner for a plan that does something now; for one that does not, later
+    // on a Timing of its own weapons (`holdLate`).
+    const soon = !skills.holdLate || found.best.deed ? w.tempo * (d.options.length - i) : armed.has(timing) ? w.tempo * (i + 1) : 0;
+    const value = worthOf(found.best) - first + back + soon - lent - doubt;
     if (!best || value > best.value + EXACT) best = { o, value, plan: found.best };
     if (w.cover > 0 && !found.best.option && !found.best.deed) holding.push({ o, value, plan: found.best, timing, c });
   }

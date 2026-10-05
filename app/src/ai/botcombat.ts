@@ -23,6 +23,7 @@ import { boxHands } from '../tasks';
 import { attackActionOf, attackOpening, boxDropSpots, boxesKnocked, interceptAgain, multiTargetHeld, terrainOf, type AttackMode, type InterceptAttempt } from '../turn';
 import type { CardAction, CombatView, DiceData, DieColor, Side, Token } from '../types';
 import { knockbackOf, type MultiTarget } from '../units';
+import { largeGridOf } from '../rules';
 import type { Host } from './driver';
 import { InHand, type Odds } from './odds';
 
@@ -74,6 +75,11 @@ const TAGS: Record<string, string[]> = {
   'finish.bonus': ['attack'],
   'finish.decline': ['decline'],
   'finish.done': ['end'],
+  // What a hit does to the unit it struck, the attacker's to take.
+  'finish.shutdown': ['rider', 'shutdown'],
+  'finish.disarm': ['rider', 'disarm'],
+  'finish.immobilize': ['rider', 'immobilize'],
+  'finish.faceaway': ['rider', 'turn'],
   'declare.none': ['decline'],
   'declare.designate': ['designate'],
   'declare.kc': ['spend-charge'],
@@ -102,6 +108,8 @@ const QUESTIONS: { kind: string; has: string[]; safe: string[] }[] = [
   { kind: 'attack.surplus', has: ['surplus.effect', 'surplus.part', 'surplus.unit'], safe: ['surplus.effect', 'surplus.part', 'surplus.unit'] },
   { kind: 'attack.finish', has: ['finish.bonus', 'finish.decline', 'finish.done', 'finish.shutdown', 'finish.disarm', 'finish.immobilize', 'finish.faceaway'], safe: ['finish.decline', 'finish.done'] },
 ];
+
+const FACINGS = ['North', 'East', 'South', 'West'];
 
 // The next task. A page has only the timer; a test run in node has a faster
 // one, which matters over thousands of games.
@@ -141,6 +149,9 @@ export class BotCombat {
   private subject: { attackerUid: number; targetUid: number; actionId: string } | null = null;
   // What the options of the last Decision press, by option id.
   private offered = new Map<string, Press[]>();
+  // The effects of a hit this window pressed and the table refused: not
+  // offered again, so a refusal cannot hold the window open.
+  private tried = new Set<string>();
   // How many commands this window has sent.
   private sends = 0;
   // Set while a Detonation that catches several units is being resolved: the
@@ -286,6 +297,7 @@ export class BotCombat {
     this.watching = null;
     this.windowNo += 1;
     this.presses = 0;
+    this.tried.clear();
     this.subject = { attackerUid: a.uid, targetUid: open.defender.uid, actionId: a.actionId };
     this.shoveOwed = null;
     this.intercepting = a.mode === 'intercept' ? { uid: a.uid, actionId: a.actionId, targetUid: a.targetUid } : null;
@@ -618,8 +630,18 @@ export class BotCombat {
         continue;
       }
       const id = b.arg !== undefined ? `${b.act}:${b.arg}` : b.act;
-      if (this.offered.has(id)) continue;
-      add(id, b.label, TAGS[b.act] ?? [], [[b.act, b.arg]]);
+      if (this.offered.has(id) || this.tried.has(id)) continue;
+      add(id, b.label, [...(TAGS[b.act] ?? []), ...(b.el.dataset?.must ? ['must'] : [])], [[b.act, b.arg]]);
+    }
+    if (!mirror && q.kind === 'attack.finish') this.drags(all, add);
+    // What a hit CAUSES (050's Drag or Disarm, ZHRA-303_A's Drag) is not let
+    // go by: the window is not closed while one is still to be taken.
+    if (options.some((o) => o.tags.includes('must'))) {
+      for (let i = options.length - 1; i >= 0; i--) {
+        if (!options[i].tags.includes('end')) continue;
+        this.offered.delete(options[i].id);
+        options.splice(i, 1);
+      }
     }
     if (!options.length) return null;
     this.withChances(options, mirror, thrown, read);
@@ -712,6 +734,36 @@ export class BotCombat {
     }
   }
 
+  // A DRAG (glossary :344): the Grid beside the attacker the struck unit is
+  // pulled to, and the way it is left facing, one answer for each pair (the
+  // window asks them as two presses). The facing that turns its back on the
+  // attacker (4.2.6) is marked `away`, read as the Flog's turn reads it: the
+  // long side of the line between them, a diagonal taking the horizontal.
+  private drags(all: Btn[], add: (id: string, label: string, tags: string[], presses: Press[]) => Option): void {
+    const atk = this.subject ? this.host.state().tokens.find((t) => t.uid === this.subject!.attackerUid) : undefined;
+    for (const b of all) {
+      if (b.act !== 'finish.drag' || b.arg === undefined) continue;
+      const [col, row] = String(b.el.dataset?.at ?? '').split(',').map(Number);
+      const uid = Number(b.el.dataset?.uid);
+      if (!Number.isFinite(col) || !Number.isFinite(row) || !Number.isFinite(uid)) continue;
+      let away = -1;
+      if (atk) {
+        const a = largeGridOf({ col: atk.col ?? 0, row: atk.row ?? 0 });
+        const g = largeGridOf({ col, row });
+        const dx = g.c - a.c;
+        const dy = g.r - a.r;
+        away = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 1 : 3) : (dy >= 0 ? 2 : 0);
+      }
+      for (let f = 0; f < 4; f++) {
+        const id = `finish.drag:${b.arg}:${f}`;
+        if (this.offered.has(id) || this.tried.has(id)) continue;
+        const tags = ['rider', 'drag', ...(f === away ? ['away'] : []), ...(b.el.dataset?.must ? ['must'] : [])];
+        const o = add(id, `${b.label}, facing ${FACINGS[f]}`, tags, [['finish.drag', b.arg], ['finish.face', String(f)]]);
+        o.facts = { uid, to: { col, row }, facing: f };
+      }
+    }
+  }
+
   // Presses what an option of the last Decision named. False when a control it
   // needs is no longer there.
   press(id: string): boolean {
@@ -720,11 +772,19 @@ export class BotCombat {
     this.presses += 1;
     const drawn = this.watching;
     const sentBefore = this.sends;
+    // An effect of the hit is pressed once: refused, its control stays live,
+    // and it is not offered again.
+    const [first, firstArg] = presses[0];
+    const rider = first === 'finish.drag' || (TAGS[first] ?? []).includes('rider');
     for (const [act, arg] of presses) {
       const b = this.buttons().find((x) => x.act === act && (arg === undefined || x.arg === arg));
-      if (!b) return false;
+      if (!b) {
+        if (rider) this.tried.add(id);
+        return false;
+      }
       b.el.click();
     }
+    if (rider && this.buttons().some((x) => x.act === first && (firstArg === undefined || x.arg === firstArg))) this.tried.add(id);
     // Defending, the answer has gone to the attacking window: nothing more is
     // asked off this picture. Only when one WENT, or dice are in the air for
     // it: a press that sent nothing leaves the question standing, to be

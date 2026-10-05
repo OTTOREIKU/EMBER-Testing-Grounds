@@ -3498,6 +3498,8 @@ export function aurasAtRoll(data: GameData, tokens: Token[], attacker: Token, de
             if (firing && k === 'target_counts_low_profile') add(attacker, 'Low Profile');
             if (k === 'defense_white_dice_bonus') add(defender, `+${e.value || 1}W`);
             if (firing && k === 'low_profile') add(defender, 'Low Profile');
+            // KK9 Lock On: a shot by the KK9's own side (lockOnPenalty).
+            if (firing && k === 'firing_target_blue_penalty' && src.side === attacker.side) add(defender, `-${Math.abs(e.value) || 1}B`);
           }
         }
       }
@@ -3621,6 +3623,23 @@ export function hiddenByAlliedAura(data: GameData, tokens: Token[], t: Token): A
   // A pilot skill, and a Shutdown Mech triggers none (FAQ L3; audit Phase 2, A5).
   if (t.kind === 'mech' && t.stance === 'shutdown') return undefined;
   return aurasOn(data, tokens, t).find((src) => src.source.side === t.side);
+}
+
+// LHDR-KK9_A Lock On (UN 1.02 list): "When Ally Units perform Firing actions
+// against targets within range, target -1B." An aura on the ENEMY units within
+// the KK9's Range (data/action_overrides.json gives the card the rule), which
+// bites only on a Firing Action made by a unit of the KK9's own side. The KK9
+// ships in no released box; OTTO, 2026-10-05: "Lets wire this in and we can
+// change it later if something in the way it functions changes at actual
+// release." Each KK9 in Range is its own source, and nothing printed says two
+// do not stack (the reading Appease has, roundEndLinkSources).
+export function lockOnPenalty(data: GameData, tokens: Token[], attacker: Token, target: Token, a: CardAction): number {
+  if (a.type !== 'Firing') return 0;
+  let n = 0;
+  for (const src of aurasOn(data, tokens, target)) {
+    if (src.kinds.includes('firing_target_blue_penalty') && src.source.side === attacker.side) n += Math.abs(src.value) || 1;
+  }
+  return n;
 }
 
 // EVERY one of these auras prints "This effect does not stack", so two sources

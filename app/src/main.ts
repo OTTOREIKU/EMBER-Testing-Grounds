@@ -1,5 +1,5 @@
 import './styles.css';
-import { Board, footprint, snapPlacement, type BoardDeployment, type BoardZone, type DeployShape } from './board';
+import { Board, footprint, snapPlacement, straightStops, type BoardDeployment, type BoardZone, type DeployShape } from './board';
 import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
 import { openSoloSetup } from './solosetup';
@@ -1265,6 +1265,9 @@ async function init() {
       editor.working = editor.working.filter((p) => p.id !== id);
       afterEdit();
     },
+    routing() {
+      return !!movePlan;
+    },
     async onDestroyTerrain(id) {
       if (state.removedTerrain?.includes(id)) return;
       // Targeting: a Container in the attack's reach and sight IS its target
@@ -2406,6 +2409,12 @@ async function init() {
     const mag = ammoAvailable(data, state, t, id);
     logTo(t, `Launched ${cardName(m.card)} to ${gridRef(c, r)}${mag !== undefined ? ` (Ammo ${mag} left)` : ''}.`);
     onChanged();
+    // What was launched flies from the middle of the unit that fired it to
+    // where it lands (OTTO, 2026-10-05; the Match Centre's flyStart/flyMove).
+    for (const shot of state.tokens.slice(before)) {
+      const inset = Math.max(0, Math.floor((t.size - shot.size) / 2));
+      board.animateMove(shot.uid, straightStops({ col: t.col + inset, row: t.row + inset }, { col: shot.col, row: shot.row }), () => {});
+    }
     // A single shot closes on its own, but a Volley stays open once it is spent
     // so the last projectile can still be taken back before it counts.
     const spent = m.left <= 0 || (mag !== undefined && mag <= 0);
@@ -5130,11 +5139,22 @@ async function init() {
         const camo = explosionCamo(data, proj, action, target);
         if (camo && 'why' in camo) return;
         if (camo) { scanBeforeBlast(proj, action, target); return; }
+        // Where it stood before it flew or jumped, and its flight across the
+        // board to where it is now (OTTO, 2026-10-05: "the missile will move
+        // in a path towards the unit and then the combat popup will happen").
+        let flewFrom: { col: number; row: number } | null = null;
+        const fly = (then: () => void): void => {
+          const now = state.tokens.find((x) => x.uid === proj.uid);
+          if (!flewFrom || !now) { then(); return; }
+          onChanged();
+          board.animateMove(proj.uid, straightStops(flewFrom, { col: now.col, row: now.row }), then);
+        };
         // A Missile flies into its target's Grid first, and the flight owes
         // Interception at either end (A2). With any owed the Explosion waits:
         // picking the target again once it is resolved goes straight to it.
         if (fliesToTarget(action) && burst.flew !== target.uid) {
           const flight = missileFlight(data, state.tokens, state.smoke ?? [], proj, target);
+          flewFrom = { col: proj.col, row: proj.row };
           perform(data, state, { kind: 'flyToTarget', seat: proj.side, uid: proj.uid, actionId: action.id, targetUid: target.uid });
           burst.flew = target.uid;
           if (flight.owed.length) {
@@ -5142,7 +5162,7 @@ async function init() {
             logTo(proj, `${proj.label} flies into ${target.label}'s Grid, and its flight owes ${flight.owed.length} Interception attempt${flight.owed.length === 1 ? '' : 's'} (4.9). If it survives, open its Detonation again.`);
             renderCombatIdle();
             showSideTab('details');
-            onChanged();
+            fly(() => {});
             return;
           }
           logTo(proj, `${proj.label} flies into ${target.label}'s Grid, and nothing Intercepts it.`);
@@ -5152,15 +5172,19 @@ async function init() {
         // Mine it sets off there waits for its own blast (Supplementary Rules
         // 1.04, 1.9). Not the blast it owes as it Unfolds (M18.4): it is in
         // that Grid already (turn.ts detonationJump).
+        const stood = { col: proj.col, row: proj.row };
         if (jumpsToTarget(action) && !proj.jumpBlast && !proj.unfoldBlast
           && perform(data, state, { kind: 'flyToTarget', seat: proj.side, uid: proj.uid, actionId: action.id, targetUid: target.uid }).ok) {
+          flewFrom = stood;
           const held = minesOwed(data, state.tokens).filter((x) => x.heldBy === proj.uid).length;
           logTo(proj, `${proj.label} jumps into ${target.label}'s Grid${held
             ? ` and sets off ${held === 1 ? 'the Mine' : `${held} Mines`} there, which go off once its own blast is done (Supplementary Rules 1.04, 1.9)` : ''}.`);
         }
         burst.attacking = scope === 'all';
-        attackHelper.start(proj, action, target, 'Explosion damage: no line of sight or facing check.', 0, '', true);
-        showSideTab('combat');
+        fly(() => {
+          attackHelper.start(proj, action, target, 'Explosion damage: no line of sight or facing check.', 0, '', true);
+          showSideTab('combat');
+        });
       }),
     );
     // Terrain is removed on the spot rather than handed to the attack helper,

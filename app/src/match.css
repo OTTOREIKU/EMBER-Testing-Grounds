@@ -542,6 +542,8 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .hudmain { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .timeline { display: flex; align-items: stretch; background: var(--surface2); }
 .roundchip { padding: 8px 13px; font-family: var(--mono); font-size: 11px; color: var(--text2); background: var(--surface3); display: flex; align-items: center; }
+/* The Season Rules a table plays, as the pad's bar marks them (.pad-bar-season). */
+.roundchip-season { margin-left: 8px; color: var(--blue); white-space: nowrap; }
 .tl { flex: 1; padding: 7px 4px; text-align: center; font-size: 10px; color: var(--text3); }
 .tl.done { color: var(--text2); }
 .tl.now { background: var(--accent-lt); color: var(--accent); font-weight: 700; }

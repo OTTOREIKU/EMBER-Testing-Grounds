@@ -4,7 +4,7 @@ import { askIssuer, askTowFacing, asterBlockers, offerCoordination, offerHarpyDr
 import type { GameData } from './data';
 import { actionIconUrl, cardName, parseGridRef, secondaryImageUrl, squadLabel, environmentLookup, environmentAllowance } from './data';
 import { showInspect } from './inspector';
-import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
+import { Board, footprint, snapPlacement, straightStops, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
 import { interceptHeld, allyRepairTargets, overwatchOf, explosionCamo, detonationBar, immediatesOwed, blastScanState, chassisStop, blastTurn, blastsReady, bitPortOf, bitsToRecover, coordinationAfterManeuver, controlledMoveActions, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, overloadPackOn, cruising, transformOffer, opportunityBonusOn, ripostePart, martyrdomOwed, targetTracingOn, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, isGroundUnit, stealthValue, manifestationRange, manifestTargets, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, containerTargets, blinkTargets, camoBrokenBy, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptOwedAt, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, type ExtraActivation, type Resupply, discardSlots, chassisGone, riposteMelees } from './units';
 import { ElectronicHelper, type EwAct, type EwArg } from './combat';
@@ -310,7 +310,10 @@ function timelineHtml(s: GameState): string {
     const cls = i < s.round.phase ? ' done' : i === s.round.phase ? ' now' : '';
     return `<div class="tl${cls}">${p}<b>${i < s.round.phase ? 'done' : i === s.round.phase ? 'now' : '—'}</b></div>`;
   }).join('');
-  return `<div class="timeline"><div class="roundchip">R${s.round.n}/${s.roundLimit ?? 5}</div>${cells}</div>`;
+  // A table on the Season Rules says so beside the round, in the Season's blue,
+  // as the pad's bar does: a Stabilize System costing 2 Ticks is never a surprise.
+  const season = s.season ? `<span class="roundchip-season" title="Season ${esc(s.season)} rules: optional, not the main rules">Season ${esc(s.season)}</span>` : '';
+  return `<div class="timeline"><div class="roundchip">R${s.round.n}/${s.roundLimit ?? 5}${season}</div>${cells}</div>`;
 }
 
 // THE ACTIVATION ORDER, floating in the board's top-right corner (OTTO,
@@ -931,6 +934,9 @@ function boardCallbacks(): BoardCallbacks {
       board?.showGhost(footprint({ ...snap, size }), true);
       ctx.refresh();
     },
+    routing() {
+      return !!movePlan;
+    },
     onDestroyTerrain(id) {
       const ctx = hudRef;
       if (!ctx) return;
@@ -1151,6 +1157,7 @@ function renderBoard(ctx: HudCtx): void {
   // an unconfirmed placement does.
   const preview = pending ?? (movePlan?.turned ? { uid: movePlan.uid, facing: movePlan.facing } : undefined);
   if (animatingUid === null) board.renderTokens(s, preview);
+  nextFlight();
   // The control, and with it any armed card, only exists while the battlefield
   // is being laid out. Disarming here rather than only on close means a game
   // that starts with a card armed cannot leave a click primed on the board.
@@ -2211,8 +2218,14 @@ export function animateRemoteMove(
   from: { col: number; row: number },
   to: { col: number; row: number },
   via?: { col: number; row: number }[],
+  // What waits on the walk ending (a Projectile's attack window, once it has
+  // flown at its target).
+  done?: () => void,
 ): void {
-  if (!board || (from.col === to.col && from.row === to.row)) return;
+  if (!board || (from.col === to.col && from.row === to.row)) {
+    done?.();
+    return;
+  }
   const route = via?.length ? [from, ...via] : [from, to];
   // The command has already landed, so a render is moments away and
   // renderTokens would replace the very element being animated — which is why
@@ -2224,13 +2237,75 @@ export function animateRemoteMove(
     // out from under the second, so only the walk that set it clears it.
     if (animatingUid === uid) animatingUid = null;
     if (hudRef) renderBoard(hudRef);
+    done?.();
+    runStill();
   });
 }
 
-// Whether a unit is still being walked across this board. A computer seat
-// waits for the walk to end before it does anything more (solo.ts).
+// What waits for a unit to stand still on this board (an attack's window, its
+// Projectile having landed): run at once if it is still, or as its walk or
+// flight ends.
+const stillWaits: { uid: number; fn: () => void }[] = [];
+export function whenStill(uid: number, fn: () => void): void {
+  if (!inMotion(uid)) {
+    fn();
+    return;
+  }
+  stillWaits.push({ uid, fn });
+}
+function runStill(): void {
+  for (let i = 0; i < stillWaits.length; i++) {
+    if (inMotion(stillWaits[i].uid)) continue;
+    const w = stillWaits.splice(i, 1)[0];
+    i -= 1;
+    w.fn();
+  }
+}
+
+// Whether a unit is still being walked across this board, or a Projectile is
+// still in flight or waiting to fly. A computer seat waits for it to end before
+// it does anything more (solo.ts).
 export function walking(): boolean {
-  return animatingUid !== null;
+  return animatingUid !== null || flights.length > 0;
+}
+
+// PROJECTILES IN FLIGHT (OTTO, 2026-10-05: "the missile will move in a path
+// towards the unit and then the combat popup will happen ... This new movement
+// animation would apply to any projectiles or deployable or anything that is
+// fired away from a unit"). A launch flies from the unit that fired it to
+// where it lands. A launched token is new, so its flight waits for the board
+// to have drawn it: flights are queued and started after the token layer is
+// drawn. (A Projectile flying at the unit it attacks moves on the table
+// itself, `flyToTarget`, and is walked as any move is: match.ts.)
+const flights: { uid: number; stops: { col: number; row: number }[]; done?: () => void }[] = [];
+
+export function queueFlight(uid: number, from: { col: number; row: number }, to: { col: number; row: number }, done?: () => void): void {
+  if (!board || (from.col === to.col && from.row === to.row)) {
+    done?.();
+    return;
+  }
+  flights.push({ uid, stops: straightStops(from, to), done });
+  if (hudRef) renderBoard(hudRef);
+}
+
+// The next flight, once nothing else is walking. Its own token is on the board
+// by now, drawn where the state puts it; the walk starts it where it was fired.
+function nextFlight(): void {
+  if (!board || animatingUid !== null || !flights.length) return;
+  const f = flights.shift()!;
+  animatingUid = f.uid;
+  board.animateMove(f.uid, f.stops, () => {
+    if (animatingUid === f.uid) animatingUid = null;
+    f.done?.();
+    if (hudRef) renderBoard(hudRef);
+    runStill();
+  });
+}
+
+// Whether this unit is still on its way somewhere on the board: walking, or
+// in flight, or waiting to fly.
+export function inMotion(uid: number): boolean {
+  return animatingUid === uid || flights.some((f) => f.uid === uid);
 }
 
 // ---------- launching a Projectile (rulebook 4.7) ----------

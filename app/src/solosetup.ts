@@ -37,6 +37,9 @@ export interface SoloPick {
   mine: string;
   theirs: string;
   secondaries: boolean;
+  // The Season Rules the game is played with, or '' for the main rules (OTTO,
+  // 2026-10-05: "a toggle to turn these seasonal rules on or off").
+  season: string;
 }
 
 // The last game set up on this device, so the dialog opens on it again.
@@ -112,6 +115,7 @@ export function soloPick(data: GameData, kept: unknown, squads: SoloSquadRow[] =
     mine: has(k.mine) ? k.mine : usual('builtin:squad-raid-rdl', 0),
     theirs: has(k.theirs) ? k.theirs : usual('builtin:squad-raid-un', 1),
     secondaries: k.secondaries === true,
+    season: (data.seasons ?? []).some((s) => s.id === k.season) ? k.season as string : '',
   };
 }
 
@@ -185,6 +189,15 @@ export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadR
     ? `<p class="dlg-eyebrow">${esc(nameOf(near))} is played by</p>${levels('rival2', pick.opponent2)}
     <p class="dlg-eyebrow">${esc(nameOf(far))} is played by</p>${levels('rival', pick.opponent)}`
     : `<p class="dlg-eyebrow">The computer is</p>${levels('rival', pick.opponent)}`;
+  // THE RULES PLAYED: the main rules, or a Season the publisher trials beside
+  // them (Supplementary Rules 1.04, section 8), each in a line of what it
+  // changes. The pad's setup offers the same choice in the same words.
+  const seasons = data.seasons ?? [];
+  const rules = seasons.length
+    ? `<p class="dlg-eyebrow">Rules</p>
+    <div class="dlg-picks">${row('season', '', { name: 'Main rules', note: 'the rulebook and its updates' }, !pick.season)}${
+      seasons.map((s) => row('season', s.id, { name: s.label, note: s.rules.map((r) => r.basic.replace(/:.*$/, '').replace(/\.$/, '')).join('; ') }, pick.season === s.id)).join('')}</div>`
+    : '';
   return `<h3 class="dlg-title">Play the computer</h3>
     <p class="dlg-body">${watch
     ? 'Two computers play a full game on the Match Centre\'s table while you watch. The Thinking tab shows what each one chose and why.'
@@ -195,6 +208,7 @@ export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadR
     <div class="dlg-picks">${row('who', 'you', { name: 'You', note: 'against the computer' }, !watch)}${row('who', 'watch', { name: 'Two computers', note: 'you watch' }, watch)}</div>
     ${table}
     ${computers}
+    ${rules}
     <p class="dlg-eyebrow">${watch ? 'They play at' : 'The computer plays at'}</p>
     <div class="dlg-picks">${SPEEDS.map((s) => row('speed', s.id, { name: s.name, note: s.note }, s.id === pick.speed)).join('')}</div>
     <div class="dlg-actions">
@@ -219,7 +233,7 @@ export function soloOwnGame(pick: SoloPick, squads: SoloSquadRow[]): SoloOwn | n
 // Where Start goes: the Match Centre's page, asked for this game.
 export function soloAddress(pick: SoloPick): string {
   const own = pick.scenario === SOLO_OWN;
-  return `match/${soloQuery({ scenario: pick.scenario, side: own ? 's1' : pick.side, speed: pick.speed, opponent: pick.opponent, watch: pick.watch, opponent2: pick.opponent2 })}`;
+  return `match/${soloQuery({ scenario: pick.scenario, side: own ? 's1' : pick.side, speed: pick.speed, opponent: pick.opponent, watch: pick.watch, opponent2: pick.opponent2, season: pick.season || undefined })}`;
 }
 
 // One of a game's own lists, in a dialog of its own over the setup: the row
@@ -276,6 +290,10 @@ export function openSoloSetup(data: GameData, go: (address: string) => void): vo
       else if (b.dataset.rival2) { pick.opponent2 = RIVALS.find((r) => r.id === b.dataset.rival2)?.id ?? pick.opponent2; pressed = `[data-rival2="${pick.opponent2}"]`; }
       else if (b.dataset.who) { pick.watch = b.dataset.who === 'watch'; pressed = `[data-who="${pick.watch ? 'watch' : 'you'}"]`; }
       else if (b.dataset.secondary) { pick.secondaries = b.dataset.secondary === 'on'; pressed = `[data-secondary="${pick.secondaries ? 'on' : 'off'}"]`; }
+      else if (b.dataset.season !== undefined) {
+        pick.season = (data.seasons ?? []).some((s) => s.id === b.dataset.season) ? b.dataset.season : '';
+        pressed = `[data-season="${pick.season}"]`;
+      }
       else if (b.dataset.open) {
         const what = b.dataset.open as 'map' | 'mission' | 'mine' | 'theirs';
         const list = soloLists(data, squads)[what];

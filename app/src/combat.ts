@@ -6,7 +6,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, Opportunity, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, tallyCounter, resolveCounterRoll, type AttackReaction, type MultiTarget, ignoresProtection } from './units';
+import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, partUsable, dragPrinted, designationsOn, lockOnPenalty, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, tallyCounter, resolveCounterRoll, type AttackReaction, type MultiTarget, ignoresProtection } from './units';
 import { timingOf } from './ticks';
 import { isTerminalStandIn, TERMINAL_EV } from './tasks';
 import { lowValueOf } from './scoring';
@@ -2161,6 +2161,10 @@ export class AttackHelper {
     // see the finished pool, and Immobilized deleting everything afterwards
     // still wins.
     blue = Math.max(0, blue - statusCount(d.statuses, 'hindered'));
+    // KK9 Lock On: a Firing Action by a unit of the KK9's side on a target
+    // within its Range, -1 Blue (units.ts lockOnPenalty). The target's, like
+    // Hindered, so a Surplus roll of the same Firing Action carries it too.
+    blue = Math.max(0, blue - lockOnPenalty(this.data, this.tokens ? this.tokens() : [], this.ctx!.attacker, d, this.ctx!.action));
     // 121_A MSH1 Assistance Arm: "If this part is Designated as Freehand for
     // Firing Action, target -2B." freehandSupport has always read the -2 and
     // the Two-Handed note printed it; nothing took the dice off. It is the
@@ -5499,6 +5503,16 @@ export class AttackHelper {
       })()}
       ${c.explosion ? '<p class="dim">Explosion damage allows no Terrain or Unit Protection, so the pool below is Armour and Dodge only.</p>' : ''}
       ${(() => {
+        // KK9 Lock On, said for the same reason: the Blue below is already
+        // adjusted (units.ts lockOnPenalty).
+        const n = lockOnPenalty(this.data, this.tokens ? this.tokens() : [], c.attacker, c.defender, c.action);
+        if (!n) return '';
+        const by = aurasOn(this.data, this.tokens ? this.tokens() : [], c.defender)
+          .filter((s) => s.kinds.includes('firing_target_blue_penalty') && s.source.side === c.attacker.side)
+          .map((s) => s.source.label);
+        return `<p class="ah-protect">${esc([...new Set(by)].join(', '))}: Lock On, so ${esc(c.defender.label)} rolls <b>${n} Blue fewer</b> below.</p>`;
+      })()}
+      ${(() => {
         // Dense Armor (GoF 1.021) when the dice are on the table: nothing here
         // can take them, so the step says to.
         const slot = !c.surplusRound && this.handsOff && c.defender.stance !== 'shutdown' ? denseArmorSlot(this.data, c.defender, c.targetPart ?? 'main') : null;
@@ -6487,6 +6501,10 @@ export class AttackHelper {
       const defLabel = struck.label;
       const defSize = struck.size;
       const both = disarmOn(c.action) && dragPrinted(c.action);
+      // 050 and ZHRA-303_A CAUSE their Drag or Disarm; 139's are a may. A
+      // computer seat reads the mark and takes one (ai/botcombat.ts); a
+      // player is told and trusted.
+      const must = (disarmOn(c.action) || dragPrinted(c.action)) && !immobilizeChoiceOn(c.action) && !faceAwayOnHit(c.action);
       let choiceTaken = false;
       const buttons: HTMLButtonElement[] = [];
       const retire = (winner: HTMLButtonElement, text: string): void => {
@@ -6510,9 +6528,14 @@ export class AttackHelper {
         const heldId = struck.mech?.[slot as PartSlot];
         const held = heldId ? this.data.byId.get(heldId) : undefined;
         const far = held ? discardFaceOf(this.data, held) : null;
-        if (far) {
+        // A Part the same hit destroyed has no card left to flip, and the
+        // table refuses the Disarm (commands.ts), so it is not offered: the
+        // Drag is what the hit causes then.
+        const gone = !partUsable(struck, slot);
+        if (far && !gone) {
           const go = document.createElement('button');
           go.dataset.act = 'finish.disarm';
+          if (must) go.dataset.must = '1';
           go.className = 'ah-alt';
           go.textContent = `Disarm: flip ${SLOT_LABEL[slot as PartSlot] ?? slot} to its Discard Card`;
           go.disabled = !this.mayDrive('attacker');
@@ -6536,7 +6559,9 @@ export class AttackHelper {
         } else {
           const why = document.createElement('p');
           why.className = 'ah-note';
-          why.textContent = `${SLOT_LABEL[slot as PartSlot] ?? slot} has no Discard Card, so there is no Discard State to change to (4.17).`;
+          why.textContent = gone
+            ? `${SLOT_LABEL[slot as PartSlot] ?? slot} is destroyed, so there is nothing left to Disarm.`
+            : `${SLOT_LABEL[slot as PartSlot] ?? slot} has no Discard Card, so there is no Discard State to change to (4.17).`;
           el.appendChild(why);
         }
       }
@@ -6552,7 +6577,7 @@ export class AttackHelper {
         go.disabled = !this.mayDrive('attacker');
         go.addEventListener('click', () => {
           if (choiceTaken) return;
-          this.onCommand({ kind: 'applyStatus', seat, uid: atkUid, targetUid: defUid, statusId: 'immobilized', stacks: 1 });
+          if (!accepted(this.onCommand({ kind: 'applyStatus', seat, uid: atkUid, targetUid: defUid, statusId: 'immobilized', stacks: 1 }))) return;
           this.onChanged();
           retire(go, `Immobilized: ${defLabel} bears the Token`);
         });
@@ -6584,7 +6609,7 @@ export class AttackHelper {
         go.disabled = !this.mayDrive('attacker');
         go.addEventListener('click', () => {
           if (choiceTaken) return;
-          this.onCommand({ kind: 'forceMove', seat, uid: atkUid, targetUid: defUid, to, facing: away });
+          if (!accepted(this.onCommand({ kind: 'forceMove', seat, uid: atkUid, targetUid: defUid, to, facing: away }))) return;
           this.note(`${defLabel} is forced to face away from the attacker (139_B). On a pure diagonal the horizontal was taken. Turn it by hand if the table reads it otherwise.`);
           this.onChanged();
           retire(go, `Turned: ${defLabel} faces away`);
@@ -6627,6 +6652,10 @@ export class AttackHelper {
           for (const s of spots) {
             const b = document.createElement('button');
             b.dataset.act = 'finish.drag'; b.dataset.arg = s.label;
+            // Where it lands and who, for a computer seat weighing the pull.
+            b.dataset.at = `${s.spot.col},${s.spot.row}`;
+            b.dataset.uid = String(defUid);
+            if (must) b.dataset.must = '1';
             b.className = 'chip chip-intact';
             b.textContent = `Drag ${s.label}`;
             b.disabled = !this.mayDrive('attacker');
@@ -6649,7 +6678,8 @@ export class AttackHelper {
             b.disabled = !this.mayDrive('attacker');
             b.addEventListener('click', () => {
               if (choiceTaken || !picked) return;
-              this.onCommand({ kind: 'forceMove', seat, uid: atkUid, targetUid: defUid, to: picked, facing: f as Facing });
+              // A Drag the table refuses moved nothing, so the choice stays open.
+              if (!accepted(this.onCommand({ kind: 'forceMove', seat, uid: atkUid, targetUid: defUid, to: picked, facing: f as Facing }))) return;
               this.note(`Drag: ${defLabel} is pulled adjacent and turned to face ${name}, treated as Flying Movement (glossary).`);
               this.onChanged();
               retire(b, `Dragged: ${defLabel} lands beside the attacker, facing ${name}`);

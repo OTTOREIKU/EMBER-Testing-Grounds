@@ -54,6 +54,8 @@ import { barcodeSvg } from '../src/barcode';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset, type MechPreset } from '../src/presets';
 import { deleteSquad, isBuiltInSquad, loadoutFaction as loadoutFactionOf, loadoutPoints as loadoutPointsOf, loadSquads, savedSquadPoints as savedSquadPointsOf, saveSquad, type SavedSquad } from '../src/squadstore';
 import { openAccount } from '../src/account';
+import { installDiagnostics, noteCommand, noteRefusal } from '../src/diagnostics';
+import { openBoardReport } from '../src/reportui';
 import { bindLibrary, onLibrary } from '../src/library';
 import { hiddenBuiltIns, restoreBuiltIns } from '../src/builtins';
 import { actionBlock, cardRow, fillPortraits, keywordCard, kwLabel, linkKeywords, rulesSections, rulesTab, sheetHtml as refSheetHtml, sheetLabel as refSheetLabel, traitBlock, useCardData } from '../src/refcards';
@@ -265,6 +267,9 @@ const relay = new Relay(api.base, {
 // Centre. This REPLACES publishing by hand at the call site.
 onPerformed((cmd) => relay.publish(cmd));
 
+// The errors a problem report carries, caught as the board pages catch them.
+installDiagnostics(window);
+
 // The ledger's name resolver. Built once and cached because labelFor is called
 // for EVERY command and must not rescan the card list each time - and the sheet
 // borrows it to name an Ammo pool by the Action that spends it.
@@ -277,13 +282,18 @@ function names(): LedgerNames | undefined {
 // The undo ledger. onBeforeApply fires for the other player's commands too, so
 // the history holds the whole table's story rather than half of it.
 onBeforeApply((s, cmd) => {
+  // What is being applied, for a problem report's errors (src/diagnostics.ts).
+  noteCommand(cmd.kind);
   const meta = labelFor(cmd, s, names());
   recordSnapshot(s, cmd.kind, { human: meta.label, seat: meta.seat, role: meta.role });
 });
 
 // A strict refusal is the engine teaching a rule, which is the whole point of
-// this app - so it is shown, never swallowed.
-onRefused((why) => refuse(why));
+// this app - so it is shown, never swallowed. And kept for a report.
+onRefused((why) => {
+  noteRefusal(why);
+  refuse(why);
+});
 
 // 'collection' is the lobby's own page for the player's collection, the same
 // panel the table's More opens, reachable before any game so a shelf can be
@@ -582,7 +592,10 @@ function signinHtml(): string {
       <div class="pad-or">or without an account</div>
       <button class="pad-btn" data-act="solo">Offline Game</button>
     </div>
-    ${lobbyLists()}`;
+    ${lobbyLists()}
+    <div class="pad-foot">
+      <button class="pad-btn" data-act="report">Report a problem</button>
+    </div>`;
 }
 
 function registerHtml(): string {
@@ -650,6 +663,7 @@ function lobbyHtml(): string {
     ${lobbyLists()}
     <div class="pad-foot">
       <button class="pad-btn" data-act="account">Account</button>
+      <button class="pad-btn" data-act="report">Report a problem</button>
     </div>`;
 }
 
@@ -3724,6 +3738,7 @@ function morePanel(): string {
     </div>
 
     <div class="pad-foot">
+      <button class="pad-btn" data-act="report">Report a problem</button>
       ${room
         ? `<button class="pad-btn" data-act="leave">Leave the table</button>
            ${view.host ? '<button class="pad-btn danger" data-act="close-room">Close the table for everyone</button>' : ''}`
@@ -5177,6 +5192,22 @@ function act(el: HTMLElement, ev: Event): void {
         screen = 'lobby';
       });
       return;
+    case 'report': {
+      // REPORT A PROBLEM, as the board and the Match Centre have it (OTTO,
+      // 2026-10-05: "a report button and functionality is missing entirely
+      // from PAD"): the same form and the same file, the table the pad holds
+      // and its recent moves, and the connection's own report. There is no
+      // board to draw, so no picture is offered.
+      const r = table.round;
+      const at = `Round ${r.n} · ${PHASES[r.phase] ?? ''} Phase`;
+      openBoardReport({
+        lead: view.room ? `The pad · ${at} · table ${view.room.id}` : screen === 'table' ? `The pad · ${at} · tracking a game` : 'The pad · not at a table',
+        state: table,
+        seat: view.seat ?? null,
+        net: relay.diagnostics(),
+      });
+      return;
+    }
     case 'account':
       // The account is the shared screen's (src/account.ts): the board and the
       // Match Centre open the same one. A session ended there leaves the

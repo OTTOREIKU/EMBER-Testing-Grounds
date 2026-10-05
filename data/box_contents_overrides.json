@@ -1,6 +1,12 @@
 {
   "_comment": "Corrections to the box membership recorded in cards.json, keyed by box key. Each entry is authoritative for that box: on load the box is stripped from every card's containedIn, then re-added from the list here. Card ids map to quantityPerBox. Use this when the community data groups a set wrongly, rather than editing cards.json, which is regenerated from the builder bundle.",
   "boxes": {
+    "LAB_GOF_CENTAUR": {
+      "_note": "2026-10-05, from the back of the LAB-CENTAUR SK box on the publisher's product page (queti-tectonics.com, LAB-CENTAUR SK, its second picture): 1 Mech, 5 Part Cards, 1 Pilot Card, 1 Timing Dial, 1 Link Dial, 28 tokens. OTTO, 2026-10-05: the box 'only has pieces for a single build of the unit'. The five Parts are the community data's list, unchanged. The Pilot Card printed on the box is 72 of the S25 Ursa Squadron, which is ZPA-72 Grenadier-72 (the GoF list's only pilot numbered 72, of that squadron); the community data had no pilot in this box. Whether the two SK-named Parts are the SK printings (PLK400-SK, P7A3-SK) rather than 181 and 173 the picture cannot show: the stats are the same, only the chassis points differ.",
+      "cards": {
+        "173": 1, "181": 1, "ZHLA-304": 1, "ZHRA-304": 1, "ZYBP-302": 1, "ZPA-72": 1
+      }
+    },
     "SINGLE_UN_TAURUS": {
       "_note": "OTTO 2026-09-26, from his physical Single Pack Taurus: it also holds a TM35N Alligator Electronic Warfare Core (097), which the community data filed under Doorbreaker alone. Doorbreaker has it too (he checked that box as well), so 097 is now in both. The other seven cards are the community data's list, unchanged.",
       "cards": {

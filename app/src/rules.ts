@@ -450,6 +450,16 @@ export function pathDirection(path: LargeGrid[]): string | null {
   return dir;
 }
 
+// Whether entering Large Grid `g` is a Crush that ends the Movement there
+// (4.3.6): the unit cannot stand in it as it is, it may Crush what is there,
+// and it is not passing through on a phase (the Firefly, FAQ I15).
+// `searchMoves` reads its footing the same way.
+function crushStop(g: LargeGrid, t: Token, terrain: TerrainPiece[], tokens: Token[], flying: boolean, opts?: MoveOpts): boolean {
+  if (flying || t.aerial || !opts?.crushable?.(g.c, g.r)) return false;
+  if (canStandIn(g.c, g.r, t.size, t.aerial, terrain, tokens, t.uid)) return false;
+  return !(opts.phaseThrough && canStandIn(g.c, g.r, t.size, t.aerial, terrain.filter((p) => p.type !== 'container'), [], t.uid));
+}
+
 // One search serving both the range overlay and the route a unit will actually
 // walk, so the path drawn is the path the search found rather than a straight
 // line. Steps normally cost 1, but Break Away makes leaving a Grid dearer, so
@@ -960,6 +970,11 @@ export function extendPath(
   // A route that has entered a stop Grid is finished: the Fragile Platform
   // ends the movement, so there is nothing to chain a waypoint onto.
   if (opts?.stop?.(last.c, last.r)) return null;
+  // So is one that has crushed its way into a Grid: the Crush ends the
+  // Movement Action (4.3.6; FAQ E11, E16). A waypoint chained on from there
+  // walked the unit on through the Container, which stayed on the board
+  // (terrain audit, 2026-10-05). The same test as the search's own.
+  if (path.length > 1 && crushStop(last, t, terrain, tokens, flying, opts)) return null;
   if (last.c === to.c && last.r === to.r) return null;
   const prev = path[path.length - 2];
   if (prev && prev.c === to.c && prev.r === to.r) return path.slice(0, -1);

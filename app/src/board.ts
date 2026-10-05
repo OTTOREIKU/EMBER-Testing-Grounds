@@ -65,6 +65,9 @@ export interface BoardCallbacks {
   onCellHover?(col: number, row: number): void;
   onTerrainClick?(id: string, erase: boolean): void;
   onDestroyTerrain?(id: string): void;
+  // A route is being drawn: a click on a piece of terrain is a click on its
+  // Grid, for the route to take.
+  routing?(): boolean;
 }
 
 function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
@@ -603,6 +606,12 @@ export class Board {
       } else if (p.isFragile) {
         g.style.cursor = 'pointer';
         g.addEventListener('pointerdown', (ev) => {
+          // WHILE A ROUTE IS BEING DRAWN a click on a Container is a click on
+          // its Grid, which a Large unit moving in Crushes (4.3.6). Taken as a
+          // click on the piece, it asked whether to destroy it by hand and the
+          // move was never made (OTTO, 2026-10-05: "our engine seems to stop a
+          // mech from moving into a grid that has a small destroyable terrain").
+          if (this.callbacks.routing?.()) return;
           ev.stopPropagation();
           this.callbacks.onDestroyTerrain?.(p.id);
         });
@@ -1509,6 +1518,15 @@ export class Board {
 // geometry, and a reader with no board (turn.ts) needs it. Re-exported for the
 // callers that had it from here.
 export { snapPlacement } from './rules';
+
+// A STRAIGHT FLIGHT for animateMove (OTTO, 2026-10-05: "the missile will move
+// in a path towards the unit"): one stop for each Large Grid it crosses, so a
+// long flight takes longer than a short one. What a Projectile flies on every
+// board, launched or flying at its target.
+export function straightStops(from: { col: number; row: number }, to: { col: number; row: number }): { col: number; row: number }[] {
+  const n = Math.max(1, Math.ceil(Math.max(Math.abs(to.col - from.col), Math.abs(to.row - from.row)) / 3));
+  return Array.from({ length: n + 1 }, (_, i) => ({ col: from.col + ((to.col - from.col) * i) / n, row: from.row + ((to.row - from.row) * i) / n }));
+}
 
 // The cells a base covers, a line unit's 1x3 across its facing included
 // (types.ts baseCells).

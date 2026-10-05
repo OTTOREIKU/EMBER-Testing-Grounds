@@ -92,6 +92,100 @@ export const BRAWLER = {
 
 const B = BRAWLER;
 
+// THE BRAWLER OF THE SETUP DIALOG (OTTO, 2026-10-05, watching it play UN: "the
+// Brawler may be a touch more aggressive than it needs to be and possibly
+// should consider ranged aggression"; its Drones walked "directly into the
+// line of fire of the enemy mechs causing them to all die before they could
+// get an attack off", and the Carrier "never chose to stay near the UN mech to
+// give it a bonus"). Still a fighter with no plan, with four habits a player
+// has, each a switch so that each can be measured. The copy has none of them
+// (`COPY`), and the Tactician's fallbacks answer as the copy does.
+export interface BrawlerSkills {
+  // A RANGED UNIT KEEPS ITS DISTANCE: of the Grids it could attack from, the
+  // one fewest enemies could attack it in, and of those the farthest from the
+  // enemy it would attack. Without it the nearest.
+  kite: boolean;
+  // A DRONE THAT CANNOT ATTACK YET KEEPS OUT OF THE LINE OF FIRE: walking at
+  // the enemy, a Grid fewer enemies could attack it in beats one nearer the
+  // enemy, and it stays where it is rather than step into one.
+  screen: boolean;
+  // A DRONE WITH NOTHING TO ATTACK WITH STAYS WITH ITS SQUAD: one carrying a
+  // Load stands in Contact with an Ally Mech, which uses the Load as its own
+  // Part; any other beside the nearest Mech of its squad. It never walks at the
+  // enemy.
+  escort: boolean;
+  // AN ELECTRONIC ATTACK IS AN ATTACK: its Range counts as reach in choosing
+  // where to stand, terrain and sight never in the way (4.11.1), and its target
+  // is the one it stops most: a Mech before a Drone, one that can still fire.
+  jams: boolean;
+}
+export const COPY: BrawlerSkills = { kite: false, screen: false, escort: false, jams: false };
+
+// How far a unit could walk before it attacks: a Mech its Maneuver, twice it in
+// Mobility Stance (3.4.3); a Drone not at all, a Command buying it a Movement
+// or an Action and not both.
+const stepOf = (u: UnitView): number => (u.kind === 'mech' ? u.maneuver * (u.stance === 'mobility' ? 2 : 1) : 0);
+
+// The Electronic Attacks a unit carries (`jams`): a Tactic made at a Range on
+// an enemy, not one that serves its own squad or hands an Ally a turn.
+const jammers = (u: UnitView): WeaponView[] => u.weapons.filter((w) => ready(w) && w.type === 'Tactic' && w.range > 0 && !w.own && !w.grants);
+
+// A unit with nothing of its own to attack with (`escort`): no gun, no blade,
+// no launcher, no Electronic Attack.
+const unarmed = (u: UnitView): boolean =>
+  !strikers(u).length && !jammers(u).length && !u.weapons.some((w) => ready(w) && w.type === 'Projectile');
+
+// HOW MANY ENEMIES COULD ATTACK A UNIT IN EACH OF SOME GRIDS at their next
+// turn (`kite`, `screen`, `escort`): a gun whose Range its step before the
+// attack brings within reach of the Grid, where it has sight of the Grid as it
+// stands (the engine's sight, `seen`; geometry alone with nobody to ask); a
+// launcher or an Electronic Attack likewise, sight or none; a blade it could
+// step into Contact with.
+function dangerAt(me: UnitView, grids: Grid[], d: Decision, foes: UnitView[]): number[] {
+  const seers = d.here ? d.here().seen(me.uid, grids) : null;
+  return grids.map((at, i) => foes.filter((f) => {
+    const walk = stepOf(f);
+    const far = apart(f.grid, at);
+    const sees = !seers || (seers[i] ?? []).includes(f.uid);
+    return f.weapons.some((w) => {
+      if (!ready(w) || w.own || w.grants) return false;
+      if (w.type === 'Melee') return !me.aerial && far <= walk + 1;
+      if (w.type === 'Firing') return sees && far <= Math.max(1, w.range) + walk;
+      if (w.type === 'Projectile') return far <= w.range + (w.strike ?? 0) + walk;
+      return w.type === 'Tactic' && w.range > 0 && far <= w.range + walk;
+    });
+  }).length);
+}
+
+// Two square bases in Contact (4.2.3, rules.ts inContact): their Small Grids
+// share an edge, or overlap; a corner alone is not Contact.
+function touches(a: UnitView, b: UnitView): boolean {
+  const gapX = Math.max(a.cell.col - (b.cell.col + b.size), b.cell.col - (a.cell.col + a.size));
+  const gapY = Math.max(a.cell.row - (b.cell.row + b.size), b.cell.row - (a.cell.row + a.size));
+  if (gapX < 0 && gapY < 0) return true;
+  return (gapX === 0 && gapY < 0) || (gapY === 0 && gapX < 0);
+}
+
+// What an Electronic Attack on a unit stops (`jams`): a Mech's guns before a
+// Drone's, a unit that can still fire before one that cannot, and one whose
+// turn is still to come.
+function jamWorth(t: UnitView): number {
+  const fires = t.weapons.some((w) => ready(w) && w.type === 'Firing');
+  return (t.kind === 'mech' ? 20 : 5) * (fires ? 1 : 0.2) + (t.done ? 0 : 5);
+}
+
+// A Grid an Electronic Attack could be made from (`jams`), as "where to stand"
+// scores a Grid an attack could be made from: the enemy it would be made on
+// there is the nearest within its Range (166_A: "1 nearest Enemy Unit within
+// range"), Range read along the rows and columns, nothing in the way.
+function jamAt(me: UnitView, at: Grid, foes: UnitView[]): number | null {
+  const reach = Math.max(0, ...jammers(me).map((w) => w.range));
+  const inside = foes.filter((f) => !f.camouflaged && apart(at, f.grid) <= reach);
+  if (!reach || !inside.length) return null;
+  const nearest = inside.reduce((a, b) => (apart(at, b.grid) < apart(at, a.grid) ? b : a));
+  return B.ATTACK_GRID_SCORE + jamWorth(nearest);
+}
+
 // Looking the way it is going is worth a hair to a unit with nothing to
 // attack: more than BETTER_BY, so that it will turn for it.
 const FACING_EPSILON = 0.0005;
@@ -264,9 +358,19 @@ const said = (s: Shot): string => (s.forecast ? `${percent(s.forecast.pen)} to P
 // stand Melee Locked in first, and of those the nearest to its enemy. What
 // could really be attacked from there, and at what odds, is the engine's
 // answer (`then`), so sight and what the turn still pays for count.
-interface Reached { move: Option; shot: Shot; tie: number }
+interface Reached { move: Option; shot: Shot; tie: number; danger?: number; far?: number }
 
-function reachedBy(d: Decision, view: SeatView, me: UnitView, foes: UnitView[]): Reached | null {
+// `kite`: of two attacks worth the same, the one made from the Grid fewer
+// enemies could attack it in, then from farther off.
+function kiteBeats(a: Reached, b: Reached): boolean {
+  const more = a.shot.value - b.shot.value;
+  if (Math.abs(more) > EXACT) return more > 0;
+  if ((a.danger ?? 0) !== (b.danger ?? 0)) return (a.danger ?? 0) < (b.danger ?? 0);
+  if ((a.far ?? 0) !== (b.far ?? 0)) return (a.far ?? 0) > (b.far ?? 0);
+  return a.tie > b.tie + EXACT;
+}
+
+function reachedBy(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], k: BrawlerSkills = COPY): Reached | null {
   const landings = new Map<string, { at: Grid; near: number; locked: boolean; moves: Option[] }>();
   for (const o of d.options) {
     if (o.tags[0] !== 'move' || !o.then) continue;
@@ -284,13 +388,19 @@ function reachedBy(d: Decision, view: SeatView, me: UnitView, foes: UnitView[]):
     landings.set(key, l);
   }
   const tried = [...landings.values()].sort((a, b) => Number(a.locked) - Number(b.locked) || a.near - b.near).slice(0, B.LANDING_CELLS);
+  const danger = k.kite ? dangerAt(me, tried.map((l) => l.at), d, foes) : null;
   let best: Reached | null = null;
-  for (const l of tried) {
+  for (const [i, l] of tried.entries()) {
     for (const move of l.moves) {
       const next = move.then?.(['attack']);
       const shot = next ? bestShot(next.options, view, l.at) : null;
       if (!shot || shot.value <= 0) continue;
       const tie = standing(me, l.at, facingOf(move) ?? me.facing, view, foes) ?? 0;
+      if (danger) {
+        const r: Reached = { move, shot, tie, danger: danger[i], far: shot.target ? apart(l.at, shot.target.grid) : 0 };
+        if (!best || kiteBeats(r, best)) best = r;
+        continue;
+      }
       if (!best || shot.value > best.shot.value + EXACT || (Math.abs(shot.value - best.shot.value) <= EXACT && tie > best.tie + EXACT)) best = { move, shot, tie };
     }
   }
@@ -322,28 +432,7 @@ export function nearestRoad(d: Decision): { uid: number; road: Road } | null {
 function approach(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], trust: boolean): Choice | null {
   const moves = d.options.filter((o) => o.tags[0] === 'move' && !!endOf(o));
   if (!moves.length || !foes.length) return null;
-  const led = nearestRoad(d);
-  const place = (at: Grid): number => (led ? led.road.findIndex((g) => g.c === at.col && g.r === at.row) : -1);
-  // How far a Grid still is from the enemy: along the road where one is known,
-  // and a Grid off the road is no nearer at all.
-  const far = (at: Grid): number => {
-    if (!led) return Math.min(...foes.map((f) => apart(at, f.grid)));
-    if (same(at, me.grid)) return led.road.length;
-    const i = place(at);
-    return i < 0 ? Infinity : led.road.length - 1 - i;
-  };
-  // What a unit standing there would turn to look at: the next Grid of the
-  // road, or the enemy at the end of it.
-  const onward = (at: Grid): Grid | null => {
-    if (!led) return foes.reduce((a, b) => (apart(at, b.grid) < apart(at, a.grid) ? b : a)).grid;
-    const next = led.road[same(at, me.grid) ? 0 : place(at) + 1];
-    return next ? { col: next.c, row: next.r } : unitOf(view, led.uid)?.grid ?? null;
-  };
-  // A Grid with nothing to attack from it: the nearer the enemy the better.
-  const walk = (at: Grid, facing: number): number => {
-    const to = onward(at);
-    return -far(at) + (to && !same(at, to) && facing === facingAt(at, to) ? FACING_EPSILON : 0);
-  };
+  const walk = roadOf(d, view, me, foes);
   // A Grid geometry says it could attack from, by the engine's word where the
   // answer has one to give.
   const sure = (o: Option | undefined, at: Grid, claim: number): number | null => {
@@ -374,6 +463,149 @@ function approach(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], t
     option: best.o.id, reason: 'contact_before_occupation', score: best.s,
     why: best.s >= B.ATTACK_GRID_SCORE ? 'to a Grid it can attack from' : 'closing on the nearest enemy',
   };
+}
+
+// THE ROAD TO THE ENEMY, as `approach` walks it: what a Grid with nothing to
+// attack from it is worth, the nearer the enemy the better.
+function roadOf(d: Decision, view: SeatView, me: UnitView, foes: UnitView[]): (at: Grid, facing: number) => number {
+  const led = nearestRoad(d);
+  const place = (at: Grid): number => (led ? led.road.findIndex((g) => g.c === at.col && g.r === at.row) : -1);
+  // How far a Grid still is from the enemy: along the road where one is known,
+  // and a Grid off the road is no nearer at all.
+  const far = (at: Grid): number => {
+    if (!led) return Math.min(...foes.map((f) => apart(at, f.grid)));
+    if (same(at, me.grid)) return led.road.length;
+    const i = place(at);
+    return i < 0 ? Infinity : led.road.length - 1 - i;
+  };
+  // What a unit standing there would turn to look at: the next Grid of the
+  // road, or the enemy at the end of it.
+  const onward = (at: Grid): Grid | null => {
+    if (!led) return foes.reduce((a, b) => (apart(at, b.grid) < apart(at, a.grid) ? b : a)).grid;
+    const next = led.road[same(at, me.grid) ? 0 : place(at) + 1];
+    return next ? { col: next.c, row: next.r } : unitOf(view, led.uid)?.grid ?? null;
+  };
+  // A Grid with nothing to attack from it: the nearer the enemy the better.
+  return (at: Grid, facing: number): number => {
+    const to = onward(at);
+    return -far(at) + (to && !same(at, to) && facing === facingAt(at, to) ? FACING_EPSILON : 0);
+  };
+}
+
+// Whether one ranking beats another, term by term (`kite`, `screen`): the last
+// term by more than BETTER_BY, as `approach` asks of a move over staying.
+function ranksAbove(a: number[], b: number[]): boolean {
+  for (let i = 0; i < a.length; i++) {
+    const more = a[i] - b[i];
+    const by = i === a.length - 1 ? B.BETTER_BY : EXACT;
+    if (more > by) return true;
+    if (more < -by) return false;
+  }
+  return false;
+}
+
+// MOVE TOWARD CONTACT WITH ITS HABITS (`kite`, `screen`, `jams`): `approach`'s
+// Grids and its asking of the engine, ranked so that, of the Grids it could
+// attack from, the one fewest enemies could attack it in comes first and then
+// the farthest from the enemy it would attack (`kite`); of the Grids it could
+// not, a Drone takes the one fewest enemies could attack it in before the one
+// nearer the enemy, and stays put rather than step into the line of fire
+// (`screen`); and an Electronic Attack's Range counts as reach (`jams`).
+function approachWith(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], trust: boolean, k: BrawlerSkills): Choice | null {
+  const moves = d.options.filter((o) => o.tags[0] === 'move' && !!endOf(o));
+  if (!moves.length || !foes.length) return null;
+  const walk = roadOf(d, view, me, foes);
+  const jamming = k.jams && !strikers(me).length && jammers(me).length > 0;
+  const screened = k.screen && me.kind === 'drone';
+  const end = d.options.find((o) => o.tags.includes('end'));
+  type Cand = { o: Option | null; at: Grid; facing: number; claim: number | null; s: number | null };
+  const claimOf = (at: Grid, facing: number): number | null => (jamming ? jamAt(me, at, foes) : standing(me, at, facing, view, foes));
+  // Staying first, so that a move must be better to be taken.
+  const cands: Cand[] = [
+    { o: null, at: me.grid, facing: me.facing, claim: claimOf(me.grid, me.facing), s: null },
+    ...moves.map((o) => { const at = endOf(o)!; const facing = facingOf(o) ?? me.facing; return { o, at, facing, claim: claimOf(at, facing), s: null }; }),
+  ];
+  const danger = k.kite || screened ? dangerAt(me, cands.map((c) => c.at), d, foes) : cands.map(() => 0);
+  const dangerOf = new Map(cands.map((c, i) => [c, danger[i]]));
+  // How far off the enemy it would attack is, from there.
+  const reachFrom = (c: Cand): number => {
+    const targets = foes.filter((f) => (jamming ? apart(c.at, f.grid) <= Math.max(...jammers(me).map((w) => w.range)) : couldStrike(me, c.at, c.facing, f, lockedAt(me, c.at, foes))));
+    return targets.length ? Math.min(...targets.map((f) => apart(c.at, f.grid))) : 0;
+  };
+  // Whether it could attack from each, by the engine's word as `approach` asks
+  // it; an Electronic Attack by its Range alone. The likeliest are asked
+  // first; with its habits, the Grids fewest enemies could attack it in and
+  // the farthest off, which are the ones it would take.
+  const order = k.kite || screened
+    ? [...cands].sort((a, b) => (dangerOf.get(a) ?? 0) - (dangerOf.get(b) ?? 0) || reachFrom(b) - reachFrom(a) || (b.claim ?? 0) - (a.claim ?? 0))
+    : [...cands].sort((a, b) => (b.claim ?? 0) - (a.claim ?? 0));
+  let asked = 0;
+  for (const c of order) {
+    if (c.claim === null) continue;
+    if (jamming) { c.s = c.claim; continue; }
+    const o = c.o ?? end;
+    if (o?.later) {
+      if (asked >= B.MOVEMENT_CELLS_PER_STEP) continue;
+      asked += 1;
+    }
+    const answer = o ? standingAfter(o, me, c.at, view, foes) : undefined;
+    c.s = answer === undefined ? (trust ? c.claim : null) : answer;
+  }
+  // A Drone moved now acts in the Automatic Phase, after every Mech of the
+  // other squad has had its turn: a Grid it could attack from that a Mech
+  // could attack it in first is no Grid to attack from (`screen`). And the
+  // Mechs it would attack will have moved by then, so it keeps two Grids of
+  // its Range in hand rather than stand at the end of it (`kite`).
+  const arm = Math.max(0, ...(jamming ? jammers(me) : strikers(me)).map((w) => w.range));
+  const rank = (c: Cand, i: number): number[] => {
+    const attack = c.s !== null && c.s >= B.ATTACK_GRID_SCORE;
+    if (screened) return [-danger[i], Number(attack), attack && k.kite ? Math.min(reachFrom(c), Math.max(1, arm - 2)) : 0, attack ? c.s ?? 0 : walk(c.at, c.facing)];
+    if (attack) return k.kite ? [1, -danger[i], reachFrom(c), c.s ?? 0] : [1, 0, 0, c.s ?? 0];
+    return [0, 0, 0, walk(c.at, c.facing)];
+  };
+  const ranks = cands.map(rank);
+  let bi = 0;
+  for (let i = 1; i < cands.length; i++) if (ranksAbove(ranks[i], ranks[bi])) bi = i;
+  const best = cands[bi];
+  if (!best.o) {
+    // Nowhere better to stand: a Drone keeping out of the line of fire ends
+    // its activation where it is rather than walk on for the Main Task.
+    return screened && end ? { option: end.id, reason: 'out_of_fire', why: 'keeping out of the line of fire' } : null;
+  }
+  const attack = best.s !== null && best.s >= B.ATTACK_GRID_SCORE;
+  return {
+    option: best.o.id, reason: 'contact_before_occupation', score: best.s ?? walk(best.at, best.facing),
+    why: attack ? (jamming ? 'to a Grid it can jam from' : 'to a Grid it can attack from') : screened ? 'closing on the enemy, out of the line of fire' : 'closing on the nearest enemy',
+  };
+}
+
+// A DRONE WITH NOTHING TO ATTACK WITH STAYS WITH ITS SQUAD (`escort`): one
+// carrying a Load in Contact with an Ally Mech, which then uses the Load as its
+// own Part (162_A), and any other beside the nearest Mech of its squad; of
+// those the Grid fewest enemies could attack it in. Null with no Mech left.
+function escort(d: Decision, view: SeatView, me: UnitView, foes: UnitView[]): Choice | null {
+  const mechs = view.units.filter((u) => u.side === view.seat && u.kind === 'mech' && u.deployed && u.alive);
+  if (!mechs.length) return null;
+  const end = d.options.find((o) => o.tags.includes('end'));
+  const near = (at: Grid): number => Math.min(...mechs.map((m) => apart(at, m.grid)));
+  type Cand = { o: Option | null; at: Grid; lends: number | null };
+  const touching = me.lends ? mechs.find((m) => touches(me, m)) : undefined;
+  const cands: Cand[] = [
+    { o: null, at: me.grid, lends: touching?.uid ?? null },
+    ...d.options.filter((o) => o.tags[0] === 'move' && !!endOf(o) && !o.tags.includes('crush-unit') && !o.tags.includes('mined'))
+      .map((o) => ({ o, at: endOf(o)!, lends: me.lends && typeof o.facts?.lendsTo === 'number' ? o.facts.lendsTo : null })),
+  ];
+  const danger = dangerAt(me, cands.map((c) => c.at), d, foes);
+  const rank = (c: Cand, i: number): number[] => [me.lends ? Number(c.lends !== null) : 0, -danger[i], -near(c.at)];
+  const ranks = cands.map(rank);
+  let bi = 0;
+  for (let i = 1; i < cands.length; i++) if (ranksAbove(ranks[i], ranks[bi])) bi = i;
+  const best = cands[bi];
+  const lentTo = best.lends !== null ? unitOf(view, best.lends)?.label : undefined;
+  if (!best.o) {
+    return end ? { option: end.id, reason: 'escort', why: lentTo ? `lending its Load to ${lentTo} where it stands` : 'staying with its squad' } : null;
+  }
+  return { option: best.o.id, reason: 'escort', why: lentTo ? `to lend its Load to ${lentTo}` : 'back beside its squad' };
 }
 
 // HOLD GROUND: what his rung's name puts second (contact BEFORE occupation).
@@ -412,7 +644,7 @@ function occupy(d: Decision, view: SeatView, me: UnitView, foes: UnitView[]): Ch
 
 // THE LADDER, for a unit holding an Action Opportunity or an activation. It is
 // asked again after every answer, so each rung is one step.
-function activation(asked: Decision, view: SeatView): Choice | null {
+function activation(asked: Decision, view: SeatView, k: BrawlerSkills = COPY): Choice | null {
   const me = unitOf(view, asked.unit);
   if (!me) return null;
   // His squads carry no Mines and his ladder has no rung about one: a
@@ -429,9 +661,16 @@ function activation(asked: Decision, view: SeatView): Choice | null {
 
   // Attack now, unless a Maneuver or a move Action reaches a strictly better
   // attack. A Projectile to launch is an attack like another, worth what its
-  // blast is.
-  const ahead = reachedBy(d, view, me, foes);
-  if (ahead && ahead.shot.value > Math.max(worthNow, launch?.value ?? 0) + B.BETTER_BY) {
+  // blast is. With `kite`, an attack as good from a Grid fewer enemies could
+  // attack it in, or from farther off, is better too.
+  const ahead = reachedBy(d, view, me, foes, k);
+  const fromHere = (): Reached | null => (now && ahead ? {
+    move: ahead.move, shot: now, tie: standing(me, me.grid, me.facing, view, foes) ?? 0,
+    danger: dangerAt(me, [me.grid], d, foes)[0], far: now.target ? apart(me.grid, now.target.grid) : 0,
+  } : null);
+  const kiting = k.kite && !!ahead && !!now && worthNow > 0 && worthNow >= (launch?.value ?? 0);
+  const here = kiting ? fromHere() : null;
+  if (ahead && (here ? kiteBeats(ahead, here) : ahead.shot.value > Math.max(worthNow, launch?.value ?? 0) + B.BETTER_BY)) {
     return {
       option: ahead.move.id, reason: 'movement_unlocks_better_target', score: ahead.shot.value,
       why: `from there, ${ahead.shot.option.label} (${said(ahead.shot)})`,
@@ -446,7 +685,10 @@ function activation(asked: Decision, view: SeatView): Choice | null {
   // target it is offered.
   const jams = d.options.filter((o) => o.tags[0] === 'electronic');
   if (jams.length) {
-    const scored = jams.map((o) => { const t = unitOf(view, o.facts?.targetUid); return { o, s: t ? targetScore(t, apart(me.grid, t.grid)) : 0 }; });
+    const scored = jams.map((o) => {
+      const t = unitOf(view, o.facts?.targetUid);
+      return { o, s: t ? (k.jams ? jamWorth(t) : targetScore(t, apart(me.grid, t.grid))) : 0 };
+    });
     const pick = scored.reduce((a, b) => (b.s > a.s ? b : a));
     return { option: pick.o.id, reason: 'attack_result_value', score: B.ATTACK_BASE, why: 'an Electronic Attack on offer' };
   }
@@ -480,7 +722,12 @@ function activation(asked: Decision, view: SeatView): Choice | null {
   const locked = lockedAt(me, me.grid, foes);
   const walled = fresh && !now && strikers(me).some((w) => opens(w) && !(w.type === 'Firing' && locked)
     && foes.some((f) => !f.camouflaged && inFront(me.grid, me.facing, f.grid) && reaches(w, me.grid, f.grid) && !(w.type === 'Melee' && f.aerial)));
-  const step = approach(d, view, me, foes, !walled);
+  // A Drone with nothing to attack with stays with its squad (`escort`).
+  if (k.escort && me.kind === 'drone' && unarmed(me)) {
+    const stay = escort(d, view, me, foes);
+    if (stay) return stay;
+  }
+  const step = k.kite || k.screen || k.jams ? approachWith(d, view, me, foes, !walled, k) : approach(d, view, me, foes, !walled);
   if (step) return step;
 
   // Contact before occupation: with nobody to close on, it holds ground.
@@ -542,7 +789,7 @@ function launching(d: Decision, view: SeatView, foes: UnitView[]): Launch | null
 // engine's (`then`: the Opportunity that dial would open, on the board as it
 // stands), so a wall, a Melee Lock and a Grid the Maneuver cannot reach all
 // count.
-function dial(d: Decision, view: SeatView): Choice | null {
+function dial(d: Decision, view: SeatView, k: BrawlerSkills = COPY): Choice | null {
   const me = unitOf(view, d.unit);
   if (!me) return null;
   const foes = foesOf(view).filter((f) => !f.camouflaged);
@@ -569,7 +816,7 @@ function dial(d: Decision, view: SeatView): Choice | null {
     // With nobody to ask what the dial would open, the earliest Timing with
     // something in Range is all there is to go by.
     if (!o.then) return { option: o.id, reason: 'intent_opening', score: B.INTENT_OPENING_SCORE, why: `its ${opener?.name ?? 'Punch'} has an enemy in reach` };
-    const opening = openingOf(o, view, me, foes);
+    const opening = openingOf(o, view, me, foes, k);
     if (opening && (!best || opening.value > best.value + EXACT)) best = { o, ...opening };
   }
   if (best) return { option: best.o.id, reason: 'intent_opening', score: B.INTENT_OPENING_SCORE, why: best.why };
@@ -580,7 +827,7 @@ function dial(d: Decision, view: SeatView): Choice | null {
 // What the Opportunity a dial would open is worth, and what it begins with in
 // words: the best of an attack on offer as it opens, a Projectile to launch at
 // something, and an attack the Maneuver reaches. Null when it opens on none.
-function openingOf(o: Option, view: SeatView, me: UnitView, foes: UnitView[]): { value: number; why: string } | null {
+function openingOf(o: Option, view: SeatView, me: UnitView, foes: UnitView[], k: BrawlerSkills = COPY): { value: number; why: string } | null {
   const turn = o.then?.(['attack', 'maneuver', 'launch']);
   if (!turn) return null;
   let best: { value: number; why: string } | null = null;
@@ -588,7 +835,7 @@ function openingOf(o: Option, view: SeatView, me: UnitView, foes: UnitView[]): {
   if (now && now.value > 0) best = { value: now.value, why: `it opens with ${now.option.label} (${said(now)})` };
   const launch = launching(turn, view, foes);
   if (launch && (!best || launch.value > best.value + EXACT)) best = { value: launch.value, why: `it opens with ${launch.why}` };
-  const ahead = reachedBy(turn, view, me, foes);
+  const ahead = reachedBy(turn, view, me, foes, k);
   if (ahead && (!best || ahead.shot.value > best.value + B.BETTER_BY)) {
     best = { value: ahead.shot.value, why: `after its Maneuver, ${ahead.shot.option.label} (${said(ahead.shot)})` };
   }
@@ -607,7 +854,8 @@ function centreOf(view: SeatView): Grid {
 // DEPLOYMENT, by "where to stand": a Grid it could attack from if there is
 // one, and otherwise as near the enemy as its zone goes, or the middle of the
 // board while no enemy is down. A Mech is deployed ready to attack.
-function deploy(d: Decision, view: SeatView): Choice | null {
+function deploy(d: Decision, view: SeatView, k: BrawlerSkills = COPY): Choice | null {
+  if (k.escort || k.kite) return deployWith(d, view, k);
   const foes = foesOf(view);
   const aim = foes.length ? null : centreOf(view);
   let best: { o: Option; s: number } | null = null;
@@ -621,6 +869,48 @@ function deploy(d: Decision, view: SeatView): Choice | null {
     if (!best || s > best.s + EXACT) best = { o, s };
   }
   return best ? { option: best.o.id, reason: 'deploy_toward_enemy', score: best.s, why: 'deployed as far forward as its zone goes' } : null;
+}
+
+// DEPLOYMENT WITH ITS HABITS: a Drone with nothing to attack with is set down
+// last, in Contact with a Mech where it has a Load to lend and otherwise beside
+// the nearest one (`escort`); a ranged unit that could attack from its zone
+// takes the Grid of it fewest enemies could attack it in, then the farthest
+// from them (`kite`); the rest as `deploy` sets them down.
+function deployWith(d: Decision, view: SeatView, k: BrawlerSkills): Choice | null {
+  const foes = foesOf(view);
+  const aim = foes.length ? null : centreOf(view);
+  const mechs = view.units.filter((u) => u.side === view.seat && u.kind === 'mech' && u.deployed && u.alive);
+  const cands: { o: Option; me: UnitView; at: Grid; s: number }[] = [];
+  for (const o of d.options) {
+    const at = endOf(o);
+    const me = unitOf(view, o.facts?.uid);
+    if (!at || !me) continue;
+    if (o.facts?.stance !== undefined && o.facts.stance !== 'offensive') continue;
+    const s = standing(me, at, facingOf(o) ?? 0, view, foes) ?? -(aim ? apart(at, aim) : Math.min(...foes.map((f) => apart(at, f.grid))));
+    cands.push({ o, me, at, s });
+  }
+  if (!cands.length) return null;
+  const danger = k.kite && foes.length ? cands.map((c) => dangerAt(c.me, [c.at], d, foes)[0]) : cands.map(() => 0);
+  const ranged = (u: UnitView): boolean => Math.max(0, ...strikers(u).map((w) => w.range)) > 1;
+  const rank = (c: (typeof cands)[number], i: number): number[] => {
+    if (k.escort && c.me.kind === 'drone' && unarmed(c.me)) {
+      const lent = c.me.lends && typeof c.o.facts?.lendsTo === 'number' ? 1 : 0;
+      return [0, lent, mechs.length ? -Math.min(...mechs.map((m) => apart(c.at, m.grid))) : c.s, 0];
+    }
+    // Any Grid it could attack from before any it could not, as `deploy` has it.
+    if (c.s < B.ATTACK_GRID_SCORE) return [1, -100, 0, c.s];
+    if (!k.kite || !ranged(c.me)) return [1, 0, 0, c.s];
+    const far = foes.length ? Math.min(...foes.map((f) => apart(c.at, f.grid))) : 0;
+    return [1, -danger[i], far, c.s];
+  };
+  const ranks = cands.map(rank);
+  let bi = 0;
+  for (let i = 1; i < cands.length; i++) if (ranksAbove(ranks[i], ranks[bi])) bi = i;
+  const best = cands[bi];
+  const why = k.escort && best.me.kind === 'drone' && unarmed(best.me)
+    ? (typeof best.o.facts?.lendsTo === 'number' ? `deployed against ${unitOf(view, best.o.facts.lendsTo)?.label ?? 'a Mech'} to lend its Load` : 'deployed beside its squad')
+    : 'deployed as far forward as its zone goes';
+  return { option: best.o.id, reason: 'deploy_toward_enemy', score: best.s, why };
 }
 
 // The enemies inside the Range of anything a unit carries, whichever way it
@@ -755,19 +1045,19 @@ export function surplus(d: Decision, view: SeatView, worth: Worth = worthIn(d, v
 
 // ---------- the policy ----------
 
-function decide(d: Decision, view: SeatView): Choice | null {
+function decide(d: Decision, view: SeatView, k: BrawlerSkills = COPY): Choice | null {
   switch (d.kind) {
     case 'opp.act':
     case 'activation.act':
-      return activation(d, view);
+      return activation(d, view, k);
     case 'opp.reboot': {
       const up = d.options.find((o) => o.tags.includes('stance:offensive'));
       return up ? { option: up.id, reason: 'reboot', why: 'back up, ready to attack' } : null;
     }
     case 'planning.dial':
-      return dial(d, view);
+      return dial(d, view, k);
     case 'setup.deploy':
-      return deploy(d, view);
+      return deploy(d, view, k);
     case 'setup.designate.leader':
       // The Commander is the first eligible unit: no thought goes into it.
       return d.options.length ? { option: d.options[0].id, reason: 'first_eligible_commander', why: 'the first unit that may lead' } : null;
@@ -794,13 +1084,44 @@ function decide(d: Decision, view: SeatView): Choice | null {
       return reroll(d, view);
     case 'attack.surplus':
       return surplus(d, view);
-    case 'attack.finish': {
-      const bonus = d.options.find((o) => o.id === 'finish.bonus');
-      return bonus ? { option: bonus.id, reason: 'attack_result_value', why: 'a bonus attack is an attack' } : null;
-    }
+    case 'attack.finish':
+      return finishing(d, view);
     default:
       return null;
   }
+}
+
+// WHAT A HIT DOES TO THE UNIT IT STRUCK (OTTO, 2026-10-05: "neither disarm or
+// pull were performed"). A bonus attack first, as ever. Then each effect of the
+// hit still on offer, one press at a time: a Shutdown, a Disarm, an Immobilized
+// Token, a turn of its back, each of them the struck unit's loss. A Drag where
+// nothing else is taken (the Thrust Pick's, a Grappling Hook's on a Part with no
+// Discard Card): pulled straight in, to the Grid beside the attacker nearest
+// where it stood, its back to the attacker.
+function finishing(d: Decision, view: SeatView): Choice | null {
+  const bonus = d.options.find((o) => o.id === 'finish.bonus');
+  if (bonus) return { option: bonus.id, reason: 'attack_result_value', why: 'a bonus attack is an attack' };
+  for (const tag of ['shutdown', 'disarm', 'immobilize', 'turn']) {
+    const o = d.options.find((x) => x.tags.includes('rider') && x.tags.includes(tag));
+    if (o) return { option: o.id, reason: 'hit_effect', why: o.label };
+  }
+  const drags = d.options.filter((o) => o.tags.includes('drag'));
+  const away = drags.filter((o) => o.tags.includes('away'));
+  const pool = away.length ? away : drags;
+  if (!pool.length) return null;
+  const stood = view.units.find((u) => u.uid === Number(pool[0].facts?.uid))?.grid;
+  const far = (o: Option): [number, number] => {
+    const to = o.facts?.to as { col: number; row: number } | undefined;
+    if (!to || !stood) return [0, 0];
+    const dc = Math.floor(to.col / 3) - stood.col;
+    const dr = Math.floor(to.row / 3) - stood.row;
+    return [Math.max(Math.abs(dc), Math.abs(dr)), dc * dc + dr * dr];
+  };
+  const best = pool.reduce((a, b) => {
+    const [x, y] = [far(a), far(b)];
+    return y[0] < x[0] || (y[0] === x[0] && y[1] < x[1]) ? b : a;
+  });
+  return { option: best.id, reason: 'hit_effect', why: `${best.label}: pulled straight in, its back to the attacker` };
 }
 
 export const brawlerPolicy: Policy = {
@@ -811,3 +1132,15 @@ export const brawlerPolicy: Policy = {
     return decide(d, view) ?? { option: d.fallback, reason: 'safe_answer', why: 'the safe answer' };
   },
 };
+
+// THE BRAWLER WITH ITS HABITS, each switched as `skills` has it on top of the
+// copy (`BrawlerSkills`).
+export function makeBrawler(skills: Partial<BrawlerSkills>, name = 'brawler'): Policy {
+  const k: BrawlerSkills = { ...COPY, ...skills };
+  return {
+    name,
+    choose(d: Decision, view: SeatView) {
+      return decide(d, view, k) ?? { option: d.fallback, reason: 'safe_answer', why: 'the safe answer' };
+    },
+  };
+}

@@ -328,7 +328,23 @@
       "description": {
         "en": "· When Ally Units perform Firing actions against targets within range, target -1B."
       },
-      "_source": "UN 1.02 list, KK9 row. Publisher English for a card that had only our translation. The -1 Blue aura itself is not wired; the card ships in no released box."
+      "gameRules": [
+        {
+          "effects": [
+            {
+              "type": "aura",
+              "effectTypes": ["firing_target_blue_penalty"],
+              "targetSide": "enemy",
+              "targetUnitType": "unit",
+              "value": -1,
+              "label": "锁定",
+              "description": "友军在射击范围内目标时，目标-1{B}"
+            }
+          ]
+        }
+      ],
+      "_source": "UN 1.02 list, KK9 row. Publisher English for a card that had only our translation. The card ships in no released box.",
+      "_note": "Lock On, wired 2026-10-05 at OTTO's word (\"Lets wire this in and we can change it later if something in the way it functions changes at actual release\"). An aura on the ENEMY units within the KK9's Range: a Firing Action made against one of them by a unit of the KK9's side rolls 1 Blue die fewer in its Defense Roll (units.ts lockOnPenalty, read in combat.ts suggestedDefensePool). Each KK9 in Range is its own source and nothing printed says two do not stack, the reading Appease has (units.ts roundEndLinkSources). Written here because cards.json is regenerated from the community bundle, which gave this Passive no gameRules."
     },
     "LHDR-KK9_B": {
       "description": {

@@ -653,7 +653,7 @@
     "en": "Trainee Grenadiers from 525 Squadron."
    },
    "_flavour_note": "The English line is the list's Trait Description for this row. The Chinese is the other Grenadiers' line, since the list is English only.",
-   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer.",
+   "_box_note": "IN LAB-CENTAUR SK (box_contents_overrides.json): the back of that box, on the publisher's product page, shows its one Pilot Card, 72 of the S25 Ursa Squadron (2026-10-05). Before that the box was unknown: the parts lists carry no box column and neither does the publisher API.",
    "category": "pilot",
    "keywords": []
   },
