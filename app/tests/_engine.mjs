@@ -92,7 +92,12 @@ export function runner(M, data, state) {
 // default. The Match Centre's page runs its own on top of that (matchhud.ts
 // glueAfter: the queue of Smoke Screens a round's end owes), so a suite about
 // what only the page keeps hands that one in.
-export function seatTable(M, data, scenario, glue = M.G.glueAfter) {
+//
+// `tap(seat, cmd)` hears each command the moment it lands, before the glue and
+// before anyone at the table answers it: in the order the board took them, as
+// a page's relay hears them. (A watcher hears a command only once the answers
+// it set off have landed, so watchers hear an answer before its question.)
+export function seatTable(M, data, scenario, glue = M.G.glueAfter, tap = null) {
   M.L.setLocalSeat(null);
   const state = freshState(M, data);
   const sent = [];
@@ -112,6 +117,7 @@ export function seatTable(M, data, scenario, glue = M.G.glueAfter) {
     const v = seat === 's1' ? M.C.perform(data, state, cmd) : M.C.applyRemote(data, state, cmd);
     sent.push({ seat, kind: cmd.kind, ok: v.ok });
     if (v.ok) {
+      tap?.(seat, cmd);
       glue(data, state, cmd);
       for (const w of watchers) w(cmd);
     } else refused.push({ seat, kind: cmd.kind, why: v.why, cmd });
@@ -124,10 +130,11 @@ export function seatTable(M, data, scenario, glue = M.G.glueAfter) {
 // both seats or one each; the dice come from a stream of their own, so the same
 // seed is the same game. `host` adds to what each driver's host answers: the
 // pace hooks (`pace`, `settled`), which a page uses and a suite records.
-// `dice` replaces the table's dice: (pool, label) => faces.
-export function botTable(M, data, scenario, { seed = 1, policies, host = {}, dice: fixed, glue } = {}) {
+// `dice` replaces the table's dice: (pool, label) => faces. `tap` is
+// seatTable's.
+export function botTable(M, data, scenario, { seed = 1, policies, host = {}, dice: fixed, glue, tap } = {}) {
   const AI = M.AI;
-  const table = seatTable(M, data, scenario, glue);
+  const table = seatTable(M, data, scenario, glue, tap);
   const dice = new AI.Rng(`${seed}:dice`);
   const roll = fixed
     ? async (pool, label) => fixed(pool, label)
