@@ -6,7 +6,7 @@ import { Relay, type NetHooks, type RolledDie, type RollKind, type TableRelay } 
 import { LoopbackRelay } from './loopback';
 import { Rng } from './ai/rng';
 import { forecastOf } from './ai/odds';
-import { OPPONENTS, ownGame, publicDecisions, SOLO_OWN, SOLO_OWN_KEY, SOLO_ROOM, SoloTable, soloAsk, soloHands, soloQuery, soloSetup, soloSpec, SPEEDS, type SoloOwn, type SoloSpec, type Speed } from './solo';
+import { OPPONENTS, ownGame, publicDecisions, RIVALS, SOLO_OWN, SOLO_OWN_KEY, SOLO_ROOM, SoloTable, soloAsk, soloHands, soloQuery, soloSetup, soloSpec, SPEEDS, type SoloOwn, type SoloSpec, type Speed } from './solo';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { diagErrors, diagRefusals, installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
 import { openBoardReport } from './reportui';
@@ -2838,9 +2838,12 @@ function startSolo(): void {
   loopback.open({
     id: SOLO_ROOM,
     seat: spec.human,
-    // Each seat's name on screen: the player's squad, and the computer; in a
-    // game the player watches, a computer in each.
-    names: { [spec.human]: spec.watch ? OPPONENTS[spec.opponent2].name : state.sideNames?.[spec.human] || 'Player', [spec.bot]: OPPONENTS[spec.opponent].name } as Record<Side, string>,
+    // Each seat's name on screen: the player's squad, and the computer. In a
+    // game the player watches, each squad by its name and the level playing it
+    // ("RDL Raid (Ace)"): two computers of one level would otherwise read alike.
+    names: (spec.watch
+      ? { [spec.human]: `${spec.squads[spec.human].name} (${levelName(spec.opponent2)})`, [spec.bot]: `${spec.squads[spec.bot].name} (${levelName(spec.opponent)})` }
+      : { [spec.human]: state.sideNames?.[spec.human] || 'Player', [spec.bot]: OPPONENTS[spec.opponent].name }) as Record<Side, string>,
     // One seeded stream for every die the table rolls: a game is its seed and
     // what the player did.
     dice: new Rng(`${spec.seed}:dice`),
@@ -2880,6 +2883,12 @@ function startSolo(): void {
   // On the dev server only: the game in hand for whoever is testing the page.
   if (import.meta.env.DEV) (window as unknown as { __solo?: unknown }).__solo = { spec, table, state: () => state, refusals: diagRefusals, errors: diagErrors };
   table.start();
+}
+
+// A computer's level as the setup dialog names it (Recruit, Veteran, Ace,
+// Brawler), or its own name for the two only an address asks for.
+function levelName(id: string): string {
+  return RIVALS.find((r) => r.id === id)?.name ?? OPPONENTS[id]?.name ?? id;
 }
 
 // Before the table is up, or when it could not be set.

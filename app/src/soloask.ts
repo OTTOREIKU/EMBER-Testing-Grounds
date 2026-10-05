@@ -16,6 +16,12 @@ export const SPEEDS: { id: Speed; name: string; note: string; scale: number }[] 
   { id: 'brisk', name: 'Brisk', note: 'for a table you know', scale: 0.55 },
 ];
 
+// THE SAME THREE, SLOWER, IN A GAME THE PLAYER WATCHES (OTTO, 2026-10-05, two
+// computers: "even on relaxed it was still very fast. Relaxed might be to be the
+// new Brisk and then have two slower steps"): nobody waits on a person, so
+// every step follows the last at once unless the pace leaves room to watch it.
+export const WATCH_SCALE: Record<Speed, number> = { brisk: 1.6, normal: 2.5, relaxed: 3.6 };
+
 // The opponents a player may pick: what each is called and what it does, in a
 // line. The three levels first, easiest first (M9.1, OTTO 2026-10-03), then the
 // Brawler. The policies themselves are solo.ts's (OPPONENTS, which also has two

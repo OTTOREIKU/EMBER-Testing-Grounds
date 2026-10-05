@@ -16,19 +16,6 @@ export interface Choice {
   // The rule that chose it, by name: one word a test or a tally can count.
   reason?: string;
   score?: number;
-  // What it weighed, the one chosen first, each with what it was worth and the
-  // terms that came to it: for a player watching it think (solo.ts Thought).
-  // Never read by a policy.
-  considered?: Weighing[];
-}
-
-export interface Weighing {
-  label: string;
-  worth: number;
-  // What it does this turn, what it sets up for the next, the mission, where
-  // it leaves the unit, what the enemy's fire is expected to cost it, and the
-  // chance it is lost.
-  parts?: { now: number; next: number; mission: number; shape: number; cost: number; risk: number };
 }
 
 export interface Policy {

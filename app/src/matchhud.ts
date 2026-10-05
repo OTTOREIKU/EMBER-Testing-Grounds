@@ -5729,28 +5729,14 @@ export function showSideTab(host: HTMLElement | null, name: SideTab): void {
 
 // THE THINKING TAB (a game against the computer; OTTO, 2026-10-05: "some sort
 // of History or Thinking tab that becomes visible where I can watch how the
-// computer chooses to make moves and follow along"): what each computer chose
-// and why, the newest first, under the round and phase it was chosen in. In a
-// game the player watches, a turn also lists the plans it weighed and what
-// each was worth to it, and the answer it is about to give is marked.
+// computer chooses to make moves and follow along"; then "Just the unit, what
+// it did and any relevant damage or markers on it"): what each computer did,
+// the newest first, under the round and phase it did it in, and under each,
+// what it did to each unit. The answer a computer is about to give is marked.
 let thinkingKey = '';
 
-function signed(x: number): string {
-  return `${x < 0 ? '−' : ''}${Math.abs(x).toFixed(2)}`;
-}
-
-// The terms of the plan chosen, the ones that came to anything.
-function partsLine(p: NonNullable<NonNullable<Thought['considered']>[number]['parts']>): string {
-  const terms: [string, number][] = [['now', p.now], ['next turn', p.next], ['mission', p.mission], ['position', p.shape], ['enemy fire', -p.cost]];
-  const said = terms.filter(([, v]) => Math.abs(v) >= 0.005).map(([k, v]) => `${k} ${signed(v)}`);
-  if (p.risk >= 0.005) said.push(`${Math.round(p.risk * 100)}% chance to be lost`);
-  return said.join(' · ');
-}
-
 export function thinkingHtml(list: readonly Thought[], watching: boolean): string {
-  const lead = watching
-    ? 'What each computer chose and why, newest first. A number is what that plan was worth to it, in Victory Points.'
-    : 'What the computer did and why, newest first.';
+  const lead = watching ? 'What each computer did, newest first.' : 'What the computer did, newest first.';
   if (!list.length) return `<p class="th-lead">${lead}</p><p class="th-empty">Nothing yet.</p>`;
   const groups: { head: string; rows: Thought[] }[] = [];
   for (let i = list.length - 1; i >= 0; i--) {
@@ -5762,21 +5748,17 @@ export function thinkingHtml(list: readonly Thought[], watching: boolean): strin
   }
   const row = (t: Thought): string => {
     const who = t.unit ?? squadLabel(t.seat);
-    // A label that starts with the unit's name says it once, in front.
-    const bare = (label: string): string => (t.unit && label.startsWith(`${t.unit}: `) ? label.slice(t.unit.length + 2) : label);
-    const what = bare(t.label);
-    const alts = watching && t.considered?.length
-      ? `<ol class="th-alts">${t.considered.map((c, i) => `<li${i === 0 ? ' class="chosen"' : ''}><span>${esc(bare(c.label))}</span><em>${signed(c.worth)}</em></li>`).join('')}</ol>`
-        + (t.considered[0].parts ? `<div class="th-parts">${esc(partsLine(t.considered[0].parts))}</div>` : '')
-      : '';
-    // Its own words, less the sum the list above already shows, and less the
-    // reason already given in a player's words.
-    const own = watching && t.why ? t.why.replace(/(^|;\s*)worth -?[\d.]+ \([^)]*\)\s*$/, '').replace(/;\s*$/, '').trim() : '';
-    const said = !!t.because && own.toLowerCase().startsWith(t.because.toLowerCase());
-    const why = own && !said ? `<div class="th-why">${esc(own)}</div>` : '';
+    // The unit's name is said once, in front: "Mire: Sprint to E4" and "Deploy
+    // Mire at B3" are Mire's, and "Command Porcupine" is the Porcupine given one.
+    const bare = !t.unit ? t.label
+      : t.label.startsWith(`${t.unit}: `) ? t.label.slice(t.unit.length + 2)
+        : t.label.startsWith(`Deploy ${t.unit} `) ? `Deploy ${t.label.slice(`Deploy ${t.unit} `.length)}`
+          : t.label === `Command ${t.unit}` ? 'receives a Command'
+            : t.label;
+    const what = t.kind === 'planning.dial' ? `Timing Dial: ${bare}` : bare;
+    const result = (t.result ?? []).map((r) => `<div class="th-result"><b class="${r.side}">${esc(r.unit)}</b> ${esc(r.said.join(', '))}</div>`).join('');
     const state = t.given === null ? ' th-now' : t.given === 'refused' ? ' th-refused' : '';
-    return `<li class="th-row${state}"><div class="th-line"><b class="${t.seat}">${esc(who)}</b> ${esc(what)}${t.given === 'refused' ? ' <em>(refused by the table)</em>' : ''}</div>`
-      + `${t.because ? `<div class="th-because">${esc(t.because)}</div>` : ''}${why}${alts}</li>`;
+    return `<li class="th-row${state}"><div class="th-line"><b class="${t.seat}">${esc(who)}</b> ${esc(what)}${t.given === 'refused' ? ' <em>(refused by the table)</em>' : ''}</div>${result}</li>`;
   };
   return `<p class="th-lead">${lead}</p>${groups.map((g) => `<p class="th-head">${esc(g.head)}</p><ul class="th-list">${g.rows.map(row).join('')}</ul>`).join('')}`;
 }
@@ -5801,7 +5783,7 @@ export function paintThinking(): void {
   // Drawn only while it is the tab in front (`showSideTab` draws it as it
   // comes forward).
   if (!body || !list || !host.querySelector('#tab-thinking.active')) return;
-  const key = `${ctx.solo?.watching ? 'w' : 'p'}|${list.map((t) => `${t.n}${t.given ? t.given[0] : '?'}`).join(',')}`;
+  const key = `${ctx.solo?.watching ? 'w' : 'p'}|${list.map((t) => `${t.n}${t.given ? t.given[0] : '?'}${t.result ? 'r' : ''}`).join(',')}`;
   if (key === thinkingKey && body.childElementCount) return;
   thinkingKey = key;
   body.innerHTML = thinkingHtml(list, !!ctx.solo?.watching);

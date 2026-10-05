@@ -527,9 +527,9 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
       lines.filter((x) => !x.named).map((x) => x.line).slice(0, 3)],
     ['over', [], true, true, 0, [], []]);
   const seen = p.table.thinking();
-  check('THE THINKING TAB, played against the Ace: the computer\'s answers once given, its own seat\'s only, in order, and never what else it weighed or its own words',
-    [seen.length > 10, seen.every((t) => t.seat === p.spec.bot && t.given === 'done'), seen.every((t, i) => i === 0 || t.n > seen[i - 1].n), seen.some((t) => 'considered' in t || 'why' in t),
-      seen.filter((t) => t.because).length > 5],
+  check('THE THINKING TAB, played against the Ace: the computer\'s answers once given, its own seat\'s only, in order, never a step inside an attack, and what its attacks did',
+    [seen.length > 10, seen.every((t) => t.seat === p.spec.bot && t.given === 'done'), seen.every((t, i) => i === 0 || t.n > seen[i - 1].n),
+      seen.some((t) => /^(attack|defence|contest)\./.test(t.kind)), seen.some((t) => t.result?.some((r) => r.said.some((s) => /damaged|destroyed/.test(s))))],
     [true, true, true, false, true]);
   p.close();
 }
@@ -554,38 +554,61 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
 // ---------- what the Thinking tab may show ----------
 {
   const F = M.SOLO.thoughtsFor;
-  const t = (n, seat, round, phase, kind, option, given = 'done') => ({ n, seat, round, phase, kind, option, label: option, why: 'w', considered: [{ label: 'x', worth: 1 }], given });
+  const t = (n, seat, round, phase, kind, option, given = 'done') => ({ n, seat, round, phase, kind, option, label: option, given });
   const all = [
     t(1, 's2', 0, 0, 'setup.secondary', 'secondary:3'), t(2, 's2', 0, 0, 'setup.deploy', 'deploy:4'), t(3, 's2', 1, 1, 'planning.dial', 'dial:firing'),
     t(4, 's2', 1, 2, 'opp.act', 'attack:x'), t(5, 's1', 1, 2, 'opp.act', 'move:y'), t(6, 's2', 1, 2, 'opp.act', 'move:z', null), t(7, 's2', 1, 2, 'opp.act', 'move:w', 'refused'),
     t(8, 's2', 1, 5, 'tactic.end', 'forget'), t(9, 's2', 1, 5, 'tactic.end', 'tactic:275:4'), t(10, 's2', 2, 1, 'planning.dial', 'dial:movement'),
   ];
   const played = (n, phase) => F(all, { round: { n, phase } }, { watch: false, bot: 's2' });
-  check('IN A GAME YOU PLAY the Thinking tab shows the computer\'s answers once given and seen on the table, a dial once both are revealed, and never a Secondary Task, a card it kept, the other seat, or what it weighed',
-    [played(2, 1).map((x) => x.n), played(2, 2).map((x) => x.n), played(2, 2).some((x) => 'why' in x || 'considered' in x)],
-    [[2, 3, 4, 9], [2, 3, 4, 9, 10], false]);
+  check('IN A GAME YOU PLAY the Thinking tab shows the computer\'s answers once given and seen on the table, a dial once both are revealed, and never a Secondary Task, a card it kept, or the other seat',
+    [played(2, 1).map((x) => x.n), played(2, 2).map((x) => x.n)], [[2, 3, 4, 9], [2, 3, 4, 9, 10]]);
   check('watched, everything, the answer about to be given included, as copies', [F(all, { round: { n: 2, phase: 1 } }, { watch: true, bot: 's2' }).map((x) => x.n), F(all, {}, { watch: true, bot: 's2' })[0] !== all[0]],
     [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], true]);
   const W = M.SOLO.worthAThought;
   const d = (kind, n = 2) => ({ kind, options: Array.from({ length: n }, (_, i) => ({ id: `o${i}`, tags: [] })) });
-  check('a line is an answer to a question with more than one, not one let go by, and a Ready only where a card is played with it',
+  check('A LINE is what a unit does with its turn, a Command, a deployment, a dial, an answer to the other squad, a card played; to a question with more than one answer, not one let go by, nor a turn ended with nothing picked up',
     [W(d('opp.act'), { id: 'a', tags: ['move'] }), W(d('opp.act', 1), { id: 'a', tags: ['move'] }), W(d('reaction.answer'), { id: 'a', tags: ['pass'] }),
-      W(d('phase.ready'), { id: 'a', tags: [] }), W(d('phase.ready'), { id: 'a', tags: ['tactic'] })],
-    [true, false, false, false, true]);
+      W(d('phase.ready'), { id: 'a', tags: [] }), W(d('phase.ready'), { id: 'a', tags: ['tactic'] }), W(d('opp.act'), { id: 'a', tags: ['end'] }), W(d('opp.act'), { id: 'a', tags: ['end', 'take'] }),
+      W(d('loop.designate.command'), { id: 'a', tags: ['designate'] }), W(d('setup.deploy'), { id: 'a', tags: ['deploy'] })],
+    [true, false, false, false, true, false, true, true, true]);
+  check('never a step inside an attack (its line tells what the attack did), nor the bookkeeping of setting up',
+    ['attack.focus', 'attack.part', 'defence.declare', 'defence.reroll', 'contest.focus', 'setup.roll', 'setup.edge', 'setup.box', 'loop.designate.unit'].map((k) => W(d(k), { id: 'a', tags: [] })),
+    [false, false, false, false, false, false, false, false, false]);
+  // What a line did: each unit's Parts and Tokens before and after.
+  const mark = (uid, label, side, kind, partStates, statuses = []) => ({ uid, label, side, kind, partStates, statuses });
+  const before = M.SOLO.marksOf({ tokens: [
+    mark(1, 'Mire', 's1', 'mech', { torso: 'intact', leftHand: 'intact', chasis: 'damaged' }, ['command']),
+    mark(2, 'Dune', 's1', 'mech', { torso: 'damaged' }), mark(3, 'Raven', 's2', 'drone', { main: 'intact' }),
+    mark(4, 'Missile', 's2', 'projectile', { main: 'intact' }), mark(5, 'Wild Cat', 's2', 'mech', { torso: 'intact' }),
+  ] });
+  const after = M.SOLO.marksOf({ tokens: [
+    mark(1, 'Mire', 's1', 'mech', { torso: 'damaged', leftHand: 'destroyed', chasis: 'damaged' }, ['highlight', 'commandUsed']),
+    mark(2, 'Dune', 's1', 'mech', { torso: 'destroyed' }), mark(3, 'Raven', 's2', 'drone', { main: 'damaged' }),
+    mark(5, 'Wild Cat', 's2', 'mech', { torso: 'intact' }),
+  ] });
+  check('WHAT A LINE DID, in a player\'s words: a Part damaged or destroyed, a unit destroyed (and nothing more said of it), a Token gained but never a Command Token, a Drone\'s Hull; a Projectile that went off is not destroyed, and a unit nothing happened to is not named',
+    M.SOLO.resultOf(before, after),
+    [{ unit: 'Mire', side: 's1', said: ['Torso damaged', 'L.Arm destroyed', 'gains Highlight'] }, { unit: 'Dune', side: 's1', said: ['destroyed'] }, { unit: 'Raven', side: 's2', said: ['Hull damaged'] }]);
   const H = M.HUD.thinkingHtml;
   const list = [
-    { n: 1, seat: 's2', round: 1, phase: 2, kind: 'opp.act', option: 'a', unit: 'Mire', label: 'Mire: Sprint to E4, facing east', because: 'for the mission', why: 'and then X; worth 1.00 (now 0.00, next 0.50, mission 0.50, cost 0.00)',
-      considered: [{ label: 'Sprint to E4', worth: 1, parts: { now: 0, next: 0.5, mission: 0.5, shape: 0, cost: 0, risk: 0.12 } }, { label: 'Stay where it is', worth: 0.25 }], given: 'done' },
+    { n: 1, seat: 's2', round: 1, phase: 2, kind: 'opp.act', option: 'a', unit: 'Mire', label: 'Mire: Single Shot at Raven', given: 'done',
+      result: [{ unit: 'Raven', side: 's1', said: ['Hull damaged', 'gains Highlight'] }] },
     { n: 2, seat: 's1', round: 1, phase: 2, kind: 'opp.act', option: 'b', unit: 'Dune', label: 'Single Shot at <Mire>', given: null },
   ];
   const drawn = H(list, true);
-  check('THE THINKING TAB draws the newest first under its round and phase, the unit in its squad\'s colour, the answer about to be given marked, the plans weighed with what each was worth, the terms of the one chosen, and its own words less the sum',
-    [drawn.indexOf('Dune') < drawn.indexOf('Mire'), /<p class="th-head">Round 1 · Action<\/p>/.test(drawn), /<b class="s2">Mire<\/b> Sprint to E4, facing east/.test(drawn), /th-row th-now/.test(drawn),
-      /<li class="chosen"><span>Sprint to E4<\/span><em>1\.00<\/em><\/li><li><span>Stay where it is<\/span><em>0\.25<\/em><\/li>/.test(drawn), /next turn 0\.50 · mission 0\.50 · 12% chance to be lost/.test(drawn),
-      /<div class="th-why">and then X<\/div>/.test(drawn), /&lt;Mire&gt;/.test(drawn), /<Mire>/.test(drawn)],
-    [true, true, true, true, true, true, true, true, false]);
-  const plain = H([list[0]], false);
-  check('in a game you play it draws the lines alone', [/th-alts|th-parts|th-why/.test(plain), /for the mission/.test(plain), /What the computer did and why/.test(plain)], [false, true, true]);
+  check('THE THINKING TAB draws the newest first under its round and phase: the unit in its squad\'s colour and what it did, and under it what it did to each unit; the answer about to be given marked; no reasons and no numbers',
+    [drawn.indexOf('Dune') < drawn.indexOf('Mire'), /<p class="th-head">Round 1 · Action<\/p>/.test(drawn), /<b class="s2">Mire<\/b> Single Shot at Raven<\/div>/.test(drawn),
+      /<div class="th-result"><b class="s1">Raven<\/b> Hull damaged, gains Highlight<\/div>/.test(drawn), /th-row th-now/.test(drawn), /&lt;Mire&gt;/.test(drawn), /<Mire>/.test(drawn),
+      /What each computer did, newest first\./.test(drawn), /\d\.\d\d|Victory Points|because/.test(drawn)],
+    [true, true, true, true, true, true, false, true, false]);
+  check('in a game you play it says it is the computer\'s', /What the computer did, newest first\./.test(H([list[0]], false)), true);
+  const one = (kind, unit, label) => H([{ n: 3, seat: 's1', round: 1, phase: 1, kind, option: 'x', unit, label, given: 'done' }], true);
+  check('the unit is named once, in front: a deployment is the unit it puts down, a Command the Drone given it, a dial its Timing Dial',
+    [/<b class="s1">Mire<\/b> Deploy at B3, offensive<\/div>/.test(one('setup.deploy', 'Mire', 'Deploy Mire at B3, offensive')),
+      /<b class="s1">Porcupine<\/b> receives a Command<\/div>/.test(one('loop.designate.command', 'Porcupine', 'Command Porcupine')),
+      /<b class="s1">Dune<\/b> Timing Dial: Firing<\/div>/.test(one('planning.dial', 'Dune', 'Dune: Firing'))],
+    [true, true, true]);
   check('and says so when there is nothing yet', /Nothing yet\./.test(H([], true)), true);
 }
 {
@@ -829,6 +852,19 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
   };
   const [slow, normal, fast] = [await at('relaxed'), await at('normal'), await at('brisk')];
   check('Relaxed waits longer than Normal, and Brisk less', [slow > normal * 1.3, fast < normal * 0.75], [true, true]);
+  // A game the player watches (OTTO, 2026-10-05: "even on relaxed it was still
+  // very fast. Relaxed might be to be the new Brisk and then have two slower steps").
+  const scaleAt = (watch, speed) => {
+    const p = page(alley, 's1', { seed: 5, watch });
+    p.table.speed = speed;
+    const s = p.table.scale();
+    p.close();
+    return s;
+  };
+  check('WATCHED, the same three speeds are slower: its Brisk is a played game\'s Relaxed, and Normal and Relaxed slower again; a played game keeps its own',
+    [scaleAt(true, 'brisk') === scaleAt(false, 'relaxed'), scaleAt(true, 'normal') > scaleAt(true, 'brisk'), scaleAt(true, 'relaxed') > scaleAt(true, 'normal'),
+      ['relaxed', 'normal', 'brisk'].map((x) => scaleAt(false, x))],
+    [true, true, true, SPEEDS.map((x) => x.scale)]);
 }
 {
   // ON A SLOW MACHINE (OTTO, 2026-10-05: "a slow laptop might be good to check
@@ -876,20 +912,19 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
     [true, true, null, [], true, true, true, ['s1', 's2']]);
   check('and neither seat\'s Part Die is announced', p.rolled.filter((r) => r.label === 'Part Die').length, 0);
   check('a game not asked to be watched sits nobody in the page\'s seat', games[0].p.table.player, null);
-  // What both computers chose, as the Thinking tab shows a watched game. The
+  // What both computers did, as the Thinking tab shows a watched game. The
   // page's seat is the Ace here (the second computer, not asked for), the
   // other the Brawler.
   const th = p.table.thinking();
-  check('THE THINKING TAB, watched: what both computers chose, oldest first, each given, a turn\'s answer with the unit it was for',
+  check('THE THINKING TAB, watched: what both computers did, oldest first, each given, a turn\'s answer and a deployment with the unit it was for, never a step inside an attack',
     [th.length > 30, [...new Set(th.map((t) => t.seat))].sort(), th.every((t, i) => i === 0 || t.n > th[i - 1].n), th.every((t) => t.given === 'done'),
-      th.filter((t) => t.kind === 'opp.act' || t.kind === 'activation.act').every((t) => !!t.unit)],
-    [true, ['s1', 's2'], true, true, true]);
-  const weighed = th.filter((t) => t.seat === 's1' && t.considered);
-  check('and the Ace\'s turns list the plans it weighed, the one chosen first and the best, each with what it was worth and the terms of the one chosen; the Brawler weighs nothing to list',
-    [weighed.length > 5, weighed.every((t) => t.considered.length >= 1 && t.considered.length <= 4 && t.considered.every((c) => typeof c.label === 'string' && c.label.length > 0 && Number.isFinite(c.worth))),
-      weighed.every((t) => ['now', 'next', 'mission', 'shape', 'cost', 'risk'].every((k) => Number.isFinite(t.considered[0].parts[k]))),
-      weighed.every((t) => t.considered.every((c, i) => i === 0 || c.worth <= t.considered[i - 1].worth + 0.01)), th.some((t) => t.seat === 's2' && t.considered)],
-    [true, true, true, true, false]);
+      th.filter((t) => t.kind === 'opp.act' || t.kind === 'activation.act' || t.kind === 'setup.deploy').every((t) => !!t.unit), th.some((t) => /^(attack|defence|contest)\./.test(t.kind))],
+    [true, ['s1', 's2'], true, true, true, false]);
+  const hits = th.filter((t) => t.result?.length);
+  check('and under a line, what it did to each unit, in a player\'s words, of both squads\' lines',
+    [hits.length > 3, hits.every((t) => t.result.every((r) => typeof r.unit === 'string' && (r.side === 's1' || r.side === 's2') && r.said.length > 0
+      && r.said.every((s) => /^(destroyed|(Torso|Chassis|L\.Arm|R\.Arm|Pack|Hull) (damaged|destroyed)|gains .+)$/.test(s)))), [...new Set(hits.map((t) => t.seat))].sort()],
+    [true, true, ['s1', 's2']]);
   p.close();
   // Each computer at its own level.
   const two = page(vip, 's1', { seed: 9, watch: true, opponent: 'brawler', opponent2: 'recruit' });

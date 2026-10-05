@@ -20,15 +20,17 @@ import { eagerPolicy } from './ai/eager';
 import { legalPolicy } from './ai/legal';
 import { tacticianPolicy } from './ai/tactician';
 import { recruitPolicy, veteranPolicy } from './ai/levels';
-import type { Choice, Policy, Weighing } from './ai/policy';
+import type { Policy } from './ai/policy';
 import { Rng } from './ai/rng';
 import type { LoopbackRelay } from './loopback';
 import { newSalt, sealTactic } from './secrecy';
 import { handCommand, type HeldCard } from './tactichand';
-import { RIVAL, SOLO_OWN, SPEEDS, type SoloOwn, type Speed } from './soloask';
+import { RIVAL, SOLO_OWN, SPEEDS, WATCH_SCALE, type SoloOwn, type Speed } from './soloask';
 import type { Decision, Option } from './seat';
 import { mapConfig, missionConfig } from './tableconfig';
-import { PHASES, type GameState, type Side } from './types';
+import { alive } from './loop';
+import { SLOT_LABEL } from './units';
+import { PHASES, STATUSES, type GameState, type PartSlot, type PartState, type Side, type Token } from './types';
 
 // ---------- what the address asks for ----------
 
@@ -349,10 +351,12 @@ function seenByOther(e: { kind: string; option: string; round: number }, state: 
 
 // ---------- what the computer is thinking ----------
 
-// WHAT A COMPUTER CHOSE AND WHY (OTTO, 2026-10-05: "some sort of History or
-// Thinking tab that becomes visible where I can watch how the computer chooses
-// to make moves and follow along with what it's doing"). Every answer worth a
-// line, told as it is chosen (`given` null) and marked once the table has it.
+// WHAT A COMPUTER DID (OTTO, 2026-10-05: a Thinking tab "where I can watch how
+// the computer chooses to make moves and follow along"; and once he had watched
+// one: "Just the unit, what it did and any relevant damage or markers on it").
+// Every answer worth a line, told as it is chosen (`given` null), marked once
+// given, and once what it did is over (an attack's window closed), what it did
+// to each unit.
 export interface Thought {
   n: number;
   seat: Side;
@@ -363,50 +367,88 @@ export interface Thought {
   // The unit the question was about, by name, where there is one.
   unit?: string;
   label: string;
-  // Why, in a few plain words, where there are any.
-  because?: string;
-  // The policy's own words, and the plans it weighed, the one chosen first.
-  why?: string;
-  considered?: Weighing[];
   given: 'done' | 'refused' | null;
+  // What it did to each unit: a Part damaged or destroyed, the unit destroyed,
+  // a Token gained.
+  result?: ThoughtResult[];
 }
 
-// The words for the reasons the notice line has none for, which only the
-// Thinking tab says.
-const THOUGHT: Record<string, string> = Object.assign(Object.create(null) as Record<string, string>, {
-  end_activation: 'nothing better to do', delayed_action: 'its Delayed Action',
-  free_reroll: 'the reroll costs nothing', focus_by_value: 'worth the reroll', paid_reroll: 'worth the reroll', reroll_value: 'worth the reroll',
-  reroll_blanks: 'the dice that rolled nothing', hit_location: 'the Part worth most to hit', declare_parry: 'to parry the blow',
-  dial_by_plan: 'for its plan this round', deploy_by_value: 'where it does most', deploy_toward_enemy: 'toward the enemy',
-  riposte_by_value: 'to strike back', overwatch_shot: 'to shoot as it passes', steer_by_value: 'worth more to its squad there',
-  shove_by_value: 'worth more to its squad there', shove_turned: 'its back to this squad', blast_by_value: 'where it does most',
-  mine_toward_enemy: 'toward the enemy', box_place: 'where it does most', tactic_hit_and_run: 'better placed there',
-  tactic_restart: 'a Mech in Shutdown acts again',
-});
-
-function becauseOf(reason: string | undefined): string | undefined {
-  if (!reason) return undefined;
-  if (Object.prototype.hasOwnProperty.call(BECAUSE, reason)) return BECAUSE[reason];
-  return Object.prototype.hasOwnProperty.call(THOUGHT, reason) ? THOUGHT[reason] : undefined;
+export interface ThoughtResult {
+  unit: string;
+  side: Side;
+  said: string[];
 }
 
-// An answer worth a line: to a question that had more than one, and not a step
-// let go by. A Ready is a line only where a Tactics Card is played with it.
+// The questions a line is told of: what a unit does with its turn, a Command
+// given, where a unit is deployed, its dial, an answer to the other squad's
+// move (a reaction, an Interception, a blast, a Reveal), a Mine laid, a Tactics
+// Card played. Never a step inside an attack, whose result is told on the
+// attack's own line, nor the bookkeeping of setting up and readying.
+const TOLD_IN_THINKING = new Set([
+  'opp.act', 'activation.act', 'opp.reboot', 'loop.designate.command', 'setup.deploy', 'planning.dial',
+  'reaction.answer', 'intercept.attempt', 'blast.resolve', 'reveal.make', 'mine.lay', 'smoke.thin',
+  'phase.ready', 'tactic.after', 'tactic.end',
+]);
+
+// An answer worth a line: to such a question, with more than one answer, and
+// not one let go by, nor the end of a turn that picks nothing up. A Ready, or a
+// moment for a Tactics Card, is a line only where a card is played.
 export function worthAThought(d: Decision, o: Option): boolean {
-  if (d.options.length < 2 || o.tags.includes('pass')) return false;
-  if (d.kind === 'phase.ready') return o.tags.includes('tactic');
+  if (!TOLD_IN_THINKING.has(d.kind) || d.options.length < 2 || o.tags.includes('pass')) return false;
+  if (o.tags.includes('end') && !o.tags.includes('take')) return false;
+  if (d.kind === 'phase.ready' || d.kind === 'tactic.after' || d.kind === 'tactic.end') return o.tags.includes('tactic');
   return true;
 }
 
+// The table as it bears on the lines: each unit's Parts and Tokens.
+type Marks = Map<number, { label: string; side: Side; kind: Token['kind']; alive: boolean; parts: Partial<Record<string, PartState>>; tokens: Map<string, number> }>;
+
+// The Tokens a line does not tell: a Command Token is handed out and swept every
+// round.
+const UNTOLD_TOKENS = new Set(['command', 'commandUsed']);
+
+export function marksOf(state: GameState): Marks {
+  const out: Marks = new Map();
+  for (const t of state.tokens) {
+    const tokens = new Map<string, number>();
+    for (const id of t.statuses ?? []) if (!UNTOLD_TOKENS.has(id)) tokens.set(id, (tokens.get(id) ?? 0) + 1);
+    out.set(t.uid, { label: t.label, side: t.side, kind: t.kind, alive: alive(t), parts: { ...t.partStates }, tokens });
+  }
+  return out;
+}
+
+// What changed for each unit between two tables, in a player's words: "Torso
+// damaged", "L.Arm destroyed", "destroyed", "gains Highlight". A Projectile
+// that left the board went off; it was not destroyed.
+export function resultOf(before: Marks, after: Marks): ThoughtResult[] {
+  const out: ThoughtResult[] = [];
+  for (const [uid, was] of before) {
+    const now = after.get(uid);
+    if (!now && was.kind === 'projectile') continue;
+    const said: string[] = [];
+    if (was.alive && (!now || !now.alive)) said.push('destroyed');
+    else if (now) {
+      for (const [slot, part] of Object.entries(now.parts)) {
+        const had = was.parts[slot] ?? 'intact';
+        if (part === had || part === 'intact') continue;
+        const name = SLOT_LABEL[slot as PartSlot | 'main'] ?? slot;
+        said.push(`${name} ${part === 'destroyed' ? 'destroyed' : 'damaged'}`);
+      }
+      for (const [id, n] of now.tokens) {
+        if (n > (was.tokens.get(id) ?? 0)) said.push(`gains ${STATUSES.find((s) => s.id === id)?.label ?? id}`);
+      }
+    }
+    if (said.length) out.push({ unit: was.label, side: was.side, said });
+  }
+  return out;
+}
+
 // What the page's Thinking tab may show. In a game the player watches, both
-// computers' every thought. In a game the player plays, the computer's answers
-// once given and only what the player has seen it do (`seenByOther`), in a
-// line: never what else it weighed, which could name a card it holds.
+// computers' every line. In a game the player plays, the computer's answers
+// once given and only what the player has seen it do (`seenByOther`).
 export function thoughtsFor(thoughts: readonly Thought[], state: GameState, o: { watch: boolean; bot: Side }): Thought[] {
   if (o.watch) return thoughts.map((t) => ({ ...t }));
-  return thoughts
-    .filter((t) => t.seat === o.bot && t.given === 'done' && seenByOther(t, state))
-    .map(({ why: _why, considered: _considered, ...t }) => ({ ...t }));
+  return thoughts.filter((t) => t.seat === o.bot && t.given === 'done' && seenByOther(t, state)).map((t) => ({ ...t }));
 }
 
 // How many thoughts the table keeps: a whole game's worth of turns.
@@ -455,9 +497,11 @@ export class SoloTable {
   // How many rollbacks the table has had: one more is a board replaced under
   // the computer, which forgets what it remembered of the old one (M9.4).
   private rollbacks = 0;
-  // What each computer chose and why, newest last (`Thought`).
+  // What each computer did, newest last (`Thought`), and the table as each
+  // line began, kept until what it did is over (`settle`).
   private readonly thoughts: Thought[] = [];
   private thoughtN = 0;
+  private readonly before = new Map<number, Marks>();
 
   // THE PAGE'S THREAD, handed back to it in the middle of a decision: at once
   // while the computer has held it for less than a frame, and by a timer's
@@ -487,7 +531,7 @@ export class SoloTable {
         roll,
         pace: (d, o, think) => this.pace(seat, d, o, think),
         settled: (d, o) => this.rest(d, o),
-        chose: (d, o, why) => this.chose(seat, d, o, why),
+        chose: (d, o) => this.chose(seat, d, o),
         // A long decision is worked out in steps, and the page has its thread
         // back between them: a frame is drawn, a click is heard. A step may be
         // a millisecond's work and a timer's turn is four, so the thread is
@@ -530,9 +574,11 @@ export class SoloTable {
     return v;
   }
 
-  // Every seat here is told of every command that lands, its own included.
+  // Every seat here is told of every command that lands, its own included; and
+  // a line whose attack has just closed is told what it did.
   private landed(cmd: Command): void {
     for (const r of this.runners) r.driver.observe(cmd);
+    if (this.before.size) this.settle();
   }
 
   // Begins: the computer hears of every command the page performs, and is
@@ -596,20 +642,44 @@ export class SoloTable {
   }
 
   // An answer chosen, told before the moment is taken over it.
-  private chose(seat: Side, d: Decision, o: Option, c: Pick<Choice, 'why' | 'reason' | 'considered'>): void {
+  private chose(seat: Side, d: Decision, o: Option): void {
     if (!worthAThought(d, o)) return;
     const state = this.h.state();
-    const unit = d.unit === undefined ? undefined : state.tokens.find((t) => t.uid === d.unit)?.label;
-    const because = becauseOf(c.reason);
+    // The unit the question is about, or the one the answer puts down.
+    const uid = d.unit ?? (typeof o.facts?.uid === 'number' ? o.facts.uid : undefined);
+    const unit = uid === undefined ? undefined : state.tokens.find((t) => t.uid === uid)?.label;
     // (Setting the table up is no round's: the Thinking tab files it under Setup.)
     const setup = d.kind.startsWith('setup.');
+    const n = ++this.thoughtN;
     this.thoughts.push({
-      n: ++this.thoughtN, seat, round: setup ? 0 : state.round?.n ?? 0, phase: setup ? 0 : state.round?.phase ?? 0, kind: d.kind, option: o.id,
-      ...(unit ? { unit } : {}), label: o.label, ...(because ? { because } : {}), ...(c.why ? { why: c.why } : {}),
-      ...(c.considered?.length ? { considered: c.considered } : {}), given: null,
+      n, seat, round: setup ? 0 : state.round?.n ?? 0, phase: setup ? 0 : state.round?.phase ?? 0, kind: d.kind, option: o.id,
+      ...(unit ? { unit } : {}), label: o.label, given: null,
     });
-    if (this.thoughts.length > THOUGHTS) this.thoughts.shift();
+    this.before.set(n, marksOf(state));
+    if (this.thoughts.length > THOUGHTS) this.before.delete(this.thoughts.shift()!.n);
     this.h.thought?.();
+  }
+
+  // WHAT A LINE DID, once it is over: what changed for each unit since it was
+  // chosen. An attack is over when its window closes (the attacker takes its
+  // published picture down; an Electronic Counter-roll, its record), so a line
+  // given while one is open waits; a line not yet given, or refused, has done
+  // nothing.
+  private settle(): void {
+    const script = this.h.state().script;
+    if (script?.combatView || script?.counter) return;
+    let now: Marks | null = null;
+    let told = false;
+    for (const [n, was] of this.before) {
+      const t = this.thoughts.find((x) => x.n === n);
+      if (t?.given === null) continue;
+      this.before.delete(n);
+      if (t?.given !== 'done') continue;
+      now ??= marksOf(this.h.state());
+      const result = resultOf(was, now);
+      if (result.length) { t.result = result; told = true; }
+    }
+    if (told) this.h.thought?.();
   }
 
   // And what became of it: given, refused by the table, or never given (the
@@ -619,8 +689,9 @@ export class SoloTable {
     while (at >= 0 && !(this.thoughts[at].seat === seat && this.thoughts[at].given === null)) at -= 1;
     if (at < 0 || (option !== undefined && this.thoughts[at].option !== option)) return;
     if (given) this.thoughts[at].given = given;
-    else this.thoughts.splice(at, 1);
+    else this.before.delete(this.thoughts.splice(at, 1)[0].n);
     this.h.thought?.();
+    if (given) this.settle();
   }
 
   wake(): void {
@@ -710,6 +781,7 @@ export class SoloTable {
   }
 
   private scale(): number {
+    if (this.spec.watch) return WATCH_SCALE[this.speed] ?? WATCH_SCALE.normal;
     return SPEEDS.find((x) => x.id === this.speed)?.scale ?? 1;
   }
 
