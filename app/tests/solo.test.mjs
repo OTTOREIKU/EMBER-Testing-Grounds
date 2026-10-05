@@ -648,7 +648,7 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
   const b = await run();
   check('and the same seed is the same game against it too, though its thinking is put down and picked up: a pause changes no answer', a.sent === b.sent, true);
   check('the page\'s host offers the pause, handing the thread back once it has been held a frame and not at every step; the suite\'s offers none',
-    [/breathe: \(\) => this\.breathe\(\),/.test(src('solo.ts'))
+    [/breathe: \(\) => this\.breathe\(seat\),/.test(src('solo.ts'))
       && /if \(performance\.now\(\) - this\.breathed < FRAME_MS\) return Promise\.resolve\(\);\n\s+return new Promise<void>\(\(done\) => \{ setTimeout\(\(\) => \{ this\.breathed = performance\.now\(\); done\(\); \}, 0\); \}\);/.test(src('solo.ts')),
     /const choice = pause && this\.policy\.ponder\n\s+\? await musing\(\(\) => this\.policy\.ponder!\(narrowed, view, this\.rng, pause\)\)\n\s+: pondering\(\(\) => this\.policy\.choose\(narrowed, view, this\.rng\)\);/.test(src('ai/driver.ts'))], [true, true]);
 }
@@ -764,6 +764,33 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
   };
   const [slow, normal, fast] = [await at('relaxed'), await at('normal'), await at('brisk')];
   check('Relaxed waits longer than Normal, and Brisk less', [slow > normal * 1.3, fast < normal * 0.75], [true, true]);
+}
+{
+  // ON A SLOW MACHINE (OTTO, 2026-10-05: "a slow laptop might be good to check
+  // on the speed in which it calculates"): the thought is part of the moment
+  // before an answer, not added to it, and a thought that runs long is said to
+  // be one, so the page never shows a computer at work as one waiting.
+  const waits = [];
+  const said = [];
+  const p = page(alley, 's1', { seed: 5, sleep: async (ms) => { waits.push(ms); }, status: (_seat, x) => said.push(x) });
+  const host = p.table.driver.host;
+  const d = { kind: 'opp.act', id: 'opp.act|x', options: [], fallback: '' };
+  const o = { id: 'move:x', label: 'x', tags: ['move'] };
+  await host.pace(d, o, 0);
+  await host.pace(d, o, 1000);
+  await host.pace(d, o, 9000);
+  check('THE THOUGHT IS PART OF THE MOMENT: a Movement waits its whole moment when the answer came at once, what is left of it after a second\'s thought, and a beat after a long one',
+    [waits[0] >= 1300 && waits[0] <= 2400, waits[1] >= 300 && waits[1] <= 1400, waits[2]], [true, true, 100]);
+  const r = p.table.runners.find((x) => x.seat === p.spec.bot);
+  r.asked = performance.now();
+  r.shown = false;
+  await host.breathe();
+  const quick = said.includes('thinking');
+  r.asked = performance.now() - 400;
+  await host.breathe();
+  await host.breathe();
+  check('a thought that runs past a third of a second is said to be one, once', [quick, said.filter((x) => x === 'thinking').length], [false, 1]);
+  p.close();
 }
 
 // ---------- a game the player only watches ----------

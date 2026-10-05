@@ -141,7 +141,7 @@ const imports = (text) => [...text.matchAll(/^import (type )?[^;]*? from '([^']+
   check('and its looks ahead are that question asked of another table: what comes next, and a turn that has not come',
     [/export function owedAfter\(/.test(owed), /return \{ table, decision: owed\(data, table, seat, mind, want\), born:/.test(owed),
       /export function owedIfActivated\(/.test(owed), /return \{ table, decision: activationOwed\(data, table, t\.side, t, want\) \};/.test(owed),
-      /const table = JSON\.parse\(JSON\.stringify\(state\)\) as GameState;/.test(owed)], [true, true, true, true, true]);
+      /const table = copyAsJson\(state\);/.test(owed)], [true, true, true, true, true]);
   check('a dial not yet revealed is nobody\'s to look at: a Mech is asked on the Timing the asker names, never on its own',
     [/if \(!timing\) return null;\n    t\.timing = timing;/.test(owed), /owedIfActivated\([^)]*\bt\.timing\b/.test(owed)], [true, false]);
   check('the driver reads the rules through that module and the windows it presses',
