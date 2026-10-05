@@ -904,6 +904,10 @@ interface Ctx {
   // roll it clears.
   defenseCalled?: boolean;
   blackResult: string | null;
+  // The Part Die as it landed, and how many times it has been thrown this
+  // sequence: published, so a watching screen shows it roll and land
+  // (CombatView `partDie`). Optional so a context built before it reads null.
+  partDie?: { face: number; n: number } | null;
   // The one Focus the Black Die itself may take (4.10: "Black Dice used to
   // determine target Parts when attacking can also be rerolled with Focus").
   // Its own flag, not the attack roll's: the Black Die is a separate roll, so
@@ -1256,6 +1260,7 @@ export class AttackHelper {
     this.data = data;
     this.dice = dice;
     this.spinner = new DiceSpinner(dice);
+    this.partSpinner = new DiceSpinner(dice);
     this.root = root;
     this.onChanged = onChanged;
     this.onClose = onClose;
@@ -1430,6 +1435,8 @@ export class AttackHelper {
       // this window would send a second callDefense from the wrong seat.
       defenseCalled: true,
       blackResult: null,
+      // Taken only where it names a face the Black Die has: it is drawn from it.
+      partDie: view.partDie && this.dice.dice.black.faces[view.partDie.face] ? { face: view.partDie.face, n: view.partDie.n } : null,
       blackFocusUsed: false,
       focus: view.focus && FOCUS_STAGES.includes(view.focus.stage)
         ? {
@@ -1580,6 +1587,7 @@ export class AttackHelper {
     // dice stopped mid-spin and left rattling. (A mirror drawn again takes a
     // hand still rolling up again on its new dice: showMirror.)
     this.spinner.stop();
+    this.partSpinner.stop();
     this.spinFor = null;
     this.spinPending = null;
   }
@@ -3492,6 +3500,9 @@ export class AttackHelper {
         protectionNote: c.protectionNote || undefined,
         attack: c.attackRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
         defense: c.defenseRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
+        // Held under the wire's bound: a Surplus round rerolls a die that finds
+        // the original Part again, as often as it does (FAQ D4).
+        partDie: c.partDie ? { face: c.partDie.face, n: Math.min(c.partDie.n, 40) } : null,
         // THE WHOLE LOG. It used to be the last five lines, so a watcher read
         // the tail of a fight the acting player could read in full, and the
         // trace is the part OTTO named as mattering most for following what
@@ -3636,7 +3647,11 @@ export class AttackHelper {
   // spectator has no dice of their own, so it falls back to attacker above and
   // defender below, which at least never moves.
   private felt(c: Ctx): HTMLElement | null {
-    if (!c.attackRoll && !c.defenseRoll) return null;
+    // The Part Die once its step is behind it: where the hit lands, for the
+    // whole of the attack (OTTO, 2026-10-05: "rolling the part die and choosing
+    // a part ... isnt animated"). Its own step draws it until then.
+    const partHand = c.partDie && c.step !== 'part' && c.step !== 'designate' ? this.partDieHand(c, c.partDie) : null;
+    if (!c.attackRoll && !c.defenseRoll && !partHand) return null;
     const mineIsDefence = this.role === 'defender';
     const half = (which: 'attack' | 'defense', mine: boolean): HTMLElement | null => {
       const roll = which === 'attack' ? c.attackRoll : c.defenseRoll;
@@ -3660,12 +3675,64 @@ export class AttackHelper {
     };
     const top = mineIsDefence ? half('attack', false) : half('defense', false);
     const bottom = mineIsDefence ? half('defense', true) : half('attack', true);
-    if (!top && !bottom) return null;
+    if (!top && !bottom && !partHand) return null;
     const wrap = document.createElement('div');
     wrap.className = 'ah-felt';
+    if (partHand) wrap.appendChild(partHand);
     if (top) wrap.appendChild(top);
     if (bottom) wrap.appendChild(bottom);
     return wrap;
+  }
+
+  // THE PART DIE AS IT LANDED, in a hand of its own: the Black Die on its face
+  // and what it chose. It rolls in the first time this throw is drawn, and a
+  // window drawn again while it rolls takes the roll up where it had got to (a
+  // mirror is drawn on every render of the page).
+  private partDieShown = '';
+  private partDieAt = 0;
+  private readonly partSpinner: DiceSpinner;
+  private partDieHand(c: Ctx, pd: { face: number; n: number }): HTMLElement {
+    const side = document.createElement('div');
+    side.className = 'ah-half ah-half-part';
+    const head = document.createElement('div');
+    head.className = 'ah-half-h';
+    head.innerHTML = `<span class="eyebrow">Part Die</span><span class="ah-partsaid">${esc(this.partDieSaid(c, pd))}</span>`;
+    side.appendChild(head);
+    const row = document.createElement('div');
+    row.className = 'ah-roll';
+    const die = document.createElement('span');
+    die.className = 'die die-black';
+    die.innerHTML = faceHtml(this.dice, 'black', pd.face);
+    row.appendChild(die);
+    side.appendChild(row);
+    this.rollPartDie(c, pd, row);
+    return side;
+  }
+
+  // What the Part Die chose, in a player's words.
+  private partDieSaid(c: Ctx, pd: { face: number; n: number }): string {
+    const part = this.dice.dice.black.faces[pd.face]?.[0]?.part ?? 'any';
+    const target = c.targetPart ? (SLOT_LABEL[c.targetPart as PartSlot | 'main'] ?? c.targetPart) : null;
+    if (part === 'any') return target ? `ANY: ${c.attacker.label} picks the ${target}` : `ANY: ${c.attacker.label} picks the Part`;
+    const rolled = BLACK_SLOT[part] ?? 'torso';
+    const named = SLOT_LABEL[rolled as PartSlot | 'main'] ?? rolled;
+    if (!target) return named;
+    return rolled === c.targetPart ? `${target} takes the hit` : `${named} on the die: the ${target} takes the hit`;
+  }
+
+  // The roll itself: on the first drawing of this throw, and on a drawing made
+  // while it is still rolling, from how far it had got.
+  // A window of the attacker's own has watched the die roll on its stage.
+  private rollPartDie(c: Ctx, pd: { face: number; n: number }, row: HTMLElement): void {
+    if (this.instant || !this.mirroring) return;
+    const key = `${c.attacker.uid}>${c.defender.uid}|${c.surplusRound}|${pd.face}|${pd.n}`;
+    if (key !== this.partDieShown) {
+      this.partDieShown = key;
+      this.partDieAt = performance.now();
+    }
+    const ticks = Math.floor((performance.now() - this.partDieAt) / 55);
+    if (ticks >= 8) return;
+    window.setTimeout(() => this.partSpinner.spin(row, [{ color: 'black' as DieColor, face: pd.face }], null, 'part', ticks), 0);
   }
 
   // The last ask this window DREW, so motion fires on a new demand and never on
@@ -4500,6 +4567,15 @@ export class AttackHelper {
     const showFace = (i: number) => { die.innerHTML = blackFace(i); };
     showFace(0);
     stage.append(die, caption);
+    // A WATCHING SCREEN draws the die the attacker threw, rolling in to its
+    // face, once the published view carries it (an ANY waiting for its Part, a
+    // Focus offered on it): it used to show the die blank beside a Roll button
+    // while the roll happened elsewhere.
+    if (this.mirroring && c.partDie) {
+      showFace(c.partDie.face);
+      caption.textContent = this.partDieSaid(c, c.partDie);
+      this.rollPartDie(c, c.partDie, stage);
+    }
 
     // The attacker simply DESIGNATES on a Back Attack, against a Shutdown
     // target, or with Snipe (4.4.1 step 2): no roll is owed. The chips were
@@ -4528,6 +4604,8 @@ export class AttackHelper {
     rollBtn.className = mayDesignate ? 'ah-alt' : 'ah-primary';
     rollBtn.innerHTML = `${ICON_DICE} Roll Black Die`;
     rollBtn.disabled = !this.mayDrive('attacker');
+    // Thrown already, on the screen this one is drawn from.
+    if (this.mirroring && c.partDie) rollBtn.hidden = true;
     rollBtn.addEventListener('click', () => {
       if (this.blackTimer) return;
       rollBtn.disabled = true;
@@ -4601,8 +4679,17 @@ export class AttackHelper {
   // implementation of the shake.
   private spinBlack(stage: HTMLElement, caption: HTMLElement, showFace: (i: number) => void, settle: (landed: number) => void): void {
     // The die is on the table from here, even while its Focus is still being
-    // offered and no Part is recorded yet: the close question counts it.
-    const done = (face: number): void => { this.blackLanded = true; settle(face); };
+    // offered and no Part is recorded yet: the close question counts it. And
+    // it is published as it lands, for every screen watching.
+    const done = (face: number): void => {
+      this.blackLanded = true;
+      const c = this.ctx;
+      if (c) c.partDie = { face, n: (c.partDie?.n ?? 0) + 1 };
+      // Sent on landing, before its Focus is offered and before the step moves
+      // on: a computer's window does both in the same moment.
+      this.publishMirror();
+      settle(face);
+    };
     if (this.blackRoller) {
       caption.textContent = '';
       void this.blackRoller(this.ctx!.defender).then((face) => { showFace(face); done(face); });
@@ -6003,6 +6090,7 @@ export class AttackHelper {
           // first roll opened the chips with no die thrown, and the attacker
           // hand-picked where a Scatter-shot or a Cleave went.
           c.blackResult = null;
+          c.partDie = null;
           c.attackRoll = null;
           c.eyeSwaps = 0;
           c.defenseRoll = null;

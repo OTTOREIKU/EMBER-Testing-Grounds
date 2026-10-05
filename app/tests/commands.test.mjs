@@ -3232,6 +3232,12 @@ check('and it really does move', [wMobile.tokens[1].col, wMobile.tokens[1].row],
   // SHAPE is refused here, not every value.
   check('an unknown offset is tolerated, since the renderer normalises it',
     send([{ kind: 'heavyHit', offset: 'nonsense' }]), true);
+  // The Part Die as it landed (combat.ts publishMirror): one face of the Black
+  // Die's six and how many throws, or none.
+  const part = (partDie) => C.check(data, wfoc, { kind: 'setCombatView', seat: 's1', view: { ...view([]), partDie } }).ok;
+  check('a landed Part Die is accepted, and so is none', [part({ face: 5, n: 1 }), part({ face: 0, n: 40 }), part(null)], [true, true, true]);
+  check('a face the die does not have is refused', [part({ face: 6, n: 1 }), part({ face: -1, n: 1 }), part({ face: '2', n: 1 })], [false, false, false]);
+  check('and so is a count of throws that is no count', [part({ face: 2, n: 0 }), part({ face: 2, n: 1.5 }), part({ face: 2, n: 41 })], [false, false, false]);
 }
 
 globalThis.__baseData = data;

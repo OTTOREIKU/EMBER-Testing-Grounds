@@ -480,6 +480,8 @@
 .ah-half-h .tot { margin-left: auto; font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--text); }
 .ah-half-h .tot small { font-family: var(--font); font-size: 9.5px; font-weight: 400; color: var(--text3); margin-left: 4px; }
 .ah-half .ah-roll { margin: 0; }
+/* The Part Die's hand (combat.ts partDieHand): the Black Die and what it chose. */
+.ah-half-part .ah-partsaid { font-size: 11.5px; font-weight: 600; color: var(--accent); }
 
 /* ---------- The step stack ----------
    Every step of the attack is a card. Finished ones collapse to one line

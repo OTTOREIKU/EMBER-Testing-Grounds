@@ -75,7 +75,7 @@ const combat = { attackerUid: 7, targetUid: 9, actionId: '032_A', white: 6, blue
 const combatView = {
   attackerUid: 7, targetUid: 9, actionId: '032_A', mode: 'attack', step: 'defense',
   targetPart: 'rightHand', attack: [{ color: 'red', face: 2 }, { color: 'yellow', face: 0 }],
-  defense: null, log: ['Black Die: rightArm.'],
+  defense: null, partDie: { face: 3, n: 2 }, log: ['Black Die: rightArm.'],
   // Non-default on purpose, like everything else here: the Focus flow's place
   // must survive the trip or the defender's mirror asks at the wrong moment,
   // and a spent KC Armor must stay spent.

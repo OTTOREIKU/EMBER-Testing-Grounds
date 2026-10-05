@@ -141,7 +141,7 @@ const norm = typesSrc.slice(
   typesSrc.indexOf('function normaliseCombatView(raw: unknown)'),
   typesSrc.indexOf('function normaliseRollback('),
 );
-for (const field of ['evadeUsed', 'evadeReady', 'dodgeDieUsed', 'dodgeDieReady', 'designate']) {
+for (const field of ['evadeUsed', 'evadeReady', 'dodgeDieUsed', 'dodgeDieReady', 'designate', 'partDie']) {
   check(`a checkpoint carries ${field} through`, new RegExp(`\\b${field}:`).test(norm), true);
 }
 check('and the designated Parts are bounded like the rest', /slice\(0, 8\)/.test(norm), true);

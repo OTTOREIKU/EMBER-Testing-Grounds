@@ -1357,6 +1357,12 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // moves with it, because the shield is always the target's own ally.
       if (!at || at.side !== cmd.seat) return no('The combat window belongs to the attacking squad.');
       if ((view.attack?.length ?? 0) > 40 || (view.defense?.length ?? 0) > 40) return no('That is not a dice pool.');
+      // The Part Die is one die of six faces, drawn on the receiving screen by
+      // its face: anything else is no die at all.
+      const pd = view.partDie;
+      if (pd != null && !(Number.isSafeInteger(pd.face) && pd.face >= 0 && pd.face < 6 && Number.isSafeInteger(pd.n) && pd.n >= 1 && pd.n <= 40)) {
+        return no('That is not a Part Die.');
+      }
       if ((view.log ?? []).some((l) => typeof l !== 'string' || l.length > 400)) return no('That is not a combat log.');
       // The resolution strip is drawn into the OTHER player's window, so it is
       // bounded here the way the pools and the log are. No legal attack makes

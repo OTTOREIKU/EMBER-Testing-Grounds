@@ -1329,5 +1329,122 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms));
   check('a [Stationary]-gated grant stays out until its rider learns keywords', w.h.mayPickPart(), false);
 }
 
+// ---------- THE PART DIE IS SEEN TO ROLL ----------
+// OTTO, 2026-10-05, watching two computers: "rolling the part die and choosing
+// a part if selected any isnt animated as well. both AI popups showed the dice
+// and roll button but then moved past it after having done a hidden roll". The
+// view carried no Part Die, so a watching screen drew the die blank beside its
+// Roll button and then the next step. The die travels as it lands, a watching
+// screen rolls it in on the first sight of that throw, and it stays on the
+// felt, with where the hit went, for the rest of the attack.
+{
+  const faces = dice.dice.black.faces;
+  const faceOf = (part) => faces.findIndex((f) => (f[0]?.part ?? 'any') === part);
+  const anyFace = faceOf('any');
+  const torsoFace = faceOf('torso');
+  check('the Black Die prints an ANY face and a Torso face', [anyFace >= 0, torsoFace >= 0], [true, true]);
+  // The one draw a throw makes, set so the die lands where the walk needs it.
+  const throwOn = (face, root) => {
+    const was = Math.random;
+    Math.random = () => (face + 0.5) / 6;
+    try { press(root, 'Roll Black Die'); } finally { Math.random = was; }
+  };
+  const byClass = (root, cls, out = []) => {
+    const walk = (el) => {
+      if (String(el.className ?? '').split(/\s+/).includes(cls)) out.push(el);
+      for (const c of el.children ?? []) walk(c);
+    };
+    walk(root);
+    return [...new Set(out)];
+  };
+  const rollingBlack = (root) => byClass(root, 'die-black').filter((d) => d._cls?.has('rolling')).length;
+  const caption = (root) => byClass(root, 'ah-blackcap')[0]?.textContent ?? null;
+
+  // A face that names a Part: it lands, is read, and the attack moves on.
+  const bb = board();
+  bb.atk.link = 0;
+  const A6 = attacker(bb.all);
+  A6.h.start(bb.atk, firing, bb.def, 'clear');
+  check('no Part Die travels before it is thrown', A6.views.some((v) => v.partDie), false);
+  throwOn(torsoFace, A6.root);
+  await tick(600);
+  const landed = A6.views.find((v) => v.partDie);
+  check('it travels as it lands, on the step that threw it',
+    [landed?.step, landed?.partDie], ['part', { face: torsoFace, n: 1 }]);
+  const w = watcher(bb.all, []);
+  w.h.showMirror(landed, bb.atk, bb.def, firing, 'spectator');
+  await settle();
+  check('a watching screen rolls it in', rollingBlack(w.root), 1);
+  check('and names the Part it shows', caption(w.root), 'Torso');
+  check('with no Roll button beside a die already thrown', find(w.root, 'Roll Black Die')?.hidden, true);
+  // A repaint while it rolls takes the roll up, and it lands on time.
+  await tick(120);
+  w.h.showMirror(landed, bb.atk, bb.def, firing, 'spectator');
+  await settle();
+  check('a repaint mid-roll rolls the new die on', rollingBlack(w.root), 1);
+  await tick(450);
+  check('and it lands when the first would have', rollingBlack(w.root), 0);
+  await tick(800);
+  const after = A6.views.at(-1);
+  check('the attack moves on with the die still in the view',
+    [after.step !== 'part', after.targetPart, after.partDie], [true, 'torso', { face: torsoFace, n: 1 }]);
+  w.h.showMirror(after, bb.atk, bb.def, firing, 'spectator');
+  await settle();
+  check('the felt keeps the die and where the hit went',
+    [byClass(w.root, 'die-black').length, texts(w.root).includes('Torso takes the hit')], [1, true]);
+  check('without throwing it a second time', rollingBlack(w.root), 0);
+  const late = watcher(bb.all, []);
+  late.h.showMirror(after, bb.atk, bb.def, firing, 'defender');
+  await settle();
+  check('a screen that first sees the throw on a later step rolls it there', rollingBlack(late.root), 1);
+  check('while the attacker\'s own window, which rolled it on its stage, does not',
+    [byClass(A6.root, 'die-black').length, rollingBlack(A6.root)], [1, 0]);
+
+  // ANY: the die waits on its step while the attacker picks, then the felt
+  // says what was picked.
+  const b2 = board();
+  b2.atk.link = 0;
+  const A7 = attacker(b2.all);
+  A7.h.start(b2.atk, firing, b2.def, 'clear');
+  throwOn(anyFace, A7.root);
+  await tick(1400);
+  const asked = A7.views.at(-1);
+  check('an ANY waits on its step with the die in the view',
+    [asked.step, asked.targetPart, asked.partDie], ['part', null, { face: anyFace, n: 1 }]);
+  const w2 = watcher(b2.all, []);
+  w2.h.showMirror(asked, b2.atk, b2.def, firing, 'spectator');
+  await settle();
+  check('a watcher sees it land on ANY, and who picks', [rollingBlack(w2.root), caption(w2.root)], [1, 'ANY: Attacker picks the Part']);
+  press(A7.root, 'Torso');
+  press(A7.root, 'Confirm');
+  const picked = A7.views.at(-1);
+  w2.h.showMirror(picked, b2.atk, b2.def, firing, 'spectator');
+  await settle();
+  check('and then the Part picked', [picked.targetPart, texts(w2.root).includes('ANY: Attacker picks the Torso')], ['torso', true]);
+
+  // A Focus throws it again, and a watching screen sees that throw roll too.
+  const b3 = board();
+  b3.atk.link = 4;
+  const A8 = attacker(b3.all);
+  A8.h.onCommand = () => true;
+  A8.h.start(b3.atk, firing, b3.def, 'clear');
+  throwOn(torsoFace, A8.root);
+  await tick(600);
+  const offer = () => findButtons(A8.root).find((x) => /Focus: reroll the Black Die/.test(label(x)));
+  const first = A8.views.find((v) => v.partDie);
+  check('the die travels before its Focus is answered', [first?.partDie?.n, !!offer()], [1, true]);
+  const w3 = watcher(b3.all, []);
+  w3.h.showMirror(first, b3.atk, b3.def, firing, 'spectator');
+  await tick(600);
+  check('the first throw lands on the watching screen', rollingBlack(w3.root), 0);
+  offer().click();
+  await tick(600);
+  const second = A8.views.filter((v) => v.partDie).at(-1);
+  check('the Focus throw travels as the second', second?.partDie?.n, 2);
+  w3.h.showMirror(second, b3.atk, b3.def, firing, 'spectator');
+  await settle();
+  check('and rolls on the watching screen as a throw of its own', rollingBlack(w3.root), 1);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

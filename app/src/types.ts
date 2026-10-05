@@ -1125,6 +1125,12 @@ export interface CombatView {
   chargeChoice?: string;
   attack: { color: string; face: number }[] | null;
   defense: { color: string; face: number }[] | null;
+  // The Part Die (4.4.1 step 2) once it has landed: its face, and how many
+  // times it has been thrown this sequence (a Focus throws it again), so every
+  // screen watching shows it roll and land (OTTO, 2026-10-05: "rolling the part
+  // die and choosing a part ... isnt animated"). Null before, and where no die
+  // is thrown (a Part designated, Cruise Mode).
+  partDie?: { face: number; n: number } | null;
   log: string[];
   // The step each log line belongs to, same length as `log`. Sent so a watcher's
   // step cards open on the same lines the attacker's do. Optional because a view
@@ -1399,6 +1405,14 @@ function normaliseCombatView(raw: unknown): CombatView | null {
     chargeChoice: typeof v.chargeChoice === 'string' ? v.chargeChoice : undefined,
     attack: faces(v.attack),
     defense: faces(v.defense),
+    // A face of the Black Die (six of them) and a count of throws, bounded.
+    // Absent stays absent, as a view from before the field round-trips.
+    partDie: (() => {
+      const p = v.partDie as { face?: unknown; n?: unknown } | null | undefined;
+      return p && Number.isSafeInteger(p.face) && (p.face as number) >= 0 && (p.face as number) < 6
+        ? { face: p.face as number, n: Math.max(1, dieCount(p.n)) }
+        : undefined;
+    })(),
     // THE WHOLE LOG, not a tail. It used to be capped at 6 here and at 5 on the
     // way out, so a watcher read the last five sentences of a fight the acting
     // player could scroll in full: the trace is the thing OTTO named as most
