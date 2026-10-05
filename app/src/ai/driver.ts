@@ -79,6 +79,9 @@ export interface LogEntry {
   reason: string;
   options: number;
   ms: number;
+  // Of `ms`, how long the policy took to choose: the question to the answer,
+  // before the host's pace and the table's rest.
+  think: number;
 }
 
 export type Step =
@@ -447,6 +450,7 @@ export class Driver {
       }
     }
     const option = narrowed.options.find((o) => o.id === pick) ?? narrowed.options.find((o) => o.id === narrowed.fallback)!;
+    const think = Date.now() - t0;
     done.add(option.id);
     this.tried.set(d.id, done);
 
@@ -481,7 +485,7 @@ export class Driver {
     this.taken += 1;
     this.log.push({
       n: this.taken, round: at.round, phase: at.phase, kind: d.kind, decision: d.id,
-      option: option.id, label: option.label, why: failed ? `REFUSED: ${failed.why}` : why, reason, options: d.options.length, ms: Date.now() - t0,
+      option: option.id, label: option.label, why: failed ? `REFUSED: ${failed.why}` : why, reason, options: d.options.length, ms: Date.now() - t0, think,
     });
     if (this.log.length > (this.opts.logSize ?? 400)) this.log.shift();
     if (failed) return { kind: 'refused', decision: d, option, command: failed.command, why: failed.why };
