@@ -476,6 +476,13 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
       W({ kind: 'loop.designate.command' }, o('Command Porcupine', ['designate']), 'command_opportunity')],
     ['Mire: Sprint to E4, facing east (for the mission)', 'Burst Fire at Wolf (its best attack)', 'Command Porcupine (the Command that does most)', 'Mire: Maneuver to B6, facing west (a mistake)',
       'Command Porcupine (so no Command goes unspent)']);
+  // (2026-10-05: the Drones launched to mend and to call a shot, the Aster pilot's Command for Link and a Command
+  // a Tactics Card pays for were told nothing: their reasons had no words.)
+  check('a Drone launched to mend an ally or to call in a shot, and a Command for Link or paid for by a card, are told too',
+    [W(turn, o('Nest: Nest Guardian Swarm: SU1 to E4', ['launch']), 'patch_value'), W(turn, o('Cobra: Launch Snake Eyes: KK9 to F7', ['launch']), 'spotter_value'),
+      W({ kind: 'loop.designate.command' }, o('Command Porcupine', ['designate']), 'aster_link'), W({ kind: 'loop.designate.command' }, o('Command Porcupine', ['designate']), 'tactic_command')],
+    ['Nest: Nest Guardian Swarm: SU1 to E4 (to mend an ally next round)', 'Cobra: Launch Snake Eyes: KK9 to F7 (to call in a shot)',
+      'Command Porcupine (to turn a spare Command into Link)', 'Command Porcupine (a Command its Tactics Card pays for)']);
   check('the unit whose turn it is is named first where the answer does not name it, and never twice',
     [W(turn, o('Burst Fire at Wolf', ['attack']), 'attack_value', 'Dune'), W(turn, o('Mire: Sprint to E4, facing east', ['move']), 'take_zone', 'Mire'),
       W(turn, o('Mire Reveals where it stands', ['reveal']), 'cloak', 'Mire')],
@@ -491,7 +498,7 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
     named: line.startsWith('Command ') || p.state.tokens.some((t) => t.side === seat && (line.startsWith(`${t.label}:`) || line.startsWith(`${t.label} `))) }) });
   p.table.start();
   const end = await p.play();
-  const phrase = /\((for the mission|to close with the enemy|to close in|to attack from there|to be in reach next turn|out of the enemy's sights|to reach a better target|to find something to attack|to attack|its best attack|at the unit its Scan found|where it does most|to jam the enemy|to keep its squad going|to lend a shot|for what that Stance lets it do|to open an attack|to charge a Part for its attack|to hide behind it|to be hard to target|for what it can do then|worth more played than kept|to put a Drone to work|for the turn it opens|to get back into the fight|to restore its Link|the Command that does most|so no Command goes unspent|a mistake)\)$/;
+  const phrase = /\((for the mission|to close with the enemy|to close in|to attack from there|to be in reach next turn|out of the enemy's sights|to reach a better target|to find something to attack|to attack|its best attack|at the unit its Scan found|where it does most|to jam the enemy|to keep its squad going|to lend a shot|to mend an ally next round|to call in a shot|for what that Stance lets it do|to open an attack|to charge a Part for its attack|to hide behind it|to be hard to target|for what it can do then|worth more played than kept|to put a Drone to work|for the turn it opens|to get back into the fight|to restore its Link|the Command that does most|so no Command goes unspent|to turn a spare Command into Link|a Command its Tactics Card pays for|a mistake)\)$/;
   check('PLAYED against the Ace: the game ends, and the computer tells why as it goes, only of its own seat, never in the Planning Phase (its dials are its secret), each line one of its phrases, each naming the unit it is about',
     [end.kind, p.refused, lines.length > 10, lines.every((x) => x.seat === p.spec.bot), lines.filter((x) => x.phase === 1).length, lines.filter((x) => !phrase.test(x.line)).map((x) => x.line).slice(0, 3),
       lines.filter((x) => !x.named).map((x) => x.line).slice(0, 3)],

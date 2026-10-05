@@ -296,6 +296,7 @@ const BECAUSE: Record<string, string> = Object.assign(Object.create(null) as Rec
   attack_value: 'its best attack', attack_result_value: 'its best attack', attack_revealed: 'at the unit its Scan found',
   launch_value: 'where it does most', projectile_blast_value: 'where it does most', blast_value: 'where it does most',
   jam_value: 'to jam the enemy', support_value: 'to keep its squad going', overwatch_value: 'to lend a shot',
+  patch_value: 'to mend an ally next round', spotter_value: 'to call in a shot',
   stance_by_value: 'for what that Stance lets it do', preparation_unlocks_attack: 'to open an attack',
   charge_for_attack: 'to charge a Part for its attack', smoke_for_cover: 'to hide behind it',
   cloak: 'to be hard to target', low_profile: 'to be hard to target', draw_fire: 'to draw the enemy\'s fire', mode_by_value: 'for what it can do then',
@@ -303,6 +304,7 @@ const BECAUSE: Record<string, string> = Object.assign(Object.create(null) as Rec
   tick_by_value: 'for the turn it opens', reboot: 'to get back into the fight', restore_link: 'to restore its Link',
   // A Command given.
   command_by_value: 'the Command that does most', command_opportunity: 'so no Command goes unspent',
+  aster_link: 'to turn a spare Command into Link', tactic_command: 'a Command its Tactics Card pays for',
   // A level's mistake (ai/levels.ts).
   blunder: 'a mistake',
 });
