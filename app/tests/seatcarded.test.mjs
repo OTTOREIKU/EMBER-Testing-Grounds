@@ -51,5 +51,37 @@ check('THE WHITE DWARF CHANGES TO CRUISE MODE FOR THE BEAM CANNON, AND LAUNCHES 
   [modes(now), now.some((x) => /Cruise Mode, ACE-001/.test(x)), now.some((x) => /"White Dwarf" Bit .* to [A-L]\d+/.test(x))], [1, true, true]);
 check('WITHOUT IT (the old key) it changed back the next Action, the launch unmade', modes(then), 2);
 
+// A DESTROYED PART IS NOT A DAMAGED ONE (2026-10-04 night): the key read each
+// Part's state by its first letter, and "damaged" and "destroyed" share it.
+// One policy asked on a table where the White Dwarf's last gun is Damaged, and
+// then on the same table with it destroyed, answered the second from what it
+// had worked out for the first: the same Glenn Launcher shot, priced at 3.55
+// where asked afresh it is 3.73.
+{
+  const t = botTable(M, data, scenario, { seed: 51040, policies: AI.eagerPolicy });
+  await t.run({ until: (st) => M.SU.normaliseSetup(st.setup)?.stage === 'done' });
+  const s = t.state;
+  const [mine, theirs] = ['s1', 's2'].map((side) => s.tokens.find((x) => x.side === side && x.kind === 'mech'));
+  const at = (x, c, r, f) => { x.col = c * 3; x.row = r * 3; x.facing = f; };
+  at(mine, 2, 5, 1); at(theirs, 6, 5, 3);
+  mine.partStates = { ...mine.partStates, leftHand: 'destroyed', rightHand: 'damaged' };
+  const sc = s.script;
+  s.round.phase = 2; sc.stage = '1:2'; sc.passed = []; sc.revealed = ['s1', 's2'];
+  for (const x of s.tokens) if (x.kind === 'mech') x.timing = 'firing';
+  sc.acted = s.tokens.filter((x) => x.kind === 'mech' && x.uid !== mine.uid).map((x) => x.uid);
+  sc.opp = null;
+  M.G.opportunity(data, s);
+  const W = { press: 0, nextAfter: 0 };
+  const ask = (p) => p.choose(t.drivers.s1.pending(), M.SEAT.viewOf(data, s, 's1'), new AI.Rng('key')).why;
+  const kept = AI.makeTactician({}, W);
+  const old = AI.makeTactician({ carded: false }, W);
+  ask(kept); ask(old);
+  mine.partStates = { ...mine.partStates, rightHand: 'destroyed' };
+  const after = { kept: ask(kept), old: ask(old), fresh: ask(AI.makeTactician({}, W)), freshOld: ask(AI.makeTactician({ carded: false }, W)) };
+  check('A DESTROYED PART IS NOT A DAMAGED ONE: asked again once the White Dwarf\'s last gun goes from Damaged to destroyed, a policy answers as one asked afresh; on the old key it answered from what it had worked out with the gun',
+    [after.kept === after.fresh, after.old === after.freshOld], [true, false]);
+  t.close();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
