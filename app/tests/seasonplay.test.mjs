@@ -151,5 +151,26 @@ check('the pad\'s End Phase names the Season\'s Smoke count while one is on',
   [/const per = smokePerGroup\(api\.data, s\);/.test(guided), /a Connected group of \$\{per\} or fewer comes off whole, and each larger group loses \$\{per\}/.test(guided)],
   [true, true]);
 
+// THE MATCH CENTRE SAYS SO (2026-10-05: a game against the computer may be set
+// on the Season from the Play the computer dialog, and the round chip is the one
+// place a player sees which rules a game plays): matchhud.ts timelineHtml, run.
+{
+  const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const cut = (a, b) => { const i = hud.indexOf(a); const j = hud.indexOf(b, i); if (i < 0 || j < 0) throw new Error(`no ${a}`); return hud.slice(i, j); };
+  const slice = new URL('./_seasonplay.timeline.slice.ts', import.meta.url);
+  writeFileSync(slice, `const PHASES = ['Command', 'Planning', 'Action', 'Automatic', 'Delay', 'End'];
+${cut('function esc(s: string): string {', '\n}\n')}
+}
+export ${cut('function timelineHtml(s: GameState): string {', '\n}\n').replace('s: GameState', 's: any')}
+}
+`);
+  const { timelineHtml } = await import(`${slice.href}?v=${Date.now()}`);
+  const on = timelineHtml({ round: { n: 2, phase: 1 }, roundLimit: 5, season: '1.04' });
+  const off = timelineHtml({ round: { n: 2, phase: 1 }, roundLimit: 5 });
+  check('the Match Centre\'s round chip names the Season a table plays, in its blue, saying it is optional',
+    [/<div class="roundchip">R2\/5<span class="roundchip-season" title="Season 1\.04 rules: optional, not the main rules">Season 1\.04<\/span><\/div>/.test(on), /roundchip-season/.test(off)], [true, false]);
+  check('in the blue the pad marks it in', /\.roundchip-season \{[^}]*color: var\(--blue\)/.test(readFileSync(new URL('../src/match.css', import.meta.url), 'utf8')), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

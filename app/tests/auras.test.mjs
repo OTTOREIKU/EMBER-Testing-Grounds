@@ -1044,9 +1044,10 @@ check('nothing asks aurasOn about the defender for the ZHDR-204 kind',
 // survive the status whose whole job is to delete the pool. The ORDER of the
 // whole trio is pinned: the 164 bonus, then Hindered's per-token subtraction
 // (which has to see the finished pool), then Immobilized deleting everything.
-// 121_A's -2 Blue joined the subtractions between them on 2026-09-25.
+// 121_A's -2 Blue joined the subtractions between them on 2026-09-25, and the
+// KK9's Lock On -1 on 2026-10-05 (lockon.test.mjs).
 check('the 164 Blue is added BEFORE Hindered subtracts and Immobilized zeroes',
-  /if \(this\.earlyWarning\(\)\) blue \+= 1;[\s\S]{0,500}?blue = Math\.max\(0, blue - statusCount\(d\.statuses, 'hindered'\)\);[\s\S]{0,800}?if \(statusCount\(d\.statuses, 'immobilized'\) > 0\) blue = 0;/.test(combatSrc), true);
+  /if \(this\.earlyWarning\(\)\) blue \+= 1;[\s\S]{0,500}?blue = Math\.max\(0, blue - statusCount\(d\.statuses, 'hindered'\)\);[\s\S]{0,1400}?if \(statusCount\(d\.statuses, 'immobilized'\) > 0\) blue = 0;/.test(combatSrc), true);
 
 // The three arguments the four reviewed defects were: a missing one each.
 check('combat.ts feeds earlyWarningCover the smoke as well as the terrain (4.16)',

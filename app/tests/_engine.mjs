@@ -20,13 +20,17 @@ const MODULES = [
 
 // The table a scenario is played on, set up the way the Match Centre's lobby
 // sets one up: the battlefield, then the Main Task with its zones and its Task
-// items (tableconfig.ts), then the rounds and the Secondary Tasks switch. A
-// table handed only the Task's id plays a Task that can never score.
+// items (tableconfig.ts), then the rounds and the Secondary Tasks switch, and
+// the Season Rules as solo.ts soloSetup sets them (the scenario's `season`, or
+// SEASON=<id> in the environment for a measurement). A table handed only the
+// Task's id plays a Task that can never score.
 export function tableCommands(M, data, scenario) {
+  const season = scenario.season ?? process.env.SEASON ?? null;
   return [
     { kind: 'configureTable', seat: 's1', ...M.TC.mapConfig(data, scenario.map, null) },
     { kind: 'configureTable', seat: 's1', ...M.TC.missionConfig(data, scenario.map, scenario.mission) },
     { kind: 'configureTable', seat: 's1', roundLimit: scenario.rounds, ...(scenario.secondaries === false ? { noSecondary: true } : {}) },
+    ...(season ? [{ kind: 'configureTable', seat: 's1', season }] : []),
   ];
 }
 

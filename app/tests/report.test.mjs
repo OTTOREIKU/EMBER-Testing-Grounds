@@ -379,6 +379,25 @@ ok('and so does the match centre', /noteRefusal\(why\);/.test(src('match.ts')));
 ok('both name the command in flight', /noteCommand\(cmd\.kind\)/.test(src('main.ts'))
   && /noteCommand\(cmd\.kind\)/.test(src('match.ts')));
 
+// THE PAD (OTTO, 2026-10-05: "a report button and functionality is missing
+// entirely from PAD"): the board pages' form and file, the table the pad holds
+// with no picture of a board, on the three screens a player is ever on.
+console.log('\nthe pad');
+const pad = src('../pad/pad.ts');
+check('the pad has a report button on its sign-in screen, its lobby and its table panel',
+  (pad.match(/data-act="report">Report a problem</g) ?? []).length, 3);
+ok('and it opens the same form the board pages do', /case 'report': \{[\s\S]{0,900}openBoardReport\(\{/.test(pad));
+ok('with the table the pad holds', /openBoardReport\(\{[\s\S]{0,300}state: table,/.test(pad));
+ok('and offers no picture of a board it does not have', !/openBoardReport\(\{[^}]*boardSvg/.test(pad));
+ok('the pad reuses the relay\'s own connection report', /openBoardReport\(\{[\s\S]{0,400}net: relay\.diagnostics\(\)/.test(pad));
+{
+  const at = pad.indexOf('installDiagnostics(window)');
+  ok('the pad installs the black box', at > 0);
+  ok('  and does it before anything else runs', at < pad.indexOf('addEventListener(\'click\''));
+}
+ok('the pad records refusals as well as showing them', /onRefused\(\(why\) => \{\s*noteRefusal\(why\);\s*refuse\(why\);/.test(pad));
+ok('and names the command in flight', /onBeforeApply\(\(s, cmd\) => \{[\s\S]{0,200}noteCommand\(cmd\.kind\);/.test(pad));
+
 // ---------- the page behind the dialog ----------
 //
 // The dialog is a fixed sheet over the whole screen, and the page behind it

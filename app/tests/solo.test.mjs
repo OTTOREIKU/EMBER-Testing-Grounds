@@ -183,6 +183,24 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
   const went = cmds.map((c) => { const v = M.C.perform(data, s, c); if (v.ok) M.G.glueAfter(data, s, c); return v.ok; });
   check('every one of them is taken by a fresh table, which then waits for the roll for First Player',
     [went.every(Boolean), M.SU.normaliseSetup(s.setup).stage, s.tokens.length, M.TK.normaliseTasks(s.tasks).items.length], [true, 'roll', 6, 3]);
+  // THE SEASON RULES (OTTO, 2026-10-05: "add in a toggle to turn these seasonal
+  // rules on or off when choosing the AI settings in the Play the computer
+  // popup"): the address names the season, the spec keeps one the data holds,
+  // and the host sets it with the table, before the start that fixes it.
+  check('the address names a season and reads it back; one the data does not hold plays the main rules',
+    [soloQuery({ scenario: 'x', side: 's1', season: '1.04' }), soloQuery({ scenario: 'x', side: 's1' }),
+      spec('?solo=alley-forward-advance&season=1.04').season, spec('?solo=alley-forward-advance&season=9.9').season, spec('?solo=alley-forward-advance').season],
+    ['?solo=x&side=s1&season=1.04', '?solo=x&side=s1', '1.04', null, null]);
+  const seasoned = soloSetup(data, alley, undefined, [], '1.04');
+  check('the host sets the season with the table, before the start; without one it sends none',
+    [seasoned.slice(0, 4).map((c) => c.kind), seasoned[3].season, seasoned.indexOf(seasoned[3]) < seasoned.findIndex((c) => c.kind === 'startMatch'), cmds.some((c) => c.season !== undefined)],
+    [['configureTable', 'configureTable', 'configureTable', 'configureTable'], '1.04', true, false]);
+  const ss = freshState(M, data);
+  const wentS = seasoned.map((c) => { const v = M.C.perform(data, ss, c); if (v.ok) M.G.glueAfter(data, ss, c); return v.ok; });
+  check('and a fresh table takes it: the game is played on Season 1.04', [wentS.every(Boolean), ss.season], [true, '1.04']);
+  check('the page sets the season it was asked for, and a rematch asks for it again',
+    [/soloSetup\(data, spec\.scenario, spec\.squads, hands\.commands, spec\.season\)/.test(src('match.ts')),
+      (src('match.ts').match(/season: spec\.season \?\? undefined/g) ?? []).length], [true, 2]);
 }
 
 // ---------- the way in, on the tabletop (M4.4) ----------
@@ -234,6 +252,15 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
   check('a watched game is kept with the pick and opens again watched; anything else kept there is a played game against the usual computer',
     [(() => { const k = M.SETUP.soloPick(data, { scenario: vip.id, watch: true, opponent2: 'veteran' }); return [k.watch, k.opponent2]; })(), (() => { const k = M.SETUP.soloPick(data, { watch: 'yes', opponent2: 'skynet' }); return [k.watch, k.opponent2]; })()],
     [[true, 'veteran'], [false, 'tactician']]);
+  // THE RULES PLAYED: the main rules or a Season, picked in the dialog as on the pad.
+  const seasonRows = (h) => [...h.matchAll(/data-season="([^"]*)" aria-pressed="(true|false)"><span>([^<]*)<\/span><em>([^<]*)<\/em>/g)].map((m) => [m[1], m[2] === 'true', m[3], m[4]]);
+  check('RULES: the main rules picked unless a Season is, each Season named as the pad names it with what it changes',
+    seasonRows(html), [['', true, 'Main rules', 'the rulebook and its updates'], ['1.04', false, 'Season 1.04', 'Stabilize System becomes a Medium Action; Smoke thins faster']]);
+  check('a Season picked is marked, kept with the pick, and asked for by Start; one this build has not is the main rules',
+    [seasonRows(soloSetupHtml(data, { ...M.SETUP.soloPick(data, null), season: '1.04' })).map((r) => r[1]),
+      M.SETUP.soloPick(data, { season: '1.04' }).season, M.SETUP.soloPick(data, { season: '7.7' }).season,
+      soloAddress({ scenario: alley.id, side: 's1', speed: 'normal', opponent: 'tactician', season: '1.04' }), soloAddress({ scenario: alley.id, side: 's1', speed: 'normal', opponent: 'tactician', season: '' })],
+    [[false, true], '1.04', '', `match/?solo=${alley.id}&side=s1&season=1.04`, `match/?solo=${alley.id}&side=s1`]);
   // The tabletop offers the game and carries none of what plays it.
   const imports = (f) => [...src(f).matchAll(/^import (?:type )?[^;]*? from '([^']+)';/gm)].map((m) => m[1]).sort();
   check('the tabletop\'s row opens it, on the Setup tab\'s own row pattern',
@@ -264,7 +291,7 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
   const pick = soloPick(data, kept, squads);
   const { map: _m, mission: _t, mine: _a, theirs: _b, secondaries: _s, ...head } = kept;
   check('a game of your own kept from last time opens again as it was (kept from before a game could be watched: played, the second computer the usual one)',
-    pick, { ...head, watch: false, opponent2: 'tactician', map: kept.map, mission: kept.mission, mine: kept.mine, theirs: kept.theirs, secondaries: kept.secondaries });
+    pick, { ...head, watch: false, opponent2: 'tactician', map: kept.map, mission: kept.mission, mine: kept.mine, theirs: kept.theirs, secondaries: kept.secondaries, season: '' });
   check('what this build or this device no longer has falls back: a battlefield, a Main Task, a squad; and with no squad to play it with there is no game of your own',
     [(() => { const p = soloPick(data, { ...kept, map: 'moon', mission: 'tea', mine: 'gone', theirs: 7 }, squads); return [p.scenario, p.map, p.mission, p.mine, p.theirs]; })(), soloPick(data, kept, []).scenario],
     [[SOLO_OWN, 'alley', 'control-frontal-breakthrough', 'builtin:squad-raid-rdl', 'builtin:squad-raid-un'], alley.id]);
@@ -333,7 +360,7 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
 {
   const m = src('match.ts');
   check('the page asks its address, sets the table through its own door, opens the loopback and seats the computer',
-    [/const soloWanted = soloAsk\(location\.search\);/.test(m), /const hands = soloHands\(spec\);\n\s*for \(const cmd of soloSetup\(data, spec\.scenario, spec\.squads, hands\.commands\)\) \{\n\s*const v = send\(cmd\);/.test(m),
+    [/const soloWanted = soloAsk\(location\.search\);/.test(m), /const hands = soloHands\(spec\);\n\s*for \(const cmd of soloSetup\(data, spec\.scenario, spec\.squads, hands\.commands, spec\.season\)\) \{\n\s*const v = send\(cmd\);/.test(m),
       /loopback\.open\(\{\n\s*id: SOLO_ROOM,\n\s*seat: spec\.human,/.test(m), /const table = new SoloTable\(\{/.test(m), /table\.start\(\);/.test(m)], [true, true, true, true, true]);
   check('and deals the computer\'s hand to its seat alone', /\}, spec, hands\.held\);/.test(m), true);
   check('it asks the server nothing: no session, no registration, no record of the game',
@@ -341,7 +368,10 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
       /if \(loopback\) return 'A game against the computer is not kept on a record\.';/.test(m)], [true, true, true]);
   check('and keeps nothing of it on the device: no room to rejoin, no dial secret',
     [/if \(view\.room\) \{ if \(!loopback\) rememberRoom\(view\.room\.id\); \}/.test(m), /function dialSecretKey\(\): string \| null \{\n(?:\s*\/\/[^\n]*\n)*\s*if \(soloWanted\) return null;/.test(m)], [true, true]);
-  check('the computer waits for a walk to end on the player\'s board', [/walking,\n\s*changed: \(\) => render\(\),/.test(m), /export function walking\(\): boolean \{\n\s*return animatingUid !== null;/.test(src('matchhud.ts'))], [true, true]);
+  // And for a Projectile's flight, launched or flying at its target (OTTO,
+  // 2026-10-05: "the missile will move in a path towards the unit and then the
+  // combat popup will happen").
+  check('the computer waits for a walk or a flight to end on the player\'s board', [/walking,\n\s*changed: \(\) => render\(\),/.test(m), /export function walking\(\): boolean \{\n\s*return animatingUid !== null \|\| flights\.length > 0;/.test(src('matchhud.ts'))], [true, true]);
   const hud = src('matchhud.ts');
   check('the result of a game against the computer offers another game and the way back, and no record',
     [/const foot = ctx\.solo\n\s*\? `<button class="bigbtn" data-act="soloagain">Play again<\/button>/.test(hud), /on\('\[data-act="soloagain"\]', \(\) => ctx\.solo\?\.again\(\)\);/.test(hud)], [true, true]);
@@ -621,7 +651,7 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
   check('WATCHED, the notice line says nothing of what the computers do (the Thinking tab does), and the watched seat\'s moves walk across the board as the other seat\'s do',
     [/if \(kind === 'event' && solo\?\.spec\.watch\) return;/.test(src('match.ts')),
       /const start = moveStart\(cmd\);\n\s*const v = send\(cmd\);\n\s*if \(v\.ok\) \{\n\s*walkMove\(cmd, start\);/.test(src('match.ts')),
-      /const start = moveStart\(cmd\);\n\s*const verdict = applyRemote\(data, state, cmd\);/.test(src('match.ts'))],
+      /const start = moveStart\(cmd\);\n\s*const fly = flyStart\(cmd\);\n\s*const verdict = applyRemote\(data, state, cmd\);/.test(src('match.ts'))],
     [true, true, true]);
   const one = (kind, unit, label) => H([{ n: 3, seat: 's1', round: 1, phase: 1, kind, option: 'x', unit, label, given: 'done' }], true);
   check('the unit is named once, in front: a deployment is the unit it puts down, a Command the Drone given it, a dial its Timing Dial',

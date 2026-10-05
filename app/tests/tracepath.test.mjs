@@ -66,5 +66,21 @@ check('an unreachable grid is refused', trace('0,0', '3,0', 20, sealed), null);
 // An empty route has no last grid to work from.
 check('an empty route is refused', cells(extendPath([], { c: 0, r: 0 }, unit, 5, [], [], false)), null);
 
+// A CRUSH ENDS THE MOVEMENT (4.3.6; FAQ E11, E16). A waypoint chained on from a
+// Grid the route had crushed into walked the unit on through the Container,
+// which stayed on the board (the terrain audit, 2026-10-05). A Small unit that
+// fits beside the Container walks on, as the rules let it.
+const container = (c, r) => ({
+  id: `c${c}${r}`, type: 'container', height: 1, blocksLos: false, providesProtection: false, isFragile: true,
+  subCells: [{ col: c * 3 + 2, row: r * 3 + 2 }],
+});
+const large = { uid: 2, size: 3, aerial: false, col: 0, row: 0, partStates: {} };
+const crushing = { crushable: (c, r) => c === 1 && r === 0 };
+const heavy = (path, to, terrain) => cells(extendPath(g(path), g(to)[0], large, 4, terrain, [], false, crushing));
+check('a Large unit crushes its way into a Container\'s Grid', heavy('0,0', '1,0', [container(1, 0)]), '0,0 1,0');
+check('and the route ends there: no waypoint is chained on', heavy('0,0 1,0', '2,0', [container(1, 0)]), null);
+check('while a route that crushed nothing goes on as before', heavy('0,0 1,0', '2,0', []), '0,0 1,0 2,0');
+check('and a Small unit that fits beside the Container walks on', trace('0,0 1,0', '2,0', 6, [container(1, 0)]), '0,0 1,0 2,0');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
