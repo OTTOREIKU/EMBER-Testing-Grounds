@@ -202,13 +202,54 @@ export interface Skills {
   // Warfare Core at 0.83 with `sprints`, took them, and lost them. KEPT ON
   // (2026-10-05): with `sprints`, Black Box 115 of 200 against 114.
   held: boolean;
+  // AN ENEMY ON A SWIFT OR TACTICAL DIAL STILL TO ACT (`seconds`): 3.4.3 again.
+  // Its Starting Action is a Swift Action or a Tactic, and an attack may follow
+  // with the Ticks left, from where its Maneuver leaves it: so a Mech carrying
+  // such an Action is read on the Timings a dial not shown is read on as well.
+  seconds: boolean;
+  // A BLOW A BOUGHT TICK PAYS FOR (`tickReach`, `tickDeed`): a move after which
+  // nothing is left to attack with for want of an Action Tick (a Sprint that
+  // spent them), where one may be bought (a pilot's Link, an Overloading Pack,
+  // Attack Mode), is worth the attack the Tick would pay for, less its Link.
+  // The plans stopped at the offer, so a blade a Sprint away never counted.
+  tickReach: boolean;
+  // THE LAST ROUND (`lastRound`, `lastTurn`): the game ends with it, so there
+  // is no turn after it. The engine already asks no unit for a turn after the
+  // last round (owed.ts owedIfActivated), but a plan's walk toward an enemy
+  // to fight later (`shapeAt`'s quarry) is not asked of the engine, and a Box
+  // carried outside the zone that pays was priced at `carry` of a Box home on
+  // a bearer that will never carry it there. With the skill, on its last turn
+  // of the game a unit walks toward no fight, and a Box outside the zone on a
+  // bearer whose last turn is behind it is worth nothing. Without it the
+  // Ace's carriers walked off from Echo on the last turn of Asset
+  // Preservation: in random game 92036 a Mech beside Echo with a Box in hand
+  // weighed the walk in (4 Victory Points) at -1.20, a step toward the fight
+  // it would never have at -0.48, and took the step. MEASURED LEVEL and kept ON
+  // (2026-10-05): every Black Box Task 81 of 200 against 81, every Main Task
+  // 88 against 88; the one Box game it turned (96164) it turned 0 to 0 into 4.
+  lastRound: boolean;
+  // THE BOXES A UNIT CARRIES ARE LOST ONCE (`boxOnce`, `exposure`): a bearer
+  // Penetrated drops them, and each attack that could Penetrate it was charged
+  // the whole of them, so two Razor Missiles over Echo charged a carrier five
+  // Victory Points for a Box worth four (random game 92002). With the skill they
+  // are charged once, at the chance that any of the attacks Penetrates.
+  boxOnce: boolean;
+  // SHOCK ATTACK X (`shock`; OTTO, 2026-10-05: "wire in melee as well as all of
+  // the melee relevant parts and abilities"): the Spear, the Lance and the
+  // Halberd gain it in Offensive Stance, "Before performing this Action, may
+  // move X grids", and the seam offers the walk and the attack as one answer
+  // (owed.ts, tagged `shock`). Planned as a walk is, for the Grid it ends in,
+  // at what the attack is worth there, priced on the table the walk leaves.
+  // Without it the walk is never taken (an attack's own deed leaves it out).
+  shock: boolean;
 }
 
 export const SKILLS: Skills = {
   mission: true, exposure: true, stance: true, charge: true, focus: true, command: true, dials: true, setup: true, screen: true, emergency: true,
   support: true, profile: true, mode: true, coordinate: true, orders: true, stalk: true, cloak: true, appear: true, shown: true, overwatch: true, grant: true,
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
-  entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true,
+  entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
+  lastRound: true, boxOnce: false, shock: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -418,7 +459,7 @@ function shotValue(o: Option, c: Ctx): { value: number; f: Forecast | null; targ
   const spent = o.tags.includes('spend-charge') ? CHARGE_COST : 0;
   // A bearer that is Penetrated drops its Black Boxes: what they were worth to
   // its squad is this squad's gain, at the same share a zone-holder's is.
-  const loose = f && target && c.skills.mission && target.side !== c.view.seat ? f.pen * c.w.holder * carried(target, c.view, c.w) : 0;
+  const loose = f && target && c.skills.mission && target.side !== c.view.seat ? f.pen * c.w.holder * carried(target, c.view, c.w, lastRoundOf(c) && target.done) : 0;
   // The enemy unit that would take a loose Box first, destroyed, takes none
   // (`deny`, M11).
   const denied = f && target && c.skills.mission && c.w.deny > 0 && target.side !== c.view.seat ? f.kill * c.w.deny * takesFirst(target, c) : 0;
@@ -515,12 +556,14 @@ function gangOf(f: Forecast, e: UnitView, c: Ctx): number {
 // THE ATTACKS OF ONE ACTIVATION: the attack worth most, and with `whole` what
 // could still be made after it (`then` on an attack: the question once it is
 // paid for). Two openings are tried, because the attack worth most may be the
-// one that leaves no Tick for a second.
-function volley(options: Option[], c: Ctx, whole: boolean): Deed | null {
+// one that leaves no Tick for a second. A Shock Attack's walk ends somewhere
+// else, so it is planned as a walk (plansSteps) and counted here only where
+// `shock` asks for it: what a Stance taken first would let the unit do.
+function volley(options: Option[], c: Ctx, whole: boolean, shock = false): Deed | null {
   const shots = options
     // One Explosion of a blast on every unit in Range is not an attack to be
     // weighed by itself: the blast is weighed whole (blastDeed).
-    .filter((o) => isShot(o) && !o.tags.includes('blast') && (c.skills.charge || !o.tags.includes('spend-charge')) && (c.skills.stalk || !o.tags.includes('hidden')))
+    .filter((o) => isShot(o) && !o.tags.includes('blast') && (shock || !o.tags.includes('shock')) && (c.skills.charge || !o.tags.includes('spend-charge')) && (c.skills.stalk || !o.tags.includes('hidden')))
     .map((o) => ({ o, ...shotValue(o, c) }))
     .filter((s) => s.value > EXACT)
     .sort((a, b) => b.value - a.value);
@@ -553,7 +596,7 @@ function ownLoss(o: Option, c: Ctx): number {
   const target = unitOf(c.view, o.facts?.targetUid);
   const f = o.chance ? o.chance() : null;
   if (!target) return 0;
-  return f ? gainOf(f, target, c.view, c.w) + (c.skills.mission ? f.pen * carried(target, c.view, c.w) : 0) : UNKNOWN_SHOT;
+  return f ? gainOf(f, target, c.view, c.w) + (c.skills.mission ? f.pen * carried(target, c.view, c.w, lastRoundOf(c) && target.done) : 0) : UNKNOWN_SHOT;
 }
 
 // A DETONATION, WEIGHED WHOLE. A blast on every unit in Range is one Explosion
@@ -857,9 +900,9 @@ function access(options: Option[], c: Ctx): Deed | null {
 }
 
 // The best thing to do at a table, of the five kinds.
-function deedAt(options: Option[], c: Ctx, whole: boolean): Deed | null {
+function deedAt(options: Option[], c: Ctx, whole: boolean, shock = false): Deed | null {
   let best: Deed | null = null;
-  for (const deed of [volley(options, c, whole), launch(options, c), jam(options, c), access(options, c), blastDeed(options, c), support(options, c), handOff(options, c), strike(options, c)]) {
+  for (const deed of [volley(options, c, whole, shock), launch(options, c), jam(options, c), access(options, c), blastDeed(options, c), support(options, c), handOff(options, c), strike(options, c)]) {
     if (deed && (!best || deed.value > best.value + EXACT)) best = deed;
   }
   return best;
@@ -975,6 +1018,15 @@ const DEEDS = ['attack', 'launch', 'electronic', 'terminal', 'support'];
 // another answer, and costs its Action).
 const OFFENSIVE = 'stance:offensive';
 
+// THE LAST ROUND (`lastRound`): the game ends with this round, so no unit has a
+// turn after it.
+const lastRoundOf = (c: Ctx): boolean => c.skills.lastRound && c.view.round >= c.view.roundLimit;
+// And the turn this unit is planning is its last of the game: a Drone moved by
+// a Command still has its Automatic Phase to come. (A unit of the squad not
+// the one asked about, read as `me`, has had its last turn once it is done.)
+const lastTurn = (c: Ctx): boolean => lastRoundOf(c)
+  && (c.me.uid === c.d.unit ? !(c.me.kind !== 'mech' && c.view.phaseName === 'Command') : c.me.done);
+
 // ---------- what the other squad could do to it ----------
 
 // Whether an enemy unit is worth asking about a Grid at all: by its Range,
@@ -990,8 +1042,12 @@ function inReachOf(e: UnitView, at: Grid, more = 0): boolean {
 // turn still to come, is the one. Otherwise its next dial is not known, and
 // it is asked on what it would most likely want: Firing if it has a gun, and
 // Melee if it is close enough to use one.
-function timingsOf(e: UnitView, view: SeatView, at: Grid): (string | undefined)[] {
+function timingsOf(e: UnitView, view: SeatView, at: Grid, seconds = false): (string | undefined)[] {
   if (e.kind !== 'mech') return [undefined];
+  // (`seconds`: a Swift or Tactical Starting Action the Mech carries, and an
+  // attack after it.)
+  if (view.phaseName === 'Action' && !e.done && e.timing && seconds && (e.timing === 'swift' || e.timing === 'tactical')
+    && e.weapons.some((x) => ready(x) && x.timing === e.timing)) return [e.timing, ...likelyTimings(e, at)];
   if (view.phaseName === 'Action' && !e.done && e.timing) return [e.timing];
   return likelyTimings(e, at);
 }
@@ -1009,17 +1065,20 @@ const shotsOn = (turn: Decision | null | undefined, uid: number): Option[] =>
 
 // What a set of attacks on this unit is worth to the enemy making them: the
 // worst of them, and the worst that could follow it in the same activation;
-// and the chance that between them they destroy it.
-interface Barrage { value: number; kill: number; hits: Forecast[] }
-const NO_BARRAGE: Barrage = { value: 0, kill: 0, hits: [] };
+// and the chance that between them they destroy it. (`box`: what of `value`
+// is the Boxes it carries lost to a Penetration; `pen`: the chance that
+// between them they Penetrate it.)
+interface Barrage { value: number; kill: number; hits: Forecast[]; box: number; pen: number }
+const NO_BARRAGE: Barrage = { value: 0, kill: 0, hits: [], box: 0, pen: 0 };
 
 function barrage(shots: Option[], c: Ctx, more: boolean): Barrage {
-  let worst: { o: Option; value: number; f: Forecast | null } | null = null;
+  let worst: { o: Option; value: number; f: Forecast | null; box: number } | null = null;
   for (const o of shots) {
     const f = o.chance?.() ?? null;
     // What it carries is lost to a Penetration, whatever else the hit does.
-    const value = f ? gainOf(f, c.me, c.view, c.w) + (c.skills.mission ? f.pen * carried(c.me, c.view, c.w) : 0) : UNKNOWN_SHOT;
-    if (!worst || value > worst.value) worst = { o, value, f };
+    const box = f && c.skills.mission ? f.pen * carried(c.me, c.view, c.w, lastTurn(c)) : 0;
+    const value = f ? gainOf(f, c.me, c.view, c.w) + box : UNKNOWN_SHOT;
+    if (!worst || value > worst.value) worst = { o, value, f, box };
   }
   if (!worst) return NO_BARRAGE;
   const next = more && worst.o.then ? barrage(shotsOn(worst.o.then([`strike:${c.me.uid}`]), c.me.uid), c, false) : NO_BARRAGE;
@@ -1027,6 +1086,8 @@ function barrage(shots: Option[], c: Ctx, more: boolean): Barrage {
     value: worst.value + next.value,
     kill: 1 - (1 - (worst.f?.kill ?? 0)) * (1 - next.kill),
     hits: [...(worst.f ? [worst.f] : []), ...next.hits],
+    box: worst.box + next.box,
+    pen: 1 - (1 - (worst.f?.pen ?? 0)) * (1 - next.pen),
   };
 }
 
@@ -1110,6 +1171,11 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
   // Part does (`compound`): a run of hits that each only Damages it, as each
   // forecast reads the Mech as it stands, destroys it between them.
   const lost = (): number => (single ? lostTo(c.me, hits) : c.w.compound > 0 ? Math.max(1 - survives, torsoLost(c.me, hits)) : 1 - survives);
+  // THE BOXES IT CARRIES ARE LOST ONCE (`boxOnce`): to the first Penetration,
+  // however many attacks could make one. Each attack's share of them is kept
+  // out of its price, and the chance that none Penetrates is followed instead.
+  const once = c.skills.boxOnce && c.skills.mission;
+  let keep = 1;
   const by: NonNullable<Harm['by']> = [];
   // The enemies that could attack it there this round.
   const struck = new Set<number>();
@@ -1144,7 +1210,10 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
   };
   for (const e of order) {
     if (cost > budget) return { cost, risk: lost(), partial: true };
-    let { worst, on } = read(e, timingsOf(e, c.view, at));
+    // In the last round an enemy whose turn is behind it has none to come
+    // (`lastRound`; the engine would ask it nothing: not asked).
+    if (e.done && lastRoundOf(c)) continue;
+    let { worst, on } = read(e, timingsOf(e, c.view, at, c.skills.seconds));
     // AN ENEMY WHOSE TURN THIS ROUND CANNOT TOUCH THE UNIT (its dial shown, on
     // a Timing with no attack on it: a Movement) is no danger this round, and
     // was no danger at all; its turn a round on is read as an enemy's whose
@@ -1156,6 +1225,8 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
       ({ worst, on } = read(e, likelyTimings(e, at)));
       after = true;
     }
+    // Nor a round on for one whose turn cannot touch the unit.
+    if (after && lastRoundOf(c)) continue;
     // AN ENEMY WITH A BETTER TARGET shoots this unit only as often as it is
     // worth shooting against the best other unit of this squad in its sights
     // (`decoy`): a Raven behind a wall is not what a Mech walks round it for
@@ -1166,8 +1237,10 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
       for (const [uid, v] of aimsOf(e, c)) if (uid !== c.me.uid) rival = Math.max(rival, v);
       if (rival > worst.value) p = (worst.value / rival) ** c.w.decoy;
     }
-    const share = p * (after ? c.w.exposureLater * (e.done ? 1 : c.w.later) : c.w.exposure) * worst.value;
+    const weight = p * (after ? c.w.exposureLater * (e.done ? 1 : c.w.later) : c.w.exposure);
+    const share = weight * (once ? worst.value - worst.box : worst.value);
     cost += share;
+    if (once) keep *= 1 - Math.min(1, weight) * worst.pen;
     if (!after) {
       survives *= 1 - p * worst.kill;
       hits.push(...(p < 1 ? worst.hits.map((f) => atChance(f, p)) : worst.hits));
@@ -1188,7 +1261,8 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
       if (cost > budget) return { cost, risk: lost(), partial: true };
       const v = salvoOn(e, out, at, c);
       if (v.value <= 0) continue;
-      cost += c.w.salvo * c.w.exposure * c.w.launch * v.value;
+      cost += c.w.salvo * c.w.exposure * c.w.launch * (once ? v.value - v.box : v.value);
+      if (once) keep *= 1 - Math.min(1, c.w.salvo * c.w.exposure * c.w.launch) * v.pen;
       hits.push(...v.hits.map((f) => atChance(f, Math.min(1, c.w.salvo * c.w.launch))));
     }
   }
@@ -1202,7 +1276,7 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
   // Commander that outguns the one Mech coming at it has nothing to hide
   // from, and one with two Mechs coming answers one of them. So what counts
   // is all they could do, less the best it could do to one of them.
-  if (c.w.ahead > 0 && c.me.commander && c.view.task?.family === 'vip') {
+  if (c.w.ahead > 0 && c.me.commander && c.view.task?.family === 'vip' && !lastRoundOf(c)) {
     let theirs = 0;
     let mine = 0;
     for (const e of c.hostile) {
@@ -1215,6 +1289,7 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
     }
     cost += c.w.ahead * Math.max(0, theirs - c.w.riposte * mine);
   }
+  if (once && keep < 1) cost += (1 - keep) * carried(c.me, c.view, c.w, lastTurn(c));
   // What the run of hits destroys between them that no one of them would: the
   // Mech, at what it is worth (`compound`).
   if (!single && c.w.compound > 0) cost += c.w.compound * Math.max(0, torsoLost(c.me, hits) - (1 - survives)) * unitWorth(c.me, c.view, c.w);
@@ -1304,6 +1379,23 @@ function armOf(me: UnitView, aimed: boolean): number {
   return Math.max(0, ...arms);
 }
 
+// THE RANGE A UNIT FIGHTS AT (`blade`): where the walk to a fight ends. Its
+// blades' reach where they weigh `blade` times what its guns do (an attack by
+// its dice, a red die two yellow: a red die rolls a heavy Hit three times in
+// four, a yellow one a light Hit), else its longest reach without a Tactic that
+// hands an Ally a turn. At 0, its longest reach (`armOf`).
+function fightArm(me: UnitView, aimed: boolean, blade: number): number {
+  if (blade <= 0) return armOf(me, aimed);
+  const weigh = (type: string): number => me.weapons
+    .filter((x) => ready(x) && x.type === type)
+    .reduce((n, x) => n + 2 * x.red + x.yellow, 0);
+  const blades = weigh('Melee');
+  if (blades > 0 && blades >= blade * weigh('Firing')) {
+    return Math.max(1, ...me.weapons.filter((x) => ready(x) && x.type === 'Melee').map((x) => x.range));
+  }
+  return armOf({ ...me, weapons: me.weapons.filter((x) => !x.grants) }, aimed);
+}
+
 // How near a unit must stand to strike a carrier itself (`hunt`): its longest
 // gun's Range, or beside it with only a blade. A launcher's reach counts only
 // for a unit with nothing else: a Projectile lands a turn late, on a dial of its
@@ -1323,7 +1415,7 @@ function huntArm(me: UnitView, aimed: boolean): number {
 interface Quarry { foe: UnitView; road: Road | null; prize: number }
 
 function quarryOf(c: Ctx): Quarry | null {
-  const arm = armOf(c.me, c.skills.aimed);
+  const arm = fightArm(c.me, c.skills.aimed, c.w.blade);
   if (arm <= 0) return null;
   const roads = c.d.facts.roads as Record<string, Road> | undefined;
   let best: (Quarry & { score: number }) | null = null;
@@ -1582,7 +1674,16 @@ function zoneWalk(at: Grid, c: Ctx, left?: number[], took: readonly string[] = N
     // pays the same whenever it is reached, and without this a Grid nearer the
     // carrier was worth no more than one further off.
     const chase = t.zone.id.startsWith('hunt:') ? c.w.huntTurn ** Math.max(0, away) : 1;
-    const worth = t.swing * t.share * (t.held ? c.w.zoneHeld : 1) * task.vp * payFrom(arrives, c.view, c.w) * c.w.zonePull * sure * lever * contest * chase - c.w.zoneStep * walk.grids;
+    // THE LAST WALK (`lastWalk`; OTTO, 2026-10-05, the Black Box games that end
+    // 0 to 0): a Task paid as the game ends, walked for so as to arrive in its
+    // last round, is the walk the game is won by, not a pull to shape a turn.
+    // Its pull is `lastWalk` of the way from `zonePull` to the whole of it. (In
+    // Asset Preservation the Ace's carriers ended the game with their Boxes a
+    // Grid or five from Echo: in round 4 a Grid within one activation of it was
+    // worth 2 of the Box's 4 Victory Points, and cost more than that.)
+    const last = c.w.lastWalk > 0 && task.cadence !== 'per-round' && arrives === c.view.roundLimit;
+    const pull = last ? c.w.zonePull + c.w.lastWalk * (1 - c.w.zonePull) : c.w.zonePull;
+    const worth = t.swing * t.share * (t.held ? c.w.zoneHeld : 1) * task.vp * payFrom(arrives, c.view, c.w) * pull * sure * lever * contest * chase - c.w.zoneStep * walk.grids;
     if (worth > best) best = worth;
   }
   // With no zone left to walk to, the walk is worth nothing either way.
@@ -1654,7 +1755,8 @@ function takesFirst(u: UnitView, c: Ctx): number {
 function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took: readonly string[] = NONE): number {
   const walk = zoneWalk(at, c, left, took);
   let pull = walk;
-  if (quarry) {
+  // (On its last turn of the game a unit walks toward no fight: `lastRound`.)
+  if (quarry && !lastTurn(c)) {
     let far: number;
     if (quarry.road) {
       const i = quarry.road.findIndex((g) => g.c === at.col && g.r === at.row);
@@ -1672,7 +1774,7 @@ function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took:
     // `pressLate`).
     const press = c.behind && walk <= EXACT ? c.w.press * (1 - c.w.pressLate * (1 - c.view.round / Math.max(1, c.view.roundLimit))) : 0;
     const step = c.w.contactStep * (out || press ? 1 + out + press : 1);
-    pull -= (step + c.w.approach * quarry.prize) * Math.max(0, far - armOf(c.me, c.skills.aimed));
+    pull -= (step + c.w.approach * quarry.prize) * Math.max(0, far - fightArm(c.me, c.skills.aimed, c.w.blade));
   }
   return pull;
 }
@@ -1769,6 +1871,10 @@ function scoringCells(view: SeatView): Set<string> {
 // leaves the same table whichever question it was offered in, so it is asked
 // once for a table.
 function nextTurn(o: Option, at: Grid, c: Ctx): number {
+  // The last turn of the game has none after it (`lastRound`; the engine asks
+  // nothing after the last round either, so this only spares the asking). A
+  // Projectile launched now still strikes this round.
+  if (lastTurn(c) && kindOf(o) !== 'launch') return 0;
   const spot = `${c.me.uid}|${o.id}`;
   const known = c.nexts.get(spot);
   if (known !== undefined) return known;
@@ -1794,8 +1900,70 @@ function nextTurnAsked(o: Option, at: Grid, c: Ctx): number {
     const fought = up?.then ? deedAt(up.then(DEEDS)?.options ?? [], c, false) : null;
     if (fought) best = Math.max(best, fought.value);
   }
+  // Nothing from the Grid itself: a blade carried to its target (`charge`).
+  if (best <= 0 && c.w.charge > 0 && c.me.kind === 'mech') best = c.w.charge * chargeNext(o, at, c);
   // A Drone moved by a Command acts again in the same round.
   return best * (c.me.kind !== 'mech' && c.view.phaseName === 'Command' ? c.w.futureSoon : c.w.future);
+}
+
+// THE BLOW A STEP AWAY (`charge`; OTTO, 2026-10-05: "melee squads still hang
+// back"). The exposure reads an enemy's turn with its step first (`reach:`, and
+// on a Movement dial its Sprint, `reachAll:`), but a Mech's own turn a round on
+// was read from the Grid a plan left it in: a gun four Grids off counted, a
+// blade counted only beside the enemy, so a melee Mech saw every danger in
+// crossing the open and none of its own blows, and stood off. Here its blade is
+// carried as the enemy's is: of the two nearest enemies its Maneuver and a
+// Movement Action could bring it to, the first blow the engine finds after the
+// step (on its Melee Timing; after a Sprint on a Movement dial, 3.4.3).
+function chargeNext(o: Option, at: Grid, c: Ctx): number {
+  const reach = chargeReach(c.me);
+  if (!reach || !o.later) return 0;
+  const near = c.foes
+    .filter((f) => !f.camouflaged && apart(at, f.grid) <= reach.grids)
+    .sort((a, b) => apart(at, a.grid) - apart(at, b.grid))
+    .slice(0, 2);
+  const { timings, run } = reach;
+  const blow = (only: string, timing: string | undefined): number => {
+    for (const step of o.later?.([only], timing)?.options ?? []) {
+      const deed = deedAt(step.then?.(DEEDS)?.options ?? [], c, false) ?? (c.skills.tickReach ? tickDeed(step, c) : null);
+      if (deed) return deed.value;
+    }
+    return 0;
+  };
+  let best = 0;
+  for (const f of near) {
+    let found = 0;
+    for (const timing of timings) found = Math.max(found, blow(`reach:${f.uid}`, timing));
+    if (!found && run > 0) found = blow(`reachAll:${f.uid}`, 'movement');
+    best = Math.max(best, found);
+  }
+  return best;
+}
+
+// THE ATTACK A BOUGHT TICK WOULD PAY FOR after `o` (`tickReach`): of the
+// Ticks the table would then sell (Firewatch buys a Token, not a Tick), the
+// best attack each opens, less the Link it costs (`link`; Attack Mode costs
+// none, as buyTick reckons it). Null where none opens one.
+function tickDeed(o: Option, c: Ctx): Deed | null {
+  let best: Deed | null = null;
+  for (const tick of o.then?.(['tick'])?.options ?? []) {
+    if (kindOf(tick) !== 'tick' || tick.tags.includes('firewatch') || !tick.then) continue;
+    const deed = deedAt(tick.then(DEEDS)?.options ?? [], c, false);
+    if (!deed) continue;
+    const value = deed.value - (tick.tags.includes('attackMode') ? 0 : c.w.link);
+    if (value > EXACT && (!best || value > best.value + EXACT)) best = { ...deed, value };
+  }
+  return best;
+}
+
+// How far a Mech's blade could be carried by its next turn (`charge`): its
+// Maneuver, the furthest Movement Action it carries, and the blade's own reach;
+// with the Timings its blades open on. Null with no blade.
+function chargeReach(me: UnitView): { grids: number; run: number; timings: (string | undefined)[] } | null {
+  const blades = me.weapons.filter((x) => ready(x) && x.type === 'Melee' && !!x.timing);
+  if (me.kind !== 'mech' || !blades.length) return null;
+  const run = Math.max(0, ...me.weapons.filter((x) => ready(x) && x.type === 'Moving').map((x) => x.range));
+  return { grids: me.maneuver + run + Math.max(1, ...blades.map((x) => x.range)), run, timings: [...new Set(blades.map((x) => x.timing))] };
 }
 
 // Whether geometry says anything could be done from a Grid: an enemy in the
@@ -1813,6 +1981,22 @@ function claimAt(at: Grid, facing: number, c: Ctx): number {
   // A jammer or a launcher: an enemy inside its arm.
   const arm = Math.max(0, ...c.me.weapons.filter((x) => ready(x) && !(c.skills.aimed && x.own) && (x.type === 'Tactic' || x.type === 'Projectile')).map((x) => x.range + (x.strike ?? 0)));
   if (arm > 0 && c.foes.some((f) => !f.camouflaged && apart(at, f.grid) <= arm)) return 1;
+  // A blade an enemy is a Shock Attack's walk from (`shock`): the walk and the
+  // attack after the Maneuver, the engine's to say (seat.ts WeaponView
+  // `shock`; a Grid's slack, as the engine's Melee reach is a unit's base).
+  if (c.skills.shock) {
+    const lunge = Math.max(0, ...c.me.weapons.filter((x) => ready(x) && x.type === 'Melee' && (x.shock ?? 0) > 0).map((x) => Math.max(1, x.range) + (x.shock ?? 0)));
+    if (lunge > 0 && c.foes.some((f) => !f.camouflaged && apart(at, f.grid) <= lunge + 1)) return 1;
+  }
+  // A blade an enemy is a step and a Movement from (`charge`): a blow a turn
+  // later, the engine's to say (chargeNext).
+  // The nearer, the stronger the claim: of the Grids asked about a turn on,
+  // half are the strongest claims.
+  const blade = c.w.charge > 0 ? chargeReach(c.me) : null;
+  if (blade) {
+    const near = Math.min(Infinity, ...c.foes.filter((f) => !f.camouflaged).map((f) => apart(at, f.grid)));
+    if (near <= blade.grids) return 1 + 1 / (1 + near);
+  }
   // A Mech within a Remote Access of a Terminal still open that is not its
   // squad's to have anyway.
   const task = c.view.task;
@@ -2201,9 +2385,23 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
   // say, for the Grids geometry gives a chance (a Drone that has moved has
   // nothing left to do).
   const deeds = new Map<Option, Deed | null>();
+  // And from a Maneuver's Grid, the Shock Attack whose walk goes on from it
+  // (`shock`): the best of them, with the Grid the walk ends in.
+  const shocks = new Map<Option, { s: Option; at: Grid; deed: Deed }>();
   if (me.kind === 'mech') {
     for (const l of ranked.filter((x) => x.claim >= 1 && !!x.o.then).slice(0, LIMITS.LANDINGS)) {
-      deeds.set(l.o, deedAt(l.o.then?.(DEEDS)?.options ?? [], c, false));
+      const there = l.o.then?.(DEEDS)?.options ?? [];
+      deeds.set(l.o, deedAt(there, c, false) ?? (c.skills.tickReach ? tickDeed(l.o, c) : null));
+      if (c.skills.shock && l.o.tags.includes('maneuver')) {
+        let top: { s: Option; at: Grid; deed: Deed } | null = null;
+        for (const s2 of there) {
+          const end = s2.tags.includes('shock') && isShot(s2) ? endOf(s2) : null;
+          if (!end) continue;
+          const v = shotValue(s2, c);
+          if (v.value > EXACT && (!top || v.value > top.deed.value + EXACT)) top = { s: s2, at: end, deed: { option: s2, value: v.value, why: `${s2.label} (${said(v.f)})`, reason: 'attack_value' } };
+        }
+        if (top) shocks.set(l.o, top);
+      }
       yield;
     }
   }
@@ -2263,9 +2461,46 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
       shape: shapeAt(l.at, c, led, deed ? undefined : unspent(l.o, c), l.take ? tookBy(l.o) : NONE),
       cost: 0, risk: 0,
     });
+    // The Maneuver and then the Shock Attack's walk and its attack (`shock`),
+    // planned for the Grid the walk ends in.
+    const shock = shocks.get(l.o);
+    if (shock) {
+      const left = zones.has(key(shock.at)) || zones.has(key(me.grid)) ? shock.s.then?.(['end'])?.here?.()?.view() : undefined;
+      plans.push({
+        option: l.o, via: shock.s, how: 'shock', at: shock.at, deed: shock.deed,
+        now: shock.deed.value - mineCost(l.o, c), next: 0,
+        mission: left ? missionOf(left, w) - c.mission : 0,
+        shape: shapeAt(shock.at, c, led),
+        cost: 0, risk: 0,
+      });
+    }
     const entry = deed && !c.skills.entryDeed ? null : entryBy(l.o, l.at, c, led);
     if (entry) plans.push(entry);
     yield;
+  }
+
+  // A SHOCK ATTACK (`shock`): the walk and the attack, one answer, planned for
+  // the Grid the walk ends in; what could still be done after it is counted
+  // as an attack's own deed counts it (`volley`).
+  if (c.skills.shock) {
+    for (const o of d.options) {
+      if (!o.tags.includes('shock') || !isShot(o)) continue;
+      const at = endOf(o);
+      if (!at) continue;
+      const s = shotValue(o, c);
+      if (s.value <= EXACT) continue;
+      const rest = o.then ? volley(o.then(['attack'])?.options ?? [], c, false) : null;
+      const deed: Deed = { option: o, value: s.value + (rest?.value ?? 0), why: `${o.label} (${said(s.f)})`, reason: 'attack_value' };
+      const left = zones.has(key(at)) || zones.has(key(me.grid)) ? o.then?.(['end'])?.here?.()?.view() : undefined;
+      plans.push({
+        option: o, how: 'shock', at, deed,
+        now: deed.value, next: 0,
+        mission: left ? missionOf(left, w) - c.mission : 0,
+        shape: shapeAt(at, c, led),
+        cost: 0, risk: 0,
+      });
+      yield;
+    }
   }
 
   // Answers that prepare something where it stands: asked what they lead to.
@@ -2294,7 +2529,8 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
       // or another (Target Tag): whom the other squad may shoot (`taunt`).
       || (highlights(o) && w.taunt > 0);
     if (!prepares || !o.then) continue;
-    const deed = deedAt(o.then(DEEDS)?.options ?? [], c, false);
+    // (A Stance that grants a Shock Attack is weighed with its walk: `shock`.)
+    const deed = deedAt(o.then(DEEDS)?.options ?? [], c, false, c.skills.shock && what === 'stance');
     const back = what === 'tactic' && o.facts?.uid !== me.uid ? mended(o, c) : highlights(o) ? tauntOf(o, c) : 0;
     yield;
     plans.push({
@@ -2375,7 +2611,10 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
     if (!harm) {
       const acted = hiding && p.deed ? p.deed.option.after?.() ?? p.deed.option.then?.(['end'])?.here?.() : undefined;
       const stands = acted ?? c.d.here?.();
-      const table = p.via ? p.via.after?.() : p.option ? p.option.after?.() : stands;
+      // (A Shock Attack's walk: the table once it is made and the attack
+      // paid, its dice not yet thrown.)
+      const walked = p.how === 'shock' ? (p.via ?? p.option)?.then?.(['end'])?.here?.() : undefined;
+      const table = walked ?? (p.via ? p.via.after?.() : p.option ? p.option.after?.() : stands);
       // THE UNIT AS THE PLAN LEAVES IT (`reshape`): a Mode, a Stance, a Token,
       // a Bit's face changed is a different unit to shoot at and to shoot back
       // with, read off the table the plan leaves; at 0 it is read as it stands.

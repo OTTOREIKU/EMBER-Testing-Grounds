@@ -111,6 +111,31 @@ export interface Weights {
   // to is the nearest; with one, it is the enemy worth most for the walk.
   contactStep: number;
   approach: number;
+  // THE RANGE A UNIT FIGHTS AT (`blade`; OTTO, 2026-10-05: "melee squads still
+  // hang back"): the walk to a fight ends at the reach of the unit's strongest
+  // attacks, not its longest. Where its blades weigh `blade` times what its
+  // guns do (each attack by its dice, a red die two yellow), it walks to its
+  // blades; and a Tactic that hands an Ally a turn (Coordinate) is no reach on
+  // an enemy. At 0 the walk ends at its longest reach, as it always did (a
+  // Mech with two Slashes and a Burst Fire stood four Grids off and fired).
+  // MEASURED (2026-10-05): RDL_Melee1 34 of 100 against the Ace's 37, with
+  // `charge` 45 against its 47: stays 0.
+  blade: number;
+  // A MECH'S BLOW A STEP AWAY, A ROUND ON (`charge`, tactician.ts chargeNext):
+  // where nothing could be attacked from the Grid a plan leaves it in, the
+  // blow its Maneuver (or on a Movement dial its Sprint) would carry its blade
+  // to, `charge` of what it is worth, as a turn a round on is (`future`). At 0
+  // a blade counted only beside the enemy, and a melee Mech stood off.
+  // ADOPTED at 1 (2026-10-05): RDL_Melee1 against the community squads 47 of
+  // 100 against the Ace's 37 and 87 of 200 against 85, TopTierMelee 31 of 100
+  // against 28, random squads 90 of 200 against 87 (193 the same game).
+  charge: number;
+  // THE LAST WALK (`lastWalk`, tactician.ts zoneWalk): a walk to a Task paid
+  // as the game ends that would arrive in its last round pulls `lastWalk` of
+  // the way from `zonePull` to the whole of what it pays. At 0, `zonePull`.
+  // MEASURED (2026-10-05): every Black Box Task, fewer games 0 to 0 (57 to 46
+  // of 200) and fewer won (98 against 107): stays 0.
+  lastWalk: number;
   // A Remote Access: the chance its Counter-roll against the Terminal is won,
   // as a share of what the Terminal pays. MEASURED at 0.5 on Terminals:
   // Receive Signal (plan section 12, tm1b to tm3b): 345 of 400 against the
@@ -292,6 +317,16 @@ export interface Weights {
   tiebreak: number;
   tieSpread: number;
   tieCount: number;
+  // THE LAST ROUND'S POINTS (`horizon`; 2026-10-05, the Black Box games that
+  // end 0 to 0): a unit's points stand for what it will go on to do, and in
+  // the last round there is no round to go on to. There a unit's points count
+  // `1 - horizon` of their worth (`unitWorth`); what a Part does to the
+  // tiebreak, what a unit still to act would do this round, a zone it holds
+  // and the Boxes it carries are priced besides. In random game 96032 a Mech
+  // with a Box two Grids from Echo in the last round set its dial to fire a
+  // Full-auto worth 5.15 rather than carry in the 4 Victory Points that won
+  // the game, and the game was lost on Parts. At 0, as in any round.
+  horizon: number;
   // THE ODDS OF AN ELECTRONIC COUNTER-ROLL (M12): an Electronic Attack and a
   // Remote Access are weighed at the chance their Counter-roll is won
   // (`Option.win`, ai/odds.ts counterChance), `jam` read as what a won roll is
@@ -472,6 +507,9 @@ export const TACTICIAN: Weights = {
   holder: 0.75,
   contactStep: 0.04,
   approach: 0,
+  blade: 0,
+  charge: 1,
+  lastWalk: 0,
   access: 1,
   carry: 0.5,
   boxFuture: 0.85,
@@ -508,6 +546,7 @@ export const TACTICIAN: Weights = {
   tiebreak: 0,
   tieSpread: 1,
   tieCount: 3,
+  horizon: 0,
   ewOdds: 1,
   escort: 0,
   taunt: 0,
@@ -541,7 +580,7 @@ export function unitWorth(u: UnitView, view: SeatView, w: Weights): number {
   const listed = u.parts.reduce((n, p) => n + p.points, 0);
   const standing = u.parts.reduce((n, p) => n + p.points * standingShare(p.state, w), 0);
   // What its Parts do not account for (a pilot) stands while it does.
-  const material = w.material * (standing + Math.max(0, u.points - listed));
+  const material = w.material * lastPoints(view, w) * (standing + Math.max(0, u.points - listed));
   const task = view.task;
   const lead = task?.family === 'vip' && u.commander ? task.vp * (u.side === view.seat ? w.vipOwn : w.vipKill) : 0;
   return material + lead + keystoneOf(u, view, w);
@@ -558,8 +597,11 @@ function keystoneOf(u: UnitView, view: SeatView, w: Weights): number {
   if (w.keystone <= 0 || u.kind !== 'mech') return 0;
   const squad = view.units.filter((x) => x.side === u.side && x.uid !== u.uid && x.alive && x.deployed);
   if (squad.some((x) => x.kind === 'mech')) return 0;
-  return w.keystone * w.material * squad.filter((x) => x.kind === 'drone' && !x.lowValue).reduce((n, x) => n + x.points, 0);
+  return w.keystone * w.material * lastPoints(view, w) * squad.filter((x) => x.kind === 'drone' && !x.lowValue).reduce((n, x) => n + x.points, 0);
 }
+
+// The share of its worth a unit's points count for in this round (`horizon`).
+const lastPoints = (view: SeatView, w: Weights): number => (w.horizon > 0 && view.round >= view.roundLimit ? 1 - w.horizon : 1);
 
 // What one more Part of a Mech destroyed costs its squad. A Mech left with
 // two Parts leaves the board (Integrity Loss), so a Part is not a fifth of the
@@ -749,13 +791,14 @@ function boxesOf(u: UnitView, view: SeatView): number {
 // WHAT THE BOXES A UNIT CARRIES ARE WORTH TO ITS SQUAD, in Victory Points:
 // what a Penetration costs it, since a bearer that is Penetrated drops them.
 // A Box that would pay where its bearer stands counts whole; one that has
-// still to be carried to the zone the card names counts for the share `carry`.
-export function carried(u: UnitView, view: SeatView, w: Weights): number {
+// still to be carried to the zone the card names counts for the share `carry`,
+// and nothing on a bearer whose last turn of the game is behind it (`spent`).
+export function carried(u: UnitView, view: SeatView, w: Weights, spent = false): number {
   const task = view.task;
   const held = boxesHeld(u, view);
   if (!task || !held) return 0;
   const paying = boxesOf(u, view);
-  return task.vp * (paying + (held - paying) * w.carry) * endsIn(view, w);
+  return task.vp * (paying + (spent ? 0 : (held - paying) * w.carry)) * endsIn(view, w);
 }
 
 // A unit that can take a zone, or keep the other squad from taking it: on the

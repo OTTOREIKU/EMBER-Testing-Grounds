@@ -27,10 +27,10 @@ import { lowValueOf, missionScoring, zoneCellsOf } from './scoring';
 import { normaliseSetup, type SetupStage } from './setup';
 import { boxHands, controlOf, normaliseTasks } from './tasks';
 import { canManeuver, extrasLeft, lengthOf, timingOf, type ActionLength } from './ticks';
-import { actionRoute, type ActionRoute } from './turn';
+import { actionRoute, shockWalk, type ActionRoute } from './turn';
 import { PHASES, statusCount, zonesOf } from './types';
 import type { CardAction, Facing, GameState, PartState, Side, Stance, Timing, Token } from './types';
-import { freehandSlots, isGroundUnit, maneuverRange, maxLink, onHitRiders, structureOf, tokenCards } from './units';
+import { extraActivationOf, freehandSlots, isGroundUnit, maneuverRange, maxLink, onHitRiders, structureOf, tokenCards } from './units';
 
 // ---------- the view ----------
 
@@ -80,8 +80,21 @@ export interface WeaponView {
   // or a change to the unit itself (turn.ts actionRoute). Its Range is no reach
   // on an enemy.
   own?: boolean;
+  // A Tactic that hands an Ally Mech an Extra Action Opportunity (Coordinate,
+  // 009_A): its Range is where the Ally stands, no reach on an enemy either.
+  // Routed as card text (units.ts extraActivationOf), so not `own`.
+  grants?: boolean;
+  // A Melee Action's Shock Attack X as the unit stands (turn.ts shockWalk): how
+  // far it may walk before the attack. Absent for none.
+  shock?: number;
   // Its Part still works: not destroyed, or destroyed and Repaired.
   usable: boolean;
+}
+
+// A Melee Action's Shock Attack walk, where it has one (`shock`).
+function shockOf(state: GameState, t: Token, a: CardAction): { shock?: number } {
+  const x = a.type === 'Melee' ? shockWalk(state, t, a) : 0;
+  return x > 0 ? { shock: x } : {};
 }
 
 // The Action Routes of a Tactic that serves its own squad alone (`own`).
@@ -332,6 +345,8 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
         ...(a.type === 'Projectile' ? { strike: strikeOf(data, card.projectile) } : {}),
         ...(riders.length ? { riders } : {}),
         ...(a.type === 'Tactic' && (a.range ?? 0) > 0 && OWN_ROUTES.has(actionRoute(data, t, a)) ? { own: true } : {}),
+        ...(a.type === 'Tactic' && extraActivationOf(a) ? { grants: true } : {}),
+        ...shockOf(state, t, a),
         usable: !part || part.state !== 'destroyed' || part.repaired,
       });
     }

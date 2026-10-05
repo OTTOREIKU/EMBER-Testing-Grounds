@@ -1322,6 +1322,34 @@ function actionOptions(data: GameData, state: GameState, seat: Side, t: Token, w
           }
         }
       }
+      // SHOCK ATTACK X (turn.ts shockWalk): the walk before the attack, as the
+      // Match Centre makes it ("Move first", matchhud.ts shockmove): the Action
+      // paid, the free Movement it owes made, and the attack from where that
+      // ends, on the table the walk leaves. One answer each end Grid and target;
+      // not a walk that sets a Mine off, owes an Interception, picks up a Box,
+      // or crushes a unit (each has a question of its own to answer). Tagged
+      // `shock`, with the Grid it ends in (`to`) and its facing.
+      const shock = pay.cmd ? turn.shockWalk(state, t, row.a) : 0;
+      if (shock > 0 && pay.cmd) {
+        const walkName = `${name}: Shock Attack`;
+        const walks = movementOptions(data, state, t, { key: `shock:${row.key}`, name: walkName, tags: ['shock'], prefix: [pay.cmd], actionId: row.a.id, range: shock, free: true });
+        for (const w of walks) {
+          if (['mined', 'intercepted', 'take', 'crush-unit', 'halt', 'tow', 'lend', 'pivot'].some((x) => w.tags.includes(x))) continue;
+          const walked = w.commands?.length ? tableAfter(data, state, w.commands) : null;
+          if (!walked) continue;
+          const reading = turn.attackLines(data, walked, { uid: t.uid, actionId: row.a.id, ...(narrowed ? { only: struck } : {}) });
+          for (const target of reading?.lines ?? []) {
+            if (target.blocked || target.hidden) continue;
+            out.push({
+              id: `attack:${row.key}:${target.t.uid}:${w.id}`,
+              label: `${name} at ${target.t.label}, after a Shock Attack walk${w.label.slice(walkName.length)}`,
+              tags: ['attack', (row.a.type ?? '').toLowerCase(), 'shock'],
+              run: { routine: 'attack', args: { uid: t.uid, actionId: row.a.id, targetUid: target.t.uid, mode: 'attack', before: w.commands } },
+              facts: { uid: t.uid, targetUid: target.t.uid, actionId: row.a.id, to: w.facts?.to, facing: w.facts?.facing },
+            });
+          }
+        }
+      }
     }
     // Charging is the whole Action: its payment, named for the Part Charged,
     // turns that Part's token face-up. One Part per Charge Action, and only
