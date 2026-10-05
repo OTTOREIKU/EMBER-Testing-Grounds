@@ -30,8 +30,8 @@ check('Match Centre: the line lives at the bottom of the board, not in a red box
   [hud.includes('<div id="mc-notice" class="mc-notice" hidden></div>'), /class="mc-err"[^\n]*ctx\.note/.test(hud)], [true, false]);
 check('Match Centre: terse, and a long press explains a greyed row',
   /configureNotices\(\{ host: \(\) => document\.getElementById\('mc-notice'\), voice: 'terse' \}\);\s*explainOnHold\(document\.body\);/.test(match), true);
-check('Match Centre: while the match is on screen every message goes to the line; anywhere else (a room\'s lobby too) the lobby keeps its own',
-  /function say\(kind: NoticeKind, text: string \| null \| undefined\): void \{\s*if \(!text\) return;\s*if \(hudUp\(\)\) notify\(\{ kind, text \}\);\s*else \{ lobbyNote = text; render\(\); \}/.test(match) && /const hud = hudUp\(\);/.test(match), true);
+check('Match Centre: while the match is on screen every message goes to the line; anywhere else (a room\'s lobby too) the lobby keeps its own; in a game the player watches, what the computers do is left to the Thinking tab (OTTO, 2026-10-05)',
+  /function say\(kind: NoticeKind, text: string \| null \| undefined\): void \{\s*if \(!text\) return;\s*(?:\/\/[^\n]*\n\s*)*if \(kind === 'event' && solo\?\.spec\.watch\) return;\s*if \(hudUp\(\)\) notify\(\{ kind, text \}\);\s*else \{ lobbyNote = text; render\(\); \}/.test(match) && /const hud = hudUp\(\);/.test(match), true);
 check('Match Centre: nothing writes the old note directly any more, except to clear it',
   [...match.matchAll(/lobbyNote = ([^;\n]+)/g)].map((m) => m[1]).filter((v) => v !== 'null' && v !== 'text'), []);
 check('Match Centre: the HUD\'s notes say what kind they are, and refuse by default',

@@ -603,6 +603,15 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
       /What each computer did, newest first\./.test(drawn), /\d\.\d\d|Victory Points|because/.test(drawn)],
     [true, true, true, true, true, true, false, true, false]);
   check('in a game you play it says it is the computer\'s', /What the computer did, newest first\./.test(H([list[0]], false)), true);
+  // OTTO, 2026-10-05, having watched: "I will see movements from units but the
+  // actual movement of the unit on the board wont change for a few seconds."
+  check('A LINE APPEARS AS ITS COMMANDS GO TO THE TABLE: told after the computer\'s moment over it and the check that it still stands, just before it is sent',
+    /chosen = fresh;\n\s*\}\n\s*this\.host\.chose\?\.\(d, chosen\);\n\s*let failed: Failed;\n\s*try \{\n\s*failed = await this\.perform\(chosen, d\);/.test(src('ai/driver.ts')), true);
+  check('WATCHED, the notice line says nothing of what the computers do (the Thinking tab does), and the watched seat\'s moves walk across the board as the other seat\'s do',
+    [/if \(kind === 'event' && solo\?\.spec\.watch\) return;/.test(src('match.ts')),
+      /const start = moveStart\(cmd\);\n\s*const v = send\(cmd\);\n\s*if \(v\.ok\) walkMove\(cmd, start\);/.test(src('match.ts')),
+      /const start = moveStart\(cmd\);\n\s*const verdict = applyRemote\(data, state, cmd\);/.test(src('match.ts'))],
+    [true, true, true]);
   const one = (kind, unit, label) => H([{ n: 3, seat: 's1', round: 1, phase: 1, kind, option: 'x', unit, label, given: 'done' }], true);
   check('the unit is named once, in front: a deployment is the unit it puts down, a Command the Drone given it, a dial its Timing Dial',
     [/<b class="s1">Mire<\/b> Deploy at B3, offensive<\/div>/.test(one('setup.deploy', 'Mire', 'Deploy Mire at B3, offensive')),

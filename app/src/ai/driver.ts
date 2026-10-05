@@ -49,9 +49,11 @@ export interface Host {
   // moment: a slow machine's thought is not waited out a second time.
   pace?(decision: Decision, option: Option, think?: number): Promise<void>;
   settled?(decision: Decision, option: Option): Promise<void>;
-  // The answer chosen, told before the moment is taken over it: for a page that
-  // shows a player what the computer is doing. Whether it is then given is what
-  // `step` answers.
+  // The answer about to be given, told as its commands go to the table, after
+  // the moment taken over it: for a page that shows a player what the computer
+  // is doing, in step with the board (OTTO, 2026-10-05: "keep the items
+  // appearing in thinking in line with how the board looks"). Whether the table
+  // takes it is what `step` answers.
   chose?(decision: Decision, option: Option): void;
   // A pause in the middle of a decision: a page hands its thread to whatever
   // else is waiting on it (a frame to draw, a click) and comes back. A policy
@@ -463,7 +465,6 @@ export class Driver {
     // The host's pace: a moment before the answer, and the table at rest
     // after it. Nothing is sent while either is pending.
     let chosen = option;
-    this.host.chose?.(d, option);
     if (this.host.pace) {
       await this.host.pace(d, option, think);
       // The table may have moved on meanwhile, so the question is asked again
@@ -479,6 +480,7 @@ export class Driver {
       }
       chosen = fresh;
     }
+    this.host.chose?.(d, chosen);
     let failed: Failed;
     try {
       failed = await this.perform(chosen, d);

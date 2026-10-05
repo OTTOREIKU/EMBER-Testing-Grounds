@@ -267,6 +267,10 @@ function announceRemote(cmd: Command): void {
 // notices review, 2026-09-28).
 function say(kind: NoticeKind, text: string | null | undefined): void {
   if (!text) return;
+  // A game the player watches: what the two computers do is the Thinking tab's
+  // to tell (OTTO, 2026-10-05: "its repeat info when spectating"). A warning or
+  // a refusal still shows.
+  if (kind === 'event' && solo?.spec.watch) return;
   if (hudUp()) notify({ kind, text });
   else { lobbyNote = text; render(); }
 }
@@ -345,16 +349,34 @@ const preHash = new WeakMap<object, string>();
 // playing instead and says why.
 let boardBroken = false;
 
+// A MOVE THIS PAGE DID NOT WALK ITSELF: where the unit stood before it lands,
+// so the board can walk it across rather than teleport it once the move has
+// been applied. Another seat's, through the relay; and in a game the player
+// watches, the computer's in this page's own seat, which sends through the
+// page's door (OTTO, 2026-10-05: "3-4 movements didn't have their animation on
+// the board"). crushSwap moves the crushed Units too; only the crusher is
+// walked across, because the exchange is a swap of places rather than a route
+// anyone took. A controlled move walks the unit controlled.
+function moveStart(cmd: Command): { uid: number; from: { col: number; row: number } } | null {
+  const uid = cmd.kind === 'maneuver' || cmd.kind === 'forceMove' || cmd.kind === 'crushSwap' ? cmd.uid : cmd.kind === 'controlledMove' ? cmd.targetUid : null;
+  const walker = uid === null ? undefined : state.tokens.find((t) => t.uid === uid);
+  return walker ? { uid: walker.uid, from: { col: walker.col ?? 0, row: walker.row ?? 0 } } : null;
+}
+
+// And the walk, once it has landed. A Maneuver carries the route it took; a
+// Forced Movement is a straight line by definition, so there is nothing to
+// carry.
+function walkMove(cmd: Command, start: { uid: number; from: { col: number; row: number } } | null): void {
+  if (!start) return;
+  const now = state.tokens.find((t) => t.uid === start.uid);
+  const via = cmd.kind === 'maneuver' || cmd.kind === 'controlledMove' ? cmd.via : undefined;
+  if (now) animateRemoteMove(start.uid, start.from, { col: now.col ?? 0, row: now.row ?? 0 }, via);
+}
+
 const hooks: NetHooks = {
   onCommand(cmd) {
     if (!data || boardBroken) return;
-    // Where the unit stood before their command lands, so the board can walk
-    // it across rather than teleport it once the move has been applied.
-    // crushSwap moves the crushed Units too; only the crusher is walked across,
-    // because the exchange is a swap of places rather than a route anyone took.
-    const moving = cmd.kind === 'maneuver' || cmd.kind === 'forceMove' || cmd.kind === 'crushSwap' ? cmd.uid : null;
-    const walker = moving === null ? undefined : state.tokens.find((t) => t.uid === moving);
-    const from = walker ? { col: walker.col ?? 0, row: walker.row ?? 0 } : null;
+    const start = moveStart(cmd);
     const verdict = applyRemote(data, state, cmd);
     if (!verdict.ok) {
       // The reason a remote command was refused is the whole diagnosis of a
@@ -376,13 +398,7 @@ const hooks: NetHooks = {
     if (catchingUp) return;
     announceRemote(cmd);
     advanceIfBothReady(cmd);
-    if (from && moving !== null) {
-      const now = state.tokens.find((t) => t.uid === moving);
-      // A Maneuver carries the route it took; a Forced Movement is a straight
-      // line by definition, so there is nothing to carry.
-      const via = cmd.kind === 'maneuver' ? cmd.via : undefined;
-      if (now) animateRemoteMove(moving, from, { col: now.col ?? 0, row: now.row ?? 0 }, via);
-    }
+    walkMove(cmd, start);
     // Their commitment may be the second one, which releases our reveal; and
     // their reveal is checked against the hash they promised.
     if (cmd.kind === 'commitTimings') maybeReveal();
@@ -2863,15 +2879,22 @@ function startSolo(): void {
     // What it just did, and why, on the notice line as the other player's
     // move (solo.ts whyLine; M9.2).
     told: (_seat, line) => say('event', line),
-    // What it chose and why, in the Thinking tab.
+    // What it did, in the Thinking tab.
     thought: () => paintThinking(),
     // A game the player only watches (?watch=1): the computer in this page's
     // own seat sends through the page's door and rolls the page's dice. The
     // page turns the phase itself when its own ready completes the pair
     // (advanceIfBothReady), so the turn such a seat sends after its ready has
-    // nothing left to do.
+    // nothing left to do. Its moves are walked across the board as another
+    // seat's are (`walkMove`): nothing on this page walked them first.
     page: spec.watch ? {
-      send: (cmd) => (cmd.kind === 'advancePhase' && !(state.ready?.s1 && state.ready?.s2) ? { ok: true } : send(cmd)),
+      send: (cmd) => {
+        if (cmd.kind === 'advancePhase' && !(state.ready?.s1 && state.ready?.s2)) return { ok: true };
+        const start = moveStart(cmd);
+        const v = send(cmd);
+        if (v.ok) walkMove(cmd, start);
+        return v;
+      },
       roll: (pool, label, kind) => sealedRoll(pool, label, kind),
     } : undefined,
   }, spec, hands.held);

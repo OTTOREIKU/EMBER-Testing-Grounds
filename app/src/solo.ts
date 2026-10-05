@@ -354,9 +354,9 @@ function seenByOther(e: { kind: string; option: string; round: number }, state: 
 // WHAT A COMPUTER DID (OTTO, 2026-10-05: a Thinking tab "where I can watch how
 // the computer chooses to make moves and follow along"; and once he had watched
 // one: "Just the unit, what it did and any relevant damage or markers on it").
-// Every answer worth a line, told as it is chosen (`given` null), marked once
-// given, and once what it did is over (an attack's window closed), what it did
-// to each unit.
+// Every answer worth a line, told as its commands go to the table (`given`
+// null while the board shows it), marked once the table has taken it, and once
+// what it did is over (an attack's window closed), what it did to each unit.
 export interface Thought {
   n: number;
   seat: Side;
@@ -641,7 +641,8 @@ export class SoloTable {
     return thoughtsFor(this.thoughts, this.h.state(), { watch: this.spec.watch, bot: this.spec.bot });
   }
 
-  // An answer chosen, told before the moment is taken over it.
+  // An answer being given, told as its commands go to the table: the line
+  // appears as the board shows it.
   private chose(seat: Side, d: Decision, o: Option): void {
     if (!worthAThought(d, o)) return;
     const state = this.h.state();
