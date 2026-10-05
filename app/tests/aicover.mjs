@@ -46,7 +46,7 @@ export const COMMANDS = {
   // ---------- an activation ----------
   setStance: ['seat', 'a Stance, until the first move or Action fixes it'],
   reboot: ['seat', 'a Shutdown Mech\'s Reboot'],
-  maneuver: ['seat', 'the Maneuver, a Movement Action\'s move, a turn on the spot'],
+  maneuver: ['seat', 'the Maneuver, a Movement Action\'s move, a turn on the spot, a Shock Attack\'s walk before its attack'],
   performAction: ['seat', 'the payment of every Action a seat performs; a Charge is this command alone'],
   setCharge: ['seat', 'a Charge spent on an attack; the window sends it for KC Armor'],
   stabilise: ['seat', 'one Token off, or the Link alone'],
