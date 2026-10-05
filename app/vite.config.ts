@@ -57,6 +57,22 @@ function staticDirs(map: Record<string, string>): Plugin {
             const file = path.join(dir, url.slice(prefix.length));
             if (!file.startsWith(path.resolve(dir))) break;
             if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+              // Cached as the live site's host caches them (OTTO, 2026-10-05: a
+              // game against the computer took "a minute to load the images
+              // again for all of the parts"). Served with no validator at all,
+              // every page fetched every picture afresh, the art warm-up's 37 MB
+              // included, and a unit's own pictures queued behind it. A picture
+              // is kept an hour; the card data is asked again every time, and a
+              // file that has not changed answers 304.
+              const modified = fs.statSync(file).mtime.toUTCString();
+              const picture = /\.(webp|png|jpe?g|svg|avif)$/i.test(file);
+              res.setHeader('Last-Modified', modified);
+              res.setHeader('Cache-Control', picture ? 'public, max-age=3600' : 'no-cache');
+              if (req.headers['if-modified-since'] === modified) {
+                res.statusCode = 304;
+                res.end();
+                return;
+              }
               res.setHeader('Content-Type', mime[path.extname(file).toLowerCase()] ?? 'application/octet-stream');
               fs.createReadStream(file).pipe(res);
               return;

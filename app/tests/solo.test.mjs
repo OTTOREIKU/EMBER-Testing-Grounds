@@ -607,9 +607,20 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
   // actual movement of the unit on the board wont change for a few seconds."
   check('A LINE APPEARS AS ITS COMMANDS GO TO THE TABLE: told after the computer\'s moment over it and the check that it still stands, just before it is sent',
     /chosen = fresh;\n\s*\}\n\s*this\.host\.chose\?\.\(d, chosen\);\n\s*let failed: Failed;\n\s*try \{\n\s*failed = await this\.perform\(chosen, d\);/.test(src('ai/driver.ts')), true);
+  // OTTO, 2026-10-05: "the left side of the screen doesnt update", and an attack
+  // on a Missile whose defence "stayed blank and then closed": the watched seat's
+  // own commands never drew the page again.
+  check('WATCHED, the page is drawn again after every command of its own seat\'s computer, as after one through the relay',
+    /if \(v\.ok\) \{\n\s*walkMove\(cmd, start\);\n\s*render\(\);\n\s*\}/.test(src('match.ts')), true);
+  // OTTO, 2026-10-05: "add a loading screen to download all of the images before
+  // the match begins".
+  check('A GAME AGAINST THE COMPUTER loads its table\'s pictures before the computer is seated, and before the site\'s art warm-up begins',
+    [/const pictures = tablePictures\(state\);[\s\S]{0,200}await loadPictures\(pictures, [\s\S]{0,300}?loopback\.open\(\{/.test(src('match.ts')),
+      /if \(soloWanted\) await startSolo\(\);[\s\S]{0,600}?warmAllImagesWhenIdle\(\)/.test(src('match.ts'))],
+    [true, true]);
   check('WATCHED, the notice line says nothing of what the computers do (the Thinking tab does), and the watched seat\'s moves walk across the board as the other seat\'s do',
     [/if \(kind === 'event' && solo\?\.spec\.watch\) return;/.test(src('match.ts')),
-      /const start = moveStart\(cmd\);\n\s*const v = send\(cmd\);\n\s*if \(v\.ok\) walkMove\(cmd, start\);/.test(src('match.ts')),
+      /const start = moveStart\(cmd\);\n\s*const v = send\(cmd\);\n\s*if \(v\.ok\) \{\n\s*walkMove\(cmd, start\);/.test(src('match.ts')),
       /const start = moveStart\(cmd\);\n\s*const verdict = applyRemote\(data, state, cmd\);/.test(src('match.ts'))],
     [true, true, true]);
   const one = (kind, unit, label) => H([{ n: 3, seat: 's1', round: 1, phase: 1, kind, option: 'x', unit, label, given: 'done' }], true);

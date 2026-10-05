@@ -17,7 +17,7 @@ import { attackActionOf as turnAttackActionOf, attackOpening } from './turn';
 import { defenderAct } from './defender';
 import { tableDeployFor } from './mapeditor';
 import { mapConfig, missionConfig } from './tableconfig';
-import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, parseGridRef, setSquadNames, squadLabel, type GameData } from './data';
+import { cardName, FACTION_LABEL, dataUrl, loadData, mechArtLayers, missionImageUrl, parseGridRef, setSquadNames, squadLabel, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl, type GameData } from './data';
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells, resetHudTools, startActionFromCard, startSupportPick } from './matchhud';
 import { printedDeployment } from './overlays';
@@ -43,7 +43,7 @@ import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
 import { boxNoteText, dodgeEnhanceOf, SLOT_LABEL, loanedParts, explosionScope } from './units';
-import { gridsOf, PHASES, SCALES, statusCount } from './types';
+import { gridsOf, PHASES, SCALES, STATUSES, statusCount } from './types';
 import { syncSeason } from './season';
 import { handCommand, handCount, handIds, setHandRoom } from './tactichand';
 // FIRST, before anything else in this module runs. A net that is installed
@@ -2834,7 +2834,47 @@ function bringSquad(name: string, mechs: SavedSquad['mechs'], drones: SavedSquad
 // and a driver sits in the other seat (solo.ts). From the roll for First
 // Player on, the page plays it exactly as it plays a room.
 
-function startSolo(): void {
+// THE TABLE'S OWN PICTURES, fetched before a game against the computer begins
+// (OTTO, 2026-10-05: "add a loading screen to download all of the images before
+// the match begins": a unit the computer put down was drawn late, its pictures
+// still on their way). Every unit's art, the Stance prints and every Token's
+// faces. One that fails or is slow holds the table up no longer than
+// PICTURES_MS.
+const PICTURES_MS = 20000;
+let soloLoading: { done: number; total: number } | null = null;
+
+function tablePictures(s: GameState): string[] {
+  const out = new Set<string>();
+  for (const t of s.tokens) {
+    if (t.kind === 'mech' && t.mech) for (const src of mechArtLayers(t.mech, t.partStates)) out.add(src);
+    if (t.cardId) out.add(tabImageUrl(t.cardId));
+  }
+  for (const stance of ['offensive', 'defensive', 'mobility', 'shutdown']) out.add(stancePrintUrl(stance));
+  for (const def of STATUSES) {
+    for (const red of [false, true]) {
+      const face = tokenFace(def.id, def.decay, red);
+      if (face.art) out.add(tokenPrintUrl(face.art));
+    }
+  }
+  return [...out];
+}
+
+function loadPictures(urls: string[], progress: (done: number) => void): Promise<void> {
+  let done = 0;
+  const one = (src: string): Promise<void> => new Promise((resolve) => {
+    const img = new Image();
+    const landed = (): void => { done += 1; progress(done); resolve(); };
+    img.onload = landed;
+    img.onerror = landed;
+    img.src = src;
+  });
+  return Promise.race([
+    Promise.all(urls.map(one)).then(() => undefined),
+    new Promise<void>((resolve) => { setTimeout(resolve, PICTURES_MS); }),
+  ]);
+}
+
+async function startSolo(): Promise<void> {
   if (!data || !loopback || !soloWanted) return;
   // A game the player put together on the tabletop is kept in this device's
   // storage (solosetup.ts wrote it there); the address only asks for it.
@@ -2854,6 +2894,18 @@ function startSolo(): void {
     const v = send(cmd);
     if (!v.ok) { soloErr = `The table could not be set: ${v.why}`; return; }
   }
+  // The squads are on the table: their pictures first, and only then a seat
+  // for the computer.
+  const pictures = tablePictures(state);
+  soloLoading = { done: 0, total: pictures.length };
+  render();
+  await loadPictures(pictures, (done) => {
+    if (!soloLoading) return;
+    soloLoading.done = done;
+    const line = document.getElementById('mc-soloload');
+    if (line) line.textContent = loadingText();
+  });
+  soloLoading = null;
   loopback.open({
     id: SOLO_ROOM,
     seat: spec.human,
@@ -2889,13 +2941,23 @@ function startSolo(): void {
     // page turns the phase itself when its own ready completes the pair
     // (advanceIfBothReady), so the turn such a seat sends after its ready has
     // nothing left to do. Its moves are walked across the board as another
-    // seat's are (`walkMove`): nothing on this page walked them first.
+    // seat's are (`walkMove`): nothing on this page walked them first. And the
+    // page is drawn again after each of its commands, as after one that came
+    // through the relay (onCommand): a player's own presses draw the page
+    // themselves, and nothing else did for this seat's, so the turn panel
+    // stayed on the last phase and the attack window it was running stayed on
+    // "waiting for the defence" until the other seat's next command (OTTO,
+    // 2026-10-05: "the left side of the screen doesnt update", and an attack
+    // on a Missile whose defence "stayed blank and then closed").
     page: spec.watch ? {
       send: (cmd) => {
         if (cmd.kind === 'advancePhase' && !(state.ready?.s1 && state.ready?.s2)) return { ok: true };
         const start = moveStart(cmd);
         const v = send(cmd);
-        if (v.ok) walkMove(cmd, start);
+        if (v.ok) {
+          walkMove(cmd, start);
+          render();
+        }
         return v;
       },
       roll: (pool, label, kind) => sealedRoll(pool, label, kind),
@@ -2917,13 +2979,18 @@ function levelName(id: string): string {
   return RIVALS.find((r) => r.id === id)?.name ?? OPPONENTS[id]?.name ?? id;
 }
 
+// The table's pictures as they come in (`tablePictures`).
+function loadingText(): string {
+  return soloLoading ? `Loading the pictures: ${soloLoading.done} of ${soloLoading.total}` : 'Setting the table…';
+}
+
 // Before the table is up, or when it could not be set.
 function soloPane(): string {
   return `<div class="mc-col" style="max-width:420px">
     <h1 class="mc-h">Against the computer</h1>
     ${soloErr
       ? `<p class="mc-sub">${esc(soloErr)}</p><div class="panel"><button class="btn wide" id="mc-soloback" style="margin-top:0">Back to the board</button></div>`
-      : '<p class="mc-sub">Setting the table…</p>'}
+      : `<p class="mc-sub" id="mc-soloload">${esc(loadingText())}</p>`}
   </div>`;
 }
 
@@ -3585,7 +3652,9 @@ void (async () => {
   account = user;
   diceData = dice;
   reg = mode;
-  if (soloWanted) startSolo();
+  // A game against the computer loads its table's pictures before anything
+  // else asks for art (the warm-up below fetches every picture the site has).
+  if (soloWanted) await startSolo();
   // The squad list and the card panel already tag their rows with
   // `data-tip-card`; this is the delegated listener that turns those into the
   // hover previews the freeplay board has. Nothing else was missing.
