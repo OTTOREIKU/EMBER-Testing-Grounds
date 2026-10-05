@@ -67,7 +67,8 @@ const plainOn = (d, uid) => (d?.options ?? []).filter((o) => o.tags[0] === 'atta
 {
   // Four Grids off: the Maneuver of one, then the walk of one, then the Thrust.
   const x = await staged(4);
-  const off = AI.weighed(x.d, x.view, {}, {});
+  // The skill is ON by default since 2026-10-05: without it is asked for in so many words.
+  const off = AI.weighed(x.d, x.view, { shock: false }, {});
   const on = AI.weighed(x.d, x.view, { shock: true }, {});
   check('FOUR GRIDS OFF: without `shock` no plan takes the walk',
     off.some((r) => r.how === 'shock'), false);

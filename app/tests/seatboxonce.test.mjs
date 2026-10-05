@@ -52,6 +52,8 @@ const staged = async (drones, box = true) => {
   return { t, U, d, view };
 };
 const costOf = (x, skills, weights = {}) => AI.exposureAt(x.d, x.view, null, Infinity, skills, weights).cost;
+// The skill is ON by default since 2026-10-05: without it is asked for in so many words.
+const OFF = { boxOnce: false };
 
 {
   // The Porcupine's Single Shot reaches twelve Grids: beside the Mire it is a
@@ -61,9 +63,9 @@ const costOf = (x, skills, weights = {}) => AI.exposureAt(x.d, x.view, null, Inf
     [two.d?.kind, two.d?.unit === two.U.Mire.uid, two.view.boxes.filter((b) => b.bearer === two.U.Mire.uid).length,
       two.view.units.filter((u) => u.side === 's2' && !u.done && (u.label === 'Wild Cat' || u.label.startsWith('ADK15P'))).length],
     ['opp.act', true, 1, 2]);
-  const off = costOf(two, {});
+  const off = costOf(two, OFF);
   const on = costOf(two, { boxOnce: true });
-  const bare = costOf(two, { mission: false });
+  const bare = costOf(two, { mission: false, boxOnce: false });
   check('TWO ATTACKS THAT COULD EACH PENETRATE IT: with the skill the Box is charged less than the two charges of it without',
     [on < off, on > bare], [true, true]);
   two.t.close();
@@ -72,15 +74,15 @@ const costOf = (x, skills, weights = {}) => AI.exposureAt(x.d, x.view, null, Inf
   // The Drones out of reach: the Wild Cat alone, whose turn may hold two
   // attacks (the second after the first), each of which could Penetrate.
   const one = await staged([[11, 2], [11, 0], [11, 1]]);
-  const off = costOf(one, {});
+  const off = costOf(one, OFF);
   const on = costOf(one, { boxOnce: true });
   check('ONE ENEMY: never charged more with the skill, and still charged for the Box',
-    [on <= off + 1e-9, on > costOf(one, { mission: false })], [true, true]);
+    [on <= off + 1e-9, on > costOf(one, { mission: false, boxOnce: false })], [true, true]);
   one.t.close();
   // With no Box in hand the skill has nothing to change.
   const none = await staged([[3, 3], [11, 0], [11, 1]], false);
   check('NO BOX IN HAND: the same with the skill as without',
-    costOf(none, { boxOnce: true }).toFixed(6), costOf(none, {}).toFixed(6));
+    costOf(none, { boxOnce: true }).toFixed(6), costOf(none, OFF).toFixed(6));
   none.t.close();
 }
 

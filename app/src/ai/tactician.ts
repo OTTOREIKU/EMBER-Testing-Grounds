@@ -212,6 +212,8 @@ export interface Skills {
   // spent them), where one may be bought (a pilot's Link, an Overloading Pack,
   // Attack Mode), is worth the attack the Tick would pay for, less its Link.
   // The plans stopped at the offer, so a blade a Sprint away never counted.
+  // MEASURED and left OFF (2026-10-05): the melee squads 87 of 200 against 87,
+  // not one game of the 200 different.
   tickReach: boolean;
   // THE LAST ROUND (`lastRound`, `lastTurn`): the game ends with it, so there
   // is no turn after it. The engine already asks no unit for a turn after the
@@ -233,6 +235,8 @@ export interface Skills {
   // the whole of them, so two Razor Missiles over Echo charged a carrier five
   // Victory Points for a Box worth four (random game 92002). With the skill they
   // are charged once, at the chance that any of the attacks Penetrates.
+  // MEASURED LEVEL and kept ON (2026-10-05): every Black Box Task 94 of 200
+  // against 93, the games ending 0 to 0 within one or two of each other.
   boxOnce: boolean;
   // SHOCK ATTACK X (`shock`; OTTO, 2026-10-05: "wire in melee as well as all of
   // the melee relevant parts and abilities"): the Spear, the Lance and the
@@ -241,6 +245,8 @@ export interface Skills {
   // (owed.ts, tagged `shock`). Planned as a walk is, for the Grid it ends in,
   // at what the attack is worth there, priced on the table the walk leaves.
   // Without it the walk is never taken (an attack's own deed leaves it out).
+  // MEASURED LEVEL and kept ON (2026-10-05): squads carrying a Spear or a Lance
+  // 95 of 200 against 94, six games of the 200 different.
   shock: boolean;
 }
 
@@ -249,7 +255,7 @@ export const SKILLS: Skills = {
   support: true, profile: true, mode: true, coordinate: true, orders: true, stalk: true, cloak: true, appear: true, shown: true, overwatch: true, grant: true,
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
-  lastRound: true, boxOnce: false, shock: false,
+  lastRound: true, boxOnce: true, shock: true,
 };
 
 // How much of the board is put to the engine in one decision.
