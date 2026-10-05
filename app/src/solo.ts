@@ -344,6 +344,12 @@ export function publicDecisions(log: readonly LogEntry[], state: GameState): Log
 // seen to stop.
 const FRAME_MS = 12;
 
+// How long a computer may think before the page says it is thinking: a slow
+// machine's long thought is not shown as a computer waiting on the player.
+const THINKING_MS = 300;
+// The least moment before an answer at Normal speed, however long the thought.
+const BEAT_MS = 100;
+
 // One computer seat and the loop that keeps asking it.
 interface Runner {
   seat: Side;
@@ -351,6 +357,10 @@ interface Runner {
   pumping: boolean;
   again: boolean;
   refusals: number;
+  // When the question in hand was put to it, and whether the page has been
+  // told it is thinking about it.
+  asked: number;
+  shown: boolean;
 }
 
 export class SoloTable {
@@ -375,8 +385,13 @@ export class SoloTable {
 
   // THE PAGE'S THREAD, handed back to it in the middle of a decision: at once
   // while the computer has held it for less than a frame, and by a timer's
-  // turn once it has.
-  private breathe(): Promise<void> {
+  // turn once it has. A thought that has run long is said to be one.
+  private breathe(seat: Side): Promise<void> {
+    const r = this.runners.find((x) => x.seat === seat);
+    if (r && !r.shown && performance.now() - r.asked > THINKING_MS) {
+      r.shown = true;
+      this.h.status?.(seat, 'thinking');
+    }
     if (performance.now() - this.breathed < FRAME_MS) return Promise.resolve();
     return new Promise<void>((done) => { setTimeout(() => { this.breathed = performance.now(); done(); }, 0); });
   }
@@ -392,18 +407,18 @@ export class SoloTable {
         state: () => h.state(),
         send,
         roll,
-        pace: (d, o) => this.pace(seat, d, o),
+        pace: (d, o, think) => this.pace(seat, d, o, think),
         settled: (d, o) => this.rest(d, o),
         // A long decision is worked out in steps, and the page has its thread
         // back between them: a frame is drawn, a click is heard. A step may be
         // a millisecond's work and a timer's turn is four, so the thread is
         // handed back once the computer has held it for a frame's length, and
         // not at every step.
-        breathe: () => this.breathe(),
+        breathe: () => this.breathe(seat),
       }, policy, new Rng(`${spec.seed}:${seat}`), {
         prefer: spec.scenario.edges ? [`edge:${spec.scenario.edges[seat]}`] : [],
       });
-      this.runners.push({ seat, driver, pumping: false, again: false, refusals: 0 });
+      this.runners.push({ seat, driver, pumping: false, again: false, refusals: 0, asked: 0, shown: false });
       return driver;
     };
     // The computer's command is judged here so the driver has its verdict, and
@@ -524,6 +539,8 @@ export class SoloTable {
           this.rollbacks = rolled;
           for (const x of this.runners) x.driver.forget();
         }
+        r.asked = performance.now();
+        r.shown = false;
         const step = await r.driver.step();
         if (this.stopped) return;
         if (step.kind === 'acted') {
@@ -583,12 +600,17 @@ export class SoloTable {
 
   // The moment before an answer. A pause holds the answer too, and a table
   // taken down takes it back.
-  private async pace(seat: Side, d: Decision, o: Option): Promise<void> {
+  // `think` is the time the answer took to choose, which is part of the
+  // moment, not added to it: on a slow machine the thought is the wait, and
+  // what is left of it is a beat, for the page to say what the computer is
+  // doing before it does it.
+  private async pace(seat: Side, d: Decision, o: Option, think = 0): Promise<void> {
     this.h.status?.(seat, doing(d, o));
     const [lo, hi] = thinkMs(d, o);
     // Never the computer's own stream: the spread is how the wait feels, not a
     // part of the game.
-    await this.sleep((lo + Math.random() * (hi - lo)) * this.scale());
+    const wait = (lo + Math.random() * (hi - lo)) * this.scale();
+    await this.sleep(Math.max(BEAT_MS * this.scale(), wait - think));
     while (this.held && !this.stopped) await new Promise<void>((resolve) => { this.release.push(resolve); });
     if (this.stopped) throw new Stopped();
   }

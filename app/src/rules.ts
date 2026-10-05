@@ -139,12 +139,26 @@ export function largeGridOf(t: { col: number; row: number }): LargeGrid {
   return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
 }
 
-// The cells each list of terrain fills (standingSpot), kept by the list itself
-// for as long as one seat's one thought lasts (thinking(), with the lines of
-// sight). A list is what `terrainOf` hands back, made new each time it is
-// asked, so the one a search of the board is run with is gathered once for
-// that search. Outside a thought nothing is kept.
-let GROUND: Map<TerrainPiece[], Set<string>> | null = null;
+// A cell by one number, for the set standingSpot reads the board through: one
+// for every cell within 1024 of the board, which is all of them.
+const cellNo = (col: number, row: number): number => (col + 1024) * 4096 + (row + 1024);
+
+// The cells each list of terrain fills (standingSpot), kept for as long as one
+// seat's one thought lasts (thinking(), with the lines of sight). A search of
+// the board asks about hundreds of Grids, and `terrainOf` hands back a new list
+// each time it is asked, so what is kept is kept by the pieces (terrainKey),
+// not by the list. Outside a thought nothing is kept.
+let GROUND: Map<string, Set<number>> | null = null;
+function groundCells(terrain: TerrainPiece[]): Set<number> {
+  const key = GROUND ? terrainKey(terrain) : '';
+  let cells = GROUND?.get(key);
+  if (!cells) {
+    cells = new Set<number>();
+    for (const p of terrain) for (const c of p.subCells) cells.add(cellNo(c.col, c.row));
+    GROUND?.set(key, cells);
+  }
+  return cells;
+}
 
 // Where inside Large Grid (c,r) a unit of this size actually fits. A Grid is 3x3
 // small cells, so a 1x1 or 2x2 unit sharing it with terrain has to take the free
@@ -178,26 +192,25 @@ export function standingSpot(
   if (aerial) return spots[0];
 
   // The cells terrain fills are the same for every Grid asked about of one
-  // board. A search of the board asks about hundreds, each with the same list
-  // of pieces: while somebody is thinking the cells of a list are gathered
-  // once (thinking(), below), and otherwise for each call as they always were.
-  let ground = GROUND?.get(terrain);
-  if (!ground) {
-    ground = new Set<string>();
-    for (const p of terrain) for (const cell of p.subCells) ground.add(`${cell.col},${cell.row}`);
-    GROUND?.set(terrain, ground);
-  }
-  const blocked = new Set<string>();
+  // board (groundCells, gathered once a thought). A unit stands in the way of
+  // the cells inside its base: one standing on whole cells, as every unit
+  // does; a base off them takes no cell a spot asks about.
+  const ground = groundCells(terrain);
+  const bases: { col: number; row: number; w: number; h: number }[] = [];
   for (const t of tokens) {
     if (t.uid === ignoreUid || t.aerial) continue;
-    for (const cell of baseCells(t)) blocked.add(`${cell.col},${cell.row}`);
+    const b = baseBox(t);
+    if (Number.isInteger(b.col) && Number.isInteger(b.row)) bases.push(b);
   }
+  const taken = (col: number, row: number): boolean =>
+    bases.some((b) => col >= b.col && col < b.col + b.w && row >= b.row && row < b.row + b.h);
   for (const spot of spots) {
     let ok = true;
     outer: for (let dc = 0; dc < size; dc++) {
       for (let dr = 0; dr < size; dr++) {
-        const k = `${spot.col + dc},${spot.row + dr}`;
-        if (ground.has(k) || blocked.has(k)) {
+        const col = spot.col + dc;
+        const row = spot.row + dr;
+        if (ground.has(cellNo(col, row)) || taken(col, row)) {
           ok = false;
           break outer;
         }
@@ -1018,6 +1031,11 @@ export function firingSight(
 // lives only as long as one seat's one decision, in which no board changes.
 type Sight = 'clear' | 'obstructed' | 'blocked' | 'smoked';
 let WALKED: Map<string, Sight> | null = null;
+// The cells a list of terrain puts in a line's way (walkLinesNow), by a cell's
+// number: every cell obstructs it, the cells of a piece that blocks sight
+// block it. Kept by the pieces for as long as a thought lasts, as the lines
+// are (thinking()).
+let SIGHT_GROUND: Map<string, { all: Set<number>; los: Set<number> }> | null = null;
 const PIECE = new WeakMap<TerrainPiece, number>();
 let pieces = 0;
 
@@ -1028,11 +1046,13 @@ export function thinking<T>(fn: () => T): T {
   if (WALKED) return fn();
   WALKED = new Map();
   GROUND = new Map();
+  SIGHT_GROUND = new Map();
   try {
     return fn();
   } finally {
     WALKED = null;
     GROUND = null;
+    SIGHT_GROUND = null;
   }
 }
 
@@ -1083,11 +1103,13 @@ export async function musing<T>(fn: () => Promise<T>): Promise<T> {
   if (WALKED) return fn();
   WALKED = new Map();
   GROUND = new Map();
+  SIGHT_GROUND = new Map();
   try {
     return await fn();
   } finally {
     WALKED = null;
     GROUND = null;
+    SIGHT_GROUND = null;
   }
 }
 
@@ -1134,14 +1156,26 @@ function walkLinesNow(
   // which is how it gets Protection (ruling I14; audit Phase 5, C4).
   const aerial = !!((a.aerial && !a.mine) || (b.aerial && !b.mine));
   if (aerial && !smokeGrids) return 'clear';
-  const losCells = new Set<string>();
-  const obstructCells = new Set<string>();
+  // The terrain's cells (SIGHT_GROUND, gathered once a thought) and the
+  // units' own, gathered apart: a cell is in the line's way when it is in
+  // either. A cell by its number (one for every cell within 1024 of the
+  // board), as are the Grids of the smoke.
+  const cellNo = (col: number, row: number): number => (col + 1024) * 4096 + (row + 1024);
+  const losCells = new Set<number>();
+  const obstructCells = new Set<number>();
+  let ground: { all: Set<number>; los: Set<number> } | null = null;
   if (!aerial) {
-    for (const p of terrain) {
-      for (const c of p.subCells) {
-        obstructCells.add(`${c.col},${c.row}`);
-        if (p.blocksLos) losCells.add(`${c.col},${c.row}`);
+    const tk = SIGHT_GROUND ? terrainKey(terrain) : '';
+    ground = SIGHT_GROUND?.get(tk) ?? null;
+    if (!ground) {
+      ground = { all: new Set<number>(), los: new Set<number>() };
+      for (const p of terrain) {
+        for (const c of p.subCells) {
+          ground.all.add(cellNo(c.col, c.row));
+          if (p.blocksLos) ground.los.add(cellNo(c.col, c.row));
+        }
       }
+      SIGHT_GROUND?.set(tk, ground);
     }
     for (const t of tokens) {
       if (t.uid === a.uid || t.uid === b.uid || t.aerial) continue;
@@ -1149,9 +1183,17 @@ function walkLinesNow(
       // Turtle Shell, only obstructs them (Supplementary Rules 1.04, 1.2).
       const wall = blocksAsTerrain(t);
       for (const cell of baseCells(t)) {
-        obstructCells.add(`${cell.col},${cell.row}`);
-        if (wall) losCells.add(`${cell.col},${cell.row}`);
+        obstructCells.add(cellNo(cell.col, cell.row));
+        if (wall) losCells.add(cellNo(cell.col, cell.row));
       }
+    }
+  }
+  let smoke: Set<number> | null = null;
+  if (smokeGrids) {
+    smoke = new Set<number>();
+    for (const k of smokeGrids) {
+      const [gc, gr] = k.split(',').map(Number);
+      smoke.add(cellNo(gc, gr));
     }
   }
 
@@ -1170,6 +1212,11 @@ function walkLinesNow(
   };
 
   const inBase = (x: number, y: number, b: Box): boolean => x >= b.col && x < b.col + b.w && y >= b.row && y < b.row + b.h;
+  // Bases that stand on whole cells, as every unit does: whether a point of a
+  // line is inside one is then the cell's to say, as everything else read of
+  // a point is, so a line's next point in the cell just read is read already.
+  const whole = (b: Box): boolean => Number.isInteger(b.col) && Number.isInteger(b.row) && Number.isInteger(b.w) && Number.isInteger(b.h);
+  const byCell = whole(boxA) && whole(boxB);
 
   let anySight = false;
   let smokeTook = false;
@@ -1182,14 +1229,19 @@ function walkLinesNow(
       let lineBlocked = false;
       let lineObstruct = false;
       let lineSmoked = false;
+      let last = NaN;
       for (let i = 1; i < n; i++) {
         const x = pa.x + ((pb.x - pa.x) * i) / n;
         const y = pa.y + ((pb.y - pa.y) * i) / n;
+        const cx = Math.floor(x);
+        const cy = Math.floor(y);
+        const key = cellNo(cx, cy);
+        if (byCell && key === last) continue;
+        last = key;
         if (inBase(x, y, boxA) || inBase(x, y, boxB)) continue;
-        const key = `${Math.floor(x)},${Math.floor(y)}`;
-        if (losCells.has(key)) lineBlocked = true;
-        if (obstructCells.has(key)) lineObstruct = true;
-        if (smokeGrids?.has(`${Math.floor(x / 3)},${Math.floor(y / 3)}`)) lineSmoked = true;
+        if (losCells.has(key) || ground?.los.has(key)) lineBlocked = true;
+        if (obstructCells.has(key) || ground?.all.has(key)) lineObstruct = true;
+        if (smoke?.has(cellNo(Math.floor(cx / 3), Math.floor(cy / 3)))) lineSmoked = true;
       }
       if (first && !lineBlocked && !lineSmoked) return 'clear';
       if (!lineBlocked && !lineSmoked) anySight = true;

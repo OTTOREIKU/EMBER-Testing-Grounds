@@ -11,6 +11,7 @@
 // Pure: it reads the table and the seat's own memory and returns data. It
 // sends nothing and changes nothing; whoever asked sends the option it picks.
 import { ammoAvailable, apply, check, checkAfter, liveIntercepts, missionZones, readyCommands, rebootOwed, taskDesignations, type CheckResult, type Command } from './commands';
+import { copyAsJson } from './jsoncopy';
 import type { GameData } from './data';
 import { cardName, isMine, unfoldsInto } from './data';
 import { makeInit, opportunity, tableAfter } from './glue';
@@ -2815,7 +2816,7 @@ function turnBehind(state: GameState, t: Token): boolean {
 export function owedIfActivated(
   data: GameData, state: GameState, uid: number, timing?: Timing, want?: Want,
 ): { table: GameState; decision: Decision | null } | null {
-  const table = JSON.parse(JSON.stringify(state)) as GameState;
+  const table = copyAsJson(state);
   let t = table.tokens.find((x) => x.uid === uid);
   const sc = table.script;
   if (!t || !sc || t.deployed === false || !alive(t)) return null;

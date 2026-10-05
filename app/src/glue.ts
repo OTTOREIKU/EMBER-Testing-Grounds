@@ -9,6 +9,7 @@
 // whose turn it is. So the shared half lives here, and matchhud.ts imports it
 // and adds only what a board page needs on top (the smoke-dissipation queue).
 import type { GameData } from './data';
+import { copyAsJson } from './jsoncopy';
 import type { Command } from './commands';
 import { ammoAvailable, apply, check, clearDroneCommands, seedCommandTokens } from './commands';
 import { alive, type InitLookup, nextActivation } from './loop';
@@ -109,7 +110,7 @@ export function glueAfter(data: GameData, state: GameState, cmd: Command): void 
 // (AI-OPPONENT-PLAN.md, R5), and many answers that begin with the same command
 // are judged against one copy.
 export function tableAfter(data: GameData, state: GameState, cmds: Command[]): GameState | null {
-  const next = JSON.parse(JSON.stringify(state)) as GameState;
+  const next = copyAsJson(state);
   for (const cmd of cmds) {
     if (!check(data, next, cmd).ok) return null;
     apply(data, next, cmd);
