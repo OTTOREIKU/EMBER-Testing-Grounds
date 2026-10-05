@@ -2045,22 +2045,33 @@ p.points { white-space: pre-line; }
 .token-reserve { opacity: 0.55; }
 
 .mech-presets { display: flex; gap: 5px; align-items: center; margin: 0 0 8px; }
-.squad-presets { margin: 0 0 14px; }
 .pg-waiting { font-style: italic; animation: pg-wait-pulse 2.4s ease-in-out infinite; }
 @keyframes pg-wait-pulse { 50% { opacity: 0.55; } }
-.mech-presets select {
-  flex: 1; min-width: 0; padding: 6px 7px; border: none; border-radius: var(--radius-sm);
-  background: var(--surface2); color: var(--text); font-family: var(--font); font-size: 12px; cursor: pointer;
-}
 .mech-presets button {
   flex: 0 0 auto; border: none; border-radius: var(--radius-sm); cursor: pointer;
   font-family: var(--font); font-size: 12px; font-weight: 600; padding: 6px 10px;
   background: var(--accent-lt); color: var(--accent);
 }
 .mech-presets button:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
-.mech-presets .preset-del { background: var(--surface3); color: var(--text2); padding: 6px 9px; }
-.mech-presets .preset-del:hover:not(:disabled) { background: var(--red-lt); color: var(--red); }
 .mech-presets button:disabled { opacity: 0.4; cursor: default; }
+/* The saved builds and squads (roster.ts savedFold): the pad's two folds, in
+   the shared list rows (ui.css .ui-list), each row tinted with its faction and
+   the one picked in the accent tint (ui.css rule 2). */
+.roster-fold { margin: 0 0 10px; }
+.roster-fold > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+  padding: 6px 0; font-size: 12px; font-weight: 600; color: var(--text2);
+}
+.roster-fold > summary::-webkit-details-marker { display: none; }
+.roster-fold > summary::after { content: '▾'; margin-left: auto; font-size: 14px; }
+.roster-fold[open] > summary::after { content: '▴'; }
+.roster-saved { margin: 4px 0 8px; }
+.roster-saved .ui-row { background: color-mix(in srgb, var(--fac, var(--neutral)) 14%, var(--surface2)); }
+.roster-saved .ui-row.tap:hover { background: color-mix(in srgb, var(--fac, var(--neutral)) 22%, var(--surface2)); }
+.roster-saved .ui-row.chosen { background: var(--accent-lt); color: var(--accent); }
+.roster-saved .ui-row.tap:hover .ui-go { background: var(--accent); color: var(--on-accent); }
+.roster-saved .saved-pts { flex: 0 0 3.2em; text-align: right; }
+.roster-saved .ui-go { width: 22px; height: 22px; flex-basis: 22px; font-size: 13px; }
 
 /* ---------- details tab ---------- */
 #details-body { padding: 10px 12px 16px; }

@@ -3,7 +3,7 @@ import { cardName, FACTION_LABEL, isDiscardCard, SQUAD_ORDER, squadLabel, squadN
 import { inspectOnHover } from './inspector';
 import { confirmDialog, promptDialog } from './dialog';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset } from './presets';
-import { deleteSquad, isBuiltInSquad, loadSquads } from './squadstore';
+import { deleteSquad, isBuiltInSquad, loadoutFaction, loadoutPoints, loadSquads, savedSquadPoints } from './squadstore';
 import { canBeLoad, cardFitsSquad, isCarrier, type SquadAllegiance } from './units';
 import { ICON_EXPAND, squadColour } from './icons';
 import { groupByFaction, openPartPicker } from './partpicker';
@@ -12,26 +12,13 @@ import { fillPortraits } from './cardart';
 
 const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;');
 
-// Options for a saved-thing dropdown, with the builds that ship with the app
-// held apart from the player's own under a heading of their own. They were
-// interleaved alphabetically before, so somebody's saved mech sat between two
-// presets with nothing saying which was which. Shipped ones go LAST: the list
-// is the player's, and ours are the reference at the bottom of it.
-function savedOptions<T extends { id: string; name: string }>(
-  list: T[],
-  chosenId: string,
-  label: (item: T) => string,
-): string {
-  const opt = (p: T): string =>
-    `<option value="${escAttr(p.id)}"${p.id === chosenId ? ' selected' : ''}>${escAttr(label(p))}</option>`;
-  const mine = list.filter((p) => !p.id.startsWith('builtin:'));
-  const shipped = list.filter((p) => p.id.startsWith('builtin:'));
-  // A single group with nothing to separate it from would just be a stray
-  // heading, so the labels only appear once both kinds exist.
-  if (!mine.length || !shipped.length) return [...mine, ...shipped].map(opt).join('');
-  return `<optgroup label="Saved">${mine.map(opt).join('')}</optgroup>`
-    + `<optgroup label="Presets">${shipped.map(opt).join('')}</optgroup>`;
-}
+// One row of a saved-things list (Roster.savedFold).
+interface SavedRow { id: string; name: string; tag: string; points: number; faction: string | null; chosen: boolean; removable: boolean }
+
+// The player's own first, then the ones that ship with the app: the list is
+// the player's, and ours are the reference at the bottom of it.
+const mineFirst = <T extends { id: string }>(list: T[]): T[] =>
+  [...list.filter((p) => !p.id.startsWith('builtin:')), ...list.filter((p) => p.id.startsWith('builtin:'))];
 
 export interface RosterCallbacks {
   squadAllegiance(side: Side): SquadAllegiance;
@@ -81,6 +68,8 @@ export class Roster {
   private droneLoads: Record<string, string> = {};
   private presetId = '';
   private squadId = '';
+  // Whether each saved list is open, kept while the page is.
+  private folds: Record<'mechs' | 'squads', boolean> = { mechs: false, squads: false };
   private editing: { uid: number; side: Side; label: string } | null = null;
 
   // The build rules are the same whether a mech is being added or edited, so
@@ -485,58 +474,29 @@ export class Roster {
     pts.textContent = this.pointsText();
     wrap.appendChild(pts);
 
-    // Presets sit directly above the add buttons, so a build can be stored and
-    // recalled without rebuilding it slot by slot every game.
-    const presets = document.createElement('div');
-    presets.className = 'mech-presets';
-    const renderPresets = (): void => {
-      const list = loadMechPresets();
-      // Loading a preset re-renders the whole builder, which used to reset this
-      // select to its placeholder. The delete button then read an empty value
-      // and silently did nothing, so the choice is held on the instance and
-      // re-applied here instead.
-      if (this.presetId && !list.some((p) => p.id === this.presetId)) this.presetId = '';
-      const chosen = list.find((p) => p.id === this.presetId);
-      presets.innerHTML = `<select class="preset-pick"><option value="">Saved mechs…</option>${savedOptions(
-        list,
-        this.presetId,
-        (p) => p.name,
-      )}</select>
-        <button class="preset-save" title="Save the current build under a name">Save</button>
-        <button class="preset-del" title="${
-          !chosen
-            ? 'Pick a saved mech to delete it'
-            : isBuiltInPreset(chosen.id)
-              ? `“${escAttr(chosen.name)}” ships with the app and cannot be deleted. Save over its name to replace it.`
-              : `Delete “${escAttr(chosen.name)}”`
-        }" ${chosen && !isBuiltInPreset(chosen.id) ? '' : 'disabled'}>✕</button>`;
-      const pick = presets.querySelector<HTMLSelectElement>('.preset-pick')!;
-      pick.addEventListener('change', () => {
-        this.presetId = pick.value;
-        const found = loadMechPresets().find((p) => p.id === pick.value);
-        if (!found) return this.render();
+    // Saved builds sit directly above the add buttons, so a build can be stored
+    // and recalled without rebuilding it slot by slot every game. Picking one
+    // loads it into the builder; the build picked stays marked.
+    const mechList = loadMechPresets();
+    if (this.presetId && !mechList.some((p) => p.id === this.presetId)) this.presetId = '';
+    wrap.appendChild(this.savedFold('mechs', 'Saved mechs',
+      mineFirst(mechList).map((p) => ({
+        id: p.id, name: p.name, tag: isBuiltInPreset(p.id) ? 'preset' : 'saved',
+        points: loadoutPoints(this.data, p.mech), faction: loadoutFaction(this.data, p.mech),
+        chosen: p.id === this.presetId, removable: !isBuiltInPreset(p.id),
+      })),
+      'None saved yet.',
+      (id) => {
+        const found = loadMechPresets().find((p) => p.id === id);
+        if (!found) return;
+        this.presetId = id;
         this.mech = { ...found.mech };
         this.name = found.name;
         this.render();
-      });
-      presets.querySelector('.preset-save')!.addEventListener('click', () => {
+      },
+      (id) => {
         void (async () => {
-          const suggested = this.name.trim() || buildDefaultName(this.data, this.mech) || 'My mech';
-          const name = await promptDialog({
-            title: 'Save this mech',
-            body: 'Saved builds are kept on this device and can be dropped onto the board in any later game. Reusing a name overwrites that preset.',
-            value: suggested,
-            placeholder: 'Preset name',
-            confirmLabel: 'Save',
-          });
-          if (!name) return;
-          saveMechPreset(name, this.mech, this.cb.now());
-          this.render();
-        })();
-      });
-      presets.querySelector('.preset-del')!.addEventListener('click', () => {
-        void (async () => {
-          const found = loadMechPresets().find((p) => p.id === this.presetId);
+          const found = loadMechPresets().find((p) => p.id === id);
           if (!found) return;
           const ok = await confirmDialog({
             title: `Delete “${found.name}”?`,
@@ -546,13 +506,29 @@ export class Roster {
           });
           if (!ok) return;
           deleteMechPreset(found.id);
-          this.presetId = '';
+          if (this.presetId === found.id) this.presetId = '';
           this.render();
         })();
-      });
-    };
-    renderPresets();
-    wrap.appendChild(presets);
+      },
+      {
+        label: 'Save this build',
+        title: 'Save the current build under a name',
+        run: () => {
+          void (async () => {
+            const suggested = this.name.trim() || buildDefaultName(this.data, this.mech) || 'My mech';
+            const name = await promptDialog({
+              title: 'Save this mech',
+              body: 'Saved builds are kept on this device and can be dropped onto the board in any later game. Reusing a name overwrites that preset.',
+              value: suggested,
+              placeholder: 'Preset name',
+              confirmLabel: 'Save',
+            });
+            if (!name) return;
+            saveMechPreset(name, this.mech, this.cb.now());
+            this.render();
+          })();
+        },
+      }));
 
     const btns = document.createElement('div');
     btns.className = 'mech-add-btns';
@@ -639,44 +615,29 @@ export class Roster {
     imp.addEventListener('click', () => document.getElementById('import-squad-file')!.click());
     squad.append(builder, imp);
 
-    // The whole-squad library, in the same select–save–delete shape as the
-    // mech presets above so the two read as one convention. Saving stores a
-    // side's units off the board; picking one brings it back through the
-    // importSquad command, so in an online room it reaches both screens.
-    const squads = document.createElement('div');
-    squads.className = 'mech-presets squad-presets';
-    const renderSquads = (): void => {
-      const list = loadSquads();
-      if (this.squadId && !list.some((s) => s.id === this.squadId)) this.squadId = '';
-      const chosen = list.find((s) => s.id === this.squadId);
-      const blurb = (s: { mechs: unknown[]; drones: unknown[]; tactics?: string[] }) =>
-        [s.mechs.length ? `${s.mechs.length}M` : '', s.drones.length ? `${s.drones.length}D` : '', s.tactics?.length ? `${s.tactics.length}T` : '']
-          .filter(Boolean).join(' ');
-      squads.innerHTML = `<select class="preset-pick"><option value="">Saved squads…</option>${savedOptions(
-        list,
-        this.squadId,
-        (s) => `${s.name} (${blurb(s)})`,
-      )}</select>
-        <button class="preset-save" title="Save a squad now on the board under a name">Save</button>
-        <button class="preset-del" title="${
-          !chosen
-            ? 'Pick a saved squad to delete it'
-            : isBuiltInSquad(chosen.id)
-              ? `“${escAttr(chosen.name)}” ships with the app and cannot be deleted. Save over its name to replace it.`
-              : `Delete “${escAttr(chosen.name)}”`
-        }" ${chosen && !isBuiltInSquad(chosen.id) ? '' : 'disabled'}>✕</button>`;
-      const pick = squads.querySelector<HTMLSelectElement>('.preset-pick')!;
-      pick.addEventListener('change', () => {
-        this.squadId = pick.value;
-        if (pick.value) this.cb.onLoadSquad?.(pick.value);
-        renderSquads();
-      });
-      squads.querySelector('.preset-save')!.addEventListener('click', () => {
-        void this.cb.onSaveSquad?.().then(() => renderSquads());
-      });
-      squads.querySelector('.preset-del')!.addEventListener('click', () => {
+    // The whole-squad library, in the same list as the builds above. Saving
+    // stores a side's units off the board; picking one brings it back through
+    // the importSquad command, so in an online room it reaches both screens.
+    const squadList = loadSquads();
+    if (this.squadId && !squadList.some((q) => q.id === this.squadId)) this.squadId = '';
+    const blurb = (q: { mechs: unknown[]; drones: unknown[]; tactics?: string[] }): string =>
+      [q.mechs.length ? `${q.mechs.length}M` : '', q.drones.length ? `${q.drones.length}D` : '', q.tactics?.length ? `${q.tactics.length}T` : '']
+        .filter(Boolean).join(' ');
+    const squads = this.savedFold('squads', 'Saved squads',
+      mineFirst(squadList).map((q) => ({
+        id: q.id, name: q.name, tag: `${blurb(q)}${isBuiltInSquad(q.id) ? ' · preset' : ''}`,
+        points: savedSquadPoints(this.data, q), faction: q.mechs[0] ? loadoutFaction(this.data, q.mechs[0].loadout) : null,
+        chosen: q.id === this.squadId, removable: !isBuiltInSquad(q.id),
+      })),
+      'None saved yet.',
+      (id) => {
+        this.squadId = id;
+        this.cb.onLoadSquad?.(id);
+        this.render();
+      },
+      (id) => {
         void (async () => {
-          const found = loadSquads().find((s) => s.id === this.squadId);
+          const found = loadSquads().find((q) => q.id === id);
           if (!found) return;
           const ok = await confirmDialog({
             title: `Delete “${found.name}”?`,
@@ -686,17 +647,61 @@ export class Roster {
           });
           if (!ok) return;
           deleteSquad(found.id);
-          this.squadId = '';
-          renderSquads();
+          if (this.squadId === found.id) this.squadId = '';
+          this.render();
         })();
+      },
+      {
+        label: 'Save a squad',
+        title: 'Save a squad now on the board under a name',
+        run: () => { void this.cb.onSaveSquad?.().then(() => this.render()); },
       });
-    };
-    renderSquads();
-    // The two libraries read as one convention, so the squads row sits right
-    // under the mechs row, and the add buttons follow with room to breathe.
+    // The two libraries read as one, so the squads list sits right under the
+    // builds, and the add buttons follow with room to breathe.
     wrap.append(squads, btns, squad);
 
     this.body.appendChild(wrap);
+  }
+
+  // A FOLD OF SAVED THINGS (OTTO, 2026-10-05: "it only saves the names but not
+  // how much each costs ... match the UI of our PAD setup"): the pad's folds
+  // (pad.ts savedHtml) in the shared list rows (ui.css): each row tinted with
+  // its faction, its name, what it is and its points. A row loads it; the
+  // circle removes a saved one, never a shipped one. Open or shut is kept
+  // while the page is.
+  private savedFold(
+    key: 'mechs' | 'squads', title: string, rows: SavedRow[], empty: string,
+    onPick: (id: string) => void, onRemove: (id: string) => void,
+    save: { label: string; title: string; run: () => void },
+  ): HTMLElement {
+    const fold = document.createElement('details');
+    fold.className = 'roster-fold';
+    fold.open = this.folds[key];
+    fold.addEventListener('toggle', () => { this.folds[key] = fold.open; });
+    const items = rows.map((r) => `<li class="ui-row tap saved-row${r.chosen ? ' chosen' : ''}" role="button" tabindex="0" data-pick="${escAttr(r.id)}" style="--fac:${squadColour(r.faction)}">
+        <span class="ui-row-name">${escAttr(r.name)}</span>
+        <span class="ui-row-meta">${escAttr(r.tag)}</span>
+        <span class="ui-row-meta saved-pts">${r.points}</span>
+        <span class="ui-go" aria-hidden="true">›</span>
+        ${r.removable ? `<button class="ui-x" data-remove="${escAttr(r.id)}" title="Delete ${escAttr(r.name)}" aria-label="Delete ${escAttr(r.name)}">✕</button>` : ''}
+      </li>`).join('');
+    fold.innerHTML = `<summary><span>${escAttr(title)}</span><b class="ui-badge">${rows.length}</b></summary>
+      ${rows.length ? `<ul class="ui-list roster-saved">${items}</ul>` : `<p class="dim">${escAttr(empty)}</p>`}
+      <div class="mech-presets"><button class="preset-save" title="${escAttr(save.title)}">${escAttr(save.label)}</button></div>`;
+    for (const li of fold.querySelectorAll<HTMLElement>('[data-pick]')) {
+      const pick = (): void => onPick(li.dataset.pick ?? '');
+      li.addEventListener('click', pick);
+      li.addEventListener('keydown', (e) => {
+        if (e.target !== li || (e.key !== 'Enter' && e.key !== ' ')) return;
+        e.preventDefault();
+        pick();
+      });
+    }
+    for (const b of fold.querySelectorAll<HTMLButtonElement>('[data-remove]')) {
+      b.addEventListener('click', (e) => { e.stopPropagation(); onRemove(b.dataset.remove ?? ''); });
+    }
+    fold.querySelector('.preset-save')!.addEventListener('click', save.run);
+    return fold;
   }
 
   private pointsText(): string {

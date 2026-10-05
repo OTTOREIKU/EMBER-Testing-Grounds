@@ -1,4 +1,5 @@
 import type { MechLoadout } from './types';
+import type { GameData } from './data';
 import { hiddenBuiltIns, hideBuiltIn } from './builtins';
 
 // Whole squads remembered across games, kept in local storage next to the mech
@@ -120,6 +121,23 @@ export function loadSquads(): SavedSquad[] {
   const hidden = new Set(hiddenBuiltIns());
   const shipped = BUILT_IN.filter((s) => !taken.has(s.name.toLowerCase()) && !hidden.has(s.id));
   return [...shipped, ...saved].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// A saved build's points and faction, read the way a sheet reads a Mech's:
+// every Part plus the pilot, and the Torso's faction for the tint; and a saved
+// squad's points, its Drones' Loads and its Tactics Cards included. The pad's
+// saved lists and the board's roster read them here.
+export function loadoutPoints(data: GameData, m: MechLoadout): number {
+  return Object.values(m).reduce((n, id) => n + (id ? data.byId.get(id)?.score ?? 0 : 0), 0);
+}
+export function loadoutFaction(data: GameData, m: MechLoadout): string | null {
+  const core = m.torso ? data.byId.get(m.torso) : undefined;
+  return core ? data.factionOf(core) : null;
+}
+export function savedSquadPoints(data: GameData, sq: SavedSquad): number {
+  const drones = sq.drones.reduce((n, d) => n + (data.byId.get(d.cardId)?.score ?? 0) + (d.backpack ? data.byId.get(d.backpack)?.score ?? 0 : 0), 0);
+  const tactics = (sq.tactics ?? []).reduce((n, id) => n + (data.byId.get(id)?.score ?? 0), 0);
+  return sq.mechs.reduce((n, m) => n + loadoutPoints(data, m.loadout), 0) + drones + tactics;
 }
 
 const writers = new Set<() => void>();

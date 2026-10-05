@@ -52,7 +52,7 @@ import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, discardFace
 import { importSquadFile } from '../src/importer';
 import { barcodeSvg } from '../src/barcode';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset, type MechPreset } from '../src/presets';
-import { deleteSquad, isBuiltInSquad, loadSquads, saveSquad, type SavedSquad } from '../src/squadstore';
+import { deleteSquad, isBuiltInSquad, loadoutFaction as loadoutFactionOf, loadoutPoints as loadoutPointsOf, loadSquads, savedSquadPoints as savedSquadPointsOf, saveSquad, type SavedSquad } from '../src/squadstore';
 import { openAccount } from '../src/account';
 import { bindLibrary, onLibrary } from '../src/library';
 import { hiddenBuiltIns, restoreBuiltIns } from '../src/builtins';
@@ -4225,19 +4225,16 @@ function loadRow(t: Token): string {
 // shipped starters and what the player saved, on this device and on the
 // account. A saved entry can be removed here; the shipped ones cannot.
 
-// A saved build's points and faction, read the way the sheet reads a Mech's:
-// every Part plus the pilot, and the Torso's faction for the tint.
+// A saved build's points and faction, and a saved squad's points: the shared
+// readers (squadstore.ts), which the board's roster lists them by too.
 function loadoutPoints(m: MechLoadout): number {
-  return Object.values(m).reduce((n, id) => n + (id ? data?.byId.get(id)?.score ?? 0 : 0), 0);
+  return data ? loadoutPointsOf(data, m) : 0;
 }
 function loadoutFaction(m: MechLoadout): string | null {
-  const core = m.torso ? data?.byId.get(m.torso) : undefined;
-  return core && data ? data.factionOf(core) : null;
+  return data ? loadoutFactionOf(data, m) : null;
 }
 function savedSquadPoints(sq: SavedSquad): number {
-  const drones = sq.drones.reduce((n, d) => n + (data?.byId.get(d.cardId)?.score ?? 0) + (d.backpack ? data?.byId.get(d.backpack)?.score ?? 0 : 0), 0);
-  const tactics = (sq.tactics ?? []).reduce((n, id) => n + (data?.byId.get(id)?.score ?? 0), 0);
-  return sq.mechs.reduce((n, m) => n + loadoutPoints(m.loadout), 0) + drones + tactics;
+  return data ? savedSquadPointsOf(data, sq) : 0;
 }
 
 // What a side has brought: every unit's Parts and pilot, plus its hand.
