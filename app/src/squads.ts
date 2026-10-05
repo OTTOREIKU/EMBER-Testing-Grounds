@@ -73,6 +73,8 @@ export interface SquadCallbacks {
   onDelete(uid: number): void;
   onEditMech(uid: number): void;
   onPlayTactic(side: Side, id: string): void;
+  // Takes a Tactics Card back out of the squad's hand.
+  onDropTactic?(side: Side, id: string): void;
   scenarioName(id: string): string | null;
   onShowScenario(): void;
 }
@@ -419,6 +421,19 @@ export class SquadTracker {
         lines: [tacticSpec(id)?.text ?? '', 'Only 1 Tactics Card may be played per round, and once used it is discarded for the game (rulebook 5.4.2, FAQ P2).'],
       });
       row.append(name, timing, play);
+      // Out of the hand from here, as a unit comes off the board from its own
+      // row (OTTO, 2026-10-05: "add a small X ... so you can remove a tactic card
+      // from the squad without having to go all the way into the add section"):
+      // while the squads are being put together, and only this player's own.
+      if (!running && !notMine && this.cb.onDropTactic) {
+        const drop = document.createElement('button');
+        drop.className = 'ui-x';
+        drop.textContent = '✕';
+        drop.title = `Take ${cardName(card)} out of ${squadLabel(side)}`;
+        drop.setAttribute('aria-label', drop.title);
+        drop.addEventListener('click', () => this.cb.onDropTactic?.(side, id));
+        row.appendChild(drop);
+      }
       box.appendChild(row);
     }
     if (hidden) {

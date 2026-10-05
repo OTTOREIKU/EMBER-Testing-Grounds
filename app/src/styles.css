@@ -1952,7 +1952,11 @@ button.add.sq-add.has-faction {
   color: var(--sq-tint);
 }
 button.add.sq-add.has-faction:hover { background: color-mix(in srgb, var(--sq-tint) 40%, var(--surface3)); }
-button.add.sq-add.has { background: color-mix(in srgb, var(--sq-tint, var(--accent)) 40%, var(--surface3)); }
+/* A Tactics Card the squad holds: the squad's own colour, solid (ui.css rule 2,
+   the pad's solid toggle), so the box says it without a mark beside the number
+   (OTTO, 2026-10-05: "keep the box colored so that way it doesnt bump the text
+   around"). */
+button.add.sq-add.has, button.add.sq-add.has:hover { background: var(--sq-tint, var(--accent)); color: var(--on-accent); }
 button.add.sq-add.sq-wide { min-width: 0; flex: 1; padding: 6px 10px; font-size: 12px; }
 button.add.off-faction { opacity: 0.4; }
 /* Without a side colour a bare .add falls back to the browser button face, which
@@ -2072,6 +2076,11 @@ p.points { white-space: pre-line; }
 .roster-saved .ui-row.tap:hover .ui-go { background: var(--accent); color: var(--on-accent); }
 .roster-saved .saved-pts { flex: 0 0 3.2em; text-align: right; }
 .roster-saved .ui-go { width: 22px; height: 22px; flex-basis: 22px; font-size: 13px; }
+/* The way back for the built-in starters put away (the pad's .pad-link). */
+.roster-restore {
+  display: block; margin: 0 0 10px; padding: 2px 0; border: none; background: none; cursor: pointer;
+  color: var(--accent); font: inherit; font-size: 12px; text-decoration: underline;
+}
 
 /* ---------- details tab ---------- */
 #details-body { padding: 10px 12px 16px; }

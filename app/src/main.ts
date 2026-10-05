@@ -872,6 +872,9 @@ async function init() {
     onPlayTactic(side, id) {
       void playTactic(side, id);
     },
+    onDropTactic(side, id) {
+      dropTactic(side, id);
+    },
     scenarioName(id) {
       return scenarios.find((x) => x.id === id)?.name ?? null;
     },
@@ -2556,6 +2559,18 @@ async function init() {
     return Math.max(0, owned - inUse(data, state.tokens, card));
   }
 
+  // A Tactics Card taken back out of a squad's hand: from the Add tab's button
+  // and from the ✕ beside it in the Squads tab (OTTO, 2026-10-05).
+  function dropTactic(side: Side, id: string): void {
+    const held = [...handIds(state, side, handRoom)];
+    const i = held.lastIndexOf(id);
+    if (i < 0) return;
+    held.splice(i, 1);
+    perform(data, state, handCommand(side, held, handRoom));
+    onChanged();
+    roster.render();
+  }
+
   const roster = new Roster(data, {
     now: () => Date.now(),
     squadAllegiance: (side) => squadAllegiance(data, state.tokens.filter((t) => t.side === side)),
@@ -2593,15 +2608,7 @@ async function init() {
       onChanged();
       roster.render();
     },
-    onDropTactic: (card, side) => {
-      const held = [...handIds(state, side, handRoom)];
-      const i = held.lastIndexOf(card.id);
-      if (i < 0) return;
-      held.splice(i, 1);
-      perform(data, state, handCommand(side, held, handRoom));
-      onChanged();
-      roster.render();
-    },
+    onDropTactic: (card, side) => dropTactic(side, card.id),
     pointsCap: () => {
       const sc = SCALES.find((x) => x.id === (state.scale ?? 'standard'));
       return sc ? { name: sc.name, points: sc.points, openEnded: !!sc.openEnded } : null;
@@ -8826,7 +8833,10 @@ async function init() {
     openSoloSetup(data, (address) => { location.href = address; });
   });
 
-  document.getElementById('btn-scenarios')!.addEventListener('click', () => {
+  // ARCHIVED (OTTO, 2026-10-05): the Setup tab no longer offers Scenarios, so
+  // there is no row to bind (table/index.html keeps it, commented out). The
+  // picker below and its replays stay as they were, for the day it returns.
+  document.getElementById('btn-scenarios')?.addEventListener('click', () => {
     document.getElementById('scn-dialog')?.remove();
     const dlg = document.createElement('div');
     dlg.id = 'scn-dialog';

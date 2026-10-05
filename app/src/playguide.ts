@@ -244,7 +244,7 @@ export class PlayGuide {
           <li><b>Start the game.</b> The button below walks you through the rest.</li>
         </ol>
         <div class="pg-units"><button class="pg-start" data-start-game="1">Start game</button></div>
-        <p class="pg-idle-note">In a hurry? Load a ready-made squad and board from <b>Scenarios</b> in the toolbar.</p>
+        <p class="pg-idle-note">In a hurry? Load a starter squad from <b>Saved squads</b> in the <b>ADD</b> tab.</p>
         <details class="pg-rules"${this.ui.rules ? ' open' : ''}>
           <summary>Playing without the guide</summary>
           <ul class="pg-steps">

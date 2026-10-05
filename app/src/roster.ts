@@ -2,6 +2,7 @@ import type { Card, MechLoadout, Side } from './types';
 import { cardName, FACTION_LABEL, isDiscardCard, SQUAD_ORDER, squadLabel, squadNumber, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { confirmDialog, promptDialog } from './dialog';
+import { hiddenBuiltIns, restoreBuiltIns } from './builtins';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset } from './presets';
 import { deleteSquad, isBuiltInSquad, loadoutFaction, loadoutPoints, loadSquads, savedSquadPoints } from './squadstore';
 import { canBeLoad, cardFitsSquad, isCarrier, type SquadAllegiance } from './units';
@@ -13,7 +14,7 @@ import { fillPortraits } from './cardart';
 const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;');
 
 // One row of a saved-things list (Roster.savedFold).
-interface SavedRow { id: string; name: string; tag: string; points: number; faction: string | null; chosen: boolean; removable: boolean }
+interface SavedRow { id: string; name: string; tag: string; points: number; faction: string | null; chosen: boolean }
 
 // The player's own first, then the ones that ship with the app: the list is
 // the player's, and ours are the reference at the bottom of it.
@@ -96,10 +97,10 @@ export class Roster {
   // The label is always the squad number: renaming a squad must not move the
   // buttons around under the player's cursor. Pass no card to get the button
   // without the faction test, which is what the tactics list wants.
-  private squadButton(side: Side, card: Card | null, suffix = ''): HTMLButtonElement {
+  private squadButton(side: Side, card: Card | null): HTMLButtonElement {
     const b = document.createElement('button');
     b.className = 'add sq-add';
-    b.textContent = `${squadNumber(side)}${suffix}`;
+    b.textContent = `${squadNumber(side)}`;
     const faction = this.cb.squadAllegiance(side).faction;
     if (faction) {
       b.classList.add('has-faction');
@@ -327,8 +328,10 @@ export class Roster {
         // and 5.4.2 calls these commander actions rather than Units, so they
         // join any squad. Passing no card skips the faction test. Only one
         // copy of each may be purchased (FAQ P2), so a held card's button
-        // turns into its own remover rather than offering a second copy.
-        const b = this.squadButton(side, null, n ? ' ✓' : '');
+        // turns into its own remover rather than offering a second copy. Held
+        // is said by the colour alone (styles.css `.has`): a mark beside the
+        // number moved the row's text.
+        const b = this.squadButton(side, null);
         if (n) b.classList.add('has');
         if (!b.classList.contains('off-faction')) {
           b.title = n
@@ -483,7 +486,7 @@ export class Roster {
       mineFirst(mechList).map((p) => ({
         id: p.id, name: p.name, tag: isBuiltInPreset(p.id) ? 'preset' : 'saved',
         points: loadoutPoints(this.data, p.mech), faction: loadoutFaction(this.data, p.mech),
-        chosen: p.id === this.presetId, removable: !isBuiltInPreset(p.id),
+        chosen: p.id === this.presetId,
       })),
       'None saved yet.',
       (id) => {
@@ -498,13 +501,7 @@ export class Roster {
         void (async () => {
           const found = loadMechPresets().find((p) => p.id === id);
           if (!found) return;
-          const ok = await confirmDialog({
-            title: `Delete “${found.name}”?`,
-            body: 'This only removes the saved build. Anything already on the board stays.',
-            confirmLabel: 'Delete',
-            danger: true,
-          });
-          if (!ok) return;
+          if (!(await this.confirmRemove(found.name, isBuiltInPreset(found.id), 'build'))) return;
           deleteMechPreset(found.id);
           if (this.presetId === found.id) this.presetId = '';
           this.render();
@@ -627,7 +624,7 @@ export class Roster {
       mineFirst(squadList).map((q) => ({
         id: q.id, name: q.name, tag: `${blurb(q)}${isBuiltInSquad(q.id) ? ' · preset' : ''}`,
         points: savedSquadPoints(this.data, q), faction: q.mechs[0] ? loadoutFaction(this.data, q.mechs[0].loadout) : null,
-        chosen: q.id === this.squadId, removable: !isBuiltInSquad(q.id),
+        chosen: q.id === this.squadId,
       })),
       'None saved yet.',
       (id) => {
@@ -639,13 +636,7 @@ export class Roster {
         void (async () => {
           const found = loadSquads().find((q) => q.id === id);
           if (!found) return;
-          const ok = await confirmDialog({
-            title: `Delete “${found.name}”?`,
-            body: 'This only removes the saved squad. Anything already on the board stays.',
-            confirmLabel: 'Delete',
-            danger: true,
-          });
-          if (!ok) return;
+          if (!(await this.confirmRemove(found.name, isBuiltInSquad(found.id), 'squad'))) return;
           deleteSquad(found.id);
           if (this.squadId === found.id) this.squadId = '';
           this.render();
@@ -657,8 +648,18 @@ export class Roster {
         run: () => { void this.cb.onSaveSquad?.().then(() => this.render()); },
       });
     // The two libraries read as one, so the squads list sits right under the
-    // builds, and the add buttons follow with room to breathe.
-    wrap.append(squads, btns, squad);
+    // builds, and the add buttons follow with room to breathe. Under them, as
+    // on the pad, the way back for the built-in starters put away.
+    wrap.append(squads);
+    const hidden = hiddenBuiltIns().length;
+    if (hidden) {
+      const back = document.createElement('button');
+      back.className = 'roster-restore';
+      back.textContent = `Show the built-in starters again (${hidden})`;
+      back.addEventListener('click', () => { restoreBuiltIns(); this.render(); });
+      wrap.append(back);
+    }
+    wrap.append(btns, squad);
 
     this.body.appendChild(wrap);
   }
@@ -667,8 +668,9 @@ export class Roster {
   // how much each costs ... match the UI of our PAD setup"): the pad's folds
   // (pad.ts savedHtml) in the shared list rows (ui.css): each row tinted with
   // its faction, its name, what it is and its points. A row loads it; the
-  // circle removes a saved one, never a shipped one. Open or shut is kept
-  // while the page is.
+  // circle removes it, a built-in starter by putting it away as the pad does
+  // (builtins.ts; OTTO: "there was no x like there is on pad to hide/remove the
+  // preset units or squads"). Open or shut is kept while the page is.
   private savedFold(
     key: 'mechs' | 'squads', title: string, rows: SavedRow[], empty: string,
     onPick: (id: string) => void, onRemove: (id: string) => void,
@@ -683,7 +685,7 @@ export class Roster {
         <span class="ui-row-meta">${escAttr(r.tag)}</span>
         <span class="ui-row-meta saved-pts">${r.points}</span>
         <span class="ui-go" aria-hidden="true">›</span>
-        ${r.removable ? `<button class="ui-x" data-remove="${escAttr(r.id)}" title="Delete ${escAttr(r.name)}" aria-label="Delete ${escAttr(r.name)}">✕</button>` : ''}
+        <button class="ui-x" data-remove="${escAttr(r.id)}" title="Remove ${escAttr(r.name)}" aria-label="Remove ${escAttr(r.name)}">✕</button>
       </li>`).join('');
     fold.innerHTML = `<summary><span>${escAttr(title)}</span><b class="ui-badge">${rows.length}</b></summary>
       ${rows.length ? `<ul class="ui-list roster-saved">${items}</ul>` : `<p class="dim">${escAttr(empty)}</p>`}
@@ -702,6 +704,21 @@ export class Roster {
     }
     fold.querySelector('.preset-save')!.addEventListener('click', save.run);
     return fold;
+  }
+
+  // The ask before a row goes, in the pad's words (pad.ts 'preset-del'): a
+  // saved one is deleted; a built-in starter is put away, and the link under
+  // the lists brings the starters back.
+  private confirmRemove(name: string, builtIn: boolean, what: 'build' | 'squad'): Promise<boolean> {
+    return confirmDialog({
+      title: `Remove “${name}”?`,
+      body: builtIn
+        ? 'The built-in starter is put away, here and on your account. A link under the lists brings the starters back.'
+        : `The saved ${what} is removed from this device and your account. Anything already on the board stays.`,
+      confirmLabel: 'Remove',
+      cancelLabel: 'Keep',
+      danger: !builtIn,
+    });
   }
 
   private pointsText(): string {
