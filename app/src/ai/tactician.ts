@@ -27,7 +27,7 @@
 // is worth can be measured by itself (section 8). With all of them off it is
 // the Brawler's fighter with a different price list.
 import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, ZoneView } from '../seat';
-import type { Choice, Policy } from './policy';
+import type { Choice, Policy, Weighing } from './policy';
 import {
   apart, attacking, brawlerPolicy, couldStrike, declare, endOf, facingAt, facingOf, foesOf, hitLocation, lockedAt, percent, reaches, ready, reroll,
   same, standing, strikers, surplus, unitOf, type Grid, type Road, type Worth,
@@ -2748,6 +2748,24 @@ function reasonOf(p: Plan, stay: Plan): string {
 const told = (p: Plan): string =>
   `worth ${worthOf(p).toFixed(2)} (now ${p.now.toFixed(2)}, next ${p.next.toFixed(2)}, mission ${p.mission.toFixed(2)}, cost ${p.cost.toFixed(2)}${p.risk > 0.005 ? `, ${percent(p.risk)} to be lost` : ''})`;
 
+// WHAT IT WEIGHED, for a player watching it think (OTTO, 2026-10-05: "a
+// History or Thinking tab ... where I can watch how the computer chooses"):
+// the plan it chose first, then the best of the others it priced, each in a
+// player's words with what it was worth. Read off the plans already weighed;
+// nothing here is asked of the table, and nothing changes what is chosen.
+const CONSIDERED = 4;
+function planLabel(p: Plan): string {
+  const walk = p.option ? `${p.option.label}${p.via ? `, then ${p.via.label}` : ''}` : '';
+  const deed = p.deed?.option.label;
+  return walk && deed ? `${walk}, then ${deed}` : walk || deed || 'Stay where it is';
+}
+function consideredOf(best: Plan, plans: Plan[]): Weighing[] {
+  const others = plans.filter((p) => p.priced && p !== best).sort((a, b) => worthOf(b) - worthOf(a)).slice(0, CONSIDERED - 1);
+  return [best, ...others].map((p) => ({
+    label: planLabel(p), worth: worthOf(p), parts: { now: p.now, next: p.next, mission: p.mission, shape: p.shape, cost: p.cost, risk: p.risk },
+  }));
+}
+
 function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Memo): Ctx | null {
   const me = unitOf(view, d.unit);
   if (!me) return null;
@@ -2834,11 +2852,12 @@ function* activation(d: Decision, view: SeatView, w: Weights, skills: Skills, me
     if (bought) return bought;
   }
   const { best, stay } = found;
+  const considered = consideredOf(best, found.plans);
   if (best.option) {
     const then = best.via ? `and then ${best.via.label}; ` : '';
-    return { option: best.option.id, reason: reasonOf(best, stay), score: worthOf(best), why: `${then}${best.deed ? `from there, ${best.deed.why}; ` : ''}${told(best)}` };
+    return { option: best.option.id, reason: reasonOf(best, stay), score: worthOf(best), why: `${then}${best.deed ? `from there, ${best.deed.why}; ` : ''}${told(best)}`, considered };
   }
-  if (best.deed) return { option: best.deed.option.id, reason: best.deed.reason, score: best.deed.value, why: `${best.deed.why}; ${told(best)}` };
+  if (best.deed) return { option: best.deed.option.id, reason: best.deed.reason, score: best.deed.value, why: `${best.deed.why}; ${told(best)}`, considered };
   // Nothing to do and nowhere better to be. A Projectile's own Delayed Action
   // with nothing to take is resolved; Link is restored; the activation ends.
   const spent = d.options.find((o) => kindOf(o) === 'detonate' && !o.run);
@@ -2849,9 +2868,9 @@ function* activation(d: Decision, view: SeatView, w: Weights, skills: Skills, me
   }
   // A Black Box in its Grid is picked up as the activation ends.
   const take = skills.mission ? d.options.find((o) => o.tags.includes('end') && o.tags.includes('take')) : undefined;
-  if (take) return { option: take.id, reason: 'take_box', score: best.mission, why: `a Black Box underfoot; ${told(best)}` };
+  if (take) return { option: take.id, reason: 'take_box', score: best.mission, why: `a Black Box underfoot; ${told(best)}`, considered };
   const end = d.options.find((o) => o.tags.includes('end'));
-  return end ? { option: end.id, reason: 'end_activation', why: `nothing better to do; ${told(best)}` } : null;
+  return end ? { option: end.id, reason: 'end_activation', why: `nothing better to do; ${told(best)}`, considered } : null;
 }
 
 // AN ACTION TICK BOUGHT (M7.6; FAQ L2): a pilot's Link for a Tick, an

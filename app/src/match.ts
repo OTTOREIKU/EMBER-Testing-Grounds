@@ -36,7 +36,7 @@ import { choiceDialog } from './dialog';
 import { clearNotice, configureNotices, explainOnHold, notify, speakInPlace, type NoticeKind } from './notices';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { animateRemoteMove, clearRangeOverlayFor, detonationHit, ensureHud, offerCoordinationAfterManeuver, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, walking, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, clearRangeOverlayFor, detonationHit, ensureHud, offerCoordinationAfterManeuver, glueAfter, paintThinking, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, walking, type DiceLine, type HudCtx } from './matchhud';
 import { AttackHelper, combatRoleFor, type MirrorAct } from './combat';
 import { spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
@@ -1204,7 +1204,8 @@ function mountSide(): void {
           send({ kind: 'clearDefense', seat: mySeat() ?? 's1' });
         }
         renderCombatIdle();
-        showSideTab(null, 'details');
+        // (A game the player watches keeps the tab they are reading.)
+        if (!solo?.spec.watch) showSideTab(null, 'details');
         render();
       },
       // Unit logs are a freeplay habit; here the turn panel's note carries what
@@ -2572,7 +2573,7 @@ function hudCtx(): HudCtx {
     refresh: () => render(),
     // A game against the computer: nothing to record, no second player to
     // agree an Undo with, and the table is this page's own to start again.
-    ...(solo ? { solo: { again: () => void soloRestart(false), leave: () => { location.href = '../'; } } } : {}),
+    ...(solo ? { solo: { again: () => void soloRestart(false), leave: () => { location.href = '../'; }, watching: solo.spec.watch, thinking: () => solo?.table.thinking() ?? [] } } : {}),
   };
 }
 
@@ -2837,8 +2838,9 @@ function startSolo(): void {
   loopback.open({
     id: SOLO_ROOM,
     seat: spec.human,
-    // Each seat's name on screen: the player's squad, and the computer.
-    names: { [spec.human]: state.sideNames?.[spec.human] || 'Player', [spec.bot]: OPPONENTS[spec.opponent].name } as Record<Side, string>,
+    // Each seat's name on screen: the player's squad, and the computer; in a
+    // game the player watches, a computer in each.
+    names: { [spec.human]: spec.watch ? OPPONENTS[spec.opponent2].name : state.sideNames?.[spec.human] || 'Player', [spec.bot]: OPPONENTS[spec.opponent].name } as Record<Side, string>,
     // One seeded stream for every die the table rolls: a game is its seed and
     // what the player did.
     dice: new Rng(`${spec.seed}:dice`),
@@ -2858,6 +2860,8 @@ function startSolo(): void {
     // What it just did, and why, on the notice line as the other player's
     // move (solo.ts whyLine; M9.2).
     told: (_seat, line) => say('event', line),
+    // What it chose and why, in the Thinking tab.
+    thought: () => paintThinking(),
     // A game the player only watches (?watch=1): the computer in this page's
     // own seat sends through the page's door and rolls the page's dice. The
     // page turns the phase itself when its own ready completes the pair
@@ -2872,7 +2876,7 @@ function startSolo(): void {
   // What a problem report says of this table (the Report button reads the
   // relay's own report): the seed that replays the game, and what the computer
   // last decided.
-  loopback.about = () => ({ game: spec.scenario.id, seed: spec.seed, opponent: spec.opponent, speed: table.speed, computer: table.log.slice(-80) });
+  loopback.about = () => ({ game: spec.scenario.id, seed: spec.seed, opponent: spec.opponent, ...(spec.watch ? { watched: true, opponent2: spec.opponent2 } : {}), speed: table.speed, computer: table.log.slice(-80) });
   // On the dev server only: the game in hand for whoever is testing the page.
   if (import.meta.env.DEV) (window as unknown as { __solo?: unknown }).__solo = { spec, table, state: () => state, refusals: diagRefusals, errors: diagErrors };
   table.start();
@@ -2923,7 +2927,7 @@ function soloBarHtml(): string {
     ${t && !t.over ? `<span class="mc-speeds" role="group" aria-label="How fast the computer plays">${speeds}</span>` : ''}
     ${t && !t.over && !t.trouble && !soloTaken ? `<button class="mc-backbtn ghostbtn" id="mc-solopause" title="${t.paused ? 'Let the computer play on' : 'Hold the computer where it is'}">${t.paused ? 'Resume' : 'Pause'}</button>` : ''}
     ${soloTaken ? '<button class="mc-backbtn" id="mc-sologive" title="Give the seat back to the computer">Hand the seat back</button>' : ''}
-    ${canConcede() && !soloTaken && !t?.over ? '<button class="mc-backbtn ghostbtn" id="mc-concede" title="Give up this game: the computer wins, whatever the score">Concede</button>' : ''}
+    ${canConcede() && !soloTaken && !t?.over && !t?.spec.watch ? '<button class="mc-backbtn ghostbtn" id="mc-concede" title="Give up this game: the computer wins, whatever the score">Concede</button>' : ''}
     ${t ? '<button class="mc-backbtn ghostbtn" id="mc-solorestart" title="Start this game again from the beginning">Restart</button>' : ''}
     <button class="mc-backbtn ghostbtn" id="mc-report" title="Report a problem with this game">Report</button>
     <button class="mc-account mc-menu" id="mc-menu">Menu</button>
@@ -2965,7 +2969,7 @@ function setSoloSpeed(speed: Speed): void {
   // Kept in the address, so a reload and a rematch play at the same speed.
   const { spec } = solo;
   try {
-    history.replaceState(null, '', `./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: spec.seed, speed, opponent: spec.opponent, watch: spec.watch })}`);
+    history.replaceState(null, '', `./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: spec.seed, speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2 })}`);
   } catch { /* an address that cannot be rewritten costs only that */ }
   render();
 }
@@ -2988,7 +2992,7 @@ async function soloRestart(ask = true): Promise<void> {
   }
   const { spec, table } = solo;
   table.stop();
-  location.assign(`./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: Math.floor(Math.random() * 1e9), speed: table.speed, opponent: spec.opponent, watch: spec.watch })}`);
+  location.assign(`./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: Math.floor(Math.random() * 1e9), speed: table.speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2 })}`);
 }
 
 // The computer has stopped and cannot go on by itself: said in plain words,
@@ -3086,6 +3090,10 @@ function render(): void {
       bodyhost.innerHTML = '<div class="mc-stage wide hudmode"></div>';
       host = bodyhost.querySelector('.mc-stage') as HTMLElement;
     }
+    // A game two computers play: the player watches, and what would act for
+    // the page's seat is out of reach (match.css .spectating). The cards, the
+    // side tabs and the board's own views stay in reach.
+    host.classList.toggle('spectating', !!solo?.spec.watch && !soloTaken);
     ensureHud(host, hudCtx());
   } else {
     const inner = !data

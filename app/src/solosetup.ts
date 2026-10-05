@@ -26,6 +26,10 @@ export interface SoloPick {
   side: Side;
   speed: Speed;
   opponent: string;
+  // Two computers play and the player watches (OTTO, 2026-10-05): the one in
+  // the player's seat is `opponent2`.
+  watch: boolean;
+  opponent2: string;
   // A game of the player's own: the battlefield, the Main Task, each seat's
   // squad (a SoloSquadRow's id) and whether Secondary Tasks are played.
   map: string;
@@ -101,6 +105,8 @@ export function soloPick(data: GameData, kept: unknown, squads: SoloSquadRow[] =
     side: k.side === 's2' ? 's2' : 's1',
     speed: SPEEDS.find((s) => s.id === k.speed)?.id ?? 'normal',
     opponent: RIVALS.find((r) => r.id === k.opponent)?.id ?? RIVAL,
+    watch: k.watch === true,
+    opponent2: RIVALS.find((r) => r.id === k.opponent2)?.id ?? RIVAL,
     map: maps.find((m) => m.id === k.map)?.id ?? maps[0]?.id ?? '',
     mission: (tasks.find((c) => c.id === k.mission) ?? tasks.find((c) => c.id === USUAL_TASK) ?? tasks[0])?.id ?? '',
     mine: has(k.mine) ? k.mine : usual('builtin:squad-raid-rdl', 0),
@@ -155,28 +161,44 @@ export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadR
     ...games.map((g) => row('game', g.id, soloGameLabel(data, g), !own && g.id === game.id)),
     ...(squads.length ? [row('game', SOLO_OWN, { name: 'Your own game', note: 'any battlefield, Task and squads' }, own)] : []),
   ];
+  // In a game the player watches, the squad on their side of the table is the
+  // one the page shows the game from, and a computer is picked for each.
+  const watch = pick.watch;
+  const yours = watch ? 'The squad you watch from' : 'Your squad';
   const table = own
     ? `<p class="dlg-eyebrow">The table</p>
     <div class="dlg-picks">${opens('map', 'Battlefield', named('map', pick.map).name)}${opens('mission', 'Main Task', named('mission', pick.mission).name)}</div>
-    <p class="dlg-eyebrow">Your squad</p>
+    <p class="dlg-eyebrow">${yours}</p>
     <div class="dlg-picks">${opens('mine', named('mine', pick.mine).name, named('mine', pick.mine).note)}</div>
-    <p class="dlg-eyebrow">The computer's squad</p>
+    <p class="dlg-eyebrow">${watch ? 'The other squad' : 'The computer\'s squad'}</p>
     <div class="dlg-picks">${opens('theirs', named('theirs', pick.theirs).name, named('theirs', pick.theirs).note)}</div>
     <p class="dlg-eyebrow">Secondary Tasks</p>
     <div class="dlg-picks">${row('secondary', 'off', { name: 'Off', note: 'the Main Task alone' }, !pick.secondaries)}${row('secondary', 'on', { name: 'On', note: 'each squad takes one' }, pick.secondaries)}</div>`
-    : `<p class="dlg-eyebrow">Your squad</p>
+    : `<p class="dlg-eyebrow">${yours}</p>
     <div class="dlg-picks">${(['s1', 's2'] as Side[]).map((seat) => row('side', seat, soloSquadLabel(data, game, seat), seat === pick.side)).join('')}</div>`;
+  const levels = (group: string, chosen: string): string =>
+    `<div class="dlg-picks">${RIVALS.map((r) => row(group, r.id, { name: r.name, note: r.note }, r.id === chosen)).join('')}</div>`;
+  const nameOf = (seat: Side): string => (own ? named(seat === 's1' ? 'mine' : 'theirs', seat === 's1' ? pick.mine : pick.theirs).name : soloSquadLabel(data, game, seat).name);
+  const near: Side = own ? 's1' : pick.side;
+  const far: Side = near === 's1' ? 's2' : 's1';
+  const computers = watch
+    ? `<p class="dlg-eyebrow">${esc(nameOf(near))} is played by</p>${levels('rival2', pick.opponent2)}
+    <p class="dlg-eyebrow">${esc(nameOf(far))} is played by</p>${levels('rival', pick.opponent)}`
+    : `<p class="dlg-eyebrow">The computer is</p>${levels('rival', pick.opponent)}`;
   return `<h3 class="dlg-title">Play the computer</h3>
-    <p class="dlg-body">A full game against a computer opponent, on the Match Centre's table. It needs no account and no connection.${own ? ' The computer plays any squad you give it; it does not yet use every special Action a card prints.' : ''}</p>
+    <p class="dlg-body">${watch
+    ? 'Two computers play a full game on the Match Centre\'s table while you watch. The Thinking tab shows what each one chose and why.'
+    : `A full game against a computer opponent, on the Match Centre's table. It needs no account and no connection.${own ? ' The computer plays any squad you give it; it does not yet use every special Action a card prints.' : ''}`}</p>
     <p class="dlg-eyebrow">The game</p>
     <div class="dlg-picks">${offered.join('')}</div>
+    <p class="dlg-eyebrow">Who plays</p>
+    <div class="dlg-picks">${row('who', 'you', { name: 'You', note: 'against the computer' }, !watch)}${row('who', 'watch', { name: 'Two computers', note: 'you watch' }, watch)}</div>
     ${table}
-    <p class="dlg-eyebrow">The computer is</p>
-    <div class="dlg-picks">${RIVALS.map((r) => row('rival', r.id, { name: r.name, note: r.note }, r.id === pick.opponent)).join('')}</div>
-    <p class="dlg-eyebrow">The computer plays at</p>
+    ${computers}
+    <p class="dlg-eyebrow">${watch ? 'They play at' : 'The computer plays at'}</p>
     <div class="dlg-picks">${SPEEDS.map((s) => row('speed', s.id, { name: s.name, note: s.note }, s.id === pick.speed)).join('')}</div>
     <div class="dlg-actions">
-      <button class="dlg-primary" data-ok data-autofocus>Start the game</button>
+      <button class="dlg-primary" data-ok data-autofocus>${watch ? 'Start watching' : 'Start the game'}</button>
       <button data-cancel>Cancel</button>
     </div>`;
 }
@@ -197,7 +219,7 @@ export function soloOwnGame(pick: SoloPick, squads: SoloSquadRow[]): SoloOwn | n
 // Where Start goes: the Match Centre's page, asked for this game.
 export function soloAddress(pick: SoloPick): string {
   const own = pick.scenario === SOLO_OWN;
-  return `match/${soloQuery({ scenario: pick.scenario, side: own ? 's1' : pick.side, speed: pick.speed, opponent: pick.opponent })}`;
+  return `match/${soloQuery({ scenario: pick.scenario, side: own ? 's1' : pick.side, speed: pick.speed, opponent: pick.opponent, watch: pick.watch, opponent2: pick.opponent2 })}`;
 }
 
 // One of a game's own lists, in a dialog of its own over the setup: the row
@@ -251,6 +273,8 @@ export function openSoloSetup(data: GameData, go: (address: string) => void): vo
       else if (b.dataset.side) { pick.side = b.dataset.side === 's2' ? 's2' : 's1'; pressed = `[data-side="${pick.side}"]`; }
       else if (b.dataset.speed) { pick.speed = SPEEDS.find((s) => s.id === b.dataset.speed)?.id ?? pick.speed; pressed = `[data-speed="${pick.speed}"]`; }
       else if (b.dataset.rival) { pick.opponent = RIVALS.find((r) => r.id === b.dataset.rival)?.id ?? pick.opponent; pressed = `[data-rival="${pick.opponent}"]`; }
+      else if (b.dataset.rival2) { pick.opponent2 = RIVALS.find((r) => r.id === b.dataset.rival2)?.id ?? pick.opponent2; pressed = `[data-rival2="${pick.opponent2}"]`; }
+      else if (b.dataset.who) { pick.watch = b.dataset.who === 'watch'; pressed = `[data-who="${pick.watch ? 'watch' : 'you'}"]`; }
       else if (b.dataset.secondary) { pick.secondaries = b.dataset.secondary === 'on'; pressed = `[data-secondary="${pick.secondaries ? 'on' : 'off'}"]`; }
       else if (b.dataset.open) {
         const what = b.dataset.open as 'map' | 'mission' | 'mine' | 'theirs';

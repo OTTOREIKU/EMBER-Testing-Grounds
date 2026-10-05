@@ -20,7 +20,7 @@ import { eagerPolicy } from './ai/eager';
 import { legalPolicy } from './ai/legal';
 import { tacticianPolicy } from './ai/tactician';
 import { recruitPolicy, veteranPolicy } from './ai/levels';
-import type { Policy } from './ai/policy';
+import type { Choice, Policy, Weighing } from './ai/policy';
 import { Rng } from './ai/rng';
 import type { LoopbackRelay } from './loopback';
 import { newSalt, sealTactic } from './secrecy';
@@ -66,8 +66,11 @@ export interface SoloSpec {
   seed: number;
   speed: Speed;
   opponent: string;
-  // The player's own seat is played by a computer too, and the player watches.
+  // The player's own seat is played by a computer too, and the player watches:
+  // that computer is `opponent2` (OTTO, 2026-10-05: "load a second computer in
+  // to fight it").
   watch: boolean;
+  opponent2: string;
 }
 
 const other = (s: Side): Side => (s === 's1' ? 's2' : 's1');
@@ -106,7 +109,8 @@ export function soloSpec(data: GameData, ask: Record<string, string>, newSeed: (
   const seed = ask.seed !== undefined && Number.isSafeInteger(n) && n >= 0 ? n : newSeed();
   const speed = SPEEDS.find((x) => x.id === ask.pace)?.id ?? 'normal';
   const opponent = ask.ai && OPPONENTS[ask.ai] ? ask.ai : OPPONENT;
-  return { scenario, squads, human, bot: other(human), seed, speed, opponent, watch: ask.watch === '1' };
+  const opponent2 = ask.ai2 && OPPONENTS[ask.ai2] ? ask.ai2 : OPPONENT;
+  return { scenario, squads, human, bot: other(human), seed, speed, opponent, watch: ask.watch === '1', opponent2 };
 }
 
 // What the host sends to set the table before either seat is taken: the
@@ -241,6 +245,8 @@ export interface SoloHost {
   // A computer seat has done something the other squad sees, and says why, in
   // a line (`whyLine`, M9.2).
   told?(seat: Side, line: string): void;
+  // What the computers have thought has grown or changed (`thinking`).
+  thought?(): void;
   // The page's own door and dice, for a game the player only watches: the
   // computer in the page's seat sends as a press on the page does.
   page?: {
@@ -328,16 +334,83 @@ export function whyLine(d: Decision, o: Option, reason: string | undefined, who?
 // played: a question about a card that ended in a pass would tell which card
 // the computer holds.
 export function publicDecisions(log: readonly LogEntry[], state: GameState): LogEntry[] {
+  return log.filter((e) => seenByOther(e, state)).map((e) => ({ ...e }));
+}
+
+// Whether the other squad has seen this answer given (`publicDecisions`).
+function seenByOther(e: { kind: string; option: string; round: number }, state: GameState): boolean {
   const round = state.round?.n ?? 0;
   const phase = state.round?.phase ?? 0;
-  const planning = PHASES.indexOf('Planning');
-  return log.filter((e) => {
-    if (e.kind === 'planning.dial') return e.round < round || (e.round === round && phase > planning);
-    if (e.kind === 'planning.commit' || e.kind === 'setup.secondary' || e.kind.startsWith('setup.designate')) return false;
-    if (e.kind === 'tactic.after' || e.kind === 'tactic.end') return e.option.startsWith('tactic:');
-    return true;
-  }).map((e) => ({ ...e }));
+  if (e.kind === 'planning.dial') return e.round < round || (e.round === round && phase > PHASES.indexOf('Planning'));
+  if (e.kind === 'planning.commit' || e.kind === 'setup.secondary' || e.kind.startsWith('setup.designate')) return false;
+  if (e.kind === 'tactic.after' || e.kind === 'tactic.end') return e.option.startsWith('tactic:');
+  return true;
 }
+
+// ---------- what the computer is thinking ----------
+
+// WHAT A COMPUTER CHOSE AND WHY (OTTO, 2026-10-05: "some sort of History or
+// Thinking tab that becomes visible where I can watch how the computer chooses
+// to make moves and follow along with what it's doing"). Every answer worth a
+// line, told as it is chosen (`given` null) and marked once the table has it.
+export interface Thought {
+  n: number;
+  seat: Side;
+  round: number;
+  phase: number;
+  kind: string;
+  option: string;
+  // The unit the question was about, by name, where there is one.
+  unit?: string;
+  label: string;
+  // Why, in a few plain words, where there are any.
+  because?: string;
+  // The policy's own words, and the plans it weighed, the one chosen first.
+  why?: string;
+  considered?: Weighing[];
+  given: 'done' | 'refused' | null;
+}
+
+// The words for the reasons the notice line has none for, which only the
+// Thinking tab says.
+const THOUGHT: Record<string, string> = Object.assign(Object.create(null) as Record<string, string>, {
+  end_activation: 'nothing better to do', delayed_action: 'its Delayed Action',
+  free_reroll: 'the reroll costs nothing', focus_by_value: 'worth the reroll', paid_reroll: 'worth the reroll', reroll_value: 'worth the reroll',
+  reroll_blanks: 'the dice that rolled nothing', hit_location: 'the Part worth most to hit', declare_parry: 'to parry the blow',
+  dial_by_plan: 'for its plan this round', deploy_by_value: 'where it does most', deploy_toward_enemy: 'toward the enemy',
+  riposte_by_value: 'to strike back', overwatch_shot: 'to shoot as it passes', steer_by_value: 'worth more to its squad there',
+  shove_by_value: 'worth more to its squad there', shove_turned: 'its back to this squad', blast_by_value: 'where it does most',
+  mine_toward_enemy: 'toward the enemy', box_place: 'where it does most', tactic_hit_and_run: 'better placed there',
+  tactic_restart: 'a Mech in Shutdown acts again',
+});
+
+function becauseOf(reason: string | undefined): string | undefined {
+  if (!reason) return undefined;
+  if (Object.prototype.hasOwnProperty.call(BECAUSE, reason)) return BECAUSE[reason];
+  return Object.prototype.hasOwnProperty.call(THOUGHT, reason) ? THOUGHT[reason] : undefined;
+}
+
+// An answer worth a line: to a question that had more than one, and not a step
+// let go by. A Ready is a line only where a Tactics Card is played with it.
+export function worthAThought(d: Decision, o: Option): boolean {
+  if (d.options.length < 2 || o.tags.includes('pass')) return false;
+  if (d.kind === 'phase.ready') return o.tags.includes('tactic');
+  return true;
+}
+
+// What the page's Thinking tab may show. In a game the player watches, both
+// computers' every thought. In a game the player plays, the computer's answers
+// once given and only what the player has seen it do (`seenByOther`), in a
+// line: never what else it weighed, which could name a card it holds.
+export function thoughtsFor(thoughts: readonly Thought[], state: GameState, o: { watch: boolean; bot: Side }): Thought[] {
+  if (o.watch) return thoughts.map((t) => ({ ...t }));
+  return thoughts
+    .filter((t) => t.seat === o.bot && t.given === 'done' && seenByOther(t, state))
+    .map(({ why: _why, considered: _considered, ...t }) => ({ ...t }));
+}
+
+// How many thoughts the table keeps: a whole game's worth of turns.
+const THOUGHTS = 400;
 
 // How long the computer may hold the page's thread before it hands it back in
 // the middle of a decision: under one drawn frame, so nothing on the page is
@@ -382,6 +455,9 @@ export class SoloTable {
   // How many rollbacks the table has had: one more is a board replaced under
   // the computer, which forgets what it remembered of the old one (M9.4).
   private rollbacks = 0;
+  // What each computer chose and why, newest last (`Thought`).
+  private readonly thoughts: Thought[] = [];
+  private thoughtN = 0;
 
   // THE PAGE'S THREAD, handed back to it in the middle of a decision: at once
   // while the computer has held it for less than a frame, and by a timer's
@@ -400,8 +476,10 @@ export class SoloTable {
   constructor(private readonly h: SoloHost, readonly spec: SoloSpec, hands: SoloHands['held'] = {}) {
     this.speed = spec.speed;
     const { data } = h;
-    const policy = OPPONENTS[spec.opponent].policy;
+    // Each computer plays at its own level: the page's seat, in a game the
+    // player watches, at the second one picked.
     const seated = (seat: Side, send: (cmd: Command) => CheckResult, roll: Host['roll']): Driver => {
+      const policy = OPPONENTS[seat === spec.bot ? spec.opponent : spec.opponent2]?.policy ?? OPPONENTS[OPPONENT].policy;
       const driver = new Driver(seat, {
         data,
         state: () => h.state(),
@@ -409,6 +487,7 @@ export class SoloTable {
         roll,
         pace: (d, o, think) => this.pace(seat, d, o, think),
         settled: (d, o) => this.rest(d, o),
+        chose: (d, o, why) => this.chose(seat, d, o, why),
         // A long decision is worked out in steps, and the page has its thread
         // back between them: a frame is drawn, a click is heard. A step may be
         // a millisecond's work and a timer's turn is four, so the thread is
@@ -511,6 +590,39 @@ export class SoloTable {
     return this.driver.log;
   }
 
+  // What the page's Thinking tab may show, newest last (`thoughtsFor`).
+  thinking(): Thought[] {
+    return thoughtsFor(this.thoughts, this.h.state(), { watch: this.spec.watch, bot: this.spec.bot });
+  }
+
+  // An answer chosen, told before the moment is taken over it.
+  private chose(seat: Side, d: Decision, o: Option, c: Pick<Choice, 'why' | 'reason' | 'considered'>): void {
+    if (!worthAThought(d, o)) return;
+    const state = this.h.state();
+    const unit = d.unit === undefined ? undefined : state.tokens.find((t) => t.uid === d.unit)?.label;
+    const because = becauseOf(c.reason);
+    // (Setting the table up is no round's: the Thinking tab files it under Setup.)
+    const setup = d.kind.startsWith('setup.');
+    this.thoughts.push({
+      n: ++this.thoughtN, seat, round: setup ? 0 : state.round?.n ?? 0, phase: setup ? 0 : state.round?.phase ?? 0, kind: d.kind, option: o.id,
+      ...(unit ? { unit } : {}), label: o.label, ...(because ? { because } : {}), ...(c.why ? { why: c.why } : {}),
+      ...(c.considered?.length ? { considered: c.considered } : {}), given: null,
+    });
+    if (this.thoughts.length > THOUGHTS) this.thoughts.shift();
+    this.h.thought?.();
+  }
+
+  // And what became of it: given, refused by the table, or never given (the
+  // question changed while the computer took its moment).
+  private gave(seat: Side, given: 'done' | 'refused' | null, option?: string): void {
+    let at = this.thoughts.length - 1;
+    while (at >= 0 && !(this.thoughts[at].seat === seat && this.thoughts[at].given === null)) at -= 1;
+    if (at < 0 || (option !== undefined && this.thoughts[at].option !== option)) return;
+    if (given) this.thoughts[at].given = given;
+    else this.thoughts.splice(at, 1);
+    this.h.thought?.();
+  }
+
   wake(): void {
     if (this.stopped || this.held || this.trouble || this.over) return;
     for (const r of this.runners) {
@@ -543,6 +655,9 @@ export class SoloTable {
         r.shown = false;
         const step = await r.driver.step();
         if (this.stopped) return;
+        if (step.kind === 'acted') this.gave(r.seat, 'done', step.option.id);
+        else if (step.kind === 'refused') this.gave(r.seat, 'refused', step.option.id);
+        else if (step.kind === 'moot') this.gave(r.seat, null);
         if (step.kind === 'acted') {
           r.refusals = 0;
           const unit = step.decision.unit;

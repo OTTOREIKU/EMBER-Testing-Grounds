@@ -95,23 +95,25 @@ export function ownGame(raw: unknown): SoloOwn | null {
 }
 
 // What a page's address asks for, before the card data is in:
-// ?solo=<scenario id, or own>&side=<faction, or s1 / s2>&seed=<n>&pace=<speed>&ai=<opponent>&watch=1
+// ?solo=<scenario id, or own>&side=<faction, or s1 / s2>&seed=<n>&pace=<speed>&ai=<opponent>&watch=1&ai2=<opponent>
+// (`ai2`: in a game the player watches, the computer in the page's own seat.)
 export function soloAsk(search: string): Record<string, string> | null {
   const q = new URLSearchParams(search);
   const id = q.get('solo');
   if (!id) return null;
   const out: Record<string, string> = { solo: id };
-  for (const k of ['side', 'seed', 'pace', 'ai', 'watch']) { const v = q.get(k); if (v) out[k] = v; }
+  for (const k of ['side', 'seed', 'pace', 'ai', 'watch', 'ai2']) { const v = q.get(k); if (v) out[k] = v; }
   return out;
 }
 
 // The address of a game, for the page that offers one and for a rematch. It
 // says only what is not the default.
-export function soloQuery(o: { scenario: string; side: string; seed?: number; speed?: Speed; opponent?: string; watch?: boolean }): string {
+export function soloQuery(o: { scenario: string; side: string; seed?: number; speed?: Speed; opponent?: string; watch?: boolean; opponent2?: string }): string {
   const q = new URLSearchParams({ solo: o.scenario, side: o.side });
   if (o.seed !== undefined) q.set('seed', String(o.seed));
   if (o.speed && o.speed !== 'normal') q.set('pace', o.speed);
   if (o.opponent && o.opponent !== RIVAL) q.set('ai', o.opponent);
   if (o.watch) q.set('watch', '1');
+  if (o.watch && o.opponent2 && o.opponent2 !== RIVAL) q.set('ai2', o.opponent2);
   return `?${q.toString()}`;
 }

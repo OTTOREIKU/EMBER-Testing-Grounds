@@ -21,7 +21,7 @@ import type { GameState, Side, Timing } from '../types';
 import { BotCombat, type AttackArgs } from './botcombat';
 import { BotContest } from './botcontest';
 import { Odds } from './odds';
-import type { Policy } from './policy';
+import type { Choice, Policy } from './policy';
 import type { Rng } from './rng';
 
 // The table a driver plays at, as far as it can touch it.
@@ -49,6 +49,10 @@ export interface Host {
   // moment: a slow machine's thought is not waited out a second time.
   pace?(decision: Decision, option: Option, think?: number): Promise<void>;
   settled?(decision: Decision, option: Option): Promise<void>;
+  // The answer chosen, and why, told before the moment is taken over it: for a
+  // page that shows a player what the computer is thinking. Whether it is then
+  // given is what `step` answers.
+  chose?(decision: Decision, option: Option, why: Pick<Choice, 'why' | 'reason' | 'score' | 'considered'>): void;
   // A pause in the middle of a decision: a page hands its thread to whatever
   // else is waiting on it (a frame to draw, a click) and comes back. A policy
   // that can work in steps (`Policy.ponder`) is given it between them, so a
@@ -426,6 +430,8 @@ export class Driver {
     let pick = settled?.id;
     let why = settled ? 'settled by the table' : '';
     let reason = '';
+    let score: number | undefined;
+    let considered: Choice['considered'];
     if (!pick && times > PATIENCE) {
       pick = narrowed.fallback;
       why = 'the safe answer (asked this too many times)';
@@ -445,6 +451,8 @@ export class Driver {
         pick = choice.option;
         why = choice.why ?? '';
         reason = choice.reason ?? '';
+        score = choice.score;
+        considered = choice.considered;
       } catch (err) {
         // A policy that fails costs the seat its judgement, never its turn.
         pick = narrowed.fallback;
@@ -459,6 +467,8 @@ export class Driver {
     // The host's pace: a moment before the answer, and the table at rest
     // after it. Nothing is sent while either is pending.
     let chosen = option;
+    // (The policy's own answer: what it weighed belongs to the option it named.)
+    this.host.chose?.(d, option, { why, reason, ...(option.id === pick ? { score, considered } : {}) });
     if (this.host.pace) {
       await this.host.pace(d, option, think);
       // The table may have moved on meanwhile, so the question is asked again

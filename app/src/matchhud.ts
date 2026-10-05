@@ -27,6 +27,7 @@ import { gameEndsThisRound, lowValueOf, previewScore, zoneCellsOf } from './scor
 import type { NoticeKind } from './notices';
 import { firewatchOn, targetStatusGrant, targetStatusTargets, linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
 import * as turn from './turn';
+import type { Thought } from './solo';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -98,7 +99,7 @@ export interface HudCtx {
   // arc or sight (4.9), and an Explosion grants none and ignores facing (4.7.6).
   startAttack(uid: number, actionId: string, targetUid: number, mode?: 'attack' | 'intercept' | 'explosion', opts?: { twoHandedDeclined?: boolean; charged?: boolean; chargeChoice?: string }): void;
   // Brings a side tab forward by name.
-  showTab(name: 'squad' | 'details'): void;
+  showTab(name: SideTab): void;
   // The printed faces, for drawing the dice a roll landed on.
   diceData: DiceData | null;
   // Keeps the finished game on both accounts. Resolves to null when it landed,
@@ -107,8 +108,9 @@ export interface HudCtx {
   refresh(): void;
   // A game against the computer (match.ts startSolo): there is nothing to
   // record and nobody to agree an Undo with, and the game is this page's own
-  // to play again or to leave.
-  solo?: { again(): void; leave(): void };
+  // to play again or to leave. `thinking` is what the Thinking tab shows
+  // (solo.ts thoughtsFor), and `watching` a game two computers play.
+  solo?: { again(): void; leave(): void; watching?: boolean; thinking?(): Thought[] };
 }
 
 function esc(s: string): string {
@@ -1185,12 +1187,19 @@ function renderBoard(ctx: HudCtx): void {
 // ---------- the turn panel: one question at a time ----------
 
 function head(eyebrow: string, title: string, sub: string, mine: boolean): string {
+  // In a game two computers play, the page's seat is a computer's move, not
+  // the player's (`watchedSeat`).
+  const said = watchedSeat && eyebrow === 'Your move' ? `${squadLabel(watchedSeat)} to move` : eyebrow;
   return `<div class="tp-head">
-    <div class="tp-eyebrow${mine ? ' mine' : ''}">${esc(eyebrow)}</div>
+    <div class="tp-eyebrow${mine ? ' mine' : ''}">${esc(said)}</div>
     <div class="tp-title">${title}</div>
     ${sub ? `<div class="tp-sub">${sub}</div>` : ''}
   </div>`;
 }
+
+// The page's own seat in a game two computers play (set by ensureHud), else
+// null.
+let watchedSeat: Side | null = null;
 
 // The Black Boxes placed at setup, alternately from the First Player (5.2.1;
 // ruling I23): the squad whose turn it is picks a Box, then a Grid of its zone
@@ -5708,11 +5717,94 @@ function secOverlay(ctx: HudCtx): string {
 // an attack starting has to put the Combat tab in front by itself.
 let sideTabHost: HTMLElement | null = null;
 
-export function showSideTab(host: HTMLElement | null, name: 'squad' | 'details'): void {
+export type SideTab = 'squad' | 'details' | 'thinking';
+
+export function showSideTab(host: HTMLElement | null, name: SideTab): void {
   const root = host ?? sideTabHost;
   if (!root) return;
   for (const x of root.querySelectorAll<HTMLElement>('.hudtab')) x.classList.toggle('active', x.dataset.sidetab === name);
   for (const s of root.querySelectorAll<HTMLElement>('.side-tab')) s.classList.toggle('active', s.id === `tab-${name}`);
+  if (name === 'thinking') paintThinking();
+}
+
+// THE THINKING TAB (a game against the computer; OTTO, 2026-10-05: "some sort
+// of History or Thinking tab that becomes visible where I can watch how the
+// computer chooses to make moves and follow along"): what each computer chose
+// and why, the newest first, under the round and phase it was chosen in. In a
+// game the player watches, a turn also lists the plans it weighed and what
+// each was worth to it, and the answer it is about to give is marked.
+let thinkingKey = '';
+
+function signed(x: number): string {
+  return `${x < 0 ? '−' : ''}${Math.abs(x).toFixed(2)}`;
+}
+
+// The terms of the plan chosen, the ones that came to anything.
+function partsLine(p: NonNullable<NonNullable<Thought['considered']>[number]['parts']>): string {
+  const terms: [string, number][] = [['now', p.now], ['next turn', p.next], ['mission', p.mission], ['position', p.shape], ['enemy fire', -p.cost]];
+  const said = terms.filter(([, v]) => Math.abs(v) >= 0.005).map(([k, v]) => `${k} ${signed(v)}`);
+  if (p.risk >= 0.005) said.push(`${Math.round(p.risk * 100)}% chance to be lost`);
+  return said.join(' · ');
+}
+
+export function thinkingHtml(list: readonly Thought[], watching: boolean): string {
+  const lead = watching
+    ? 'What each computer chose and why, newest first. A number is what that plan was worth to it, in Victory Points.'
+    : 'What the computer did and why, newest first.';
+  if (!list.length) return `<p class="th-lead">${lead}</p><p class="th-empty">Nothing yet.</p>`;
+  const groups: { head: string; rows: Thought[] }[] = [];
+  for (let i = list.length - 1; i >= 0; i--) {
+    const t = list[i];
+    const head = t.round ? `Round ${t.round} · ${PHASES[t.phase] ?? ''}` : 'Setup';
+    const g = groups[groups.length - 1];
+    if (g && g.head === head) g.rows.push(t);
+    else groups.push({ head, rows: [t] });
+  }
+  const row = (t: Thought): string => {
+    const who = t.unit ?? squadLabel(t.seat);
+    // A label that starts with the unit's name says it once, in front.
+    const bare = (label: string): string => (t.unit && label.startsWith(`${t.unit}: `) ? label.slice(t.unit.length + 2) : label);
+    const what = bare(t.label);
+    const alts = watching && t.considered?.length
+      ? `<ol class="th-alts">${t.considered.map((c, i) => `<li${i === 0 ? ' class="chosen"' : ''}><span>${esc(bare(c.label))}</span><em>${signed(c.worth)}</em></li>`).join('')}</ol>`
+        + (t.considered[0].parts ? `<div class="th-parts">${esc(partsLine(t.considered[0].parts))}</div>` : '')
+      : '';
+    // Its own words, less the sum the list above already shows, and less the
+    // reason already given in a player's words.
+    const own = watching && t.why ? t.why.replace(/(^|;\s*)worth -?[\d.]+ \([^)]*\)\s*$/, '').replace(/;\s*$/, '').trim() : '';
+    const said = !!t.because && own.toLowerCase().startsWith(t.because.toLowerCase());
+    const why = own && !said ? `<div class="th-why">${esc(own)}</div>` : '';
+    const state = t.given === null ? ' th-now' : t.given === 'refused' ? ' th-refused' : '';
+    return `<li class="th-row${state}"><div class="th-line"><b class="${t.seat}">${esc(who)}</b> ${esc(what)}${t.given === 'refused' ? ' <em>(refused by the table)</em>' : ''}</div>`
+      + `${t.because ? `<div class="th-because">${esc(t.because)}</div>` : ''}${why}${alts}</li>`;
+  };
+  return `<p class="th-lead">${lead}</p>${groups.map((g) => `<p class="th-head">${esc(g.head)}</p><ul class="th-list">${g.rows.map(row).join('')}</ul>`).join('')}`;
+}
+
+// Drawn again only when what it shows has changed: the computers think far
+// more often than the page draws. In a game the player watches it is the tab
+// in front when the game opens.
+let thinkingShown = false;
+export function paintThinking(): void {
+  const host = sideTabHost;
+  const ctx = hudRef;
+  if (!host || !ctx) return;
+  const list = ctx.solo?.thinking?.();
+  const tab = host.querySelector<HTMLElement>('[data-sidetab="thinking"]');
+  if (tab) tab.hidden = !list;
+  if (list && ctx.solo?.watching && !thinkingShown) {
+    thinkingShown = true;
+    showSideTab(host, 'thinking');
+    return;
+  }
+  const body = host.querySelector<HTMLElement>('#thinking-body');
+  // Drawn only while it is the tab in front (`showSideTab` draws it as it
+  // comes forward).
+  if (!body || !list || !host.querySelector('#tab-thinking.active')) return;
+  const key = `${ctx.solo?.watching ? 'w' : 'p'}|${list.map((t) => `${t.n}${t.given ? t.given[0] : '?'}`).join(',')}`;
+  if (key === thinkingKey && body.childElementCount) return;
+  thinkingKey = key;
+  body.innerHTML = thinkingHtml(list, !!ctx.solo?.watching);
 }
 
 // Mounts the HUD once and updates it in place from then on. The board is the
@@ -5720,6 +5812,7 @@ export function showSideTab(host: HTMLElement | null, name: 'squad' | 'details')
 // it must never be torn down by a re-render.
 export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
   hudRef = ctx;
+  watchedSeat = ctx.solo?.watching ? ctx.seat : null;
   if (!host.querySelector('#hud-shell')) {
     // The shell is about to be written from scratch, so #combat-body will be a
     // NEW and empty element. Nothing has to be reset here for the mirror any
@@ -5749,9 +5842,11 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
         <div class="hudtabs">
           <button class="hudtab active" data-sidetab="squad">Squads</button>
           <button class="hudtab" data-sidetab="details">Details</button>
+          <button class="hudtab" data-sidetab="thinking" hidden>Thinking</button>
         </div>
         <section id="tab-squad" class="side-tab active"><div id="squad-body"></div></section>
         <section id="tab-details" class="side-tab"><div id="details-body"></div></section>
+        <section id="tab-thinking" class="side-tab"><div id="thinking-body"></div></section>
       </div>
     </div>
     <!-- The freeplay AttackHelper renders straight into #combat-body, and
@@ -5794,10 +5889,13 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     attachCombatWindow(host);
     ctx.mountSide();
     for (const b of host.querySelectorAll<HTMLElement>('[data-sidetab]')) {
-      b.addEventListener('click', () => showSideTab(host, b.dataset.sidetab as 'squad' | 'details'));
+      b.addEventListener('click', () => showSideTab(host, b.dataset.sidetab as SideTab));
     }
     sideTabHost = host;
+    thinkingKey = '';
+    thinkingShown = false;
   }
+  paintThinking();
   (host.querySelector('#hud-tl') as HTMLElement).innerHTML = timelineHtml(ctx.state) + undoChrome(ctx);
   (host.querySelector('#hud-order') as HTMLElement).innerHTML = orderFloatHtml(ctx);
   (host.querySelector('#hud-panel') as HTMLElement).innerHTML =
