@@ -90,7 +90,8 @@ const hudSrc = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf
 check('the strip is published on the view', /resolution: c\.step === 'resolve'/.test(src), true);
 // Only at the resolution step: before it nothing is settled, and a strip left
 // over from the round before a Surplus would describe dice about to be rerolled.
-check('and only from the resolution step', /c\.step === 'resolve' \? c\.resolution \?\? null : null/.test(src), true);
+// (Each of its lines cut to what check() accepts, as the log's are: viewline.test.)
+check('and only from the resolution step', /c\.step === 'resolve' && c\.resolution \? \{ \.\.\.c\.resolution, text: c\.resolution\.text\.map\(fitViewLine\) \} : null/.test(src), true);
 // The published strip is the one that was DRAWN, not a second derivation of it.
 const stepResolve = src.slice(src.indexOf('private stepResolve()'), src.indexOf('private finish('));
 check('stepResolve hands the drawn duel to the view', /c\.resolution = \{ duel:/.test(stepResolve), true);
