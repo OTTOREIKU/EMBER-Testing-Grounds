@@ -117,4 +117,6 @@ check('and says one is while its movePlan stands', callbacks.routing(), true);
 check('the tabletop answers `routing` off its movePlan', /routing\(\) \{\n\s*return !!movePlan;\n\s*\},\n\s*async onDestroyTerrain\(id\)/.test(mainSrc), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// The exit code, not process.exit(): exiting outright while Node is still closing the handle that compiled the
+// slice above aborts on Windows (a libuv assertion, every run once the machine had 16 threads).
+process.exitCode = fail ? 1 : 0;
