@@ -40,16 +40,23 @@ data.solo.squads['t-rifle'] = {
   mechs: [{ name: 'Rifle', loadout: { torso: '539', chasis: '099', rightHand: '541', pilot: 'LPA-23-2' } }],
   drones: [],
 };
-const scenario = { ...data.solo.scenarios[0], id: 't-lockdeny', map: 'none', seats: { s1: 't-lockers', s2: 't-rifle' } };
+// A gunner on a Swift Steed: a Maneuver of 2, enough to Break Away from one unit locking it (1 + 1) and walk out to
+// fire, not from two (1 + 2).
+data.solo.squads['t-runner'] = {
+  name: 'Runner', faction: 'RDL', points: 0,
+  mechs: [{ name: 'Runner', loadout: { torso: '012', chasis: '022', rightHand: '536', pilot: 'FPA-11' } }],
+  drones: [],
+};
+const scenarioOf = (foe) => ({ ...data.solo.scenarios[0], id: `t-lockdeny-${foe}`, map: 'none', seats: { s1: 't-lockers', s2: foe === 'Rifle' ? 't-rifle' : 't-runner' } });
 
-// Round 1's Action Phase, the Blade's Melee Opportunity open, the Rifle's Firing to come; the Ally at `ally`.
-async function staged(ally) {
-  const t = botTable(M, data, scenario, { seed: 5, policies: AI.eagerPolicy });
+// Round 1's Action Phase, the Blade's Melee Opportunity open, the enemy's Firing to come; the Ally at `ally`.
+async function staged(ally, foe = 'Rifle') {
+  const t = botTable(M, data, scenarioOf(foe), { seed: 5, policies: AI.eagerPolicy });
   await t.run({ until: (st) => M.SU.normaliseSetup(st.setup)?.stage === 'done' && st.round.phase === 2 });
   const s = t.state;
   const U = Object.fromEntries(s.tokens.map((x) => [x.label, x]));
   const at = (x, c, r, f) => { x.col = c * 3; x.row = r * 3; if (f !== undefined) x.facing = f; };
-  at(U.Blade, 4, 4, 2); at(U.Ally, ally[0], ally[1], 2); at(U.Rifle, 4, 7, 0);
+  at(U.Blade, 4, 4, 2); at(U.Ally, ally[0], ally[1], 2); at(U[foe], 4, 7, 0);
   for (const x of s.tokens) { x.stance = 'offensive'; x.timing = 'firing'; }
   U.Blade.timing = 'melee';
   s.script.revealed = ['s1', 's2'];
@@ -86,6 +93,16 @@ const beside = (k, c, r) => { const [x, y] = k.split(',').map(Number); return Ma
   const off = shapes(d, view, 0), on = shapes(d, view, 1);
   const lock = [...on.keys()].filter((k) => beside(k, 4, 7) && off.has(k));
   check('WITH THE RIFLE LOCKED ALREADY by the Ally, a Grid beside it is worth nothing more', lock.every((k) => Math.abs(on.get(k) - off.get(k)) < 1e-9), true);
+  t.close();
+}
+{
+  // A Maneuver is no Action: the Runner walks out of one lock (1 + 1 Movement Range) and fires all the same.
+  const { t, U, d, view } = await staged([6, 3], 'Runner');
+  const aims = d.here?.().turnOf(U.Runner.uid, ['attack'], 'firing')?.options ?? [];
+  const off = shapes(d, view, 0), on = shapes(d, view, 1);
+  const lock = [...on.keys()].filter((k) => beside(k, 4, 7) && off.has(k));
+  check('A GUNNER THAT CAN BREAK AWAY (a Swift Steed\'s Maneuver of 2 against one locker) is not held: the Grids beside it are worth nothing more, though it has the Ally in its sights',
+    [aims.some((o) => o.facts?.targetUid === U.Ally.uid), lock.length > 0, lock.every((k) => Math.abs(on.get(k) - off.get(k)) < 1e-9)], [true, true, true]);
   t.close();
 }
 check('the weight ships at 0 until it is measured', AI.TACTICIAN.lockDeny, 0);
