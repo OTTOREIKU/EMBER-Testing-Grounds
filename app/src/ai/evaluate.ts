@@ -515,6 +515,14 @@ export interface Weights {
   // x a Part Damaged on that enemy, over one more than the Grids between them.
   // At 0 worth nothing.
   mineLay: number;
+  // A JAMMER IS WORTH ITS JAMS TO COME (2026-10-06; the W5 census: the computer's
+  // Drones jammed in sight of two or more enemies three times in four, where a
+  // player keeps a jammer behind a wall, a jam needing no sight). A Drone whose
+  // own Action is an Electronic Attack on an enemy counts its material worth
+  // 1 + `jamKeep` x the rounds left (this one too) over: to the squad that would
+  // lose it, so it stands where fewer enemies could reach it, and to the one that
+  // could destroy it. At 0 a Drone is worth its points alone.
+  jamKeep: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -609,6 +617,7 @@ export const TACTICIAN: Weights = {
   sentry: 1,
   beacon: 1,
   mineLay: 0,
+  jamKeep: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
@@ -625,8 +634,16 @@ export function unitWorth(u: UnitView, view: SeatView, w: Weights): number {
   const material = w.material * lastPoints(view, w) * (standing + Math.max(0, u.points - listed));
   const task = view.task;
   const lead = task?.family === 'vip' && u.commander ? task.vp * (u.side === view.seat ? w.vipOwn : w.vipKill) : 0;
-  return material + lead + keystoneOf(u, view, w);
+  // A jammer counts the jams it has still to make (`jamKeep`).
+  const keep = w.jamKeep > 0 && jammer(u) ? 1 + w.jamKeep * Math.max(1, view.roundLimit - view.round + 1) : 1;
+  return material * keep + lead + keystoneOf(u, view, w);
 }
+
+// A Drone whose own Action is an Electronic Attack on an enemy (`jamKeep`): a
+// Tactic made at a Range, not one that serves its own squad or hands an Ally a
+// turn.
+const jammer = (u: UnitView): boolean => u.kind === 'drone'
+  && u.weapons.some((x) => x.usable && x.type === 'Tactic' && x.range > 0 && !x.own && !x.grants);
 
 // THE SQUAD'S LAST MECH (`keystone`, M12). A Drone acts on a Command, and a
 // Command comes from a Mech of its squad (4.15): with the last Mech gone the
