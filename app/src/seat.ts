@@ -22,7 +22,7 @@ import type { Command } from './commands';
 import type { GameData } from './data';
 import { parseGridRef } from './data';
 import { alive } from './loop';
-import { meleeCapable } from './melee';
+import { isMeleeFiring, meleeCapable } from './melee';
 import { lowValueOf, missionScoring, zoneCellsOf } from './scoring';
 import { normaliseSetup, type SetupStage } from './setup';
 import { boxHands, controlOf, normaliseTasks } from './tasks';
@@ -84,6 +84,9 @@ export interface WeaponView {
   // 009_A): its Range is where the Ally stands, no reach on an enemy either.
   // Routed as card text (units.ts extraActivationOf), so not `own`.
   grants?: boolean;
+  // A Firing Action printing Melee Firing (近战射击): it may still be fired while
+  // Melee Locked, which bars every other Firing Action (4.3.5).
+  meleeFiring?: boolean;
   // A Melee Action's Shock Attack X as the unit stands (turn.ts shockWalk): how
   // far it may walk before the attack. Absent for none.
   shock?: number;
@@ -346,6 +349,7 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
         ...(riders.length ? { riders } : {}),
         ...(a.type === 'Tactic' && (a.range ?? 0) > 0 && OWN_ROUTES.has(actionRoute(data, t, a)) ? { own: true } : {}),
         ...(a.type === 'Tactic' && extraActivationOf(a) ? { grants: true } : {}),
+        ...(a.type === 'Firing' && isMeleeFiring(a) ? { meleeFiring: true } : {}),
         ...shockOf(state, t, a),
         usable: !part || part.state !== 'destroyed' || part.repaired,
       });

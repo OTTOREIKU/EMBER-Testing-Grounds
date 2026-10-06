@@ -29,7 +29,7 @@
 import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, WeaponView, ZoneView } from '../seat';
 import type { Choice, Policy } from './policy';
 import {
-  apart, attacking, brawlerPolicy, couldStrike, declare, endOf, facingAt, facingOf, foesOf, hitLocation, lockedAt, percent, reaches, ready, reroll,
+  apart, attacking, beside, brawlerPolicy, couldStrike, declare, endOf, facingAt, facingOf, foesOf, hitLocation, lockedAt, percent, reaches, ready, reroll,
   same, standing, strikers, surplus, unitOf, type Grid, type Road, type Worth,
 } from './brawler';
 import { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stride, swingOf, TACTICIAN, unitWorth, zoned, type Weights } from './evaluate';
@@ -410,6 +410,9 @@ interface Ctx {
   // The best Firing Action a Mech of this squad could make at each enemy from
   // where it stands (`calledOn`, the weight `spotter`), worked out once a table.
   calls: Map<number, number>;
+  // What each enemy's Firing could do to this squad but the unit asked about, by the enemy and that unit
+  // (`screenedFire`, the weight `lockDeny`), worked out once a table.
+  screens: Map<string, number>;
 }
 
 // FOCUS FIRE (M13): an enemy, as the units of this squad whose turn is still
@@ -454,9 +457,9 @@ export interface Memo {
   table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>;
   walks: Map<string, Stroll | null>; targets: Map<string, Target[]>; holdings: Map<number, number>;
   handed: Map<string, number | null>; aims: Map<number, Map<number, number>>; races: { map: Map<string, Race> | null };
-  backs: { map: Map<number, Back> | null }; calls: Map<number, number>;
+  backs: { map: Map<number, Back> | null }; calls: Map<number, number>; screens: Map<string, number>;
 }
-export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map() });
+export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map() });
 
 // The table as far as those answers depend on it: every unit, where it stands
 // and in what state. Whose activation is open is left out, and so is a Command
@@ -1409,7 +1412,8 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
   const order = c.hostile.filter((e) => threatens(e, at, c)).sort((a, b) => Number(a.done) - Number(b.done) || apart(a.grid, at) - apart(b.grid, at));
   // THE PACK (`pack`): the other blades of the squad that would go in beside it share the guns' fire. The
   // budget is read on the same scale, so a plan is not given up on for a cost it would not pay.
-  const shared = c.w.pack > 0 ? 1 + c.w.pack * packOf(c, order) : 1;
+  const pk = c.w.pack > 0 || c.w.packNear > 0 ? packOf(c, order) : null;
+  const shared = pk ? 1 + c.w.pack * pk.able + c.w.packNear * pk.engaged : 1;
   budget *= shared;
   // What an enemy could do to the unit on each of some Timings: the worst.
   const read = (e: UnitView, timings: (string | undefined)[]): { worst: Barrage; on: string } => {
@@ -1533,19 +1537,22 @@ function bladed(u: UnitView): boolean {
   return blades > 0 && blades >= weigh('Firing');
 }
 
-// THE OTHER BLADES THAT WOULD SHARE A GRID'S DANGER (`pack`): for a bladed Mech, each other bladed Mech of the
-// squad that could strike one of these enemies this round: beside it already, or with its turn still to come
-// and that enemy within its blade's carry (`chargeReach`).
-function packOf(c: Ctx, threats: UnitView[]): number {
+// THE OTHER BLADES THAT WOULD SHARE A GRID'S DANGER: for a bladed Mech, each other bladed Mech of the squad
+// that could strike one of these enemies this round (`able`, for `pack`): beside it already, or with its turn
+// still to come and that enemy within its blade's carry (`chargeReach`); and of them those beside one already
+// (`engaged`, for `packNear`).
+function packOf(c: Ctx, threats: UnitView[]): { able: number; engaged: number } {
   const foes = threats.filter((e) => e.kind !== 'projectile');
-  if (!foes.length || c.me.kind !== 'mech' || !bladed(c.me)) return 0;
-  let n = 0;
+  const out = { able: 0, engaged: 0 };
+  if (!foes.length || c.me.kind !== 'mech' || !bladed(c.me)) return out;
   for (const u of c.view.units) {
     if (u.side !== c.view.seat || u.uid === c.me.uid || !u.alive || !u.deployed || u.kind !== 'mech' || !bladed(u)) continue;
+    const near = foes.some((e) => apart(u.grid, e.grid) <= 1);
     const carry = u.done ? 1 : chargeReach(u)?.grids ?? 1;
-    if (foes.some((e) => apart(u.grid, e.grid) <= carry)) n += 1;
+    if (near) out.engaged += 1;
+    if (near || foes.some((e) => apart(u.grid, e.grid) <= carry)) out.able += 1;
   }
-  return n;
+  return out;
 }
 
 // WHAT AN ENEMY'S PROJECTILE COULD DO TO THE UNIT (`salvo`): of the enemy's
@@ -2028,7 +2035,43 @@ function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took:
     const step = c.w.contactStep * (out || press ? 1 + out + press : 1);
     pull -= (step + c.w.approach * quarry.prize) * Math.max(0, far - fightArm(c.me, c.skills.aimed, c.w.blade));
   }
-  return pull;
+  return pull + lockOf(at, c);
+}
+
+// MELEE LOCK AS A SCREEN (`lockDeny`): each Ground enemy beside the Grid, its turn still to come this round and
+// locked by no other unit of the squad, is Melee Locked by this one there and makes no Firing attack but with a
+// weapon printing Melee Firing (4.3.5): the best shot it could have made at the rest of the squad is taken away.
+function lockOf(at: Grid, c: Ctx): number {
+  if (c.w.lockDeny <= 0 || !c.me.locks || c.me.camouflaged) return 0;
+  const others = c.view.units.filter((u) => u.side === c.view.seat && u.uid !== c.me.uid && u.alive && u.deployed && u.locks && !u.camouflaged);
+  let sum = 0;
+  for (const e of c.foes) {
+    if (!e.ground || e.done || e.kind === 'projectile' || !beside(at, e.grid) || others.some((u) => beside(u.grid, e.grid))) continue;
+    sum += screenedFire(e, c);
+  }
+  return c.w.lockDeny * sum;
+}
+
+// The best Firing attack an enemy could make as the board stands at a unit of this squad other than the one
+// asked about, with a weapon a Melee Lock bars (none printing Melee Firing).
+function screenedFire(e: UnitView, c: Ctx): number {
+  const key = `${e.uid}|${c.me.uid}`;
+  const known = c.screens.get(key);
+  if (known !== undefined) return known;
+  let best = 0;
+  if (strikers(e).some((x) => x.type === 'Firing' && !x.meleeFiring)) {
+    const turn = c.d.here?.().turnOf(e.uid, ['attack'], e.kind === 'mech' ? 'firing' : undefined);
+    for (const o of turn?.options ?? []) {
+      if (!isShot(o) || !o.tags.includes('firing')) continue;
+      const gun = e.weapons.find((x) => x.actionId === o.facts?.actionId);
+      const target = unitOf(c.view, o.facts?.targetUid);
+      if (gun?.meleeFiring || !target || target.side !== c.view.seat || target.uid === c.me.uid) continue;
+      const f = o.chance?.();
+      if (f) best = Math.max(best, gainOf(f, target, c.view, c.w));
+    }
+  }
+  c.screens.set(key, best);
+  return best;
 }
 
 // HOW THE PARTS ARE GOING (`erode`): for each squad, its units on the board
@@ -2572,7 +2615,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     const faces = d.options.filter((o) => handed(o, c) && !c.handed.has(handKey(c, o)));
     if (faces.length) {
       // What this table has been asked already is this decision's own to keep.
-      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls };
+      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens };
       for (const o of faces) {
         c.handed.set(handKey(c, o), yield* commandGain(o, view, w, c.skills, kept));
         yield;
@@ -3157,6 +3200,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     memo.races.map = null;
     memo.backs.map = null;
     memo.calls.clear();
+    memo.screens.clear();
   }
   return {
     // A Projectile is there to be spent: nothing done to it is a loss.
@@ -3179,6 +3223,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     races: memo.races,
     backs: memo.backs,
     calls: memo.calls,
+    screens: memo.screens,
   };
 }
 

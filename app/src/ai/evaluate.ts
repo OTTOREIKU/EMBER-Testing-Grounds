@@ -540,6 +540,19 @@ export interface Weights {
   // that go in alone are shot apart one by one (RDL_Melee1, the community squads); blades that go in together
   // share the fire. At 0 every unit pays alone.
   pack: number;
+  // THE PACK ALREADY IN (`packNear`): the same sharing, counting only the other bladed Mechs standing beside
+  // one of those enemies already (engaged), whatever their turn: the first blade in pays alone, and those that
+  // follow it in share. Read beside `pack` (2026-10-06, game 130102: two blades that COULD have struck spent
+  // their turns on the Terminals instead, and the one that went in on the strength of them was lost). At 0
+  // nobody counts.
+  packNear: number;
+  // MELEE LOCK AS A SCREEN (2026-10-06; OTTO: "are melee units thinking about melee lock? It would make sense
+  // for melee mechs to get in units face ... so they can stop enemies without melee firing while they do
+  // work"): a Ground enemy beside the Grid a unit that locks ends in makes no Firing attack but with a weapon
+  // printing Melee Firing (4.3.5). For each such enemy not locked already by another unit of the squad, with
+  // its turn still to come this round, the best shot it could make at a unit of the squad OTHER than this one
+  // (what it would do to this one is the plan's own price) is worth `lockDeny` of itself. At 0 nothing.
+  lockDeny: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -637,6 +650,8 @@ export const TACTICIAN: Weights = {
   jamKeep: 0,
   veil: 1,
   pack: 0,
+  packNear: 0,
+  lockDeny: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
