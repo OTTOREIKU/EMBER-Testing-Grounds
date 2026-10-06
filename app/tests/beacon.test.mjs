@@ -76,20 +76,21 @@ async function carrierTurn(policy, { short, leftHand = 'ZHLA-303' }) {
   return out;
 }
 
-const priced = AI.makeTactician({}, { beacon: 1 });
+const priced = AI.tacticianPolicy;
+const unpriced = AI.makeTactician({}, { beacon: 0 });
 {
-  const off = await carrierTurn(AI.tacticianPolicy, { short: 2 });
+  const off = await carrierTurn(unpriced, { short: 2 });
   check('THE SEAM offers the three B3 Beacons at every Landing Point (the type is locked at the first throw)',
     [off.offered.length > 0, [...new Set(off.offered.map((o) => o.facts.cardId))].sort()], [true, ['075', '076', '077']]);
   check('WITHOUT `beacon` the Ace throws none, its Ally short of Link or not', [off.answers.some((a) => a.card), off.refused], [false, []]);
   const on = await carrierTurn(priced, { short: 2 });
   const threw = on.answers.find((a) => a.reason === 'beacon_value');
-  check('WITH IT, the Ally 2 Link short, it throws the B3/1 Link Beacon within 3 of the Ally, for its Link Support, and says so',
+  check('THE ACE AS SHIPPED, the Ally 2 Link short, it throws the B3/1 Link Beacon within 3 of the Ally, for its Link Support, and says so',
     [!!threw, threw?.card, threw ? Math.abs(threw.to.c - 3) + Math.abs(threw.to.r - 3) <= 3 : null, String(threw?.why).includes('Link Support'), on.refused],
     [true, '075', true, true, []]);
 }
 {
-  const off = await carrierTurn(AI.tacticianPolicy, { short: 0 });
+  const off = await carrierTurn(unpriced, { short: 0 });
   const on = await carrierTurn(priced, { short: 0 });
   check('with nobody short of Link it is worth nothing, and the turn is the same with the weight as without',
     [on.answers.map((a) => a.label)], [off.answers.map((a) => a.label)]);
@@ -98,7 +99,7 @@ const priced = AI.makeTactician({}, { beacon: 1 });
   const bare = await carrierTurn(priced, { short: 2, leftHand: null });
   check('a Carrier with no Part with Freehand is offered no throw at all: Throw needs one to designate (4.17)', bare.offered.length, 0);
 }
-check('the shipped weight is 0 (measured before it is adopted)', AI.TACTICIAN.beacon, 0);
+check('the shipped weight is 1 (adopted 2026-10-06: 115 of 200 against 113)', AI.TACTICIAN.beacon, 1);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
