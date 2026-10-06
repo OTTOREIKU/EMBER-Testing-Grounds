@@ -143,8 +143,16 @@ export interface BrawlerSkills {
   // the nearest such enemy, where that is at most CONTEST_DETOUR Grids further
   // than the nearest enemy of all.
   contest: boolean;
+  // IT STANDS IN THE ZONES THE ENEMY HOLDS (`claim`; OTTO, 2026-10-05: "cause
+  // them to have to reposition or have to back off of objectives"). A zone is
+  // held only by a squad with nobody of the other in it, and a Control dial
+  // stays with its holder until the other squad takes the zone (5.3.2), so a
+  // hit on whoever holds it takes nothing away. With nothing to attack, a Grid
+  // in a scoring zone that is not yet its squad's comes before any other walk,
+  // and standing in one it stays there.
+  claim: boolean;
 }
-export const COPY: BrawlerSkills = { kite: false, screen: false, escort: false, jams: false, safer: false, cover: false, contest: false };
+export const COPY: BrawlerSkills = { kite: false, screen: false, escort: false, jams: false, safer: false, cover: false, contest: false, claim: false };
 
 // `contest`: how much more an attack on an enemy holding what the mission pays
 // is worth, how much higher where to stand counts it (his target classes are a
@@ -152,6 +160,19 @@ export const COPY: BrawlerSkills = { kite: false, screen: false, escort: false, 
 const CONTEST_SHARE = 0.5;
 const CONTEST_STAND = 60;
 const CONTEST_DETOUR = 4;
+
+// A Grid in a zone the Main Task scores that is not yet this squad's (`claim`):
+// neither held by it as the board stands nor named for it by the zone's dial.
+function unclaimed(at: Grid, view: SeatView): boolean {
+  const cell = `${at.col},${at.row}`;
+  return view.zones.some((z) => z.scoring && z.cells.includes(cell) && z.holder !== view.seat && z.control !== view.seat);
+}
+// A Grid in a zone the Main Task scores whose dial does not yet name this
+// squad (`claim`): one it stands in to keep, or to take.
+function holding(at: Grid, view: SeatView): boolean {
+  const cell = `${at.col},${at.row}`;
+  return view.zones.some((z) => z.scoring && z.cells.includes(cell) && z.control !== view.seat);
+}
 
 // Whether an enemy stands on what the Main Task pays for (`contest`): in a Grid
 // of a zone it scores, or carrying a Black Box.
@@ -659,21 +680,34 @@ function approachWith(d: Decision, view: SeatView, me: UnitView, foes: UnitView[
     if (attack) return k.kite ? [1, -danger[i], reachFrom(c), c.s ?? 0] : k.safer ? [1, -exposed(danger[i]), 0, c.s ?? 0] : [1, 0, 0, c.s ?? 0];
     return k.safer ? [0, -exposed(danger[i]), 0, walk(c.at, c.facing)] : [0, 0, 0, walk(c.at, c.facing)];
   };
-  const ranks = cands.map(rank);
+  // `claim`: a walk into a scoring zone not yet this squad's comes first (the
+  // first term says whether it attacks; a Drone keeping out of the line of
+  // fire ranks by danger first and is left as it was).
+  // Staying in a zone the dial does not yet name for this squad (held now, or
+  // the enemy's) comes before walking into another: walking out gives it up.
+  const claiming = k.claim && !screened;
+  const claimTerm = (c: Cand): number => (!c.o && holding(c.at, view) ? 2 : unclaimed(c.at, view) ? 1 : 0);
+  const ranks = cands.map((c, i) => {
+    const r = rank(c, i);
+    return claiming ? [r[0], r[0] === 0 ? claimTerm(c) : 0, ...r.slice(1)] : r;
+  });
   let bi = 0;
   for (let i = 1; i < cands.length; i++) if (ranksAbove(ranks[i], ranks[bi])) bi = i;
   const best = cands[bi];
   if (!best.o) {
     // Nowhere better to stand: a Drone keeping out of the line of fire ends
     // its activation where it is rather than walk on for the Main Task.
-    return screened && end ? { option: end.id, reason: 'out_of_fire', why: 'keeping out of the line of fire' } : null;
+    if (screened && end) return { option: end.id, reason: 'out_of_fire', why: 'keeping out of the line of fire' };
+    // And one standing in a zone not yet its squad's holds it (`claim`).
+    if (claiming && end && claimTerm(best) > 0) return { option: end.id, reason: 'hold_zone', why: 'holding a zone the mission scores' };
+    return null;
   }
   const attack = best.s !== null && best.s >= B.ATTACK_GRID_SCORE;
   // Whether cover passed over a Grid nearer the enemy that more enemies could attack it in.
   const sheltered = covered && !attack && walking.some((c) => gap(c) < gap(best) && (dangerOf.get(c) ?? 0) > danger[bi]);
   return {
     option: best.o.id, reason: 'contact_before_occupation', score: best.s ?? walk(best.at, best.facing),
-    why: attack ? (jamming ? 'to a Grid it can jam from' : 'to a Grid it can attack from') : screened || sheltered ? 'closing on the enemy, out of the line of fire' : 'closing on the nearest enemy',
+    why: attack ? (jamming ? 'to a Grid it can jam from' : 'to a Grid it can attack from') : claiming && unclaimed(best.at, view) ? 'into a zone the mission scores' : screened || sheltered ? 'closing on the enemy, out of the line of fire' : 'closing on the nearest enemy',
   };
 }
 
@@ -839,7 +873,7 @@ function activation(asked: Decision, view: SeatView, k: BrawlerSkills = COPY): C
     const stay = escort(d, view, me, foes);
     if (stay) return stay;
   }
-  const step = k.kite || k.screen || k.jams || k.safer || k.cover || k.contest ? approachWith(d, view, me, foes, !walled, k) : approach(d, view, me, foes, !walled);
+  const step = k.kite || k.screen || k.jams || k.safer || k.cover || k.contest || k.claim ? approachWith(d, view, me, foes, !walled, k) : approach(d, view, me, foes, !walled);
   if (step) return step;
 
   // Contact before occupation: with nobody to close on, it holds ground.

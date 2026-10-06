@@ -307,7 +307,7 @@ const BECAUSE: Record<string, string> = Object.assign(Object.create(null) as Rec
   take_zone: 'for the mission', access_terminal: 'for the mission', take_box: 'for the mission',
   occupy_objective: 'for the mission', contact_before_occupation: 'to close with the enemy',
   advance: 'to close in', move_to_attack: 'to attack from there', move_to_strike_next: 'to be in reach next turn',
-  safer_attack: 'to attack from a safer Grid', break_in: 'to free the Black Box in it',
+  safer_attack: 'to attack from a safer Grid', break_in: 'to free the Black Box in it', hold_zone: 'to hold the zone',
   take_cover: 'out of the enemy\'s sights', movement_unlocks_better_target: 'to reach a better target',
   reposition_opening: 'to find something to attack', intent_opening: 'to attack',
   // What it does.
