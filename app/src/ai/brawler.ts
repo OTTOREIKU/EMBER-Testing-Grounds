@@ -128,13 +128,37 @@ export interface BrawlerSkills {
   // that keeps out of the line of fire (`screen`) may still attack from where
   // one enemy could answer it. `kite` without the distance, and with a margin.
   safer: boolean;
-  // A UNIT THAT CANNOT ATTACK YET WALKS UP UNDER COVER: of the Grids that take
-  // it within COVER_SLACK of as far along the road to the enemy as it could go,
-  // the one fewest enemies could attack it in. Still a fighter closing in, a
-  // Mech as much as a Drone; `screen` is the Drone's stricter habit and wins.
+  // A UNIT THAT CANNOT ATTACK YET WALKS UP UNDER COVER: of the Grids it could
+  // reach within COVER_SLACK of the nearest the enemy (off the road too, so it
+  // may step aside behind a wall), the one fewest enemies could attack it in.
+  // Still a fighter closing in, a Mech as much as a Drone; `screen` is the
+  // Drone's stricter habit and wins. MEASURED WORSE (2026-10-05): against the Ace
+  // on random squads 17 of 200 where the copy wins 28 (p .01).
   cover: boolean;
+  // IT FIGHTS FOR WHAT THE MISSION PAYS (OTTO, 2026-10-05: "should want to fight
+  // the opponents and cause them to have to reposition or have to back off of
+  // objectives"): an attack on an enemy standing in a zone the Main Task scores,
+  // or carrying a Black Box, is worth CONTEST_SHARE more; where to stand counts
+  // such a target CONTEST_STAND higher; and with nothing to attack it walks at
+  // the nearest such enemy, where that is at most CONTEST_DETOUR Grids further
+  // than the nearest enemy of all.
+  contest: boolean;
 }
-export const COPY: BrawlerSkills = { kite: false, screen: false, escort: false, jams: false, safer: false, cover: false };
+export const COPY: BrawlerSkills = { kite: false, screen: false, escort: false, jams: false, safer: false, cover: false, contest: false };
+
+// `contest`: how much more an attack on an enemy holding what the mission pays
+// is worth, how much higher where to stand counts it (his target classes are a
+// hundred apart), and how much further it will walk to reach one.
+const CONTEST_SHARE = 0.5;
+const CONTEST_STAND = 60;
+const CONTEST_DETOUR = 4;
+
+// Whether an enemy stands on what the Main Task pays for (`contest`): in a Grid
+// of a zone it scores, or carrying a Black Box.
+function holds(t: UnitView, view: SeatView): boolean {
+  const cell = `${t.grid.col},${t.grid.row}`;
+  return view.zones.some((z) => z.scoring && z.cells.includes(cell)) || view.boxes.some((b) => b.bearer === t.uid);
+}
 
 // How many Grids short of its farthest step a unit walking up under cover may
 // stop for a Grid fewer enemies could attack it in (`cover`).
@@ -308,9 +332,9 @@ export function attackWorth(f: Forecast, target: UnitView | undefined): number {
 // 1000, the best target's score, and three tie-breaks a thousand times smaller
 // (how many targets, whether the Grid scores, how many enemies could attack it
 // there). Null with nothing to attack from it.
-function standingOn(at: Grid, targets: UnitView[], view: SeatView, foes: UnitView[]): number | null {
+function standingOn(at: Grid, targets: UnitView[], view: SeatView, foes: UnitView[], k: BrawlerSkills = COPY): number | null {
   if (!targets.length) return null;
-  const best = Math.max(...targets.map((t) => targetScore(t, apart(at, t.grid))));
+  const best = Math.max(...targets.map((t) => targetScore(t, apart(at, t.grid)) + (k.contest && holds(t, view) ? CONTEST_STAND : 0)));
   const threats = foes.filter((f) => strikers(f).some((w) => reaches(w, f.grid, at))).length;
   const gain = view.zones.some((z) => z.scoring && z.cells.includes(`${at.col},${at.row}`)) ? 1 : 0;
   return B.ATTACK_GRID_SCORE + best + Math.atan(targets.length) * B.TARGET_COUNT_EPSILON
@@ -318,16 +342,16 @@ function standingOn(at: Grid, targets: UnitView[], view: SeatView, foes: UnitVie
 }
 
 // The same, as far as geometry can say what could be attacked from a Grid.
-export function standing(me: UnitView, at: Grid, facing: number, view: SeatView, foes: UnitView[]): number | null {
+export function standing(me: UnitView, at: Grid, facing: number, view: SeatView, foes: UnitView[], k: BrawlerSkills = COPY): number | null {
   const locked = lockedAt(me, at, foes);
-  return standingOn(at, foes.filter((f) => couldStrike(me, at, facing, f, locked)), view, foes);
+  return standingOn(at, foes.filter((f) => couldStrike(me, at, facing, f, locked)), view, foes, k);
 }
 
 // The same, by the engine's own word (`later`): what the unit would really be
 // offered to attack from where this answer leaves it, when its turn next
 // comes. A Mech is asked on each Timing one of its weapons opens. Undefined
 // when the answer has nobody to ask, and geometry must stand.
-function standingAfter(o: Option, me: UnitView, at: Grid, view: SeatView, foes: UnitView[]): number | null | undefined {
+function standingAfter(o: Option, me: UnitView, at: Grid, view: SeatView, foes: UnitView[], k: BrawlerSkills = COPY): number | null | undefined {
   if (!o.later) return undefined;
   const timings = me.kind === 'mech' ? [...new Set(strikers(me).map((w) => w.timing))] : [undefined];
   const targets = new Map<number, UnitView>();
@@ -337,7 +361,7 @@ function standingAfter(o: Option, me: UnitView, at: Grid, view: SeatView, foes: 
       if (t) targets.set(t.uid, t);
     }
   }
-  return standingOn(at, [...targets.values()], view, foes);
+  return standingOn(at, [...targets.values()], view, foes, k);
 }
 
 // ---------- attacks ----------
@@ -350,12 +374,14 @@ interface Shot { option: Option; value: number; tie: number; target: UnitView | 
 
 // One attack and what it is worth. An attack with no odds on it (nobody put
 // them there, or it cannot be read) is still worth making.
-function shotOf(o: Option, view: SeatView, from: Grid): Shot {
+function shotOf(o: Option, view: SeatView, from: Grid, k: BrawlerSkills = COPY): Shot {
   const target = unitOf(view, o.facts?.targetUid);
   const forecast = o.chance ? o.chance() : null;
+  // `contest`: a hit on an enemy holding what the mission pays is worth more.
+  const held = k.contest && !!target && holds(target, view) ? 1 + CONTEST_SHARE : 1;
   return {
     option: o,
-    value: forecast ? attackWorth(forecast, target) : B.ATTACK_BASE,
+    value: (forecast ? attackWorth(forecast, target) : B.ATTACK_BASE) * held,
     tie: target ? targetScore(target, apart(from, target.grid)) : 0,
     target,
     forecast,
@@ -364,11 +390,11 @@ function shotOf(o: Option, view: SeatView, from: Grid): Shot {
 
 // The attack worth most among some answers; of two worth the same, the one on
 // the better target.
-function bestShot(options: Option[], view: SeatView, from: Grid): Shot | null {
+function bestShot(options: Option[], view: SeatView, from: Grid, k: BrawlerSkills = COPY): Shot | null {
   let best: Shot | null = null;
   for (const o of options) {
     if (!isAttack(o)) continue;
-    const s = shotOf(o, view, from);
+    const s = shotOf(o, view, from, k);
     if (!best || s.value > best.value + EXACT || (Math.abs(s.value - best.value) <= EXACT && s.tie > best.tie)) best = s;
   }
   return best;
@@ -427,9 +453,9 @@ function reachedBy(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], 
   for (const [i, l] of tried.entries()) {
     for (const move of l.moves) {
       const next = move.then?.(['attack']);
-      const shot = next ? bestShot(next.options, view, l.at) : null;
+      const shot = next ? bestShot(next.options, view, l.at, k) : null;
       if (!shot || shot.value <= 0) continue;
-      const tie = standing(me, l.at, facingOf(move) ?? me.facing, view, foes) ?? 0;
+      const tie = standing(me, l.at, facingOf(move) ?? me.facing, view, foes, k) ?? 0;
       if (danger) {
         const r: Reached = { move, shot, tie, danger: danger[i], far: shot.target ? apart(l.at, shot.target.grid) : 0 };
         if (!best || (k.kite ? kiteBeats(r, best) : saferBeats(r, best))) best = r;
@@ -454,6 +480,23 @@ export function nearestRoad(d: Decision): { uid: number; road: Road } | null {
     if (!best || road.length < best.road.length) best = { uid: Number(uid), road };
   }
   return best;
+}
+
+// THE ROAD TO AN ENEMY HOLDING WHAT THE MISSION PAYS (`contest`): of the roads
+// the walk is offered, the shortest to an enemy standing in a scoring zone or
+// carrying a Black Box, where it is at most CONTEST_DETOUR Grids longer than the
+// shortest of all. Null with none.
+function contestRoad(d: Decision, view: SeatView): { uid: number; road: Road } | null {
+  const roads = d.facts.roads as Record<string, Road> | undefined;
+  const near = nearestRoad(d);
+  if (!roads || !near) return null;
+  let best: { uid: number; road: Road } | null = null;
+  for (const [uid, road] of Object.entries(roads)) {
+    const t = unitOf(view, Number(uid));
+    if (!t || !holds(t, view)) continue;
+    if (!best || road.length < best.road.length) best = { uid: Number(uid), road };
+  }
+  return best && best.road.length <= near.road.length + CONTEST_DETOUR ? best : null;
 }
 
 // MOVE TOWARD CONTACT (`contact_before_occupation`: fighting comes before
@@ -501,8 +544,8 @@ function approach(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], t
 
 // THE ROAD TO THE ENEMY, as `approach` walks it: what a Grid with nothing to
 // attack from it is worth, the nearer the enemy the better.
-function roadOf(d: Decision, view: SeatView, me: UnitView, foes: UnitView[]): (at: Grid, facing: number) => number {
-  const led = nearestRoad(d);
+function roadOf(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], k: BrawlerSkills = COPY): (at: Grid, facing: number) => number {
+  const led = (k.contest ? contestRoad(d, view) : null) ?? nearestRoad(d);
   const place = (at: Grid): number => (led ? led.road.findIndex((g) => g.c === at.col && g.r === at.row) : -1);
   // How far a Grid still is from the enemy: along the road where one is known,
   // and a Grid off the road is no nearer at all.
@@ -548,13 +591,13 @@ function ranksAbove(a: number[], b: number[]): boolean {
 function approachWith(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], trust: boolean, k: BrawlerSkills): Choice | null {
   const moves = d.options.filter((o) => o.tags[0] === 'move' && !!endOf(o));
   if (!moves.length || !foes.length) return null;
-  const walk = roadOf(d, view, me, foes);
+  const walk = roadOf(d, view, me, foes, k);
   const jamming = k.jams && !strikers(me).length && jammers(me).length > 0;
   const screened = k.screen && me.kind === 'drone';
   const covered = k.cover && !screened;
   const end = d.options.find((o) => o.tags.includes('end'));
   type Cand = { o: Option | null; at: Grid; facing: number; claim: number | null; s: number | null };
-  const claimOf = (at: Grid, facing: number): number | null => (jamming ? jamAt(me, at, foes) : standing(me, at, facing, view, foes));
+  const claimOf = (at: Grid, facing: number): number | null => (jamming ? jamAt(me, at, foes) : standing(me, at, facing, view, foes, k));
   // Staying first, so that a move must be better to be taken.
   const cands: Cand[] = [
     { o: null, at: me.grid, facing: me.facing, claim: claimOf(me.grid, me.facing), s: null },
@@ -585,7 +628,7 @@ function approachWith(d: Decision, view: SeatView, me: UnitView, foes: UnitView[
       if (asked >= B.MOVEMENT_CELLS_PER_STEP) continue;
       asked += 1;
     }
-    const answer = o ? standingAfter(o, me, c.at, view, foes) : undefined;
+    const answer = o ? standingAfter(o, me, c.at, view, foes, k) : undefined;
     c.s = answer === undefined ? (trust ? c.claim : null) : answer;
   }
   // A Drone moved now acts in the Automatic Phase, after every Mech of the
@@ -710,8 +753,8 @@ function activation(asked: Decision, view: SeatView, k: BrawlerSkills = COPY): C
   const left = (o: Option): boolean => o.tags.includes('mined') || o.tags.includes('crush-unit') || o.tags.includes('tow');
   const d = asked.options.some(left) ? { ...asked, options: asked.options.filter((o) => !left(o)) } : asked;
   const foes = foesOf(view);
-  const now = bestShot(d.options, view, me.grid);
-  const launch = launching(d, view, foes);
+  const now = bestShot(d.options, view, me.grid, k);
+  const launch = launching(d, view, foes, k);
   const worthNow = now && now.value > 0 ? now.value : 0;
 
   // Attack now, unless a Maneuver or a move Action reaches a strictly better
@@ -720,7 +763,7 @@ function activation(asked: Decision, view: SeatView, k: BrawlerSkills = COPY): C
   // attack it in, or from farther off, is better too.
   const ahead = reachedBy(d, view, me, foes, k);
   const fromHere = (): Reached | null => (now && ahead ? {
-    move: ahead.move, shot: now, tie: standing(me, me.grid, me.facing, view, foes) ?? 0,
+    move: ahead.move, shot: now, tie: standing(me, me.grid, me.facing, view, foes, k) ?? 0,
     danger: dangerAt(me, [me.grid], d, foes)[0], far: now.target ? apart(me.grid, now.target.grid) : 0,
   } : null);
   const kiting = k.kite && !!ahead && !!now && worthNow > 0 && worthNow >= (launch?.value ?? 0);
@@ -771,7 +814,7 @@ function activation(asked: Decision, view: SeatView, k: BrawlerSkills = COPY): C
   for (const o of d.options) {
     if (o.tags[0] !== 'stance' || !o.then) continue;
     const next = o.then(['attack']);
-    const shot = next ? bestShot(next.options, view, me.grid) : null;
+    const shot = next ? bestShot(next.options, view, me.grid, k) : null;
     if (shot && shot.value > 0 && (!prepared || shot.value > prepared.shot.value + EXACT)) prepared = { o, shot };
   }
   if (prepared) {
@@ -796,7 +839,7 @@ function activation(asked: Decision, view: SeatView, k: BrawlerSkills = COPY): C
     const stay = escort(d, view, me, foes);
     if (stay) return stay;
   }
-  const step = k.kite || k.screen || k.jams || k.safer || k.cover ? approachWith(d, view, me, foes, !walled, k) : approach(d, view, me, foes, !walled);
+  const step = k.kite || k.screen || k.jams || k.safer || k.cover || k.contest ? approachWith(d, view, me, foes, !walled, k) : approach(d, view, me, foes, !walled);
   if (step) return step;
 
   // Contact before occupation: with nobody to close on, it holds ground.
@@ -821,7 +864,7 @@ function activation(asked: Decision, view: SeatView, k: BrawlerSkills = COPY): C
 // that reaches a target is worth making and no more.
 interface Launch { option: Option; value: number; tie: number; why: string }
 
-function launching(d: Decision, view: SeatView, foes: UnitView[]): Launch | null {
+function launching(d: Decision, view: SeatView, foes: UnitView[], k: BrawlerSkills = COPY): Launch | null {
   const nearest = new Map<number, { o: Option; at: Grid; tie: number }>();
   for (const o of d.options) {
     if (o.tags[0] !== 'launch') continue;
@@ -840,7 +883,7 @@ function launching(d: Decision, view: SeatView, foes: UnitView[]): Launch | null
     let why = 'a Projectile, where it reaches its best target';
     if (l.o.later) {
       const turn = l.o.later(['attack']);
-      const shot = turn ? bestShot(turn.options, view, l.at) : null;
+      const shot = turn ? bestShot(turn.options, view, l.at, k) : null;
       if (!shot || shot.value <= 0) continue;
       value = shot.value;
       why = `a Projectile for ${shot.target?.label ?? 'its target'} (${said(shot)})`;
@@ -900,9 +943,9 @@ function openingOf(o: Option, view: SeatView, me: UnitView, foes: UnitView[], k:
   const turn = o.then?.(['attack', 'maneuver', 'launch']);
   if (!turn) return null;
   let best: { value: number; why: string } | null = null;
-  const now = bestShot(turn.options, view, me.grid);
+  const now = bestShot(turn.options, view, me.grid, k);
   if (now && now.value > 0) best = { value: now.value, why: `it opens with ${now.option.label} (${said(now)})` };
-  const launch = launching(turn, view, foes);
+  const launch = launching(turn, view, foes, k);
   if (launch && (!best || launch.value > best.value + EXACT)) best = { value: launch.value, why: `it opens with ${launch.why}` };
   const ahead = reachedBy(turn, view, me, foes, k);
   if (ahead && (!best || ahead.shot.value > best.value + B.BETTER_BY)) {
