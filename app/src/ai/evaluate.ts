@@ -504,6 +504,9 @@ export interface Weights {
   // Projectile whose unit's own turn is a Support Action (the B3/1 Link
   // Beacon's Link Support: each Ally Mech within 3 recovers 1 Link) is worth
   // this x what that Support is worth made now (`support`). At 0 worth nothing.
+  // ADOPTED at 1 (2026-10-06): both squads with the CP-3, the Ace against
+  // itself, 115 of 200 against 113 (2 turned to a win, none from one), trading a
+  // little better; a Beacon thrown at 30 of 192 offers, where it never was.
   beacon: number;
   // A MINE PUT DOWN BY AN ACTION (A6, 2026-10-05: the GLP-15's Mine, 006_B, laid
   // 0 times in 21 offers; OTTO: "More focus on using mines, missiles, or
@@ -604,7 +607,7 @@ export const TACTICIAN: Weights = {
   smokeAlly: 0.15,
   breakIn: 0.5,
   sentry: 1,
-  beacon: 0,
+  beacon: 1,
   mineLay: 0,
 };
 
