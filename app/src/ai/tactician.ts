@@ -2048,13 +2048,16 @@ function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took:
 function lockOf(at: Grid, c: Ctx): number {
   if (c.w.lockDeny <= 0 || !c.me.locks || c.me.camouflaged) return 0;
   const others = c.view.units.filter((u) => u.side === c.view.seat && u.uid !== c.me.uid && u.alive && u.deployed && u.locks && !u.camouflaged);
+  // Its turn this round, while still to come, and the next round's (at `future`): a blade that Sprints beside a
+  // gunner on a Movement dial, after the gunner has fired, holds it for the round after, and strikes first there.
+  const next = lastRoundOf(c) ? 0 : c.w.future;
   let sum = 0;
   for (const e of c.foes) {
-    if (!e.ground || e.done || e.kind === 'projectile' || !beside(at, e.grid)) continue;
+    if (!e.ground || e.kind === 'projectile' || !beside(at, e.grid)) continue;
     const lockers = others.filter((u) => beside(u.grid, e.grid)).length;
     const legs = e.kind === 'mech' ? e.maneuver : e.move;
     const held = (n: number): boolean => n > 0 && legs < 1 + n;
-    if (held(lockers + 1) && !held(lockers)) sum += screenedFire(e, c);
+    if (held(lockers + 1) && !held(lockers)) sum += ((e.done ? 0 : 1) + next) * screenedFire(e, c);
   }
   return c.w.lockDeny * sum;
 }

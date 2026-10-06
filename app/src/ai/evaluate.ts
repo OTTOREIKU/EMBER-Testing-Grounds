@@ -551,9 +551,10 @@ export interface Weights {
   // work"): a Ground enemy beside the Grid a unit that locks ends in makes no Firing attack but with a weapon
   // printing Melee Firing (4.3.5), unless it Breaks Away: a Maneuver is no Action, and leaving its Grid costs 1
   // Movement Range more a locker, so it is held only while its Maneuver is short of 1 + the lockers. For each such
-  // enemy, its turn still to come this round, that this unit's lock is the one to hold (held with it, not
-  // without), the best shot it could make at a unit of the squad OTHER than this one (what it would do to this one
-  // is the plan's own price) is worth `lockDeny` of itself. At 0 nothing.
+  // enemy that this unit's lock is the one to hold (held with it, not without), the best shot it could make at a
+  // unit of the squad OTHER than this one (what it would do to this one is the plan's own price), this round while
+  // its turn is still to come and the next at `future` (a blade that Sprints in after the gunner has fired holds it
+  // for the round after, and a Melee dial strikes before a Firing one), is worth `lockDeny` of itself. At 0 nothing.
   lockDeny: number;
 }
 
