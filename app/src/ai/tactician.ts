@@ -262,8 +262,10 @@ export interface Skills {
   // it in the VIP game as UN, 14 of 50 where the Ace won none. Adopted, and
   // TURNED OFF again the same night: the community melee squad held on the
   // Timing of its guns, where its blades cannot be used, and never struck
-  // (community.test). Its weapons are now its strongest only (`HOLD_SHARE`),
-  // to be measured again.
+  // (community.test). Its weapons are now its strongest only (`HOLD_SHARE`).
+  // MEASURED AGAIN AND ADOPTED (2026-10-05, night): random squads 101 of 200
+  // against 98 (p .12), VIP 91 against 90, head to head on the copied games 112
+  // of 200 (the VIP game as RDL 48 of 50, the mirror 36); the melee squad strikes.
   holdLate: boolean;
   // SMOKE FOR THE SQUAD (OTTO, 2026-10-05: "Would a unit smoke out an open area
   // so that they or a friendly unit can move safely through it?"; "more choices
@@ -304,7 +306,7 @@ export const SKILLS: Skills = {
   support: true, profile: true, mode: true, coordinate: true, orders: true, stalk: true, cloak: true, appear: true, shown: true, overwatch: true, grant: true,
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
-  lastRound: true, boxOnce: true, shock: true, holdLate: false, smokeSquad: false, smokeAhead: false, breakIn: true,
+  lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
 };
 
 // How much of the board is put to the engine in one decision.
