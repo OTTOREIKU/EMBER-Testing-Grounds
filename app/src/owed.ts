@@ -33,7 +33,7 @@ import {
   detonationToken, discardSlots, envCardAt, explosionCamo, extraActivationOf, fliesToTarget, formSwitch, immediateDetonation, immediatesOwed, isGroundUnit, linkSupportOf, linkSupportTargets, manifestTargets, martyrdomOwed, maxLink, minesLayable, repairSpec,
   resupplyHolders, resupplyOf, riposteMelees, selfGrantWhy, selfStanceShift, selfRepairOptions, selfStatusGrant, smokePlacement, stabiliseAsk, STABILISE_KEEP_LABEL, stabiliseRowLabel, stanceFeedbackTargets,
   targetStatusGrant, targetStatusTargets, tokenCards, tokenCleanupOf, tokenCleanupTargets, transformOffer, unfoldsOwed, controlledMoveActions, knockbackOf,
-  interceptPayer, overwatchOf, containerTargets,
+  interceptPayer, overwatchOf, containerTargets, lowProfileAuraOf,
 } from './units';
 
 // ---------- what a seat keeps to itself ----------
@@ -1772,6 +1772,9 @@ function launchOptions(data: GameData, state: GameState, t: Token, row: turn.Act
     // is given the Landing Points within it of an enemy already (`strike`).
     const caller = (card.actions ?? []).find((x) => overwatchOf(x));
     const calls = caller ? caller.range ?? 0 : 0;
+    // A BEACON THAT GIVES ITS OWN SIDE LOW PROFILE (the MES Beacon's Decoy
+    // Aura): the Range it reaches, for a seat that weighs whom it would cover.
+    const veil = lowProfileAuraOf(card);
     const grids = ahead
       ? turn.landingGrids(data, state, t, a, (c, r) => foes.some((f) => Math.abs(f.c - c) + Math.abs(f.r - r) <= strike)
         || (mends > 0 && hurt.some((f) => Math.abs(f.c - c) + Math.abs(f.r - r) <= mends)))
@@ -1816,7 +1819,7 @@ function launchOptions(data: GameData, state: GameState, t: Token, row: turn.Act
         label: `${name}: ${what} to ${gridName(g)}`,
         tags: ['launch', 'land', ...(underWay ? ['volley'] : []), ...(drawn ? ['intercepted'] : []), ...(smoky ? ['smoke'] : []), ...(port ? ['bit'] : []), ...(isMine(card) ? ['mine'] : [])],
         commands,
-        facts: { uid: t.uid, actionId: a.id, cardId: card.id, to: { c: g.c, r: g.r }, strike, ...(mends ? { mends } : {}), ...(calls ? { calls } : {}), ...(drawn ? { intercepts: drawn, interceptTries: tries } : {}) },
+        facts: { uid: t.uid, actionId: a.id, cardId: card.id, to: { c: g.c, r: g.r }, strike, ...(mends ? { mends } : {}), ...(calls ? { calls } : {}), ...(veil !== null ? { veil } : {}), ...(drawn ? { intercepts: drawn, interceptTries: tries } : {}) },
       });
     }
   }

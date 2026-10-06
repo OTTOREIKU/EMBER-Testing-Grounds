@@ -3375,6 +3375,14 @@ function auraRulesOf(card: Card): { a: CardAction; eff: AuraRule }[] {
   return rules;
 }
 
+// The Range of an Aura a card prints that gives its own side Low Profile (the
+// MES Beacon's Decoy, 072_A), or null where it prints none: for a seat that
+// weighs whom a Beacon launched would cover.
+export function lowProfileAuraOf(card: Card): number | null {
+  for (const { a, eff } of auraRulesOf(card)) if (eff.targetSide !== 'enemy' && eff.effectTypes?.includes('low_profile')) return a.range ?? 0;
+  return null;
+}
+
 export function aurasOn(data: GameData, tokens: Token[], t: Token, opts: { anywhere?: boolean } = {}): AuraSource[] {
   const out: AuraSource[] = [];
   for (const src of tokens) {

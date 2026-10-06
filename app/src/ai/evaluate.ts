@@ -523,6 +523,13 @@ export interface Weights {
   // lose it, so it stands where fewer enemies could reach it, and to the one that
   // could destroy it. At 0 a Drone is worth its points alone.
   jamKeep: number;
+  // A BEACON THAT GIVES THE SQUAD LOW PROFILE (A6, 2026-10-05: the Type 55
+  // Shield's MES Beacon Launcher, 064_A Decoy, launched 0 times in 17 offers;
+  // OTTO: "More focus on using mines, missiles, or beacons"): a Landing Point
+  // is worth this x what standing where they stand would cost the units of the
+  // squad its Aura covers, less on the table the launch leaves (`veil`, as
+  // `taunt` reads a Highlight). At 0 worth nothing.
+  veil: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -618,6 +625,7 @@ export const TACTICIAN: Weights = {
   beacon: 1,
   mineLay: 0,
   jamKeep: 0,
+  veil: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way

@@ -799,6 +799,62 @@ function launch(options: Option[], c: Ctx): Deed | null {
       if (s && (!best || s.value > best.value + EXACT)) best = { option: o, value: s.value, why: s.why, reason: 'mine_value' };
     }
   }
+  if (c.w.veil > 0) {
+    const v = veil(options, c);
+    if (v && (!best || v.value > best.value + EXACT)) best = v;
+  }
+  return best;
+}
+
+// A BEACON THAT GIVES THE SQUAD LOW PROFILE (`veil`; A6, 2026-10-05: the Type
+// 55 Shield's MES Beacon Launcher, 064_A Decoy, launched 0 times in 17 offers).
+// The MES Beacon strikes nothing: its Aura gives each Ally Unit within its
+// Range Low Profile (an {Eye} rolled in Defence against a Firing Attack counts
+// as a {Dodge}), so `landed` finds nothing in it. A Landing Point is worth what
+// standing where they stand would cost the units of the squad it covers (but
+// the one launching, whose own Grid is its plan's price) as the board stands,
+// less on the table the launch leaves, where the engine's odds read the Aura:
+// as `taunt` reads a Highlight. Landing Points that cover the same units are
+// worth the same, and of them the one farthest from the enemy is asked (a
+// Beacon is a unit, and may be shot).
+function veil(options: Option[], c: Ctx): Deed | null {
+  const now = c.d.here?.();
+  if (!now) return null;
+  const sets = new Map<string, { o: Option; under: UnitView[]; far: number }>();
+  for (const o of options) {
+    const reach = kindOf(o) === 'launch' && typeof o.facts?.veil === 'number' ? o.facts.veil : -1;
+    const at = reach >= 0 ? endOf(o) : null;
+    if (!at) continue;
+    const under = c.view.units.filter((u) => u.side === c.view.seat && u.alive && u.deployed && u.kind !== 'projectile' && u.uid !== c.me.uid
+      && apart(at, u.grid) <= reach && !u.statuses.includes('lowProfile') && c.hostile.some((e) => inReachOf(e, u.grid)));
+    if (!under.length) continue;
+    const id = under.map((u) => u.uid).join(',');
+    const far = Math.min(99, ...c.foes.map((f) => apart(at, f.grid)));
+    const was = sets.get(id);
+    if (!was || far > was.far) sets.set(id, { o, under, far });
+  }
+  let best: Deed | null = null;
+  for (const { o, under } of sets.values()) {
+    const after = o.after?.();
+    if (!after) continue;
+    const aims = new Map<number, Map<number, number>>();
+    let spared = 0;
+    for (const u of under) {
+      const near = c.hostile.filter((e) => inReachOf(e, u.grid));
+      const as: Ctx = { ...c, me: u, hostile: near };
+      const spot = `${u.uid}|${key(u.grid)}|stays|${near.map((e) => e.uid).join(',')}`;
+      let was = c.harms.get(spot);
+      if (!was) {
+        was = exposure(now, u.grid, as);
+        if (!was.partial) c.harms.set(spot, was);
+      }
+      spared += was.cost - exposure(after, u.grid, { ...as, aims, aimsOn: after }).cost;
+    }
+    const value = c.w.veil * spared;
+    if (value > EXACT && (!best || value > best.value + EXACT)) {
+      best = { option: o, value, why: `${o.label}, to give ${under.map((u) => u.label).join(' and ')} Low Profile`, reason: 'veil_value' };
+    }
+  }
   return best;
 }
 
