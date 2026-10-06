@@ -5479,6 +5479,7 @@ function smokePanel(ctx: HudCtx): string {
           : m.connected
             ? 'Each screen must be in Contact with one already placed by this Action, so pick a Grid sharing an edge with the smoke.'
             : 'Pick any highlighted Grid. This Action does not require the screens to be Connected.'} A Smoke Screen sits in one Large Grid and may share it with units and terrain.</p>
+        <p class="tp-dim">In the End Phase a Smoke Screen standing alone is removed, and a Connected group gives up ${smokePerGroup(ctx.data, ctx.state) === 1 ? 'one' : smokePerGroup(ctx.data, ctx.state)} (4.16).</p>
         <p class="tp-dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'}. You may stop early: the card says <i>up to</i> ${total}.</p>
       </div>
       <div class="tp-foot"><button class="bigbtn ghost2" data-act="smokestop">${m.placed.length ? 'Stop here' : 'Cancel'}</button></div>`;

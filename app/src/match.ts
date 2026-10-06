@@ -45,7 +45,7 @@ import { Panel } from './panel';
 import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
 import { boxNoteText, dodgeEnhanceOf, SLOT_LABEL, loanedParts, explosionScope } from './units';
 import { gridsOf, PHASES, SCALES, STATUSES, statusCount } from './types';
-import { syncSeason } from './season';
+import { smokePerGroup, syncSeason } from './season';
 import { handCommand, handCount, handIds, setHandRoom } from './tactichand';
 // FIRST, before anything else in this module runs. A net that is installed
 // after the thing it is meant to catch is not a net.
@@ -251,6 +251,15 @@ function announceRemote(cmd: Command): void {
     return;
   }
   if (!data) return;
+  // The End Phase run by the other side (the computer, as First Player, runs it
+  // the moment the round's last Action ends): a Smoke Screen that vanished with
+  // nothing said read as a bug (OTTO, 2026-10-05: "placed a smoke on itself and
+  // then the smoke immediately went away").
+  if (cmd.kind === 'dissipateSmoke') {
+    const per = smokePerGroup(data, state);
+    say('event', `End Phase: the Smoke dissipates. A Smoke Screen standing alone is removed, and each Connected group gives up ${per === 1 ? 'one' : per} (${per === 1 ? '4.16' : `Season ${state.season ?? ''}`}).`);
+    return;
+  }
   const c = cmd as Command & { uid?: number; targetUid?: number };
   const target = state.tokens.find((t) => t.uid === (c.targetUid ?? c.uid));
   if (!TABLE_WIDE.has(cmd.kind) && !(target && target.side === mySeat())) return;

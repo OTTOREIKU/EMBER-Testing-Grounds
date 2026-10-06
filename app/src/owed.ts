@@ -33,7 +33,7 @@ import {
   detonationToken, discardSlots, envCardAt, explosionCamo, extraActivationOf, fliesToTarget, formSwitch, immediateDetonation, immediatesOwed, isGroundUnit, linkSupportOf, linkSupportTargets, manifestTargets, martyrdomOwed, maxLink, minesLayable, repairSpec,
   resupplyHolders, resupplyOf, riposteMelees, selfGrantWhy, selfStanceShift, selfRepairOptions, selfStatusGrant, smokePlacement, stabiliseAsk, STABILISE_KEEP_LABEL, stabiliseRowLabel, stanceFeedbackTargets,
   targetStatusGrant, targetStatusTargets, tokenCards, tokenCleanupOf, tokenCleanupTargets, transformOffer, unfoldsOwed, controlledMoveActions, knockbackOf,
-  interceptPayer, overwatchOf,
+  interceptPayer, overwatchOf, containerTargets,
 } from './units';
 
 // ---------- what a seat keeps to itself ----------
@@ -1320,6 +1320,25 @@ function actionOptions(data: GameData, state: GameState, seat: Side, t: Token, w
               facts: { ...facts, charged: true },
             });
           }
+        }
+      }
+      // A CONTAINER (Supplementary Rules 1.04, 1.1.3, 3.1; OTTO's A1, 2026-10-05:
+      // "Yes lets work on those"): a Neutral Unit a Firing or Melee Action may
+      // target in its reach and sight, destroyed with no roll, as the attack
+      // panel offers it (turn.ts attackReading `boxes`, matchhud.ts
+      // data-attackbox): the Action paid, and the piece gone. Tagged
+      // `container` first, so a policy reading `attack` answers never takes it
+      // for an attack with dice; what it is worth is a policy's to say.
+      // The panel's own conditions (attackReading): not an Automatic Action,
+      // a Shock Attack's or one a Highlight names the target of.
+      const a2 = reading.action;
+      if (pay.cmd && !narrowed && !reading.autoLegal && !reading.shock && !reading.forced.length && (a2.type === 'Firing' || a2.type === 'Melee')) {
+        for (const b of containerTargets(data, state.tokens, reading.terrain, reading.by, a2, reading.smoke)) {
+          const cell = reading.terrain.find((p) => p.id === b.id)?.subCells[0];
+          const g = cell ? { c: Math.floor(cell.col / 3), r: Math.floor(cell.row / 3) } : null;
+          const o2 = sends(data, state, `container:${row.key}:${b.id}`, `${name} at the Container${g ? ` in ${gridName(g)}` : ''}`,
+            ['container', (row.a.type ?? '').toLowerCase()], [pay.cmd, { kind: 'destroyTerrain', seat: t.side, uid: t.uid, pieces: [b.id] }]);
+          if (o2) out.push({ ...o2, facts: { uid: t.uid, actionId: row.a.id, piece: b.id, ...(g ? { at: { col: g.c, row: g.r } } : {}) } });
         }
       }
       // SHOCK ATTACK X (turn.ts shockWalk): the walk before the attack, as the

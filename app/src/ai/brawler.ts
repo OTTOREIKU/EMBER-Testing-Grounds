@@ -118,8 +118,33 @@ export interface BrawlerSkills {
   // where to stand, terrain and sight never in the way (4.11.1), and its target
   // is the one it stops most: a Mech before a Drone, one that can still fire.
   jams: boolean;
+  // AN ATTACK FROM WHERE ONE ENEMY AT MOST COULD ANSWER IT (OTTO, 2026-10-05:
+  // "aggressive with them but playing smart (out of range, using cover, not
+  // walking into the direct line of multiple enemy units)"). Of the Grids it
+  // could attack from, one in the lines of fire of one enemy or none beats one
+  // in two or more's, and of those the best attack; a unit that would attack
+  // from where two or more could answer it moves first to such a Grid, for an
+  // attack worth most of this one; walking up, it keeps to such Grids. A Drone
+  // that keeps out of the line of fire (`screen`) may still attack from where
+  // one enemy could answer it. `kite` without the distance, and with a margin.
+  safer: boolean;
+  // A UNIT THAT CANNOT ATTACK YET WALKS UP UNDER COVER: of the Grids that take
+  // it within COVER_SLACK of as far along the road to the enemy as it could go,
+  // the one fewest enemies could attack it in. Still a fighter closing in, a
+  // Mech as much as a Drone; `screen` is the Drone's stricter habit and wins.
+  cover: boolean;
 }
-export const COPY: BrawlerSkills = { kite: false, screen: false, escort: false, jams: false };
+export const COPY: BrawlerSkills = { kite: false, screen: false, escort: false, jams: false, safer: false, cover: false };
+
+// How many Grids short of its farthest step a unit walking up under cover may
+// stop for a Grid fewer enemies could attack it in (`cover`).
+const COVER_SLACK = 1;
+
+// A Grid in the lines of fire of two enemies or more (`safer`).
+const exposed = (danger: number | undefined): number => ((danger ?? 0) >= 2 ? 1 : 0);
+// How much of the attack it could make where it stands one made from a safer
+// Grid must be worth for it to move there first (`safer`). Ours, not his table's.
+const SAFER_SHARE = 0.75;
 
 // How far a unit could walk before it attacks: a Mech its Maneuver, twice it in
 // Mobility Stance (3.4.3); a Drone not at all, a Command buying it a Movement
@@ -370,6 +395,15 @@ function kiteBeats(a: Reached, b: Reached): boolean {
   return a.tie > b.tie + EXACT;
 }
 
+// `safer`: an attack from where one enemy at most could answer it before one
+// from where two or more could, then the better attack.
+function saferBeats(a: Reached, b: Reached): boolean {
+  if (exposed(a.danger) !== exposed(b.danger)) return exposed(a.danger) < exposed(b.danger);
+  const more = a.shot.value - b.shot.value;
+  if (Math.abs(more) > EXACT) return more > 0;
+  return a.tie > b.tie + EXACT;
+}
+
 function reachedBy(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], k: BrawlerSkills = COPY): Reached | null {
   const landings = new Map<string, { at: Grid; near: number; locked: boolean; moves: Option[] }>();
   for (const o of d.options) {
@@ -388,7 +422,7 @@ function reachedBy(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], 
     landings.set(key, l);
   }
   const tried = [...landings.values()].sort((a, b) => Number(a.locked) - Number(b.locked) || a.near - b.near).slice(0, B.LANDING_CELLS);
-  const danger = k.kite ? dangerAt(me, tried.map((l) => l.at), d, foes) : null;
+  const danger = k.kite || k.safer ? dangerAt(me, tried.map((l) => l.at), d, foes) : null;
   let best: Reached | null = null;
   for (const [i, l] of tried.entries()) {
     for (const move of l.moves) {
@@ -398,7 +432,7 @@ function reachedBy(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], 
       const tie = standing(me, l.at, facingOf(move) ?? me.facing, view, foes) ?? 0;
       if (danger) {
         const r: Reached = { move, shot, tie, danger: danger[i], far: shot.target ? apart(l.at, shot.target.grid) : 0 };
-        if (!best || kiteBeats(r, best)) best = r;
+        if (!best || (k.kite ? kiteBeats(r, best) : saferBeats(r, best))) best = r;
         continue;
       }
       if (!best || shot.value > best.shot.value + EXACT || (Math.abs(shot.value - best.shot.value) <= EXACT && tie > best.tie + EXACT)) best = { move, shot, tie };
@@ -517,6 +551,7 @@ function approachWith(d: Decision, view: SeatView, me: UnitView, foes: UnitView[
   const walk = roadOf(d, view, me, foes);
   const jamming = k.jams && !strikers(me).length && jammers(me).length > 0;
   const screened = k.screen && me.kind === 'drone';
+  const covered = k.cover && !screened;
   const end = d.options.find((o) => o.tags.includes('end'));
   type Cand = { o: Option | null; at: Grid; facing: number; claim: number | null; s: number | null };
   const claimOf = (at: Grid, facing: number): number | null => (jamming ? jamAt(me, at, foes) : standing(me, at, facing, view, foes));
@@ -525,7 +560,7 @@ function approachWith(d: Decision, view: SeatView, me: UnitView, foes: UnitView[
     { o: null, at: me.grid, facing: me.facing, claim: claimOf(me.grid, me.facing), s: null },
     ...moves.map((o) => { const at = endOf(o)!; const facing = facingOf(o) ?? me.facing; return { o, at, facing, claim: claimOf(at, facing), s: null }; }),
   ];
-  const danger = k.kite || screened ? dangerAt(me, cands.map((c) => c.at), d, foes) : cands.map(() => 0);
+  const danger = k.kite || screened || k.safer || covered ? dangerAt(me, cands.map((c) => c.at), d, foes) : cands.map(() => 0);
   const dangerOf = new Map(cands.map((c, i) => [c, danger[i]]));
   // How far off the enemy it would attack is, from there.
   const reachFrom = (c: Cand): number => {
@@ -536,9 +571,11 @@ function approachWith(d: Decision, view: SeatView, me: UnitView, foes: UnitView[
   // it; an Electronic Attack by its Range alone. The likeliest are asked
   // first; with its habits, the Grids fewest enemies could attack it in and
   // the farthest off, which are the ones it would take.
-  const order = k.kite || screened
+  const order = k.kite || (screened && !k.safer)
     ? [...cands].sort((a, b) => (dangerOf.get(a) ?? 0) - (dangerOf.get(b) ?? 0) || reachFrom(b) - reachFrom(a) || (b.claim ?? 0) - (a.claim ?? 0))
-    : [...cands].sort((a, b) => (b.claim ?? 0) - (a.claim ?? 0));
+    : k.safer
+      ? [...cands].sort((a, b) => exposed(dangerOf.get(a)) - exposed(dangerOf.get(b)) || (b.claim ?? 0) - (a.claim ?? 0))
+      : [...cands].sort((a, b) => (b.claim ?? 0) - (a.claim ?? 0));
   let asked = 0;
   for (const c of order) {
     if (c.claim === null) continue;
@@ -557,11 +594,27 @@ function approachWith(d: Decision, view: SeatView, me: UnitView, foes: UnitView[
   // Mechs it would attack will have moved by then, so it keeps two Grids of
   // its Range in hand rather than stand at the end of it (`kite`).
   const arm = Math.max(0, ...(jamming ? jammers(me) : strikers(me)).map((w) => w.range));
+  // How near the nearest enemy each Grid it cannot attack from is, and the
+  // nearest of them (`cover`): a Grid off the road to the enemy counts too, so
+  // it may step aside behind a wall.
+  const walking = cands.filter((c) => !(c.s !== null && c.s >= B.ATTACK_GRID_SCORE));
+  const gap = (c: Cand): number => Math.min(...foes.map((f) => apart(c.at, f.grid)));
+  const closest = walking.length ? Math.min(...walking.map(gap)) : 0;
   const rank = (c: Cand, i: number): number[] => {
     const attack = c.s !== null && c.s >= B.ATTACK_GRID_SCORE;
+    // `cover`: walking up, of the Grids within COVER_SLACK of the nearest the
+    // enemy, the one fewest enemies could attack it in, then the nearer the
+    // enemy, then the farther along the road.
+    if (covered && !attack) {
+      const near = gap(c) <= closest + COVER_SLACK;
+      return [0, near ? 1 : 0, near ? -danger[i] : 0, -gap(c), walk(c.at, c.facing)];
+    }
+    // `safer` on a Drone that keeps out of the line of fire: an attack from
+    // where one enemy at most could answer it is taken; walking, none.
+    if (screened && k.safer) return attack ? [-exposed(danger[i]), 1, 0, c.s ?? 0] : [-danger[i], 0, 0, walk(c.at, c.facing)];
     if (screened) return [-danger[i], Number(attack), attack && k.kite ? Math.min(reachFrom(c), Math.max(1, arm - 2)) : 0, attack ? c.s ?? 0 : walk(c.at, c.facing)];
-    if (attack) return k.kite ? [1, -danger[i], reachFrom(c), c.s ?? 0] : [1, 0, 0, c.s ?? 0];
-    return [0, 0, 0, walk(c.at, c.facing)];
+    if (attack) return k.kite ? [1, -danger[i], reachFrom(c), c.s ?? 0] : k.safer ? [1, -exposed(danger[i]), 0, c.s ?? 0] : [1, 0, 0, c.s ?? 0];
+    return k.safer ? [0, -exposed(danger[i]), 0, walk(c.at, c.facing)] : [0, 0, 0, walk(c.at, c.facing)];
   };
   const ranks = cands.map(rank);
   let bi = 0;
@@ -573,9 +626,11 @@ function approachWith(d: Decision, view: SeatView, me: UnitView, foes: UnitView[
     return screened && end ? { option: end.id, reason: 'out_of_fire', why: 'keeping out of the line of fire' } : null;
   }
   const attack = best.s !== null && best.s >= B.ATTACK_GRID_SCORE;
+  // Whether cover passed over a Grid nearer the enemy that more enemies could attack it in.
+  const sheltered = covered && !attack && walking.some((c) => gap(c) < gap(best) && (dangerOf.get(c) ?? 0) > danger[bi]);
   return {
     option: best.o.id, reason: 'contact_before_occupation', score: best.s ?? walk(best.at, best.facing),
-    why: attack ? (jamming ? 'to a Grid it can jam from' : 'to a Grid it can attack from') : screened ? 'closing on the enemy, out of the line of fire' : 'closing on the nearest enemy',
+    why: attack ? (jamming ? 'to a Grid it can jam from' : 'to a Grid it can attack from') : screened || sheltered ? 'closing on the enemy, out of the line of fire' : 'closing on the nearest enemy',
   };
 }
 
@@ -670,7 +725,21 @@ function activation(asked: Decision, view: SeatView, k: BrawlerSkills = COPY): C
   } : null);
   const kiting = k.kite && !!ahead && !!now && worthNow > 0 && worthNow >= (launch?.value ?? 0);
   const here = kiting ? fromHere() : null;
-  if (ahead && (here ? kiteBeats(ahead, here) : ahead.shot.value > Math.max(worthNow, launch?.value ?? 0) + B.BETTER_BY)) {
+  // `safer`: standing where two or more enemies could answer, it moves first to
+  // a Grid one at most could, for an attack worth most of this one; and it does
+  // not walk into two or more's lines of fire for a better attack than the one
+  // it has from where it stands.
+  const attacksHere = !!now && worthNow > 0 && worthNow >= (launch?.value ?? 0);
+  const hereExposed = k.safer && attacksHere ? exposed(dangerAt(me, [me.grid], d, foes)[0]) : 0;
+  const shelter = k.safer && !!ahead && attacksHere && hereExposed === 1 && exposed(ahead.danger) === 0 && ahead.shot.value >= worthNow * SAFER_SHARE;
+  const intoFire = k.safer && !!ahead && attacksHere && hereExposed === 0 && exposed(ahead.danger) === 1;
+  if (shelter && ahead) {
+    return {
+      option: ahead.move.id, reason: 'safer_attack', score: ahead.shot.value,
+      why: `from there, ${ahead.shot.option.label} (${said(ahead.shot)})`,
+    };
+  }
+  if (ahead && !intoFire && (here ? kiteBeats(ahead, here) : ahead.shot.value > Math.max(worthNow, launch?.value ?? 0) + B.BETTER_BY)) {
     return {
       option: ahead.move.id, reason: 'movement_unlocks_better_target', score: ahead.shot.value,
       why: `from there, ${ahead.shot.option.label} (${said(ahead.shot)})`,
@@ -727,7 +796,7 @@ function activation(asked: Decision, view: SeatView, k: BrawlerSkills = COPY): C
     const stay = escort(d, view, me, foes);
     if (stay) return stay;
   }
-  const step = k.kite || k.screen || k.jams ? approachWith(d, view, me, foes, !walled, k) : approach(d, view, me, foes, !walled);
+  const step = k.kite || k.screen || k.jams || k.safer || k.cover ? approachWith(d, view, me, foes, !walled, k) : approach(d, view, me, foes, !walled);
   if (step) return step;
 
   // Contact before occupation: with nobody to close on, it holds ground.

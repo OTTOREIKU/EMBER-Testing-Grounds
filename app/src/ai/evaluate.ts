@@ -478,6 +478,16 @@ export interface Weights {
   // and the KK9 is used where it never was (launched 176 times of 643 offers,
   // its Strike called at all 71 of its chances).
   spotter: number;
+  // SMOKE FOR THE SQUAD (`smokeSquad`; OTTO, 2026-10-05: "Would a unit smoke out
+  // an open area so that they or a friendly unit can move safely through it?",
+  // and "more choices based on squad tactics rather than the unit thinking
+  // mostly about itself"): each enemy that would no longer see an Ally Unit
+  // behind the Screens a Smoke card puts down is worth this. The unit throwing
+  // it is priced as ever, on the table the Screens leave (`exposure`).
+  smokeAlly: number;
+  // A CONTAINER OVER A LOOSE BLACK BOX (`breakIn`, the Tactician's skill): what
+  // breaking it open is worth, as a share of what the Box in it pays.
+  breakIn: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -567,6 +577,8 @@ export const TACTICIAN: Weights = {
   reshape: 0,
   patch: 1,
   spotter: 1,
+  smokeAlly: 0.15,
+  breakIn: 0.5,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way

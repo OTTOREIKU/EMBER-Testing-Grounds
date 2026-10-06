@@ -307,6 +307,7 @@ const BECAUSE: Record<string, string> = Object.assign(Object.create(null) as Rec
   take_zone: 'for the mission', access_terminal: 'for the mission', take_box: 'for the mission',
   occupy_objective: 'for the mission', contact_before_occupation: 'to close with the enemy',
   advance: 'to close in', move_to_attack: 'to attack from there', move_to_strike_next: 'to be in reach next turn',
+  safer_attack: 'to attack from a safer Grid', break_in: 'to free the Black Box in it',
   take_cover: 'out of the enemy\'s sights', movement_unlocks_better_target: 'to reach a better target',
   reposition_opening: 'to find something to attack', intent_opening: 'to attack',
   // What it does.
@@ -315,7 +316,7 @@ const BECAUSE: Record<string, string> = Object.assign(Object.create(null) as Rec
   jam_value: 'to jam the enemy', support_value: 'to keep its squad going', overwatch_value: 'to lend a shot',
   patch_value: 'to mend an ally next round', spotter_value: 'to call in a shot',
   stance_by_value: 'for what that Stance lets it do', preparation_unlocks_attack: 'to open an attack',
-  charge_for_attack: 'to charge a Part for its attack', smoke_for_cover: 'to hide behind it',
+  charge_for_attack: 'to charge a Part for its attack', smoke_for_cover: 'to hide behind it', smoke_for_squad: 'to hide its squad',
   cloak: 'to be hard to target', low_profile: 'to be hard to target', draw_fire: 'to draw the enemy\'s fire', mode_by_value: 'for what it can do then',
   tactic_by_value: 'worth more played than kept', coordinate_by_value: 'to put a Drone to work',
   tick_by_value: 'for the turn it opens', reboot: 'to get back into the fight', restore_link: 'to restore its Link',

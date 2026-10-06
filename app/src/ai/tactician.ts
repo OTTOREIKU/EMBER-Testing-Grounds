@@ -26,7 +26,7 @@
 // EACH THING IT THINKS ABOUT CAN BE TURNED OFF (`Skills`), so that what each
 // is worth can be measured by itself (section 8). With all of them off it is
 // the Brawler's fighter with a different price list.
-import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, ZoneView } from '../seat';
+import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, WeaponView, ZoneView } from '../seat';
 import type { Choice, Policy } from './policy';
 import {
   apart, attacking, brawlerPolicy, couldStrike, declare, endOf, facingAt, facingOf, foesOf, hitLocation, lockedAt, percent, reaches, ready, reroll,
@@ -256,8 +256,26 @@ export interface Skills {
   // once the other squad has moved, with its own weapons to answer whoever
   // walked into them. With the skill such a plan is told from its equals by
   // the Timing of its own weapons that comes last; without it by the earliest
-  // Timing, and a Mech holding a line set Melee round after round.
+  // Timing, and a Mech holding a line set Melee round after round. MEASURED
+  // LEVEL on random squads (2026-10-05): every Main Task 101 of 200 against
+  // 102, VIP 83 against 85; head to head on the copied games 112 of 200, all of
+  // it in the VIP game as UN, 14 of 50 where the Ace won none. Adopted, and
+  // TURNED OFF again the same night: the community melee squad held on the
+  // Timing of its guns, where its blades cannot be used, and never struck
+  // (community.test). Its weapons are now its strongest only (`HOLD_SHARE`),
+  // to be measured again.
   holdLate: boolean;
+  // SMOKE FOR THE SQUAD (OTTO, 2026-10-05: "Would a unit smoke out an open area
+  // so that they or a friendly unit can move safely through it?"; "more choices
+  // based on squad tactics rather than the unit thinking mostly about
+  // itself"). A Smoke card is thrown at its own feet or at an Ally the enemy
+  // sees most, in the shape of Screens that hides the most Allies from enemy
+  // eyes (`smokeAlly` each), and not only as a lone Screen at its own feet (a
+  // Connected group of three keeps two through the End Phase, 4.16).
+  smokeSquad: boolean;
+  // A CONTAINER OVER A BLACK BOX IS BROKEN OPEN (`breakIn`): shot or struck,
+  // where the Box in it is this squad's to take (`breakIn` weight).
+  breakIn: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -265,7 +283,7 @@ export const SKILLS: Skills = {
   support: true, profile: true, mode: true, coordinate: true, orders: true, stalk: true, cloak: true, appear: true, shown: true, overwatch: true, grant: true,
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
-  lastRound: true, boxOnce: true, shock: true, holdLate: false,
+  lastRound: true, boxOnce: true, shock: true, holdLate: false, smokeSquad: false, breakIn: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -304,6 +322,7 @@ const EXACT = 1e-9;
 // The Action Types that attack, by which a Mech's Timings of its own weapons
 // are known (`holdLate`).
 const ARMS = new Set(['Firing', 'Melee', 'Projectile']);
+const HOLD_SHARE = 0.75;
 // What standing somewhere must cost before cover is looked for.
 const DANGER = 0.5;
 // What an attack nobody could put odds on is taken to be worth: something.
@@ -918,10 +937,40 @@ function access(options: Option[], c: Ctx): Deed | null {
   return best;
 }
 
+// BREAKING INTO A CONTAINER (`breakIn`; OTTO's A1, 2026-10-05: "attacking
+// Containers and neutral units"). A Container over a loose Black Box keeps a
+// Medium or Small unit out of its Grid (2.2.1): only a Large unit's Crush takes
+// that Box (the Steelworks Key Facility Boxes, half the Black Box games ending
+// 0-0 there). Shot or struck it is destroyed with no roll (Supplementary Rules
+// 1.04, 3.1; the seam's `container` answer): worth `breakIn` x what a Box pays,
+// for each loose Box in it, where the Main Task pays for Boxes and the nearest
+// unit to it is this squad's (opened for the other squad it would be a gift).
+function breakIn(options: Option[], c: Ctx): Deed | null {
+  const task = c.view.task;
+  if (!c.skills.breakIn || !task || task.family !== 'blackbox') return null;
+  const loose = c.view.boxes.filter((b) => b.bearer === null && !!b.grid);
+  if (!loose.length) return null;
+  const units = c.view.units.filter((u) => u.deployed && u.alive && u.kind !== 'projectile' && !u.lowValue);
+  if (!units.length) return null;
+  const worth = task.vp * payFrom(c.view.round, c.view, c.w) * (task.scoringZone ? c.w.carry : 1);
+  let best: Deed | null = null;
+  for (const o of options) {
+    const at = kindOf(o) === 'container' ? o.facts?.at as Grid | undefined : undefined;
+    if (!at) continue;
+    const boxes = loose.filter((b) => same(b.grid!, at)).length;
+    if (!boxes) continue;
+    const near = units.reduce((a, u) => (apart(u.grid, at) < apart(a.grid, at) ? u : a));
+    if (near.side !== c.view.seat) continue;
+    const value = c.w.breakIn * boxes * worth;
+    if (value > EXACT && (!best || value > best.value + EXACT)) best = { option: o, value, why: `${o.label}: the Black Box in it can be taken`, reason: 'break_in' };
+  }
+  return best;
+}
+
 // The best thing to do at a table, of the five kinds.
 function deedAt(options: Option[], c: Ctx, whole: boolean, shock = false): Deed | null {
   let best: Deed | null = null;
-  for (const deed of [volley(options, c, whole, shock), launch(options, c), jam(options, c), access(options, c), blastDeed(options, c), support(options, c), handOff(options, c), strike(options, c)]) {
+  for (const deed of [volley(options, c, whole, shock), launch(options, c), jam(options, c), access(options, c), blastDeed(options, c), support(options, c), handOff(options, c), strike(options, c), breakIn(options, c)]) {
     if (deed && (!best || deed.value > best.value + EXACT)) best = deed;
   }
   return best;
@@ -2568,13 +2617,18 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
   // Screen is gone with the round). It is a plan to stay where it stands, at
   // what standing there costs behind the one Screen: priced as every plan is,
   // and worth its Tick and its one use only where that is a good deal less.
-  if (c.skills.exposure && c.skills.screen) {
+  if (c.skills.exposure && c.skills.screen && !c.skills.smokeSquad) {
     const smoke = d.options.find((o) => kindOf(o) === 'launch' && o.tags.includes('smoke') && !!o.then && same(endOf(o) ?? { col: -1, row: -1 }, me.grid));
     const hide = smoke?.then?.()?.options.find((o) => o.tags.includes('smoke') && Array.isArray(o.facts?.cells) && (o.facts?.cells as unknown[]).length === 1);
     if (smoke && hide) {
       plans.push({ option: smoke, via: hide, how: 'screen', at: me.grid, deed: null, now: -SMOKE_WORTH, next: plans[0].next, mission: 0, shape: plans[0].shape, cost: 0, risk: 0 });
       yield;
     }
+  }
+  // SMOKE FOR THE SQUAD (`smokeSquad`): thrown at its own feet or at the Allies
+  // the enemy sees most, in the shape that hides the most of the squad.
+  if (c.skills.exposure && c.skills.smokeSquad) {
+    for (const p of yield* squadSmoke(c, plans[0])) plans.push(p);
   }
 
   // The few plans that lead: their whole volley, not only its first attack.
@@ -2585,6 +2639,82 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     if (whole && whole.value - mine > p.now + EXACT) { p.deed = whole; p.now = whole.value - mine; }
   }
   return plans;
+}
+
+// SMOKE FOR THE SQUAD (`smokeSquad`): what each shape of Screens a Smoke card
+// may put down hides, read off the table it leaves: for each unit of the squad,
+// how many of the enemy units that could attack it where it stands
+// (`threatens`) would no longer see it (`seen`, which Smoke blocks, 4.16). An
+// enemy too far off to reach it is no line of fire to hide from. The shapes are
+// the blast's own (owed.ts blastAsk).
+const screensOf = (o: Option): number => (Array.isArray(o.facts?.cells) ? (o.facts?.cells as unknown[]).length : 0);
+function* hiddenBy(shapes: Option[], here: Outlook, units: UnitView[], c: Ctx): Steps<{ via: Option; hides: Map<number, number>; total: number }[]> {
+  const foes = new Map(c.hostile.map((e) => [e.uid, e]));
+  const fire = (o: Outlook, u: UnitView): Set<number> =>
+    new Set((o.seen(u.uid, [u.grid])[0] ?? []).filter((uid) => { const e = foes.get(uid); return !!e && threatens(e, u.grid, c); }));
+  const now = new Map(units.map((u) => [u.uid, fire(here, u)]));
+  const out: { via: Option; hides: Map<number, number>; total: number }[] = [];
+  for (const s of shapes) {
+    const after = s.after?.();
+    if (!after) continue;
+    const hides = new Map<number, number>();
+    let total = 0;
+    for (const u of units) {
+      const was = now.get(u.uid);
+      if (!was?.size) continue;
+      const still = fire(after, u);
+      const gone = [...was].filter((x) => !still.has(x)).length;
+      hides.set(u.uid, gone);
+      total += gone;
+    }
+    out.push({ via: s, hides, total });
+    yield;
+  }
+  return out;
+}
+// The shape that hides the most of the squad, and of two that hide as much
+// the larger: a Connected group of three keeps two Screens through the End
+// Phase, where a lone one is gone (4.16).
+function shapeBest<T extends { via: Option; total: number }>(rows: T[]): T | null {
+  let best: T | null = null;
+  for (const r of rows) if (!best || r.total > best.total || (r.total === best.total && screensOf(r.via) > screensOf(best.via))) best = r;
+  return best;
+}
+const squadOf = (view: SeatView): UnitView[] => view.units.filter((u) => u.side === view.seat && u.deployed && u.alive && u.kind !== 'projectile');
+
+// The plans of a Smoke card thrown for the squad: at its own feet, and at the
+// two Allies the enemy sees most within its reach; each in the shape that
+// hides the most of the squad, worth `smokeAlly` for each enemy that would no
+// longer see an Ally. The unit throwing it stays where it is, and is priced as
+// every plan is, on the table the Screens leave.
+function* squadSmoke(c: Ctx, base: Plan): Steps<Plan[]> {
+  const here = c.d.here?.();
+  if (!here) return [];
+  const launches = c.d.options.filter((o) => kindOf(o) === 'launch' && o.tags.includes('smoke') && !!o.then && !!endOf(o));
+  if (!launches.length) return [];
+  const squad = squadOf(c.view);
+  // The Allies most in the enemy's lines of fire: seen by an enemy that could
+  // attack them there.
+  const eyes = new Map(squad.map((u) => [u.uid, (here.seen(u.uid, [u.grid])[0] ?? []).filter((uid) => c.hostile.some((e) => e.uid === uid && threatens(e, u.grid, c))).length]));
+  const watched = squad.filter((u) => u.uid !== c.me.uid && (eyes.get(u.uid) ?? 0) > 0)
+    .sort((a, b) => (eyes.get(b.uid) ?? 0) - (eyes.get(a.uid) ?? 0)).slice(0, 2);
+  const out: Plan[] = [];
+  for (const o of launches) {
+    const at = endOf(o)!;
+    const own = same(at, c.me.grid);
+    if (!own && !watched.some((u) => same(u.grid, at))) continue;
+    const shapes = (o.then?.()?.options ?? []).filter((x) => x.tags.includes('smoke') && screensOf(x) > 0);
+    const best = shapeBest(yield* hiddenBy(shapes, here, squad, c));
+    if (!best) continue;
+    let allies = 0;
+    for (const [uid, n] of best.hides) if (uid !== c.me.uid) allies += n;
+    if (!own && allies <= 0) continue;
+    out.push({
+      option: o, via: best.via, how: own ? 'screen' : 'squadSmoke', at: c.me.grid, deed: null,
+      now: allies * c.w.smokeAlly - SMOKE_WORTH, next: base.next, mission: 0, shape: base.shape, cost: 0, risk: 0,
+    });
+  }
+  return out;
 }
 
 // The key what standing in a Grid costs is kept under (`harms`): the unit, the
@@ -2625,7 +2755,7 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
     const self = p.how === 'stance' || p.how === 'token' || p.how === 'mode' || p.how === 'form' || p.how === 'tactic';
     // And the Boxes it picks up on the way (`held`).
     const taking = c.skills.held && c.skills.mission && (tookBy(p.option).length > 0 || tookBy(p.via).length > 0) ? `+held:${[...tookBy(p.option), ...tookBy(p.via)].join(',')}` : '';
-    const spot = harmKey(c, p.at, `${self || p.how === 'screen' ? p.option?.id : ''}${face}${tow}${mark}${taking}`, p.option);
+    const spot = harmKey(c, p.at, `${self || p.how === 'screen' || p.how === 'squadSmoke' ? p.option?.id : ''}${face}${tow}${mark}${taking}`, p.option);
     let harm = c.harms.get(spot);
     if (!harm) {
       const acted = hiding && p.deed ? p.deed.option.after?.() ?? p.deed.option.then?.(['end'])?.here?.() : undefined;
@@ -2747,7 +2877,7 @@ export function weighed(d: Decision, view: SeatView, skills: Partial<Skills> = {
 function reasonOf(p: Plan, stay: Plan): string {
   if (!p.option) return p.deed?.reason ?? 'end_activation';
   if (p.how !== 'move') {
-    return p.how === 'stance' ? 'stance_by_value' : p.how === 'charge' ? 'charge_for_attack' : p.how === 'screen' ? 'smoke_for_cover'
+    return p.how === 'stance' ? 'stance_by_value' : p.how === 'charge' ? 'charge_for_attack' : p.how === 'screen' ? 'smoke_for_cover' : p.how === 'squadSmoke' ? 'smoke_for_squad'
       : p.how === 'token' ? (p.option?.tags.includes('token:camouflage') ? 'cloak' : highlights(p.option) ? 'draw_fire' : 'low_profile') : p.how === 'mode' ? 'mode_by_value'
         : p.how === 'tactic' ? 'tactic_by_value' : 'clear_token';
   }
@@ -2919,8 +3049,19 @@ function* coordinated(deed: Deed | null | undefined, view: SeatView, w: Weights,
 // take, an enemy before any of its own; where it takes every unit in Range
 // none may be left out, and the one worth most goes first.
 function detonation(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Memo): Choice | null {
+  // A Smoke card's Screens (`smokeSquad`): the shape that hides the most of the
+  // squad, as the plan that threw it read it. Without the skill the answer that
+  // is safe is taken, which is the lone Screen.
   const c = context(d, view, w, skills, memo);
   if (!c) return null;
+  if (skills.smokeSquad) {
+    const shapes = d.options.filter((o) => o.tags.includes('smoke') && screensOf(o) > 0);
+    const here = d.here?.();
+    if (shapes.length && here) {
+      const best = shapeBest(finish(hiddenBy(shapes, here, squadOf(view), c)));
+      if (best) return { option: best.via.id, reason: 'smoke_for_squad', why: best.via.label };
+    }
+  }
   let best: { o: Option; value: number } | null = null;
   for (const o of d.options) {
     if (!isShot(o)) continue;
@@ -3075,8 +3216,15 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
   ]);
   let best: { o: Option; value: number; plan: Plan } | null = null;
   const holding: { o: Option; value: number; plan: Plan; timing: string; c: Ctx }[] = [];
-  // The Timings its own weapons are played on (`holdLate`).
-  const armed = new Set<string>(me.weapons.filter((x) => ready(x) && ARMS.has(x.type)).map((x) => x.timing ?? ''));
+  // The Timings its STRONGEST weapons are played on (`holdLate`): a gun beside
+  // a blade worth far more is no reason to wait for the Firing Timing, where the
+  // blade cannot be used (the community melee squad, RDL_Melee1, held on Firing
+  // and never struck, 2026-10-05). A weapon counts within HOLD_SHARE of the
+  // strongest by its dice, a Red die half again a Yellow.
+  const arms = me.weapons.filter((x) => ready(x) && ARMS.has(x.type));
+  const power = (x: WeaponView): number => x.yellow + 1.5 * x.red;
+  const top = Math.max(0, ...arms.map(power));
+  const armed = new Set<string>(arms.filter((x) => power(x) >= top * HOLD_SHARE).map((x) => x.timing ?? ''));
   for (const [i, o] of d.options.entries()) {
     const timing = o.tags.find((t) => t.startsWith('timing:'))?.slice(7);
     if (!timing || !o.then || (played && !played.has(timing))) continue;
