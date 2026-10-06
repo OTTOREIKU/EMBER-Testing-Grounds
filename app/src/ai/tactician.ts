@@ -787,7 +787,25 @@ function launch(options: Option[], c: Ctx): Deed | null {
       if (s && (!best || s.value > best.value + EXACT)) best = { option: o, value: s.value, why: s.why, reason: 'sentry_value' };
     }
   }
+  if (c.w.beacon > 0) {
+    for (const o of options) {
+      const s = kindOf(o) === 'launch' ? beaconOf(o, c) : null;
+      if (s && (!best || s.value > best.value + EXACT)) best = { option: o, value: s.value, why: s.why, reason: 'beacon_value' };
+    }
+  }
   return best;
+}
+
+// A UNIT PUT DOWN TO SERVE THE SQUAD (`beacon`; A6, 2026-10-05: the CP-3 Beacon
+// Backpack's B3 Beacons were deployed 0 times in 19 offers). Where the turn of
+// the unit a Deploying Projectile puts down is a Support Action (the B3/1 Link
+// Beacon's Link Support, each Ally Mech within 3 recovering 1 Link, which the
+// seam counts from the Landing Point), its Landing Point is worth that Support
+// as `support` prices one made now. Nothing where nobody in its Range needs it.
+function beaconOf(o: Option, c: Ctx): { value: number; why: string } | null {
+  const turn = o.later?.(['support']);
+  const deed = turn ? support(turn.options, c) : null;
+  return deed ? { value: c.w.beacon * deed.value, why: `${o.label}, for ${deed.why}` } : null;
 }
 
 // A DRONE THAT JAMS EVERY ROUND (`sentry`; A6, 2026-10-05: the AMDS210

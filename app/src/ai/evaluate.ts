@@ -495,6 +495,12 @@ export interface Weights {
   // offered from the Landing Point (priced as `jam` prices one), for this round
   // and each round left at `future` of the one before. At 0 worth nothing.
   sentry: number;
+  // A UNIT PUT DOWN TO SERVE THE SQUAD (A6, 2026-10-05: the CP-3 Beacon
+  // Backpack's B3 Beacons were deployed 0 times in 19 offers): a Deploying
+  // Projectile whose unit's own turn is a Support Action (the B3/1 Link
+  // Beacon's Link Support: each Ally Mech within 3 recovers 1 Link) is worth
+  // this x what that Support is worth made now (`support`). At 0 worth nothing.
+  beacon: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -587,6 +593,7 @@ export const TACTICIAN: Weights = {
   smokeAlly: 0.15,
   breakIn: 0.5,
   sentry: 0,
+  beacon: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
