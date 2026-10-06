@@ -592,10 +592,7 @@ function signinHtml(): string {
       <div class="pad-or">or without an account</div>
       <button class="pad-btn" data-act="solo">Offline Game</button>
     </div>
-    ${lobbyLists()}
-    <div class="pad-foot">
-      <button class="pad-btn" data-act="report">Report a problem</button>
-    </div>`;
+    ${lobbyLists()}`;
 }
 
 function registerHtml(): string {
@@ -663,7 +660,6 @@ function lobbyHtml(): string {
     ${lobbyLists()}
     <div class="pad-foot">
       <button class="pad-btn" data-act="account">Account</button>
-      <button class="pad-btn" data-act="report">Report a problem</button>
     </div>`;
 }
 

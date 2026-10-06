@@ -381,11 +381,18 @@ ok('both name the command in flight', /noteCommand\(cmd\.kind\)/.test(src('main.
 
 // THE PAD (OTTO, 2026-10-05: "a report button and functionality is missing
 // entirely from PAD"): the board pages' form and file, the table the pad holds
-// with no picture of a board, on the three screens a player is ever on.
+// with no picture of a board. Inside a table only (OTTO, 2026-10-06: "lets
+// remove the report a problem button on the pad landing page and keep it
+// inside of a table only. Most users will only encounter a problem inside of a
+// game").
 console.log('\nthe pad');
 const pad = src('../pad/pad.ts');
-check('the pad has a report button on its sign-in screen, its lobby and its table panel',
-  (pad.match(/data-act="report">Report a problem</g) ?? []).length, 3);
+check('the pad has one report button, on its table panel',
+  (pad.match(/data-act="report">Report a problem</g) ?? []).length, 1);
+{
+  const body = (name) => { const a = pad.indexOf(`function ${name}(`); return pad.slice(a, pad.indexOf('\nfunction ', a + 10)); };
+  ok('and none on the sign-in screen or the lobby', !/data-act="report"/.test(body('signinHtml')) && !/data-act="report"/.test(body('lobbyHtml')));
+}
 ok('and it opens the same form the board pages do', /case 'report': \{[\s\S]{0,900}openBoardReport\(\{/.test(pad));
 ok('with the table the pad holds', /openBoardReport\(\{[\s\S]{0,300}state: table,/.test(pad));
 ok('and offers no picture of a board it does not have', !/openBoardReport\(\{[^}]*boardSvg/.test(pad));
