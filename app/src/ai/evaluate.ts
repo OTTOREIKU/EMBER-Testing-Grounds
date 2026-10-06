@@ -531,7 +531,10 @@ export interface Weights {
   // `taunt` reads a Highlight). At 0 worth nothing. ADOPTED at 1 (2026-10-06):
   // both squads RDL with the Launcher, the Ace against itself, 105 of 200
   // against 104, trading alike; the Beacon launched 140 of 539 offers where it
-  // never was; about 8% more thought in those games, none in any other.
+  // never was; about 8% more thought in those games, none in any other. THEN
+  // RETURNED TO 0 the same day: on the melee test bed RDL_Melee1b, the one
+  // squad carrying the Launcher, won 11 of 24 with it against 16 without (6
+  // turned to a loss, 1 to a win; every other squad the same games).
   veil: number;
   // THE PACK (2026-10-06; OTTO: "Melee is having a hard time under both main AI"): a unit whose blades
   // outweigh its guns, walking into the reach of enemy guns, shares what standing there costs with each other
@@ -651,7 +654,7 @@ export const TACTICIAN: Weights = {
   beacon: 1,
   mineLay: 0,
   jamKeep: 0,
-  veil: 1,
+  veil: 0,
   pack: 0,
   packNear: 0,
   lockDeny: 0,
