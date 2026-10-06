@@ -79,5 +79,19 @@ check('a unit standing in smoke cannot be seen', smokeBlocks(unit(30, 30), unit(
 // Aerial units are not exempt the way they are from terrain.
 check('aerial cannot see through smoke either', smokeBlocks(unit(1, 1, 1, true), unit(1, 25), [S(0, 4)]), true);
 
+// THE DISSIPATION IS SAID (OTTO, 2026-10-05: "placed a smoke on itself and then
+// the smoke immediately went away"). A lone Screen goes in the End Phase of the
+// round it is placed in (4.16), and a computer that is First Player runs the End
+// Phase the moment the last Action ends: the player's page said nothing, and the
+// Screen seemed to vanish.
+{
+  const match = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  check('the other side\'s dissipation is announced on the player\'s page, what goes and what stays',
+    /if \(cmd\.kind === 'dissipateSmoke'\) \{\n\s*const per = smokePerGroup\(data, state\);\n\s*say\('event', `End Phase: the Smoke dissipates\. A Smoke Screen standing alone is removed, and each Connected group gives up/.test(match), true);
+  check('and the placing panel says it before a Screen goes down',
+    /In the End Phase a Smoke Screen standing alone is removed, and a Connected group gives up \$\{smokePerGroup\(ctx\.data, ctx\.state\) === 1 \? 'one' : smokePerGroup\(ctx\.data, ctx\.state\)\} \(4\.16\)\./.test(hud), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

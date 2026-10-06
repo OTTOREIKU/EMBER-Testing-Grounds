@@ -42,8 +42,9 @@ check('Match Centre: the HUD\'s notes say what kind they are, and refuse by defa
     ((hud + src('../src/contest.ts')).match(/, 'system'\)/g) ?? []).length >= 5 && /say: \(text, kind\) => ctx\.noteNow\(text, kind\)/.test(hud)],
   [true, true, true, true]);
 check('Match Centre: each player hears what the other did to their units or the table (pick 3)',
-  // Wider since P7A: the other player's Charge and Discard are said first (audit Phase 7).
-  /const TABLE_WIDE = new Set\(\[[^\]]*\]\);[\s\S]{0,1500}if \(!TABLE_WIDE\.has\(cmd\.kind\) && !\(target && target\.side === mySeat\(\)\)\) return;[\s\S]{0,200}if \(meta\.role === 'quiet'\) return;\s*say\('event', meta\.label\);/.test(match), true);
+  // Wider since P7A: the other player's Charge and Discard are said first (audit Phase 7);
+  // and since 2026-10-05 the other side's Smoke dissipation (smoke.test.mjs).
+  /const TABLE_WIDE = new Set\(\[[^\]]*\]\);[\s\S]{0,2400}if \(!TABLE_WIDE\.has\(cmd\.kind\) && !\(target && target\.side === mySeat\(\)\)\) return;[\s\S]{0,200}if \(meta\.role === 'quiet'\) return;\s*say\('event', meta\.label\);/.test(match), true);
 check('Match Centre: a refused row is greyed, silent on a press, and says why on hover or a long press (pick 6)',
   // Eleven since P7A: the Charge's and the Discard's refused Parts (audit Phase 7).
   // Seventeen since P7D: the six list rows that were truly disabled (P7D 9).

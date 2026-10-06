@@ -68,7 +68,7 @@ export const COMMANDS = {
   flyToTarget: ['seat', 'a Missile flies at the unit it detonates on; an Unfolded Pholcus jumps at it'],
   unfold: ['seat', 'a folded Pholcus Unfolds in the Delay Phase, where it must'],
   despawn: ['seat', 'a Projectile with no target is destroyed, and a blast on every unit in Range ends with it; the window removes one its blast spent'],
-  destroyTerrain: ['seat', 'Destructible Terrain crushed by a Movement that ends in its Grid, and the Containers a blast on every unit in Range takes with it (a Container as a target: later)'],
+  destroyTerrain: ['seat', 'Destructible Terrain crushed by a Movement that ends in its Grid, the Containers a blast on every unit in Range takes with it, and a Container a Firing or Melee Action targets (the `container` answer; the Tactician\'s `breakIn` values one over a loose Black Box)'],
   transformPart: ['seat', 'a Mode change chosen as an Action (the White Dwarf); the window sends the Tether Mode face'],
   stanceFeedback: ['seat', 'Stance feedback: an Ally Mech in Range to another Stance'],
   restoreAmmo: ['seat', 'a Resupply (a launch taken back is later)'],
