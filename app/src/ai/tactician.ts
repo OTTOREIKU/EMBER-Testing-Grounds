@@ -1407,6 +1407,10 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
   // Those whose turn is still to come first, and of them the nearest: the
   // ones most likely to settle it.
   const order = c.hostile.filter((e) => threatens(e, at, c)).sort((a, b) => Number(a.done) - Number(b.done) || apart(a.grid, at) - apart(b.grid, at));
+  // THE PACK (`pack`): the other blades of the squad that would go in beside it share the guns' fire. The
+  // budget is read on the same scale, so a plan is not given up on for a cost it would not pay.
+  const shared = c.w.pack > 0 ? 1 + c.w.pack * packOf(c, order) : 1;
+  budget *= shared;
   // What an enemy could do to the unit on each of some Timings: the worst.
   const read = (e: UnitView, timings: (string | undefined)[]): { worst: Barrage; on: string } => {
     let worst: Barrage = NO_BARRAGE;
@@ -1518,7 +1522,30 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
   // What the run of hits destroys between them that no one of them would: the
   // Mech, at what it is worth (`compound`).
   if (!single && c.w.compound > 0) cost += c.w.compound * Math.max(0, torsoLost(c.me, hits) - (1 - survives)) * unitWorth(c.me, c.view, c.w);
-  return { cost, risk: lost(), by };
+  return { cost: cost / shared, risk: lost(), by };
+}
+
+// A UNIT WHOSE BLADES OUTWEIGH ITS GUNS (`pack`): its Melee Actions' dice at least its Firing Actions', a red
+// die two yellow, as `blade` weighs them.
+function bladed(u: UnitView): boolean {
+  const weigh = (type: string): number => u.weapons.filter((x) => ready(x) && x.type === type).reduce((n, x) => n + 2 * x.red + x.yellow, 0);
+  const blades = weigh('Melee');
+  return blades > 0 && blades >= weigh('Firing');
+}
+
+// THE OTHER BLADES THAT WOULD SHARE A GRID'S DANGER (`pack`): for a bladed Mech, each other bladed Mech of the
+// squad that could strike one of these enemies this round: beside it already, or with its turn still to come
+// and that enemy within its blade's carry (`chargeReach`).
+function packOf(c: Ctx, threats: UnitView[]): number {
+  const foes = threats.filter((e) => e.kind !== 'projectile');
+  if (!foes.length || c.me.kind !== 'mech' || !bladed(c.me)) return 0;
+  let n = 0;
+  for (const u of c.view.units) {
+    if (u.side !== c.view.seat || u.uid === c.me.uid || !u.alive || !u.deployed || u.kind !== 'mech' || !bladed(u)) continue;
+    const carry = u.done ? 1 : chargeReach(u)?.grids ?? 1;
+    if (foes.some((e) => apart(u.grid, e.grid) <= carry)) n += 1;
+  }
+  return n;
 }
 
 // WHAT AN ENEMY'S PROJECTILE COULD DO TO THE UNIT (`salvo`): of the enemy's

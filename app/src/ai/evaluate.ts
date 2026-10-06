@@ -530,6 +530,13 @@ export interface Weights {
   // squad its Aura covers, less on the table the launch leaves (`veil`, as
   // `taunt` reads a Highlight). At 0 worth nothing.
   veil: number;
+  // THE PACK (2026-10-06; OTTO: "Melee is having a hard time under both main AI"): a unit whose blades
+  // outweigh its guns, walking into the reach of enemy guns, shares what standing there costs with each other
+  // such unit of the squad that could strike one of those enemies this round (beside it already, or with its
+  // turn still to come and that enemy within its blade's carry): the cost over 1 + `pack` x their number. Blades
+  // that go in alone are shot apart one by one (RDL_Melee1, the community squads); blades that go in together
+  // share the fire. At 0 every unit pays alone.
+  pack: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -626,6 +633,7 @@ export const TACTICIAN: Weights = {
   mineLay: 0,
   jamKeep: 0,
   veil: 0,
+  pack: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
