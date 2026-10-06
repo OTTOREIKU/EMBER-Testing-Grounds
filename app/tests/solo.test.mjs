@@ -230,7 +230,7 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
     [/<p class="dlg-eyebrow">The computer is<\/p>/.test(html), /data-rival="recruit" aria-pressed="false"><span>Recruit<\/span><em>makes mistakes<\/em>/.test(html),
       /data-rival="veteran" aria-pressed="false"><span>Veteran<\/span><em>plays a turn at a time<\/em>/.test(html),
       /data-rival="tactician" aria-pressed="false"><span>Ace<\/span><em>plays for the mission<\/em>/.test(html),
-      /data-rival="brawler" aria-pressed="true"><span>Brawler<\/span><em>attacks what it can reach<\/em>/.test(html)], [true, true, true, true, true]);
+      /data-rival="brawler" aria-pressed="true"><span>Brawler<\/span><em>fights for the zones<\/em>/.test(html)], [true, true, true, true, true]);
   check('and has one way on and one way out', [(html.match(/data-ok/g) ?? []).length, (html.match(/data-cancel/g) ?? []).length, /Start the game/.test(html)], [1, 1, true]);
   check('Start goes to the Match Centre\'s page, asked for that game and that opponent',
     [soloAddress({ scenario: vip.id, side: 's2', speed: 'relaxed', opponent: 'tactician' }), soloAddress({ scenario: alley.id, side: 's1', speed: 'normal', opponent: 'tactician' }),
