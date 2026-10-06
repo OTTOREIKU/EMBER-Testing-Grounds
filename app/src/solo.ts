@@ -15,7 +15,7 @@
 import { check, type CheckResult, type Command } from './commands';
 import type { GameData, SoloScenario, SoloSquad } from './data';
 import { Driver, type Host, type LogEntry } from './ai/driver';
-import { brawlerPolicy } from './ai/brawler';
+import { makeBrawler } from './ai/brawler';
 import { eagerPolicy } from './ai/eager';
 import { legalPolicy } from './ai/legal';
 import { tacticianPolicy } from './ai/tactician';
@@ -45,7 +45,17 @@ export { ownGame, RIVAL, RIVALS, SOLO_OWN, SOLO_OWN_KEY, SPEEDS, soloAsk, soloQu
 // levels.ts), beside the VETERAN (the Tactician without its look ahead) and the
 // RECRUIT (the Brawler, making mistakes). The BRAWLER is the one it was built
 // to beat, kept to be played against beside it: it takes the best attack its
-// odds offer and walks at whatever it cannot yet reach. The other two are for
+// odds offer, and since 2026-10-06 (OTTO: it "should want to fight the
+// opponents and cause them to have to reposition or have to back off of
+// objectives, it just shouldn't throw away units") with three habits beside the
+// copy: an attack on whoever holds what the mission pays is worth more
+// (`contest`), with nothing to attack it walks into the zones and holds them
+// (`claim`), and it attacks from where fewest enemies could answer (`kite`).
+// MEASURED on random squads: against the Ace 46 of 200 where the copy wins 27
+// (p .02), against the copy 132 of 200 (p < .01); on the community tournament
+// squads 26 of 100 against 18. The copy itself (brawler.ts `brawlerPolicy`)
+// stays as it was: the Recruit is made of it, and the Ace falls back on it.
+// The other two are for
 // the suite and for comparison: the eager one shoots at anything and weighs
 // nothing, and the legal one draws its answers by lot.
 export const OPPONENT = RIVAL;
@@ -53,7 +63,7 @@ export const OPPONENTS: Record<string, { name: string; policy: Policy }> = {
   tactician: { name: 'Computer (Ace)', policy: tacticianPolicy },
   veteran: { name: 'Computer (Veteran)', policy: veteranPolicy },
   recruit: { name: 'Computer (Recruit)', policy: recruitPolicy },
-  brawler: { name: 'Computer (Brawler)', policy: brawlerPolicy },
+  brawler: { name: 'Computer (Brawler)', policy: makeBrawler({ contest: true, claim: true, kite: true }, 'brawler') },
   eager: { name: 'Computer (eager)', policy: eagerPolicy },
   legal: { name: 'Computer (random)', policy: legalPolicy },
 };

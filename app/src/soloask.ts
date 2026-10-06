@@ -32,7 +32,7 @@ export const RIVALS: { id: string; name: string; note: string }[] = [
   { id: 'recruit', name: 'Recruit', note: 'makes mistakes' },
   { id: 'veteran', name: 'Veteran', note: 'plays a turn at a time' },
   { id: 'tactician', name: 'Ace', note: 'plays for the mission' },
-  { id: 'brawler', name: 'Brawler', note: 'attacks what it can reach' },
+  { id: 'brawler', name: 'Brawler', note: 'fights for the zones' },
 ];
 // The one a game is played against unless another is picked: the Ace.
 export const RIVAL = 'tactician';
