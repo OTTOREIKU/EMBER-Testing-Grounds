@@ -549,9 +549,11 @@ export interface Weights {
   // MELEE LOCK AS A SCREEN (2026-10-06; OTTO: "are melee units thinking about melee lock? It would make sense
   // for melee mechs to get in units face ... so they can stop enemies without melee firing while they do
   // work"): a Ground enemy beside the Grid a unit that locks ends in makes no Firing attack but with a weapon
-  // printing Melee Firing (4.3.5). For each such enemy not locked already by another unit of the squad, with
-  // its turn still to come this round, the best shot it could make at a unit of the squad OTHER than this one
-  // (what it would do to this one is the plan's own price) is worth `lockDeny` of itself. At 0 nothing.
+  // printing Melee Firing (4.3.5), unless it Breaks Away: a Maneuver is no Action, and leaving its Grid costs 1
+  // Movement Range more a locker, so it is held only while its Maneuver is short of 1 + the lockers. For each such
+  // enemy, its turn still to come this round, that this unit's lock is the one to hold (held with it, not
+  // without), the best shot it could make at a unit of the squad OTHER than this one (what it would do to this one
+  // is the plan's own price) is worth `lockDeny` of itself. At 0 nothing.
   lockDeny: number;
 }
 

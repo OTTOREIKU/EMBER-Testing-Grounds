@@ -2038,16 +2038,23 @@ function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took:
   return pull + lockOf(at, c);
 }
 
-// MELEE LOCK AS A SCREEN (`lockDeny`): each Ground enemy beside the Grid, its turn still to come this round and
-// locked by no other unit of the squad, is Melee Locked by this one there and makes no Firing attack but with a
-// weapon printing Melee Firing (4.3.5): the best shot it could have made at the rest of the squad is taken away.
+// MELEE LOCK AS A SCREEN (`lockDeny`): a Ground enemy beside the Grid, its turn still to come this round, is Melee
+// Locked there and makes no Firing attack but with a weapon printing Melee Firing (4.3.5): unless it Breaks Away.
+// A Maneuver is no Action, so a locked enemy may walk out and then fire; leaving its Grid costs 1 Movement Range
+// more for each unit locking it (melee.ts lockPrice), so it is held where it stands only while its Maneuver (a
+// Drone's Move) is short of 1 + the lockers. The best shot it could have made at the rest of the squad is taken
+// away where this unit's lock is the one that holds it: held with this unit beside it, and not held without (OTTO,
+// 2026-10-06: "position themselves to have their melee locked opponent between them and at least one ally").
 function lockOf(at: Grid, c: Ctx): number {
   if (c.w.lockDeny <= 0 || !c.me.locks || c.me.camouflaged) return 0;
   const others = c.view.units.filter((u) => u.side === c.view.seat && u.uid !== c.me.uid && u.alive && u.deployed && u.locks && !u.camouflaged);
   let sum = 0;
   for (const e of c.foes) {
-    if (!e.ground || e.done || e.kind === 'projectile' || !beside(at, e.grid) || others.some((u) => beside(u.grid, e.grid))) continue;
-    sum += screenedFire(e, c);
+    if (!e.ground || e.done || e.kind === 'projectile' || !beside(at, e.grid)) continue;
+    const lockers = others.filter((u) => beside(u.grid, e.grid)).length;
+    const legs = e.kind === 'mech' ? e.maneuver : e.move;
+    const held = (n: number): boolean => n > 0 && legs < 1 + n;
+    if (held(lockers + 1) && !held(lockers)) sum += screenedFire(e, c);
   }
   return c.w.lockDeny * sum;
 }
