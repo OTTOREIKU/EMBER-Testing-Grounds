@@ -559,6 +559,13 @@ export interface Weights {
   // its turn is still to come and the next at `future` (a blade that Sprints in after the gunner has fired holds it
   // for the round after, and a Melee dial strikes before a Firing one), is worth `lockDeny` of itself. At 0 nothing.
   lockDeny: number;
+  // A HIGHLIGHT PUT ON AN ENEMY (2026-10-06; the community kit census: the LD-5M Vigilant MG's Target Tag,
+  // PRDR-202_A, chosen 0 times in 36 offers). A Firing Action that can target a Highlighted unit must target it
+  // (6.2.1; FAQ J18): the squad's Automatic Drones, which take the nearest enemy, take the tagged one instead, and a
+  // Highlight cancels a Low Profile given by an effect (J12). For each unit of this squad with a gun and its turn
+  // still to come this round, its best Firing attack on the table the Highlight leaves less its best as the board
+  // stands (a loss where the tag drags it off a better target), worth `targetTag` of the sum. At 0 nothing.
+  targetTag: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -658,6 +665,7 @@ export const TACTICIAN: Weights = {
   pack: 0,
   packNear: 0,
   lockDeny: 0,
+  targetTag: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way

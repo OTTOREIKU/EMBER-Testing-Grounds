@@ -1026,6 +1026,44 @@ function firepower(e: UnitView, c: Ctx): number {
 // (with `aimed`, on an enemy).
 const jams = (u: UnitView, aimed: boolean): boolean => u.weapons.some((x) => ready(x) && x.type === 'Tactic' && x.range > 0 && !(aimed && x.own));
 
+// A HIGHLIGHT PUT ON AN ENEMY (`targetTag`): for each unit of this squad with a gun and its turn still to come
+// this round, its best Firing attack on the table the Highlight leaves, less its best as the board stands. A
+// Firing Action that can target a Highlighted unit must target it (6.2.1; FAQ J18), so an Automatic Drone that
+// would take the nearest enemy takes the tagged one, and a Low Profile given by an effect is cancelled (J12); a
+// unit dragged off a better target counts its loss.
+function tagDeed(options: Option[], c: Ctx): Deed | null {
+  if (c.w.targetTag <= 0) return null;
+  const now = c.d.here?.();
+  if (!now) return null;
+  const guns = c.view.units.filter((u) => u.side === c.view.seat && u.alive && u.deployed && !u.done && u.uid !== c.me.uid
+    && strikers(u).some((x) => x.type === 'Firing'));
+  if (!guns.length) return null;
+  let best: Deed | null = null;
+  for (const o of options) {
+    if (kindOf(o) !== 'token' || !o.tags.includes('enemy') || !o.tags.includes('token:highlight')) continue;
+    const after = o.after?.();
+    if (!after) continue;
+    let gain = 0;
+    for (const u of guns) gain += bestShotOn(after, u, c) - bestShotOn(now, u, c);
+    const value = c.w.targetTag * gain;
+    if (value > EXACT && (!best || value > best.value + EXACT)) best = { option: o, value, why: `${o.label}, for the squad's guns`, reason: 'tag_value' };
+  }
+  return best;
+}
+
+// A unit's best Firing attack on a given table (`targetTag`): the engine's turn for it there, at its odds.
+function bestShotOn(out: Outlook, u: UnitView, c: Ctx): number {
+  const view = out.view();
+  let best = 0;
+  const turn = out.turnOf(u.uid, ['attack'], u.kind === 'mech' ? 'firing' : undefined);
+  for (const o of turn?.options ?? []) {
+    const target = isShot(o) && o.tags.includes('firing') ? unitOf(view, o.facts?.targetUid) : undefined;
+    const f = target ? o.chance?.() : null;
+    if (f && target) best = Math.max(best, gainOf(f, target, c.view, c.w));
+  }
+  return best;
+}
+
 // WHAT ONE OF THIS SQUAD'S OWN GUNS IS WORTH, as the board stands: the best
 // Firing attack it could make if its turn came now, and for one with nobody
 // in its sights (or jammed already), its share of the unit as a gun.
@@ -1130,7 +1168,7 @@ function breakIn(options: Option[], c: Ctx): Deed | null {
 // The best thing to do at a table, of the five kinds.
 function deedAt(options: Option[], c: Ctx, whole: boolean, shock = false): Deed | null {
   let best: Deed | null = null;
-  for (const deed of [volley(options, c, whole, shock), launch(options, c), jam(options, c), access(options, c), blastDeed(options, c), support(options, c), handOff(options, c), strike(options, c), breakIn(options, c)]) {
+  for (const deed of [volley(options, c, whole, shock), launch(options, c), jam(options, c), access(options, c), blastDeed(options, c), support(options, c), handOff(options, c), strike(options, c), breakIn(options, c), tagDeed(options, c)]) {
     if (deed && (!best || deed.value > best.value + EXACT)) best = deed;
   }
   return best;
