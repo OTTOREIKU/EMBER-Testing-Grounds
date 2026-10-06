@@ -92,7 +92,7 @@ async function throwSmoke(policy) {
 }
 
 {
-  const plain = await throwSmoke(AI.tacticianPolicy);
+  const plain = await throwSmoke(AI.makeTactician({ smokeSquad: false }));
   check('WITHOUT THE SKILL the Ace answers the Screens with the safe answer: one Screen where it landed, which the End Phase takes',
     [plain.refused, plain.smoke, plain.asked[0]?.n > 1], [[], [grid(5, 5)], true]);
 }
@@ -100,6 +100,8 @@ async function throwSmoke(policy) {
   const squad = await throwSmoke(AI.makeTactician({ smokeSquad: true }));
   check('WITH IT the Screens hide the Ally beside it too: three Connected, its own Grid and the Ally\'s among them, and nothing is refused',
     [squad.refused, squad.smoke.length, squad.smoke.includes(grid(5, 5)), squad.smoke.includes(grid(6, 5))], [[], 3, true, true]);
+  const shipped = await throwSmoke(AI.tacticianPolicy);
+  check('and the Ace as shipped has it off (measured level, and a melee squad hid in its own Smoke: 2026-10-05)', shipped.smoke, [grid(5, 5)]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
