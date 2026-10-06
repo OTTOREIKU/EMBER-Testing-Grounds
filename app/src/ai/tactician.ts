@@ -2072,6 +2072,11 @@ function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took:
     const press = c.behind && walk <= EXACT ? c.w.press * (1 - c.w.pressLate * (1 - c.view.round / Math.max(1, c.view.roundLimit))) : 0;
     const step = c.w.contactStep * (out || press ? 1 + out + press : 1);
     pull -= (step + c.w.approach * quarry.prize) * Math.max(0, far - fightArm(c.me, c.skills.aimed, c.w.blade));
+    // AN OUTRANGED BLADE GOES IN (`bladeIn`): zone or no zone, each Grid of the road beyond its blades' reach.
+    if (c.w.bladeIn > 0 && bladed(c.me) && outranged(c)) {
+      const reach = Math.max(1, ...c.me.weapons.filter((x) => ready(x) && x.type === 'Melee').map((x) => x.range));
+      pull -= c.w.bladeIn * Math.max(0, far - reach);
+    }
   }
   return pull + lockOf(at, c);
 }

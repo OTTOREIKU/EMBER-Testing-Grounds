@@ -566,6 +566,13 @@ export interface Weights {
   // still to come this round, its best Firing attack on the table the Highlight leaves less its best as the board
   // stands (a loss where the tag drags it off a better target), worth `targetTag` of the sum. At 0 nothing.
   targetTag: number;
+  // AN OUTRANGED BLADE GOES IN (2026-10-06, the melee plan; game 130207: four Swift Steed blades walked to the
+  // Terminal zone, each plan worth the zone's 7.42, and stood there to be shot by Rail Guns seven Grids off; all
+  // three counted were destroyed without one Melee attack). `closeIn` and `press` count the step toward contact
+  // only for a unit with no zone to walk to, and a blade's only harm is in contact. For a Mech whose blades
+  // outweigh its guns (`bladed`), while an enemy that can reach it outranges it (`outranged`), each Grid of the
+  // road to the enemy it walks to, beyond its blades' reach, costs `bladeIn`, zone or no zone. At 0 nothing.
+  bladeIn: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -666,6 +673,7 @@ export const TACTICIAN: Weights = {
   packNear: 0,
   lockDeny: 0,
   targetTag: 0,
+  bladeIn: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
