@@ -2100,15 +2100,22 @@ function lockOf(at: Grid, c: Ctx): number {
   return c.w.lockDeny * sum;
 }
 
-// The best Firing attack an enemy could make as the board stands at a unit of this squad other than the one
-// asked about, with a weapon a Melee Lock bars (none printing Melee Firing).
+// The best Firing attack an enemy could make at a unit of this squad other than the one asked about, with a weapon
+// a Melee Lock bars (none printing Melee Firing): read as if no unit of this squad stood beside it now. The engine
+// bars a Locked unit's Firing, so read on the board as it stands a blade already holding a gunner would find its
+// hold worth nothing beside a gunner it had yet to reach, and the second blade a hold waits on the same. Those
+// units are taken off the table it is read on, and with them the fire it could have put on them.
 function screenedFire(e: UnitView, c: Ctx): number {
   const key = `${e.uid}|${c.me.uid}`;
   const known = c.screens.get(key);
   if (known !== undefined) return known;
   let best = 0;
   if (strikers(e).some((x) => x.type === 'Firing' && !x.meleeFiring)) {
-    const turn = c.d.here?.().turnOf(e.uid, ['attack'], e.kind === 'mech' ? 'firing' : undefined);
+    let out = c.d.here?.();
+    for (const u of c.view.units) {
+      if (out && u.side === c.view.seat && u.alive && u.deployed && u.locks && !u.camouflaged && beside(u.grid, e.grid)) out = out.without(u.uid);
+    }
+    const turn = out?.turnOf(e.uid, ['attack'], e.kind === 'mech' ? 'firing' : undefined);
     for (const o of turn?.options ?? []) {
       if (!isShot(o) || !o.tags.includes('firing')) continue;
       const gun = e.weapons.find((x) => x.actionId === o.facts?.actionId);
