@@ -505,6 +505,13 @@ export interface Weights {
   // Beacon's Link Support: each Ally Mech within 3 recovers 1 Link) is worth
   // this x what that Support is worth made now (`support`). At 0 worth nothing.
   beacon: number;
+  // A MINE PUT DOWN BY AN ACTION (A6, 2026-10-05: the GLP-15's Mine, 006_B, laid
+  // 0 times in 21 offers; OTTO: "More focus on using mines, missiles, or
+  // beacons"): where the walk would lay one (`lay`: an enemy Ground unit nearer
+  // the Grid than any unit of this squad, none of this squad in it), worth this
+  // x a Part Damaged on that enemy, over one more than the Grids between them.
+  // At 0 worth nothing.
+  mineLay: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -598,6 +605,7 @@ export const TACTICIAN: Weights = {
   breakIn: 0.5,
   sentry: 1,
   beacon: 0,
+  mineLay: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way

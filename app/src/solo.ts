@@ -314,7 +314,7 @@ const BECAUSE: Record<string, string> = Object.assign(Object.create(null) as Rec
   attack_value: 'its best attack', attack_result_value: 'its best attack', attack_revealed: 'at the unit its Scan found',
   launch_value: 'where it does most', projectile_blast_value: 'where it does most', blast_value: 'where it does most',
   jam_value: 'to jam the enemy', support_value: 'to keep its squad going', overwatch_value: 'to lend a shot',
-  patch_value: 'to mend an ally next round', spotter_value: 'to call in a shot', sentry_value: 'to jam an enemy every round', beacon_value: 'to support its squad',
+  patch_value: 'to mend an ally next round', spotter_value: 'to call in a shot', sentry_value: 'to jam an enemy every round', beacon_value: 'to support its squad', mine_value: 'to mine the enemy\'s way',
   stance_by_value: 'for what that Stance lets it do', preparation_unlocks_attack: 'to open an attack',
   charge_for_attack: 'to charge a Part for its attack', smoke_for_cover: 'to hide behind it', smoke_for_squad: 'to hide its squad', smoke_ahead: 'to cover its squad as it moves up',
   cloak: 'to be hard to target', low_profile: 'to be hard to target', draw_fire: 'to draw the enemy\'s fire', mode_by_value: 'for what it can do then',

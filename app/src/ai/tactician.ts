@@ -793,7 +793,33 @@ function launch(options: Option[], c: Ctx): Deed | null {
       if (s && (!best || s.value > best.value + EXACT)) best = { option: o, value: s.value, why: s.why, reason: 'beacon_value' };
     }
   }
+  if (c.w.mineLay > 0) {
+    for (const o of options) {
+      const s = kindOf(o) === 'launch' ? mineOf(o, c) : null;
+      if (s && (!best || s.value > best.value + EXACT)) best = { option: o, value: s.value, why: s.why, reason: 'mine_value' };
+    }
+  }
   return best;
+}
+
+// A MINE PUT DOWN BY AN ACTION (`mineLay`; A6, 2026-10-05: the GLP-15's Mine,
+// 006_B, laid 0 times in 21 offers). A Mine has no turn of its own: it goes off
+// under the first Ground unit that enters its Grid, whoever's, so `landed`
+// finds nothing in it. Where the walk would lay one (`lay`): an enemy Ground
+// unit nearer the Grid than any other unit of this squad, and none of this
+// squad in it. Worth a Part Damaged on that enemy (`gainOf`), over one more
+// than the Grids between them.
+function mineOf(o: Option, c: Ctx): { value: number; why: string } | null {
+  if (!o.tags.includes('mine')) return null;
+  const at = endOf(o);
+  const foes = c.hostile.filter((e) => e.ground && e.kind !== 'projectile');
+  const own = c.view.units.filter((u) => u.side === c.view.seat && u.deployed && u.alive && u.kind !== 'projectile');
+  if (!at || !foes.length || own.some((u) => same(u.grid, at))) return null;
+  const near = foes.reduce((a, b) => (apart(at, b.grid) < apart(at, a.grid) ? b : a));
+  const gap = apart(at, near.grid);
+  const ours = Math.min(99, ...own.filter((u) => u.uid !== c.me.uid).map((u) => apart(at, u.grid)));
+  if (gap >= ours) return null;
+  return { value: c.w.mineLay * gainOf(A_PART_DAMAGED, near, c.view, c.w) / (1 + gap), why: `${o.label}, in ${near.label}'s way` };
 }
 
 // A UNIT PUT DOWN TO SERVE THE SQUAD (`beacon`; A6, 2026-10-05: the CP-3 Beacon

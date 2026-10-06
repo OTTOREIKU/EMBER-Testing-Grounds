@@ -1814,7 +1814,7 @@ function launchOptions(data: GameData, state: GameState, t: Token, row: turn.Act
       out.push({
         id: `launch:${row.key}:${card.id}:${g.c},${g.r}`,
         label: `${name}: ${what} to ${gridName(g)}`,
-        tags: ['launch', 'land', ...(underWay ? ['volley'] : []), ...(drawn ? ['intercepted'] : []), ...(smoky ? ['smoke'] : []), ...(port ? ['bit'] : [])],
+        tags: ['launch', 'land', ...(underWay ? ['volley'] : []), ...(drawn ? ['intercepted'] : []), ...(smoky ? ['smoke'] : []), ...(port ? ['bit'] : []), ...(isMine(card) ? ['mine'] : [])],
         commands,
         facts: { uid: t.uid, actionId: a.id, cardId: card.id, to: { c: g.c, r: g.r }, strike, ...(mends ? { mends } : {}), ...(calls ? { calls } : {}), ...(drawn ? { intercepts: drawn, interceptTries: tries } : {}) },
       });
