@@ -55,7 +55,7 @@ async function played(policy) {
 const off = await played(AI.makeTactician({}, { targetTag: 0 }));
 check('WITHOUT `targetTag` the Vigilant tags nobody in the Command Phase', [off.tags, off.refused], [[], []]);
 const on = await played(AI.makeTactician({}, { targetTag: 1 }));
-check('WITH IT the Vigilant is given its Command and tags the Wild Cat behind the Tarantula, so the Porcupine Ion\'s four Red dice go on the Cat',
+check('WITH IT the Vigilant is given its Command and puts the Highlight on the Wild Cat behind the Tarantula',
   [on.tags, on.cat.includes('highlight'), on.refused], [['Cat'], true, []]);
 check('the weight ships at 0 until it is measured', AI.TACTICIAN.targetTag, 0);
 
