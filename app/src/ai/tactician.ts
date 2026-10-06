@@ -272,9 +272,21 @@ export interface Skills {
   // sees most, in the shape of Screens that hides the most Allies from enemy
   // eyes (`smokeAlly` each), and not only as a lone Screen at its own feet (a
   // Connected group of three keeps two through the End Phase, 4.16).
+  // MEASURED (2026-10-05): RDL squads with the Volcano's Smoke Grenade, the Ace
+  // against itself, 110 of 200 against 105 (p .56), the Grenade thrown twice as
+  // often (83 of 356 offers against 48 of 412), no slower (18.3 s a game against
+  // 18.5). NOT ADOPTED: a squad hidden where it stands stays there. In
+  // community.test's Key Facility game the melee squad RDL_Melee1 smoked itself
+  // in, took cover nine times and made no attack (two without it), and lost
+  // 12-4 where it lost 8-4. Smoke that covers a walk at the enemy is the use to
+  // build next.
   smokeSquad: boolean;
   // A CONTAINER OVER A BLACK BOX IS BROKEN OPEN (`breakIn`): shot or struck,
-  // where the Box in it is this squad's to take (`breakIn` weight).
+  // where the Box in it is this squad's to take (`breakIn` weight). MEASURED
+  // (2026-10-05): Black Box missions, the Ace against itself, 103 of 200 against
+  // 103 (195 games the same), 39 Containers broken open in 200 games and the
+  // Boxes paying 316 Victory Points against 290. Adopted: level, and the
+  // attack on a Container OTTO asked the computer to make (A1).
   breakIn: boolean;
 }
 
@@ -283,7 +295,7 @@ export const SKILLS: Skills = {
   support: true, profile: true, mode: true, coordinate: true, orders: true, stalk: true, cloak: true, appear: true, shown: true, overwatch: true, grant: true,
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
-  lastRound: true, boxOnce: true, shock: true, holdLate: false, smokeSquad: false, breakIn: false,
+  lastRound: true, boxOnce: true, shock: true, holdLate: false, smokeSquad: false, breakIn: true,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -758,7 +770,41 @@ function launch(options: Option[], c: Ctx): Deed | null {
       if (s && (!best || s.value > best.value + EXACT)) best = { option: o, value: s.value, why: s.why, reason: 'spotter_value' };
     }
   }
+  if (c.w.sentry > 0) {
+    for (const o of options) {
+      const s = kindOf(o) === 'launch' ? sentryOf(o, c) : null;
+      if (s && (!best || s.value > best.value + EXACT)) best = { option: o, value: s.value, why: s.why, reason: 'sentry_value' };
+    }
+  }
   return best;
+}
+
+// A DRONE THAT JAMS EVERY ROUND (`sentry`; A6, 2026-10-05: the AMDS210
+// Delphinium was deployed 0 times in 11 offers). The unit a Deploying
+// Projectile puts down acts on its own turn, and where that turn is an
+// Electronic Attack (the Delphinium's Fire Control Interference on the nearest
+// enemy, Automatic) `landed` finds no attack in it and `launch` prices it at
+// nothing. Its Landing Point is worth the best jam that turn is offered from
+// there, priced as `jam` prices one (at its Counter-roll's odds where they are
+// read), for this round and each round left, each at `future` of the one
+// before. Nothing where its turn offers no jam.
+function sentryOf(o: Option, c: Ctx): { value: number; why: string } | null {
+  const turn = o.later?.(['electronic']);
+  if (!turn) return null;
+  let best: { value: number; target: UnitView } | null = null;
+  for (const x of turn.options) {
+    if (kindOf(x) !== 'electronic') continue;
+    const target = unitOf(c.view, x.facts?.targetUid);
+    if (!target) continue;
+    const odds = c.w.ewOdds > 0 ? x.win?.() ?? null : null;
+    const value = c.w.jam * firepower(target, c) * (odds === null ? 1 : 2 * odds);
+    if (value > EXACT && (!best || value > best.value + EXACT)) best = { value, target };
+  }
+  if (!best) return null;
+  const left = Math.max(1, c.view.roundLimit - c.view.round + 1);
+  let rounds = 0;
+  for (let k = 0; k < left; k++) rounds += c.w.future ** k;
+  return { value: c.w.sentry * rounds * best.value, why: `a Drone to jam ${best.target.label} every round` };
 }
 
 // A DRONE THAT CALLS IN A SHOT (`spotter`): the KK9 Snake Eyes a Cobra core puts

@@ -488,6 +488,13 @@ export interface Weights {
   // A CONTAINER OVER A LOOSE BLACK BOX (`breakIn`, the Tactician's skill): what
   // breaking it open is worth, as a share of what the Box in it pays.
   breakIn: number;
+  // A DRONE PUT DOWN THAT JAMS EVERY ROUND (A6, 2026-10-05: the AMDS210
+  // Delphinium was deployed 0 times in 11 offers): a Deploying Projectile whose
+  // unit's own turn is an Electronic Attack (the Delphinium's Fire Control
+  // Interference on the nearest enemy) is worth this x the best jam it is
+  // offered from the Landing Point (priced as `jam` prices one), for this round
+  // and each round left at `future` of the one before. At 0 worth nothing.
+  sentry: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -579,6 +586,7 @@ export const TACTICIAN: Weights = {
   spotter: 1,
   smokeAlly: 0.15,
   breakIn: 0.5,
+  sentry: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
