@@ -134,9 +134,31 @@ export function popDeadExtras(s: GameState): void {
   }
 }
 
+// A Mech destroyed inside its own Action Opportunity (by the Martyrdom of the
+// unit it has just destroyed, by a reaction) leaves the board (4.4.4) with the
+// Opportunity open. endOpportunity refuses a unit no longer on the board, and
+// where it was the last of the round to act no other Opportunity replaced it,
+// so the Action Phase stalled with nobody asked anything (found 2026-10-06 in a
+// random-squad game: the White Dwarf destroyed by the Zealot it had just shot).
+// Closed here as ending it would close it: the Mech has acted, and what it owed
+// in that Opportunity lapses.
+export function closeDeadOpportunity(s: GameState): void {
+  const sc = s.script;
+  const o = sc?.opp;
+  if (!sc || !o || o.extra) return;
+  const u = s.tokens.find((x) => x.uid === o.uid);
+  if (u && alive(u)) return;
+  if (sc.counterOwed?.uid === o.uid) delete sc.counterOwed;
+  if (sc.camoOwed?.uid === o.uid) delete sc.camoOwed;
+  if (sc.swarm?.issuer === o.uid) sc.swarm = null;
+  if (!sc.acted.includes(o.uid)) sc.acted.push(o.uid);
+  sc.opp = null;
+}
+
 export function opportunity(data: GameData, s: GameState): Opportunity | null {
   const sc = ensureScript(s);
   popDeadExtras(s);
+  closeDeadOpportunity(s);
   // A nested Extra Action Opportunity (FAQ K21) belongs to whoever was just
   // granted it, NOT to whoever the activation order says is next - the
   // re-derivation below would clobber it on the very next command.
