@@ -51,13 +51,13 @@ const scenarioOf = (foe) => ({ ...data.solo.scenarios[0], id: `t-lockdeny-${foe}
 
 // Round 1's Action Phase, the Blade's Melee Opportunity open, the enemy's Firing to come (or behind it, `fired`);
 // the Ally at `ally`.
-async function staged(ally, foe = 'Rifle', fired = false) {
+async function staged(ally, foe = 'Rifle', fired = false, blade = [4, 4]) {
   const t = botTable(M, data, scenarioOf(foe), { seed: 5, policies: AI.eagerPolicy });
   await t.run({ until: (st) => M.SU.normaliseSetup(st.setup)?.stage === 'done' && st.round.phase === 2 });
   const s = t.state;
   const U = Object.fromEntries(s.tokens.map((x) => [x.label, x]));
   const at = (x, c, r, f) => { x.col = c * 3; x.row = r * 3; if (f !== undefined) x.facing = f; };
-  at(U.Blade, 4, 4, 2); at(U.Ally, ally[0], ally[1], 2); at(U[foe], 4, 7, 0);
+  at(U.Blade, blade[0], blade[1], 2); at(U.Ally, ally[0], ally[1], 2); at(U[foe], 4, 7, 0);
   for (const x of s.tokens) { x.stance = 'offensive'; x.timing = 'firing'; }
   U.Blade.timing = 'melee';
   s.script.revealed = ['s1', 's2'];
@@ -96,6 +96,17 @@ const beside = (k, c, r) => { const [x, y] = k.split(',').map(Number); return Ma
   check('WITH THE RIFLE\'S TURN BEHIND IT, a Grid beside it still earns the next round\'s shot, at `future` (this round\'s and the next together while its turn is to come)',
     [gainL.length > 0, gainL.every((g, i) => g > 0.01 && Math.abs(g - gain[0] * w / (1 + w)) < 0.05 * gain[0])], [true, true]);
   later.t.close();
+}
+{
+  // THE BLADE HOLDS THE RIFLE ALREADY, its Melee Opportunity open beside it. The engine bars a Locked unit's Firing,
+  // so the Rifle's shot read where it stands was none, and staying to hold it was worth nothing: read as if the Blade
+  // were not there, the hold keeps the Rifle's shot off the Ally.
+  const { t, d, view } = await staged([8, 3], 'Rifle', false, [4, 6]);
+  const off = shapes(d, view, 0), on = shapes(d, view, 1);
+  const lock = [...on.keys()].filter((k) => beside(k, 4, 7) && off.has(k));
+  check('A BLADE ALREADY HOLDING THE RIFLE finds the Grids beside it worth more with `lockDeny`, the one it stands in among them',
+    [lock.includes('4,6'), lock.every((k) => on.get(k) - off.get(k) > 0.05)], [true, true]);
+  t.close();
 }
 {
   // The Ally stands beside the Rifle already: the Rifle is locked whoever comes, and the Blade takes nothing more.
