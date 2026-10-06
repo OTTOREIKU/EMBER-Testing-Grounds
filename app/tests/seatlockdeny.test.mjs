@@ -49,8 +49,9 @@ data.solo.squads['t-runner'] = {
 };
 const scenarioOf = (foe) => ({ ...data.solo.scenarios[0], id: `t-lockdeny-${foe}`, map: 'none', seats: { s1: 't-lockers', s2: foe === 'Rifle' ? 't-rifle' : 't-runner' } });
 
-// Round 1's Action Phase, the Blade's Melee Opportunity open, the enemy's Firing to come; the Ally at `ally`.
-async function staged(ally, foe = 'Rifle') {
+// Round 1's Action Phase, the Blade's Melee Opportunity open, the enemy's Firing to come (or behind it, `fired`);
+// the Ally at `ally`.
+async function staged(ally, foe = 'Rifle', fired = false) {
   const t = botTable(M, data, scenarioOf(foe), { seed: 5, policies: AI.eagerPolicy });
   await t.run({ until: (st) => M.SU.normaliseSetup(st.setup)?.stage === 'done' && st.round.phase === 2 });
   const s = t.state;
@@ -60,7 +61,7 @@ async function staged(ally, foe = 'Rifle') {
   for (const x of s.tokens) { x.stance = 'offensive'; x.timing = 'firing'; }
   U.Blade.timing = 'melee';
   s.script.revealed = ['s1', 's2'];
-  s.script.acted = [U.Ally.uid];
+  s.script.acted = fired ? [U.Ally.uid, U[foe].uid] : [U.Ally.uid];
   s.script.opp = null;
   M.G.opportunity(data, s);
   return { t, U, d: t.drivers.s1.pending(), view: M.SEAT.viewOf(data, s, 's1') };
@@ -86,6 +87,15 @@ const beside = (k, c, r) => { const [x, y] = k.split(',').map(Number); return Ma
     [lock.length > 0, gain.every((g) => g > 0.05)], [true, true]);
   check('and a Grid that locks nothing is worth the same either way', far.every((k) => Math.abs(on.get(k) - off.get(k)) < 1e-9), true);
   t.close();
+  // THE ROUND AFTER: the Rifle's turn behind it, the lock still holds it there, and the blade on a Melee dial
+  // strikes before its Firing (a blade that Sprints in on a Movement dial, after the gunner has fired).
+  const later = await staged([8, 3], 'Rifle', true);
+  const offL = shapes(later.d, later.view, 0), onL = shapes(later.d, later.view, 1);
+  const gainL = lock.filter((k) => offL.has(k) && onL.has(k)).map((k) => onL.get(k) - offL.get(k));
+  const w = AI.TACTICIAN.future;
+  check('WITH THE RIFLE\'S TURN BEHIND IT, a Grid beside it still earns the next round\'s shot, at `future` (this round\'s and the next together while its turn is to come)',
+    [gainL.length > 0, gainL.every((g, i) => g > 0.01 && Math.abs(g - gain[0] * w / (1 + w)) < 0.05 * gain[0])], [true, true]);
+  later.t.close();
 }
 {
   // The Ally stands beside the Rifle already: the Rifle is locked whoever comes, and the Blade takes nothing more.
