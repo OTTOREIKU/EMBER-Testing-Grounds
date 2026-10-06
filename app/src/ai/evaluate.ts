@@ -528,7 +528,10 @@ export interface Weights {
   // OTTO: "More focus on using mines, missiles, or beacons"): a Landing Point
   // is worth this x what standing where they stand would cost the units of the
   // squad its Aura covers, less on the table the launch leaves (`veil`, as
-  // `taunt` reads a Highlight). At 0 worth nothing.
+  // `taunt` reads a Highlight). At 0 worth nothing. ADOPTED at 1 (2026-10-06):
+  // both squads RDL with the Launcher, the Ace against itself, 105 of 200
+  // against 104, trading alike; the Beacon launched 140 of 539 offers where it
+  // never was; about 8% more thought in those games, none in any other.
   veil: number;
   // THE PACK (2026-10-06; OTTO: "Melee is having a hard time under both main AI"): a unit whose blades
   // outweigh its guns, walking into the reach of enemy guns, shares what standing there costs with each other
@@ -632,7 +635,7 @@ export const TACTICIAN: Weights = {
   beacon: 1,
   mineLay: 0,
   jamKeep: 0,
-  veil: 0,
+  veil: 1,
   pack: 0,
 };
 
