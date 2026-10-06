@@ -316,7 +316,7 @@ const BECAUSE: Record<string, string> = Object.assign(Object.create(null) as Rec
   jam_value: 'to jam the enemy', support_value: 'to keep its squad going', overwatch_value: 'to lend a shot',
   patch_value: 'to mend an ally next round', spotter_value: 'to call in a shot', sentry_value: 'to jam an enemy every round',
   stance_by_value: 'for what that Stance lets it do', preparation_unlocks_attack: 'to open an attack',
-  charge_for_attack: 'to charge a Part for its attack', smoke_for_cover: 'to hide behind it', smoke_for_squad: 'to hide its squad',
+  charge_for_attack: 'to charge a Part for its attack', smoke_for_cover: 'to hide behind it', smoke_for_squad: 'to hide its squad', smoke_ahead: 'to cover its squad as it moves up',
   cloak: 'to be hard to target', low_profile: 'to be hard to target', draw_fire: 'to draw the enemy\'s fire', mode_by_value: 'for what it can do then',
   tactic_by_value: 'worth more played than kept', coordinate_by_value: 'to put a Drone to work',
   tick_by_value: 'for the turn it opens', reboot: 'to get back into the fight', restore_link: 'to restore its Link',

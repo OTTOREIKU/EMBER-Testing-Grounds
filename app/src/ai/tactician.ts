@@ -281,6 +281,15 @@ export interface Skills {
   // 12-4 where it lost 8-4. Smoke that covers a walk at the enemy is the use to
   // build next.
   smokeSquad: boolean;
+  // SMOKE AHEAD OF THE SQUAD (OTTO, 2026-10-05: "Would a unit smoke out an open
+  // area so that they or a friendly unit can move safely through it?"). A Smoke
+  // card thrown where the Allies still to act this round are about to stand:
+  // each one's walk at the nearest enemy (as far as its stride goes, stopping
+  // where its longest arm reaches) read as where it ends, and the shape of
+  // Screens that hides the most of them there from enemies that would see them
+  // and could attack them there, worth `smokeAlly` each. Smoke where the squad
+  // stands keeps it there (`smokeSquad`); Smoke ahead draws it on.
+  smokeAhead: boolean;
   // A CONTAINER OVER A BLACK BOX IS BROKEN OPEN (`breakIn`): shot or struck,
   // where the Box in it is this squad's to take (`breakIn` weight). MEASURED
   // (2026-10-05): Black Box missions, the Ace against itself, 103 of 200 against
@@ -295,7 +304,7 @@ export const SKILLS: Skills = {
   support: true, profile: true, mode: true, coordinate: true, orders: true, stalk: true, cloak: true, appear: true, shown: true, overwatch: true, grant: true,
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
-  lastRound: true, boxOnce: true, shock: true, holdLate: false, smokeSquad: false, breakIn: true,
+  lastRound: true, boxOnce: true, shock: true, holdLate: false, smokeSquad: false, smokeAhead: false, breakIn: true,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -2676,6 +2685,11 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
   if (c.skills.exposure && c.skills.smokeSquad) {
     for (const p of yield* squadSmoke(c, plans[0])) plans.push(p);
   }
+  // SMOKE AHEAD (`smokeAhead`): thrown where the Allies still to act are about
+  // to stand.
+  if (c.skills.exposure && c.skills.smokeAhead) {
+    for (const p of yield* aheadSmoke(c, plans[0])) plans.push(p);
+  }
 
   // The few plans that lead: their whole volley, not only its first attack.
   const lead = plans.filter((p) => p.option && p.deed?.reason === 'attack_value').sort((a, b) => sumOf(b) - sumOf(a)).slice(0, LIMITS.VOLLEYS);
@@ -2695,29 +2709,56 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
 // the blast's own (owed.ts blastAsk).
 const screensOf = (o: Option): number => (Array.isArray(o.facts?.cells) ? (o.facts?.cells as unknown[]).length : 0);
 function* hiddenBy(shapes: Option[], here: Outlook, units: UnitView[], c: Ctx): Steps<{ via: Option; hides: Map<number, number>; total: number }[]> {
+  return yield* hiddenAt(shapes, here, units.map((u) => ({ u, at: u.grid })), c);
+}
+// The same, with each unit read where it is about to stand (`smokeAhead`).
+function* hiddenAt(shapes: Option[], here: Outlook, spots: { u: UnitView; at: Grid }[], c: Ctx): Steps<{ via: Option; hides: Map<number, number>; total: number }[]> {
   const foes = new Map(c.hostile.map((e) => [e.uid, e]));
-  const fire = (o: Outlook, u: UnitView): Set<number> =>
-    new Set((o.seen(u.uid, [u.grid])[0] ?? []).filter((uid) => { const e = foes.get(uid); return !!e && threatens(e, u.grid, c); }));
-  const now = new Map(units.map((u) => [u.uid, fire(here, u)]));
+  const fire = (o: Outlook, s: { u: UnitView; at: Grid }): Set<number> =>
+    new Set((o.seen(s.u.uid, [s.at])[0] ?? []).filter((uid) => { const e = foes.get(uid); return !!e && threatens(e, s.at, c); }));
+  const now = new Map(spots.map((s) => [s.u.uid, fire(here, s)]));
   const out: { via: Option; hides: Map<number, number>; total: number }[] = [];
-  for (const s of shapes) {
-    const after = s.after?.();
+  for (const sh of shapes) {
+    const after = sh.after?.();
     if (!after) continue;
     const hides = new Map<number, number>();
     let total = 0;
-    for (const u of units) {
-      const was = now.get(u.uid);
+    for (const s of spots) {
+      const was = now.get(s.u.uid);
       if (!was?.size) continue;
-      const still = fire(after, u);
+      const still = fire(after, s);
       const gone = [...was].filter((x) => !still.has(x)).length;
-      hides.set(u.uid, gone);
+      hides.set(s.u.uid, gone);
       total += gone;
     }
-    out.push({ via: s, hides, total });
+    out.push({ via: sh, hides, total });
     yield;
   }
   return out;
 }
+
+// WHERE AN ALLY STILL TO ACT IS ABOUT TO STAND (`smokeAhead`): its walk at the
+// nearest enemy, as far as its stride takes it, stopping where its longest arm
+// reaches that enemy, a Grid at a time along the longer way still to go. A
+// reading of where it is headed, not a route: walls are the engine's to find
+// when it walks. Null for one that need not walk to reach.
+function aheadOf(u: UnitView, c: Ctx): Grid | null {
+  let near: UnitView | null = null;
+  for (const e of c.hostile) if (!e.camouflaged && (!near || apart(u.grid, e.grid) < apart(u.grid, near.grid))) near = e;
+  if (!near) return null;
+  const steps = Math.min(stride(u), apart(u.grid, near.grid) - Math.max(1, armOf(u, c.skills.aimed)));
+  if (steps <= 0) return null;
+  const at = { col: u.grid.col, row: u.grid.row };
+  for (let i = 0; i < steps; i++) {
+    const dc = near.grid.col - at.col;
+    const dr = near.grid.row - at.row;
+    if (dc !== 0 && Math.abs(dc) >= Math.abs(dr)) at.col += Math.sign(dc);
+    else if (dr !== 0) at.row += Math.sign(dr);
+  }
+  return at;
+}
+const aheadSpots = (c: Ctx): { u: UnitView; at: Grid }[] =>
+  squadOf(c.view).filter((u) => u.uid !== c.me.uid && !u.done).flatMap((u) => { const at = aheadOf(u, c); return at ? [{ u, at }] : []; });
 // The shape that hides the most of the squad, and of two that hide as much
 // the larger: a Connected group of three keeps two Screens through the End
 // Phase, where a lone one is gone (4.16).
@@ -2763,6 +2804,37 @@ function* squadSmoke(c: Ctx, base: Plan): Steps<Plan[]> {
   return out;
 }
 
+// The plans of a Smoke card thrown AHEAD of the squad (`smokeAhead`): for each
+// Ally still to act, at the Landing Point nearest where it is about to stand
+// (within a Grid of it); each in the shape that hides the most of them there,
+// worth `smokeAlly` for each enemy that would no longer see one of them. The
+// unit throwing it stays where it is, priced as every plan is.
+function* aheadSmoke(c: Ctx, base: Plan): Steps<Plan[]> {
+  const here = c.d.here?.();
+  if (!here) return [];
+  const launches = c.d.options.filter((o) => kindOf(o) === 'launch' && o.tags.includes('smoke') && !!o.then && !!endOf(o));
+  if (!launches.length) return [];
+  const spots = aheadSpots(c);
+  if (!spots.length) return [];
+  const picked = new Set<Option>();
+  for (const s of spots) {
+    let near: Option | null = null;
+    for (const o of launches) if (apart(endOf(o)!, s.at) <= 1 && (!near || apart(endOf(o)!, s.at) < apart(endOf(near)!, s.at))) near = o;
+    if (near) picked.add(near);
+  }
+  const out: Plan[] = [];
+  for (const o of picked) {
+    const shapes = (o.then?.()?.options ?? []).filter((x) => x.tags.includes('smoke') && screensOf(x) > 0);
+    const best = shapeBest(yield* hiddenAt(shapes, here, spots, c));
+    if (!best || best.total <= 0) continue;
+    out.push({
+      option: o, via: best.via, how: 'smokeAhead', at: c.me.grid, deed: null,
+      now: best.total * c.w.smokeAlly - SMOKE_WORTH, next: base.next, mission: 0, shape: base.shape, cost: 0, risk: 0,
+    });
+  }
+  return out;
+}
+
 // The key what standing in a Grid costs is kept under (`harms`): the unit, the
 // Grid, what the plan does there that changes what a hit costs it (`tail`), and
 // the facing the plan leaves it in (`faced`): an answer's own where it says one,
@@ -2801,7 +2873,8 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
     const self = p.how === 'stance' || p.how === 'token' || p.how === 'mode' || p.how === 'form' || p.how === 'tactic';
     // And the Boxes it picks up on the way (`held`).
     const taking = c.skills.held && c.skills.mission && (tookBy(p.option).length > 0 || tookBy(p.via).length > 0) ? `+held:${[...tookBy(p.option), ...tookBy(p.via)].join(',')}` : '';
-    const spot = harmKey(c, p.at, `${self || p.how === 'screen' || p.how === 'squadSmoke' ? p.option?.id : ''}${face}${tow}${mark}${taking}`, p.option);
+    const smoked = p.how === 'screen' || p.how === 'squadSmoke' || p.how === 'smokeAhead';
+    const spot = harmKey(c, p.at, `${self || smoked ? p.option?.id : ''}${p.how === 'smokeAhead' && p.via ? `/${p.via.id}` : ''}${face}${tow}${mark}${taking}`, p.option);
     let harm = c.harms.get(spot);
     if (!harm) {
       const acted = hiding && p.deed ? p.deed.option.after?.() ?? p.deed.option.then?.(['end'])?.here?.() : undefined;
@@ -2924,6 +2997,7 @@ function reasonOf(p: Plan, stay: Plan): string {
   if (!p.option) return p.deed?.reason ?? 'end_activation';
   if (p.how !== 'move') {
     return p.how === 'stance' ? 'stance_by_value' : p.how === 'charge' ? 'charge_for_attack' : p.how === 'screen' ? 'smoke_for_cover' : p.how === 'squadSmoke' ? 'smoke_for_squad'
+      : p.how === 'smokeAhead' ? 'smoke_ahead'
       : p.how === 'token' ? (p.option?.tags.includes('token:camouflage') ? 'cloak' : highlights(p.option) ? 'draw_fire' : 'low_profile') : p.how === 'mode' ? 'mode_by_value'
         : p.how === 'tactic' ? 'tactic_by_value' : 'clear_token';
   }
@@ -3100,6 +3174,17 @@ function detonation(d: Decision, view: SeatView, w: Weights, skills: Skills, mem
   // is safe is taken, which is the lone Screen.
   const c = context(d, view, w, skills, memo);
   if (!c) return null;
+  // Smoke ahead of the squad (`smokeAhead`): the shape that hides the most of
+  // the Allies still to act where they are about to stand, where it hides any.
+  if (skills.smokeAhead) {
+    const shapes = d.options.filter((o) => o.tags.includes('smoke') && screensOf(o) > 0);
+    const here = d.here?.();
+    const spots = shapes.length && here ? aheadSpots(c) : [];
+    if (spots.length && here) {
+      const best = shapeBest(finish(hiddenAt(shapes, here, spots, c)));
+      if (best && best.total > 0) return { option: best.via.id, reason: 'smoke_ahead', why: best.via.label };
+    }
+  }
   if (skills.smokeSquad) {
     const shapes = d.options.filter((o) => o.tags.includes('smoke') && screensOf(o) > 0);
     const here = d.here?.();
