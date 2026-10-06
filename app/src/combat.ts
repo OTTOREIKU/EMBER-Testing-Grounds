@@ -5,7 +5,7 @@ import { ICON_BLOCKED, ICON_BOLT, ICON_BURST, ICON_DICE, ICON_PIERCE, ICON_SHIEL
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, Opportunity, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
-import { statusCount, STATUSES } from './types';
+import { fitViewLine, statusCount, STATUSES } from './types';
 import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, partUsable, dragPrinted, designationsOn, lockOnPenalty, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, tallyCounter, resolveCounterRoll, type AttackReaction, type MultiTarget, ignoresProtection } from './units';
 import { timingOf } from './ticks';
 import { isTerminalStandIn, TERMINAL_EV } from './tasks';
@@ -3511,8 +3511,9 @@ export class AttackHelper {
         // the tail of a fight the acting player could read in full, and the
         // trace is the part OTTO named as mattering most for following what
         // happened. The markup is stripped because it lands in another client's
-        // innerHTML and a peer is not a trusted author of it.
-        log: c.log.map((l) => l.replace(/<[^>]*>/g, '')),
+        // innerHTML and a peer is not a trusted author of it, and each line is
+        // cut to the longest check() accepts, or the whole view is refused.
+        log: c.log.map((l) => fitViewLine(l.replace(/<[^>]*>/g, ''))),
         logStep: c.logStep.slice(),
         // The pools, so the same numbers stand in the box on every screen from
         // the moment the step opens. Nudged by hand in the editor and already
@@ -3562,7 +3563,7 @@ export class AttackHelper {
         // resolution step: stepResolve wrote it during this very render, and a
         // strip left over from the round before a Surplus would be a lie about
         // dice that have not been rolled yet.
-        resolution: c.step === 'resolve' ? c.resolution ?? null : null,
+        resolution: c.step === 'resolve' && c.resolution ? { ...c.resolution, text: c.resolution.text.map(fitViewLine) } : null,
       });
   }
 

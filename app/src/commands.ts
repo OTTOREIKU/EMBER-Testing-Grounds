@@ -1,5 +1,5 @@
 import type { BoardGrids, CardAction, CombatView, Facing, FreeTicks, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
-import { addStatus, ageTokens, cellsOf, isLineUnit, gridsOf, newOpportunity, normaliseCatalog, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
+import { addStatus, ageTokens, cellsOf, isLineUnit, gridsOf, newOpportunity, normaliseCatalog, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces, VIEW_LINE_MAX } from './types';
 import { copyAsJson } from './jsoncopy';
 import type { GameData } from './data';
 import { cardName, isMine, isUnfolded, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance, squadLabel } from './data';
@@ -1363,7 +1363,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (pd != null && !(Number.isSafeInteger(pd.face) && pd.face >= 0 && pd.face < 6 && Number.isSafeInteger(pd.n) && pd.n >= 1 && pd.n <= 40)) {
         return no('That is not a Part Die.');
       }
-      if ((view.log ?? []).some((l) => typeof l !== 'string' || l.length > 400)) return no('That is not a combat log.');
+      if ((view.log ?? []).some((l) => typeof l !== 'string' || l.length > VIEW_LINE_MAX)) return no('That is not a combat log.');
       // The resolution strip is drawn into the OTHER player's window, so it is
       // bounded here the way the pools and the log are. No legal attack makes
       // forty damage icons, and the summary is three lines plus its notes. The
@@ -1393,7 +1393,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (res && (!res.duel || badIcons(res.duel.icons) || badIcons(res.duel.triggers)
         || spare(res.duel.spareDodge) || spare(res.duel.idleDefense)
         || !Array.isArray(res.text)
-        || res.text.some((l) => typeof l !== 'string' || l.length > 400))) {
+        || res.text.some((l) => typeof l !== 'string' || l.length > VIEW_LINE_MAX))) {
         return no('That is not a combat resolution.');
       }
       return ok;

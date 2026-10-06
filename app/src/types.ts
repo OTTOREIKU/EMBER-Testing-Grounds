@@ -1106,6 +1106,17 @@ export interface Duel {
   carried: boolean;
 }
 
+// THE LONGEST LINE A COMBAT VIEW CARRIES (its log, and its resolution's text).
+// check() in commands.ts refuses a view with a longer one, since what a peer
+// sends lands in the other player's window, so the window that publishes one
+// cuts each line to it (combat.ts publishMirror). The Automatic Shield's note
+// runs past it where two Scutums qualify (449 characters), and every view of
+// that attack was refused: the defender was never shown it (2026-10-06).
+export const VIEW_LINE_MAX = 400;
+export function fitViewLine(line: string): string {
+  return line.length > VIEW_LINE_MAX ? `${line.slice(0, VIEW_LINE_MAX - 1)}…` : line;
+}
+
 // A read-only snapshot of the attacker's combat window, one per open attack.
 // Faces are raw die indexes — the mirror draws them with the same dice data —
 // and `log` is the helper's narration tail with any markup stripped.
