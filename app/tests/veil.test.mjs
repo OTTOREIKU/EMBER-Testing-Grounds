@@ -101,7 +101,7 @@ const near = (to, g) => !!to && Math.max(Math.abs(to.c - g.c), Math.abs(to.r - g
   check('with nobody able to reach the Ally it is worth nothing, and the turn is the same with the weight as without',
     [on.answers.some((a) => a.reason === 'veil_value'), on.answers.map((a) => a.label)], [false, off.answers.map((a) => a.label)]);
 }
-check('the shipped weight is 1 (adopted 2026-10-06: 105 of 200 against 104)', AI.TACTICIAN.veil, 1);
+check('the shipped weight is 0 (adopted, then returned to 0 on the melee test bed: RDL_Melee1b 11 of 24 with it against 16)', AI.TACTICIAN.veil, 0);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
