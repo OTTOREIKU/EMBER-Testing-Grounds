@@ -494,6 +494,10 @@ export interface Weights {
   // Interference on the nearest enemy) is worth this x the best jam it is
   // offered from the Landing Point (priced as `jam` prices one), for this round
   // and each round left at `future` of the one before. At 0 worth nothing.
+  // ADOPTED at 1 (2026-10-05, late night): both squads with the Carrier, the
+  // Ace against itself, 96 of 200 against 89 (19 turned to a win, 8 from one,
+  // p .05), trading a little better; deployed 100 times in 236 offers (never
+  // before), its jam made every time it was offered.
   sentry: number;
   // A UNIT PUT DOWN TO SERVE THE SQUAD (A6, 2026-10-05: the CP-3 Beacon
   // Backpack's B3 Beacons were deployed 0 times in 19 offers): a Deploying
@@ -592,7 +596,7 @@ export const TACTICIAN: Weights = {
   spotter: 1,
   smokeAlly: 0.15,
   breakIn: 0.5,
-  sentry: 0,
+  sentry: 1,
   beacon: 0,
 };
 
