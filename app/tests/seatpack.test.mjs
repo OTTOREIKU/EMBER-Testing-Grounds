@@ -64,8 +64,8 @@ async function staged(who, mate, mateDone = false) {
 function costs(d, view, me) {
   const moves = d.options.filter((o) => o.tags[0] === 'move' && o.facts?.to);
   const toward = moves.reduce((a, b) => (b.facts.to.r > a.facts.to.r ? b : a), moves[0]);
-  const cost = (pack) => AI.exposureAt(d, view, toward.id, Infinity, {}, { pack }).cost;
-  return { to: toward.facts.to, off: cost(0), on: cost(1), me };
+  const cost = (pack, packNear = 0) => AI.exposureAt(d, view, toward.id, Infinity, {}, { pack, packNear }).cost;
+  return { to: toward.facts.to, off: cost(0), on: cost(1), near: cost(0, 1), me };
 }
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 
@@ -100,7 +100,22 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
   check('A MECH WHOSE GUNS OUTWEIGH ITS BLADES pays alone whoever is beside it: its walk is priced the same with `pack` as without', [c.off > 0.1, near(c.on, c.off)], [true, true]);
   t.close();
 }
-check('the weight ships at 0 until it is measured', AI.TACTICIAN.pack, 0);
+// THE PACK ALREADY IN (`packNear`): only the blades standing beside the enemy already share, whatever their turn.
+// The first blade in pays alone; those that follow it in share (game 130102: two blades that could have struck
+// spent their turns on the Terminals, and the one that went in on the strength of them was lost).
+{
+  const { t, d, view } = await staged('Blade', [4, 2]);
+  const c = costs(d, view);
+  check('`packNear`: A MATE STILL TO ACT that could reach the Rifle but stands off shares nothing', near(c.near, c.off), true);
+  t.close();
+}
+{
+  const { t, d, view } = await staged('Blade', [3, 8], true);
+  const c = costs(d, view);
+  check('`packNear`: a Mate standing beside the Rifle already shares the fire', near(c.near, c.off / 2), true);
+  t.close();
+}
+check('the weights ship at 0 until they are measured', [AI.TACTICIAN.pack, AI.TACTICIAN.packNear], [0, 0]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
