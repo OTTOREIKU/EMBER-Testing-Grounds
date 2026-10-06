@@ -19,10 +19,13 @@ console.log('A dial for holding\n');
 const { M, data } = await loadEngine('seatcover', ["export * as SEAT from '../src/seat';", "export * as AI from '../src/ai/index';", "export * as HUD from '../src/matchhud';"]);
 const AI = M.AI;
 const vip = { ...data.solo.scenarios.find((s) => s.id === 'intersection-vip-assassination') };
-const ace = AI.makeTactician({}, {});
+// Both with `holdLate` off (adopted 2026-10-05, night): that skill answers the
+// same report another way (holdlate.test.mjs), and with it on this game goes
+// otherwise and Dune is not holding in round 3. Here the weight is read alone.
+const ace = AI.makeTactician({ holdLate: false }, {});
 // A weight far beyond any measured: however much it is, a plan that acts is
 // never outweighed by it.
-const covering = AI.makeTactician({}, { cover: 5 });
+const covering = AI.makeTactician({ holdLate: false }, { cover: 5 });
 const timingOf = (d, id) => d.options.find((o) => o.id === id)?.tags.find((t) => t.startsWith('timing:'))?.slice(7);
 
 // The game played by the Ace on both sides; each dial is read where it is set.
