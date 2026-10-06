@@ -79,25 +79,26 @@ async function carrierTurn(policy, rifle) {
   return out;
 }
 
-const priced = AI.makeTactician({}, { sentry: 1 });
+const priced = AI.tacticianPolicy;
+const unpriced = AI.makeTactician({}, { sentry: 0 });
 {
-  const off = await carrierTurn(AI.tacticianPolicy, [5, 6]);
+  const off = await carrierTurn(unpriced, [5, 6]);
   check('THE SEAM offers the Deploy from C3 on its Projectile Opportunity: a launch that lands the Delphinium (159), its jam at Range 8',
     off.offered.length > 0 && off.offered.every((o) => JSON.stringify(o) === JSON.stringify([['launch', 'land'], '159', 8])), true);
   check('WITHOUT `sentry` the Ace never deploys it, nothing refused', [off.drones, off.answers.some((a) => a.reason === 'sentry_value'), off.refused], [[], false, []]);
   const on = await carrierTurn(priced, [5, 6]);
   const dep = on.answers.find((a) => a.reason === 'sentry_value');
-  check('WITH IT the Ace deploys the Delphinium within its Opportunity, to jam the Rifle every round, and says so in plain words',
+  check('THE ACE AS SHIPPED deploys the Delphinium within its Opportunity, to jam the Rifle every round, and says so in plain words',
     [!!dep, dep?.label.startsWith('Deploy "Delphinium"'), String(dep?.why).startsWith('a Drone to jam Rifle every round'), on.drones.length, on.drones[0]?.startsWith('159@'), on.refused],
     [true, true, true, 1, true, []]);
 }
 for (const rifle of [[6, 8], [8, 9]]) {
-  const off = await carrierTurn(AI.tacticianPolicy, rifle);
+  const off = await carrierTurn(unpriced, rifle);
   const on = await carrierTurn(priced, rifle);
   check(`with the Rifle beyond its Range (at ${String.fromCharCode(65 + rifle[0])}${rifle[1] + 1}) it is worth nothing, and the turn is the same with the weight as without`,
     [on.drones, on.answers.map((a) => a.label)], [[], off.answers.map((a) => a.label)]);
 }
-check('the shipped weight is 0 (measured before it is adopted)', AI.TACTICIAN.sentry, 0);
+check('the shipped weight is 1 (adopted 2026-10-05, late night: 96 of 200 against 89)', AI.TACTICIAN.sentry, 1);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
