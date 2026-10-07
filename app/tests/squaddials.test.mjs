@@ -84,6 +84,25 @@ async function planning(policy = AI.eagerPolicy) {
     [on.d.unit === on.U.Blade.uid, timing(off.d, plain), plain.reason, timing(on.d, together), together.reason], [true, 'melee', 'dial_by_plan', 'movement', 'dial_by_squad']);
   on.t.close();
 }
+{
+  // THE LOCK BEFORE THE GUN (S3's second form, the harm counted: 2026-10-07): the Rifle three Grids south of the
+  // Blade, in reach of the Gun, the Drone far off. With the Blade's Melee first it ends beside the Rifle, which then
+  // has no shot (a Melee Lock bars its Firing); with the Blade on Movement the Rifle fires first, at the Gun.
+  const { t, U, d, view } = await planning();
+  const at = (x, c, r, f) => { x.col = c * 3; x.row = r * 3; if (f !== undefined) x.facing = f; };
+  at(U.Blade, 4, 4, 2); at(U.Rifle, 4, 7, 0); at(U.Gun, 2, 2, 2); at(U.Drone, 11, 0, 2);
+  const v = M.SEAT.viewOf(data, t.state, 's1');
+  const base = AI.turnPlanner();
+  const rifle = (dials) => run(AI.projectRound(d.here(), v, new Map(dials), base)).steps.find((x) => x.uid === U.Rifle.uid);
+  const locked = rifle([[U.Blade.uid, 'melee'], [U.Gun.uid, 'firing']]);
+  const free = rifle([[U.Blade.uid, 'movement'], [U.Gun.uid, 'firing']]);
+  check('THE LOCK BEFORE THE GUN: with the Blade\'s Melee first the Rifle, Locked, harms nobody; with the Blade on Movement it shoots first, at the Gun',
+    [locked?.harm, locked?.target, free?.harm > 0.5, free?.target === U.Gun.uid], [0, null, true, true]);
+  const choice = run(AI.chooseDials(d.here(), v, new Map([[U.Blade.uid, ['movement', 'melee']], [U.Gun.uid, ['firing', 'movement']]]), base));
+  check('and chosen together from the Blade\'s Movement, its dial goes to Melee: the squad worth far more (the harm withheld)',
+    [choice.dials.get(U.Blade.uid), choice.dials.get(U.Gun.uid), choice.total > choice.alone + 1], ['melee', 'firing', true]);
+  t.close();
+}
 check('the skill ships off until it is measured', AI.SKILLS.squadDials, false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
