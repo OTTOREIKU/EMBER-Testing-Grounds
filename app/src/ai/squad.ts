@@ -42,6 +42,9 @@ export interface RoundStep {
   removed: boolean;
   // Our turns: the plan's worth on the table it met (0 where no plan was made).
   worth: number;
+  // The enemy's turns: what its best attack on this squad is worth to it (`gainOf`), the harm this squad takes there
+  // (0 for ours, and for an enemy with no attack on us from where it stands, a Melee Lock barring its gun included).
+  harm: number;
 }
 export interface ProjectedRound { steps: RoundStep[]; end: Outlook }
 // The round as far as a run of turns, kept for another projection that begins with the same turns (S3 tries many
@@ -109,7 +112,7 @@ export function* projectRound(
     }
     if (gone.has(turn.uid)) { keep(); continue; }
     const unit = view.units.find((u) => u.uid === turn.uid)!;
-    const step: RoundStep = { uid: turn.uid, side: unit.side, label: unit.label, timing: turn.timing, mine: turn.mine, at: null, target: null, kill: 0, removed: false, worth: 0 };
+    const step: RoundStep = { uid: turn.uid, side: unit.side, label: unit.label, timing: turn.timing, mine: turn.mine, at: null, target: null, kill: 0, removed: false, worth: 0, harm: 0 };
     steps.push(step);
     // An attack laid by its odds: its target off the table where it is destroyed at better than even odds.
     const strike = (o: Option, from: Outlook): Outlook => {
@@ -150,7 +153,7 @@ export function* projectRound(
         const g = gainOf(f, target, v, w);
         if (!best || g > best.g) best = { o, g };
       }
-      if (best) cur = strike(best.o, cur);
+      if (best) { step.harm = Math.max(0, best.g); cur = strike(best.o, cur); }
     }
     keep();
   }
@@ -159,7 +162,11 @@ export function* projectRound(
 
 // THE DIALS CHOSEN TOGETHER (S3, the Tactician's skill `squadDials`). `candidates` gives each Mech of this squad the
 // Timings worth trying, its best alone first. The squad's worth of an assignment is every one of its Mechs' plans as
-// projected, each on the table it would meet (and the earlier Timing's small edge, `tempo`, as a Mech alone has it).
+// projected, each on the table it would meet (and the earlier Timing's small edge, `tempo`, as a Mech alone has it),
+// LESS THE HARM the enemy's turns do it in the round (each one's best attack on the squad, `harm`): a Mech dialled
+// late is shot before it acts, and a gunner Locked before its turn harms nobody. (The first form left the harm out:
+// only a unit destroyed outright counted against it, so the search drifted to late Timings that looked safe; random
+// squads, 75 of 200 won against 92, 2026-10-07.)
 // From each Mech's best alone, a Mech at a time in the round's order each other Timing it has is tried, and kept where
 // the squad's worth rises by more than `margin`; `passes` times over, or until nothing changes. The round's unchanged
 // beginning is reused from one trial to the next (`RoundCut`).
@@ -172,7 +179,7 @@ export function* chooseDials(
   const tempo = (timing: string): number => w.tempo * (ORDER.length - ORDER.indexOf(timing));
   const worth = function* (dials: ReadonlyMap<number, string>): Steps<number> {
     const r = yield* projectRound(start, view, dials, plan, w, true, cache, known);
-    return r.steps.filter((s) => s.mine).reduce((n, s) => n + s.worth, 0) + [...dials.values()].reduce((n, t) => n + tempo(t), 0);
+    return r.steps.reduce((n, s) => n + (s.mine ? s.worth : -s.harm), 0) + [...dials.values()].reduce((n, t) => n + tempo(t), 0);
   };
   const dials = new Map([...candidates].filter(([, ts]) => ts.length).map(([uid, ts]) => [uid, ts[0]] as [number, string]));
   let total = yield* worth(dials);
