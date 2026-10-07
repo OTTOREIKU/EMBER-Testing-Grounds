@@ -117,6 +117,26 @@ async function planning(policy = AI.eagerPolicy) {
     [near.dials.get(U.Blade.uid), near.total > near.alone + 0.5, far.dials.get(U.Blade.uid), far.total === far.alone], ['melee', true, 'movement', true]);
   t.close();
 }
+{
+  // A NEW TABLE IS READ ANEW (2026-10-07): one policy plays game after game (a probe's run, a page's next game). On a
+  // board where the squad moves the Blade (found by tests/_squadscan.mjs: alone Movement, together Melee), then on the
+  // first staged board, then that board again, the same Tactician answers each for itself. (Kept by seat and round,
+  // the second answer was the first board's: every game after a policy's first answered its dials from the first.)
+  const ace = AI.makeTactician({ squadDials: true });
+  const at = (x, c, r, f) => { x.col = c * 3; x.row = r * 3; x.facing = f; };
+  const moved = (U) => { at(U.Blade, 10, 4, 1); at(U.Gun, 6, 7, 2); at(U.Rifle, 3, 5, 0); at(U.Drone, 3, 2, 1); };
+  const ask = async (board) => {
+    const p = await planning();
+    board?.(p.U);
+    const c = ace.choose(p.d, M.SEAT.viewOf(data, p.t.state, 's1'), new AI.Rng('dial'));
+    const tm = p.d.options.find((o) => o.id === c.option)?.tags.find((x) => x.startsWith('timing:'))?.slice(7);
+    p.t.close();
+    return `${tm}:${c.reason}`;
+  };
+  const answers = [await ask(moved), await ask(null), await ask(moved)];
+  check('A NEW TABLE IS READ ANEW: the same policy, three tables of the same round and seat, each answered for itself',
+    answers, ['melee:dial_by_squad', 'melee:dial_by_plan', 'melee:dial_by_squad']);
+}
 check('the skill ships off until it is measured; the margin it reads', [AI.SKILLS.squadDials, AI.TACTICIAN.squadMargin], [false, 0.5]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
