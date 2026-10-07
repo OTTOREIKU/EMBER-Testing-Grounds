@@ -342,6 +342,19 @@ const LIMITS = {
 } as const;
 
 const EXACT = 1e-9;
+
+// THE TIE CENSUS (2026-10-07, OTTO: "go ahead with the near-tie census"): where answers of two DIFFERENT Actions are
+// priced within EXACT of each other, the one listed first wins, and nothing in the pricing told them apart (the ML-34
+// Quad Missile Rack lost every such tie to the Dual Launcher beside it). A census sets `TIES.hook` to hear of each
+// tie where a deed settles its best (`where`: between attacks, launches, or deeds of different kinds); nothing else
+// sets it, and unset nothing is computed and nothing changes.
+export interface TieInfo { where: string; unit: number; a: string; b: string; actionA: string; actionB: string; value: number }
+export const TIES: { hook: ((t: TieInfo) => void) | null } = { hook: null };
+function tieCheck(where: string, c: Ctx, a: Option, va: number, b: Option, vb: number): void {
+  const aa = String(a.facts?.actionId ?? ''), ab = String(b.facts?.actionId ?? '');
+  if (!TIES.hook || !aa || !ab || aa === ab || va <= EXACT || Math.abs(va - vb) > EXACT) return;
+  TIES.hook({ where, unit: c.me.uid, a: a.label, b: b.label, actionA: aa, actionB: ab, value: va });
+}
 // The Action Types that attack, by which a Mech's Timings of its own weapons
 // are known (`holdLate`).
 const ARMS = new Set(['Firing', 'Melee', 'Projectile']);
@@ -632,6 +645,7 @@ function volley(options: Option[], c: Ctx, whole: boolean, shock = false): Deed 
     .filter((s) => s.value > EXACT)
     .sort((a, b) => b.value - a.value);
   if (!shots.length) return null;
+  if (TIES.hook) for (const s of shots.slice(1)) { if (shots[0].value - s.value > EXACT) break; tieCheck('attack', c, shots[0].o, shots[0].value, s.o, s.value); }
   let best = { s: shots[0], total: shots[0].value };
   if (whole) {
     for (const s of shots.slice(0, 2)) {
@@ -774,6 +788,10 @@ function launch(options: Option[], c: Ctx, whole = false): Deed | null {
     const key = String(o.facts?.actionId ?? o.facts?.cardId ?? '');
     const held = byAction.get(key);
     if (value > EXACT && (!held || value > held.value + EXACT)) byAction.set(key, { o, value, why: `a Projectile for ${blast.why}` });
+  }
+  if (TIES.hook && byAction.size > 1) {
+    const rows = [...byAction.values()].sort((x, y) => y.value - x.value);
+    for (const r of rows.slice(1)) { if (rows[0].value - r.value > EXACT) break; tieCheck('launch', c, rows[0].o, rows[0].value, r.o, r.value); }
   }
   // A VOLLEY'S LATER PROJECTILES (`volleyLaunch`): where the whole of the activation is worked out, a launch whose
   // Action may launch again at once is worth its own Projectile and the best launch the Volley offers next, on the
@@ -1187,9 +1205,11 @@ function breakIn(options: Option[], c: Ctx): Deed | null {
 // The best thing to do at a table, of the five kinds.
 function deedAt(options: Option[], c: Ctx, whole: boolean, shock = false): Deed | null {
   let best: Deed | null = null;
-  for (const deed of [volley(options, c, whole, shock), launch(options, c, whole), jam(options, c), access(options, c), blastDeed(options, c), support(options, c), handOff(options, c), strike(options, c), breakIn(options, c), tagDeed(options, c)]) {
+  const deeds = [volley(options, c, whole, shock), launch(options, c, whole), jam(options, c), access(options, c), blastDeed(options, c), support(options, c), handOff(options, c), strike(options, c), breakIn(options, c), tagDeed(options, c)];
+  for (const deed of deeds) {
     if (deed && (!best || deed.value > best.value + EXACT)) best = deed;
   }
+  if (TIES.hook && best) for (const deed of deeds) if (deed && deed !== best && deed.reason !== best.reason) tieCheck('deed', c, best.option, best.value, deed.option, deed.value);
   return best;
 }
 
