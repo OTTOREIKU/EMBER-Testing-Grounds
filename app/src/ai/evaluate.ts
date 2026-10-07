@@ -585,6 +585,9 @@ export interface Weights {
   // beside it more than it did); ADOPTED AT 0.05, A TIE-BREAK (random squads 91 against 90, 199 of 200 the very same
   // games; the melee bed 94 against 94, 164 of 168 the same; the Rack fired at 28 of 109 offers, against 0 of 67).
   volleyLaunch: number;
+  // THE SQUAD'S DIALS CHOSEN TOGETHER (the skill `squadDials`, M18 S3): how much the round projected must gain before
+  // a Mech's dial is changed from the one it would set alone. Read only with the skill.
+  squadMargin: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -687,6 +690,7 @@ export const TACTICIAN: Weights = {
   targetTag: 0,
   bladeIn: 0,
   volleyLaunch: 0.05,
+  squadMargin: 0.5,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way

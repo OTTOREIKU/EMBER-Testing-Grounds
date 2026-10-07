@@ -28,7 +28,7 @@
 // the Brawler's fighter with a different price list.
 import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, WeaponView, ZoneView } from '../seat';
 import type { Choice, Policy } from './policy';
-import { chooseDials, type Planner, type TurnPlan } from './squad';
+import { chooseDials, type DialOwn, type Planner, type TurnPlan } from './squad';
 import {
   apart, attacking, beside, brawlerPolicy, couldStrike, declare, endOf, facingAt, facingOf, foesOf, hitLocation, lockedAt, percent, reaches, ready, reroll,
   same, standing, strikers, surplus, unitOf, type Grid, type Road, type Worth,
@@ -302,10 +302,10 @@ export interface Skills {
   breakIn: boolean;
   // THE SQUAD'S DIALS CHOSEN TOGETHER (M18 S3, 2026-10-07; OTTO: "the CPU needs to start thinking as one ... Humans
   // play a squad together and often think about their team interactions all game"). Each Mech's dial was set alone,
-  // on the board as it stands (`dial`). With this, at the round's first dial question every Mech's Timings worth
-  // trying are found (its two best alone), and the dials are chosen together on the round projected (squad.ts
-  // chooseDials: each Mech planned on the table its allies, and the enemy's likeliest attacks, will have left it, and
-  // the squad's worth kept highest); each dial of the round is answered from that choice. OFF until measured.
+  // on the board as it stands (`dial`). With this, at the round's first dial question every Mech is read as `dial`
+  // reads it (its dial alone and its next best), and the dials are chosen together on the round projected (squad.ts
+  // chooseDials: each Mech planned on the table its allies, and the enemy's likeliest attacks, will have left it), a
+  // Mech's changed from its own only where the round gains by more than `squadMargin`. OFF until measured.
   squadDials: boolean;
 }
 
@@ -3612,24 +3612,18 @@ function startOf(p: Plan): Option | null {
   return p.via ?? p.deed?.option ?? null;
 }
 
-// THE TIMING DIAL: the Timing whose Opportunity opens the plan worth most, on
-// the board as it stands. Each Timing something of the Mech's is played on is
-// asked for the whole of what it would offer (`then` on a dial), and that is
-// planned as the Opportunity itself will be. Acting sooner is worth a little
-// by itself, so of two plans worth the same the earlier Timing is taken: an
-// attack made first is made before the Part it would destroy has fired.
-//
-// AND A DIAL IS CHARGED FOR WHO ACTS BEFORE IT. A plan is priced for where it
-// ends; an enemy Mech whose turn comes first attacks the Mech where it stands
-// NOW, whatever it meant to do afterwards. The other squad's dials are not
-// known, so each enemy Mech that could attack it here is taken to act on the
-// Timing of that attack, and a tie to go against this Mech. A Mech standing in
-// a line of fire therefore sets a dial that comes before the guns on it.
-function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Memo): Steps<Choice | null> {
-  const me = unitOf(view, d.unit);
-  if (!me) return null;
+// One Timing of a Mech's dial as `dial` reads it: the Timing, its place in the order the Timings are played, what
+// the dial is worth there, and the plan and the reading it was found with.
+interface DialRow { timing: string; i: number; value: number; plan: Plan; c: Ctx }
+
+// THE TIMING DIAL'S READING, for any Mech of the squad (`dial`, and the dials chosen together, `squadDials`): for
+// each Timing of `timings` (in the order they are played), the Mech's turn on it (`turnOf`: what its dial question's
+// option would answer with `then`; `undefined` where the Timing is not offered), planned and priced as below.
+function* dialRows(
+  me: UnitView, timings: readonly string[], turnOf: (timing: string, i: number) => Decision | null | undefined, view: SeatView, w: Weights, skills: Skills, memo: Memo,
+): Steps<DialRow[]> {
   // The order the Timings are played in is the order the dials are offered in.
-  const order = new Map(d.options.map((o, i) => [o.tags.find((t) => t.startsWith('timing:'))?.slice(7) ?? '', i]));
+  const order = new Map(timings.map((t, i) => [t, i]));
   // EVERY Timing may be asked what it would open, not only the ones the Mech's
   // own Actions are printed with: a dial may open the Actions of the Timing
   // beside it (a gun fired on a Projectile dial is fired before the guns on a
@@ -3641,8 +3635,6 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
   const played = w.dialAll > 0 ? null : new Set<string>([
     'melee', 'movement', ...(view.task?.family === 'terminal' ? ['tactical'] : []), ...me.weapons.filter(ready).map((x) => x.timing ?? ''),
   ]);
-  let best: { o: Option; value: number; plan: Plan } | null = null;
-  const holding: { o: Option; value: number; plan: Plan; timing: string; c: Ctx }[] = [];
   // The Timings its STRONGEST weapons are played on (`holdLate`): a gun beside
   // a blade worth far more is no reason to wait for the Firing Timing, where the
   // blade cannot be used (the community melee squad, RDL_Melee1, held on Firing
@@ -3652,10 +3644,11 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
   const power = (x: WeaponView): number => x.yellow + 1.5 * x.red;
   const top = Math.max(0, ...arms.map(power));
   const armed = new Set<string>(arms.filter((x) => power(x) >= top * HOLD_SHARE).map((x) => x.timing ?? ''));
-  for (const [i, o] of d.options.entries()) {
-    const timing = o.tags.find((t) => t.startsWith('timing:'))?.slice(7);
-    if (!timing || !o.then || (played && !played.has(timing))) continue;
-    const turn = o.then();
+  const rows: DialRow[] = [];
+  for (const [i, timing] of timings.entries()) {
+    if (!timing || (played && !played.has(timing))) continue;
+    const turn = turnOf(timing, i);
+    if (turn === undefined) continue;
     const c = turn ? context(turn, view, w, skills, memo) : null;
     const found = c ? yield* bestSteps(c) : null;
     yield;
@@ -3687,75 +3680,137 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
     // before this one.
     const aim = w.dialDoubt > 0 ? found.best.deed : null;
     const prey = aim ? unitOf(view, aim.option.facts?.targetUid) : undefined;
-    const doubt = aim && prey?.kind === 'mech' && prey.side !== view.seat && !prey.done && stride(prey) > 0 ? w.dialDoubt * (i / d.options.length) * Math.max(0, aim.value) : 0;
+    const doubt = aim && prey?.kind === 'mech' && prey.side !== view.seat && !prey.done && stride(prey) > 0 ? w.dialDoubt * (i / timings.length) * Math.max(0, aim.value) : 0;
     // Sooner for a plan that does something now; for one that does not, later
     // on a Timing of its own weapons (`holdLate`).
-    const soon = !skills.holdLate || found.best.deed ? w.tempo * (d.options.length - i) : armed.has(timing) ? w.tempo * (i + 1) : 0;
-    const value = worthOf(found.best) - first + back + soon - lent - doubt;
-    if (!best || value > best.value + EXACT) best = { o, value, plan: found.best };
-    if (w.cover > 0 && !found.best.option && !found.best.deed) holding.push({ o, value, plan: found.best, timing, c });
+    const soon = !skills.holdLate || found.best.deed ? w.tempo * (timings.length - i) : armed.has(timing) ? w.tempo * (i + 1) : 0;
+    rows.push({ timing, i, value: worthOf(found.best) - first + back + soon - lent - doubt, plan: found.best, c });
   }
+  return rows;
+}
+
+// The dial `dial` sets from its rows: the one worth most (of two worth the same, the earlier Timing). A DIAL FOR
+// HOLDING (`cover`): where the plan worth most holds and does nothing, of the Timings whose plans hold too, the one
+// whose weapons are kept for most of the enemies that could walk into them this round.
+function dialPick(me: UnitView, rows: readonly DialRow[], w: Weights): DialRow | null {
+  let best: DialRow | null = null;
+  for (const r of rows) if (!best || r.value > best.value + EXACT) best = r;
   if (!best) return null;
-  // A DIAL FOR HOLDING (`cover`): where the plan worth most holds and does
-  // nothing, of the Timings whose plans hold too, the one whose weapons are
-  // kept for most of the enemies that could walk into them this round.
   if (w.cover > 0 && !best.plan.option && !best.plan.deed) {
-    let top: typeof best | null = null;
-    for (const h of holding) {
+    let top: DialRow | null = null;
+    for (const h of rows) {
+      if (h.plan.option || h.plan.deed) continue;
       const value = h.value + w.cover * coverOf(me, h.timing, h.c);
-      if (!top || value > top.value + EXACT) top = { o: h.o, value, plan: h.plan };
+      if (!top || value > top.value + EXACT) top = { ...h, value };
     }
     if (top) best = top;
   }
-  const opens = best.plan.option ? best.plan.option.label : best.plan.deed ? best.plan.deed.option.label : 'holding where it is';
-  if (DIALS.hook) {
-    const target = best.plan.deed?.option.facts?.targetUid;
-    DIALS.hook({
-      seat: view.seat, round: view.round, uid: me.uid, timing: best.o.tags.find((t) => t.startsWith('timing:'))?.slice(7) ?? '',
-      target: typeof target === 'number' ? target : null, end: best.plan.at, does: best.plan.deed?.reason ?? (best.plan.option ? best.plan.how : 'hold'),
-    });
-  }
-  return { option: best.o.id, reason: 'dial_by_plan', score: best.value, why: `it opens with ${opens}; ${told(best.plan)}` };
+  return best;
 }
 
-// THE SQUAD'S DIALS CHOSEN TOGETHER (`squadDials`, M18 S3): at the round's first dial question, each Mech of the
-// squad's Timings worth trying, found as `dial` finds them (each Timing its Actions are played on, planned on the
-// board as it stands; its two best alone, the earlier Timing's `tempo` counted), and the dials chosen together on
-// the round projected (squad.ts chooseDials). Kept for the round in `squads`; each dial question answers from it.
-// Where nothing could be projected, or the choice names no dial for the Mech asked about, nothing: `dial` answers.
-function* squadDial(d: Decision, view: SeatView, w: Weights, skills: Skills, squads: Map<string, Map<number, string> | null>): Steps<Choice | null> {
+// What `dialPick` weighs each row at: its value, and where the dial worth most holds, for a plan that holds too, what
+// its weapons are kept for (`cover`).
+function dialWeigh(me: UnitView, rows: readonly DialRow[], w: Weights): (r: DialRow) => number {
+  let best: DialRow | null = null;
+  for (const r of rows) if (!best || r.value > best.value + EXACT) best = r;
+  const holds = (r: DialRow): boolean => !r.plan.option && !r.plan.deed;
+  const covers = w.cover > 0 && best !== null && holds(best);
+  return (r) => (covers && holds(r) ? r.value + w.cover * coverOf(me, r.timing, r.c) : r.value);
+}
+
+// What a dial was set for, heard by a census (`DIALS`).
+function heardDial(view: SeatView, uid: number, timing: string, plan: Plan): void {
+  if (!DIALS.hook) return;
+  const target = plan.deed?.option.facts?.targetUid;
+  DIALS.hook({
+    seat: view.seat, round: view.round, uid, timing, target: typeof target === 'number' ? target : null, end: plan.at,
+    does: plan.deed?.reason ?? (plan.option ? plan.how : 'hold'),
+  });
+}
+
+// THE TIMING DIAL: the Timing whose Opportunity opens the plan worth most, on
+// the board as it stands. Each Timing something of the Mech's is played on is
+// asked for the whole of what it would offer (`then` on a dial), and that is
+// planned as the Opportunity itself will be. Acting sooner is worth a little
+// by itself, so of two plans worth the same the earlier Timing is taken: an
+// attack made first is made before the Part it would destroy has fired.
+//
+// AND A DIAL IS CHARGED FOR WHO ACTS BEFORE IT. A plan is priced for where it
+// ends; an enemy Mech whose turn comes first attacks the Mech where it stands
+// NOW, whatever it meant to do afterwards. The other squad's dials are not
+// known, so each enemy Mech that could attack it here is taken to act on the
+// Timing of that attack, and a tie to go against this Mech. A Mech standing in
+// a line of fire therefore sets a dial that comes before the guns on it.
+// (The reading is `dialRows`, the choice `dialPick`: the squad's dials chosen together read every Mech the same way.)
+function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Memo): Steps<Choice | null> {
+  const me = unitOf(view, d.unit);
+  if (!me) return null;
+  const timings = d.options.map((o) => o.tags.find((t) => t.startsWith('timing:'))?.slice(7) ?? '');
+  const rows = yield* dialRows(me, timings, (_, i) => {
+    const o = d.options[i];
+    return o.then ? o.then() : undefined;
+  }, view, w, skills, memo);
+  const best = dialPick(me, rows, w);
+  if (!best) return null;
+  const o = d.options[best.i];
+  const opens = best.plan.option ? best.plan.option.label : best.plan.deed ? best.plan.deed.option.label : 'holding where it is';
+  heardDial(view, me.uid, best.timing, best.plan);
+  return { option: o.id, reason: 'dial_by_plan', score: best.value, why: `it opens with ${opens}; ${told(best.plan)}` };
+}
+
+// THE SQUAD'S DIALS CHOSEN TOGETHER (`squadDials`, M18 S3): at the round's first dial question, every Mech of the
+// squad read as `dial` reads it (`dialRows`, its turn on each Timing asked of the table by `turnOf`), with the dial it
+// would set alone (`dialPick`) and its next best; then the dials chosen together on the round projected, from the
+// ones each would set alone, a Mech's changed only where the round gains by more than `squadMargin` (squad.ts
+// chooseDials with `own`, its third form). Kept for the round in `squads`: the dial question of a Mech the squad
+// moved answers from it, and every other Mech's is left to `dial`, answered as it would be without the skill.
+type SquadDials = Map<number, { timing: string; plan: Plan }>;
+function* squadDial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Memo, squads: Map<string, SquadDials | null>): Steps<Choice | null> {
   const key = `${view.seat}:${view.round}`;
   if (!squads.has(key)) {
-    let chosen: Map<number, string> | null = null;
+    let moved: SquadDials | null = null;
     const here = d.here?.();
     if (here) {
-      const planner = turnPlanner(w, skills);
       const order = d.options.map((o) => o.tags.find((t) => t.startsWith('timing:'))?.slice(7) ?? '');
       const candidates = new Map<number, string[]>();
-      // Each plan made here, on the starting table, is the plan the projection would make there: kept for it.
+      // Each plan found here, on the starting table, is the plan the projection would make there: kept for it.
       const known = new Map<string, TurnPlan>();
+      const own = new Map<number, Map<string, DialOwn>>();
+      const plans = new Map<string, Plan>();
       for (const u of view.units) {
         if (u.side !== view.seat || u.kind !== 'mech' || !u.alive || !u.deployed) continue;
-        const played = [...new Set(['melee', 'movement', ...(view.task?.family === 'terminal' ? ['tactical'] : []), ...u.weapons.filter(ready).map((x) => x.timing ?? '')])]
-          .filter((t) => t && order.includes(t));
-        const rows: { timing: string; worth: number }[] = [];
-        for (const timing of played) {
-          const turn = here.turnOf(u.uid, undefined, timing);
-          yield;
-          const p = turn ? yield* planner(turn, view) : null;
-          if (p) known.set(`${u.uid}:${timing}`, p);
-          if (p) rows.push({ timing, worth: p.worth + w.tempo * (order.length - order.indexOf(timing)) });
+        const rows = yield* dialRows(u, order, (t) => here.turnOf(u.uid, undefined, t), view, w, skills, memo);
+        const pick = dialPick(u, rows, w);
+        if (!pick) continue;
+        const weigh = dialWeigh(u, rows, w);
+        let next: DialRow | null = null;
+        for (const r of rows) if (r.timing !== pick.timing && (!next || weigh(r) > weigh(next) + EXACT)) next = r;
+        const tried = next ? [pick, next] : [pick];
+        candidates.set(u.uid, tried.map((r) => r.timing));
+        own.set(u.uid, new Map(tried.map((r) => [r.timing, { value: r === pick ? pick.value : weigh(r), worth: worthOf(r.plan) }])));
+        for (const r of tried) {
+          const p = r.plan;
+          known.set(`${u.uid}:${r.timing}`, { option: p.option, via: p.via, deed: p.deed ? { option: p.deed.option, value: p.deed.value } : null, at: p.at, worth: worthOf(p) });
+          plans.set(`${u.uid}:${r.timing}`, p);
         }
-        rows.sort((a, b) => b.worth - a.worth);
-        if (rows.length) candidates.set(u.uid, rows.slice(0, 2).map((r) => r.timing));
       }
-      if (candidates.size) chosen = (yield* chooseDials(here, view, candidates, planner, w, 1, 0.01, known)).dials;
+      if (candidates.size) {
+        const choice = yield* chooseDials(here, view, candidates, turnPlanner(w, skills), w, 1, w.squadMargin, known, own);
+        moved = new Map();
+        for (const [uid, timing] of choice.dials) {
+          const plan = plans.get(`${uid}:${timing}`);
+          if (plan && timing !== candidates.get(uid)?.[0]) moved.set(uid, { timing, plan });
+        }
+      }
     }
-    squads.set(key, chosen);
+    squads.set(key, moved);
   }
-  const timing = squads.get(key)?.get(d.unit ?? -1);
-  const o = timing ? d.options.find((x) => x.tags.includes(`timing:${timing}`)) : undefined;
-  return o ? { option: o.id, reason: 'dial_by_squad', why: `its dial set with its squad's (${timing})` } : null;
+  const uid = d.unit ?? -1;
+  const set = squads.get(key)?.get(uid);
+  const o = set ? d.options.find((x) => x.tags.includes(`timing:${set.timing}`)) : undefined;
+  if (!o || !set) return null;
+  heardDial(view, uid, set.timing, set.plan);
+  return { option: o.id, reason: 'dial_by_squad', why: `its dial set with its squad's (${set.timing})` };
 }
 
 // The enemies a Timing would keep a weapon for (`cover`): each one out of the
@@ -4322,7 +4377,7 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
   // seat is asked something.
   const memos = new Map<string, Memo>();
   // The squad's dials chosen together, for each seat and round (`squadDials`).
-  const squads = new Map<string, Map<number, string> | null>();
+  const squads = new Map<string, SquadDials | null>();
   const memoOf = (view: SeatView): Memo => {
     let memo = memos.get(view.seat);
     if (!memo) memos.set(view.seat, memo = newMemo());
@@ -4346,7 +4401,7 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
         return s.setup ? yield* deploy(d, view, w, s, memo) : null;
       case 'planning.dial': {
         // The squad's dials chosen together first (`squadDials`); else, or where that names none, each alone.
-        const together = s.dials && s.squadDials ? yield* squadDial(d, view, w, s, squads) : null;
+        const together = s.dials && s.squadDials ? yield* squadDial(d, view, w, s, memo, squads) : null;
         if (together) return together;
         return s.dials ? yield* dial(d, view, w, s, memo) : null;
       }

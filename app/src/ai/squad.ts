@@ -170,31 +170,60 @@ export function* projectRound(
 // From each Mech's best alone, a Mech at a time in the round's order each other Timing it has is tried, and kept where
 // the squad's worth rises by more than `margin`; `passes` times over, or until nothing changes. The round's unchanged
 // beginning is reused from one trial to the next (`RoundCut`).
+//
+// WITH `own` (the third form, 2026-10-07): for each Mech, its Timings as the Tactician's `dial` reads them alone
+// (`value`: the plan, and what standing where it is costs it, and the rest of that reading) and the worth of the plan
+// that reading found (`worth`). A Mech's dial then changes where the round gains by more than `margin` with the Mech
+// itself read as `dial` reads it, and the projection kept for what is the squad's: what the Mech's own plan gains or
+// loses by the turns around it, every other Mech's plan as projected, and the harm the enemy's turns do every OTHER
+// unit of ours (its own is in its reading). (The second form weighed a Mech's own Timings by its plan's bare worth,
+// and set worse dials than `dial` did even where no Mech's turn touched another's: random squads 76 of 200 against
+// 92, the melee bed 29 of 85 against 49.)
+export interface DialOwn { value: number; worth: number }
 export interface SquadChoice { dials: Map<number, string>; total: number; alone: number; tried: number }
 export function* chooseDials(
   start: Outlook, view: SeatView, candidates: ReadonlyMap<number, readonly string[]>, plan: Planner, w: Weights = TACTICIAN,
-  passes = 1, margin = 0.01, known?: ReadonlyMap<string, TurnPlan>,
+  passes = 1, margin = 0.01, known?: ReadonlyMap<string, TurnPlan>, own?: ReadonlyMap<number, ReadonlyMap<string, DialOwn>>,
 ): Steps<SquadChoice> {
   const cache = new Map<string, RoundCut>();
   const tempo = (timing: string): number => w.tempo * (ORDER.length - ORDER.indexOf(timing));
-  const worth = function* (dials: ReadonlyMap<number, string>): Steps<number> {
-    const r = yield* projectRound(start, view, dials, plan, w, true, cache, known);
-    return r.steps.reduce((n, s) => n + (s.mine ? s.worth : -s.harm), 0) + [...dials.values()].reduce((n, t) => n + tempo(t), 0);
+  const worth = (r: ProjectedRound, dials: ReadonlyMap<number, string>): number =>
+    r.steps.reduce((n, s) => n + (s.mine ? s.worth : -s.harm), 0) + [...dials.values()].reduce((n, t) => n + tempo(t), 0);
+  // What each Mech of ours does in a round, and the harm done to each unit of ours.
+  const split = (r: ProjectedRound): { did: Map<number, number>; hit: Map<number, number> } => {
+    const did = new Map<number, number>();
+    const hit = new Map<number, number>();
+    for (const s of r.steps) {
+      if (s.mine) did.set(s.uid, (did.get(s.uid) ?? 0) + s.worth);
+      else if (s.target !== null) hit.set(s.target, (hit.get(s.target) ?? 0) + s.harm);
+    }
+    return { did, hit };
   };
+  const sum = (m: ReadonlyMap<number, number>, skip?: number): number => [...m].reduce((n, [u, v]) => (u === skip ? n : n + v), 0);
   const dials = new Map([...candidates].filter(([, ts]) => ts.length).map(([uid, ts]) => [uid, ts[0]] as [number, string]));
-  let total = yield* worth(dials);
-  const alone = total;
+  let round = yield* projectRound(start, view, dials, plan, w, true, cache, known);
+  const alone = worth(round, dials);
+  let total = alone;
   let tried = 1;
   for (let pass = 0; pass < passes; pass++) {
     let moved = false;
     for (const turn of roundOrder(view, dials, true).filter((t) => t.mine)) {
       for (const timing of candidates.get(turn.uid) ?? []) {
-        if (timing === dials.get(turn.uid)) continue;
+        const was = dials.get(turn.uid);
+        if (timing === was) continue;
         const trial = new Map(dials);
         trial.set(turn.uid, timing);
-        const v = yield* worth(trial);
+        const next = yield* projectRound(start, view, trial, plan, w, true, cache, known);
         tried += 1;
-        if (v > total + margin) { total = v; dials.set(turn.uid, timing); moved = true; }
+        const a = was === undefined ? undefined : own?.get(turn.uid)?.get(was);
+        const b = own?.get(turn.uid)?.get(timing);
+        let gain: number;
+        if (a && b) {
+          const then = split(round);
+          const now = split(next);
+          gain = sum(now.did) - sum(then.did) - (b.worth - a.worth) + (b.value - a.value) - (sum(now.hit, turn.uid) - sum(then.hit, turn.uid));
+        } else gain = worth(next, trial) - worth(round, dials);
+        if (gain > margin) { total += gain; dials.set(turn.uid, timing); round = next; moved = true; }
       }
     }
     if (!moved) break;
