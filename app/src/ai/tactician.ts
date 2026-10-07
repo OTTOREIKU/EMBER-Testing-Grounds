@@ -350,6 +350,11 @@ const EXACT = 1e-9;
 // sets it, and unset nothing is computed and nothing changes.
 export interface TieInfo { where: string; unit: number; a: string; b: string; actionA: string; actionB: string; value: number }
 export const TIES: { hook: ((t: TieInfo) => void) | null } = { hook: null };
+// THE DIAL CENSUS (2026-10-07, M18's S0, OTTO: "go ahead and start the S0 census"): what each Mech's dial was set FOR,
+// the plan its Timing was chosen by: the enemy it means to attack (or none), where it means to end, what it means to
+// do. A census sets `DIALS.hook` to hear it; nothing else sets it, and unset nothing is computed and nothing changes.
+export interface DialInfo { seat: SeatView['seat']; round: number; uid: number; timing: string; target: number | null; end: Grid; does: string }
+export const DIALS: { hook: ((x: DialInfo) => void) | null } = { hook: null };
 function tieCheck(where: string, c: Ctx, a: Option, va: number, b: Option, vb: number): void {
   const aa = String(a.facts?.actionId ?? ''), ab = String(b.facts?.actionId ?? '');
   if (!TIES.hook || !aa || !ab || aa === ab || va <= EXACT || Math.abs(va - vb) > EXACT) return;
@@ -3694,6 +3699,13 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
     if (top) best = top;
   }
   const opens = best.plan.option ? best.plan.option.label : best.plan.deed ? best.plan.deed.option.label : 'holding where it is';
+  if (DIALS.hook) {
+    const target = best.plan.deed?.option.facts?.targetUid;
+    DIALS.hook({
+      seat: view.seat, round: view.round, uid: me.uid, timing: best.o.tags.find((t) => t.startsWith('timing:'))?.slice(7) ?? '',
+      target: typeof target === 'number' ? target : null, end: best.plan.at, does: best.plan.deed?.reason ?? (best.plan.option ? best.plan.how : 'hold'),
+    });
+  }
   return { option: best.o.id, reason: 'dial_by_plan', score: best.value, why: `it opens with ${opens}; ${told(best.plan)}` };
 }
 
