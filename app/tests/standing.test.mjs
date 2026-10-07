@@ -80,4 +80,4 @@ check('a grid off the board has no spot', standingSpot(-1, 0, 1, false, [], [], 
 check('and neither does one past the far edge', standingSpot(12, 0, 1, false, [], [], 99), null);
 
 console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+process.exitCode = fail ? 1 : 0;
