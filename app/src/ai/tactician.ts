@@ -28,7 +28,7 @@
 // the Brawler's fighter with a different price list.
 import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, WeaponView, ZoneView } from '../seat';
 import type { Choice, Policy } from './policy';
-import type { Planner } from './squad';
+import { chooseDials, type Planner, type TurnPlan } from './squad';
 import {
   apart, attacking, beside, brawlerPolicy, couldStrike, declare, endOf, facingAt, facingOf, foesOf, hitLocation, lockedAt, percent, reaches, ready, reroll,
   same, standing, strikers, surplus, unitOf, type Grid, type Road, type Worth,
@@ -300,6 +300,13 @@ export interface Skills {
   // Boxes paying 316 Victory Points against 290. Adopted: level, and the
   // attack on a Container OTTO asked the computer to make (A1).
   breakIn: boolean;
+  // THE SQUAD'S DIALS CHOSEN TOGETHER (M18 S3, 2026-10-07; OTTO: "the CPU needs to start thinking as one ... Humans
+  // play a squad together and often think about their team interactions all game"). Each Mech's dial was set alone,
+  // on the board as it stands (`dial`). With this, at the round's first dial question every Mech's Timings worth
+  // trying are found (its two best alone), and the dials are chosen together on the round projected (squad.ts
+  // chooseDials: each Mech planned on the table its allies, and the enemy's likeliest attacks, will have left it, and
+  // the squad's worth kept highest); each dial of the round is answered from that choice. OFF until measured.
+  squadDials: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -308,6 +315,7 @@ export const SKILLS: Skills = {
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
+  squadDials: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -3710,6 +3718,46 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
   return { option: best.o.id, reason: 'dial_by_plan', score: best.value, why: `it opens with ${opens}; ${told(best.plan)}` };
 }
 
+// THE SQUAD'S DIALS CHOSEN TOGETHER (`squadDials`, M18 S3): at the round's first dial question, each Mech of the
+// squad's Timings worth trying, found as `dial` finds them (each Timing its Actions are played on, planned on the
+// board as it stands; its two best alone, the earlier Timing's `tempo` counted), and the dials chosen together on
+// the round projected (squad.ts chooseDials). Kept for the round in `squads`; each dial question answers from it.
+// Where nothing could be projected, or the choice names no dial for the Mech asked about, nothing: `dial` answers.
+function* squadDial(d: Decision, view: SeatView, w: Weights, skills: Skills, squads: Map<string, Map<number, string> | null>): Steps<Choice | null> {
+  const key = `${view.seat}:${view.round}`;
+  if (!squads.has(key)) {
+    let chosen: Map<number, string> | null = null;
+    const here = d.here?.();
+    if (here) {
+      const planner = turnPlanner(w, skills);
+      const order = d.options.map((o) => o.tags.find((t) => t.startsWith('timing:'))?.slice(7) ?? '');
+      const candidates = new Map<number, string[]>();
+      // Each plan made here, on the starting table, is the plan the projection would make there: kept for it.
+      const known = new Map<string, TurnPlan>();
+      for (const u of view.units) {
+        if (u.side !== view.seat || u.kind !== 'mech' || !u.alive || !u.deployed) continue;
+        const played = [...new Set(['melee', 'movement', ...(view.task?.family === 'terminal' ? ['tactical'] : []), ...u.weapons.filter(ready).map((x) => x.timing ?? '')])]
+          .filter((t) => t && order.includes(t));
+        const rows: { timing: string; worth: number }[] = [];
+        for (const timing of played) {
+          const turn = here.turnOf(u.uid, undefined, timing);
+          yield;
+          const p = turn ? yield* planner(turn, view) : null;
+          if (p) known.set(`${u.uid}:${timing}`, p);
+          if (p) rows.push({ timing, worth: p.worth + w.tempo * (order.length - order.indexOf(timing)) });
+        }
+        rows.sort((a, b) => b.worth - a.worth);
+        if (rows.length) candidates.set(u.uid, rows.slice(0, 2).map((r) => r.timing));
+      }
+      if (candidates.size) chosen = (yield* chooseDials(here, view, candidates, planner, w, 1, 0.01, known)).dials;
+    }
+    squads.set(key, chosen);
+  }
+  const timing = squads.get(key)?.get(d.unit ?? -1);
+  const o = timing ? d.options.find((x) => x.tags.includes(`timing:${timing}`)) : undefined;
+  return o ? { option: o.id, reason: 'dial_by_squad', why: `its dial set with its squad's (${timing})` } : null;
+}
+
 // The enemies a Timing would keep a weapon for (`cover`): each one out of the
 // Range of every ready gun or blade of the Mech's played on that Timing, that
 // could walk into one of them this round (its stride, `stride`).
@@ -4273,6 +4321,8 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
   // is only watched), and one seat's thought may be put down while the other
   // seat is asked something.
   const memos = new Map<string, Memo>();
+  // The squad's dials chosen together, for each seat and round (`squadDials`).
+  const squads = new Map<string, Map<number, string> | null>();
   const memoOf = (view: SeatView): Memo => {
     let memo = memos.get(view.seat);
     if (!memo) memos.set(view.seat, memo = newMemo());
@@ -4294,8 +4344,12 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
         return s.setup ? leader(d, view, s.aimed) : null;
       case 'setup.deploy':
         return s.setup ? yield* deploy(d, view, w, s, memo) : null;
-      case 'planning.dial':
+      case 'planning.dial': {
+        // The squad's dials chosen together first (`squadDials`); else, or where that names none, each alone.
+        const together = s.dials && s.squadDials ? yield* squadDial(d, view, w, s, squads) : null;
+        if (together) return together;
         return s.dials ? yield* dial(d, view, w, s, memo) : null;
+      }
       case 'loop.designate.command': {
         // A Command no Token can pay for, by a Tactics Card, comes first.
         const card = s.tactics ? yield* instructions(d, view, w, s, memo) : null;

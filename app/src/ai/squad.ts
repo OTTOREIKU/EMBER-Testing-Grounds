@@ -44,6 +44,9 @@ export interface RoundStep {
   worth: number;
 }
 export interface ProjectedRound { steps: RoundStep[]; end: Outlook }
+// The round as far as a run of turns, kept for another projection that begins with the same turns (S3 tries many
+// dials, and a change to one Mech's leaves every turn before it as it was).
+export interface RoundCut { cur: Outlook; steps: RoundStep[]; gone: number[] }
 
 const ORDER = ['swift', 'melee', 'projectile', 'firing', 'movement', 'tactical'];
 // Better than even odds of destroying it: off the table for those after.
@@ -87,12 +90,24 @@ export function roundOrder(view: SeatView, dials: ReadonlyMap<number, string>, e
 // `roundOrder` planned (ours, by `plan`) or guessed (the enemy's best attack) on the table the turns before it leave.
 export function* projectRound(
   start: Outlook, view: SeatView, dials: ReadonlyMap<number, string>, plan: Planner, w: Weights = TACTICIAN, enemies = true,
+  cache?: Map<string, RoundCut>, known?: ReadonlyMap<string, TurnPlan>,
 ): Steps<ProjectedRound> {
   let cur = start;
-  const gone = new Set<number>();
-  const steps: RoundStep[] = [];
+  let gone = new Set<number>();
+  let steps: RoundStep[] = [];
+  let key = '';
+  // The round so far, kept under the turns that made it.
+  const keep = (): void => { cache?.set(key, { cur, steps: steps.map((s) => ({ ...s })), gone: [...gone] }); };
   for (const turn of roundOrder(view, dials, enemies)) {
-    if (gone.has(turn.uid)) continue;
+    key += `|${turn.uid}:${turn.timing}`;
+    const hit = cache?.get(key);
+    if (hit) {
+      cur = hit.cur;
+      steps = hit.steps.map((s) => ({ ...s }));
+      gone = new Set(hit.gone);
+      continue;
+    }
+    if (gone.has(turn.uid)) { keep(); continue; }
     const unit = view.units.find((u) => u.uid === turn.uid)!;
     const step: RoundStep = { uid: turn.uid, side: unit.side, label: unit.label, timing: turn.timing, mine: turn.mine, at: null, target: null, kill: 0, removed: false, worth: 0 };
     steps.push(step);
@@ -108,18 +123,20 @@ export function* projectRound(
       return from.without(target);
     };
     if (turn.mine) {
-      const d = cur.turnOf(turn.uid, undefined, turn.timing);
-      yield;
-      if (!d) continue;
-      const p = yield* plan(d, cur.view());
-      if (!p) continue;
-      step.at = p.at;
-      step.worth = p.worth;
-      let next = cur;
-      if (p.option) next = p.option.after?.() ?? next;
-      if (p.via) next = p.via.after?.() ?? next;
-      if (p.deed) next = isShot(p.deed.option) ? strike(p.deed.option, next) : (p.deed.option.after?.() ?? next);
-      cur = next;
+      // A turn met on the starting table was planned already (`known`, by `${uid}:${timing}`): the same plan.
+      const was = cur === start ? known?.get(`${turn.uid}:${turn.timing}`) : undefined;
+      const d = was ? null : cur.turnOf(turn.uid, undefined, turn.timing);
+      if (!was) yield;
+      const p = was ?? (d ? yield* plan(d, cur.view()) : null);
+      if (p) {
+        step.at = p.at;
+        step.worth = p.worth;
+        let next = cur;
+        if (p.option) next = p.option.after?.() ?? next;
+        if (p.via) next = p.via.after?.() ?? next;
+        if (p.deed) next = isShot(p.deed.option) ? strike(p.deed.option, next) : (p.deed.option.after?.() ?? next);
+        cur = next;
+      }
     } else {
       const d = cur.turnOf(turn.uid, ['attack'], turn.timing);
       yield;
@@ -135,6 +152,45 @@ export function* projectRound(
       }
       if (best) cur = strike(best.o, cur);
     }
+    keep();
   }
   return { steps, end: cur };
+}
+
+// THE DIALS CHOSEN TOGETHER (S3, the Tactician's skill `squadDials`). `candidates` gives each Mech of this squad the
+// Timings worth trying, its best alone first. The squad's worth of an assignment is every one of its Mechs' plans as
+// projected, each on the table it would meet (and the earlier Timing's small edge, `tempo`, as a Mech alone has it).
+// From each Mech's best alone, a Mech at a time in the round's order each other Timing it has is tried, and kept where
+// the squad's worth rises by more than `margin`; `passes` times over, or until nothing changes. The round's unchanged
+// beginning is reused from one trial to the next (`RoundCut`).
+export interface SquadChoice { dials: Map<number, string>; total: number; alone: number; tried: number }
+export function* chooseDials(
+  start: Outlook, view: SeatView, candidates: ReadonlyMap<number, readonly string[]>, plan: Planner, w: Weights = TACTICIAN,
+  passes = 1, margin = 0.01, known?: ReadonlyMap<string, TurnPlan>,
+): Steps<SquadChoice> {
+  const cache = new Map<string, RoundCut>();
+  const tempo = (timing: string): number => w.tempo * (ORDER.length - ORDER.indexOf(timing));
+  const worth = function* (dials: ReadonlyMap<number, string>): Steps<number> {
+    const r = yield* projectRound(start, view, dials, plan, w, true, cache, known);
+    return r.steps.filter((s) => s.mine).reduce((n, s) => n + s.worth, 0) + [...dials.values()].reduce((n, t) => n + tempo(t), 0);
+  };
+  const dials = new Map([...candidates].filter(([, ts]) => ts.length).map(([uid, ts]) => [uid, ts[0]] as [number, string]));
+  let total = yield* worth(dials);
+  const alone = total;
+  let tried = 1;
+  for (let pass = 0; pass < passes; pass++) {
+    let moved = false;
+    for (const turn of roundOrder(view, dials, true).filter((t) => t.mine)) {
+      for (const timing of candidates.get(turn.uid) ?? []) {
+        if (timing === dials.get(turn.uid)) continue;
+        const trial = new Map(dials);
+        trial.set(turn.uid, timing);
+        const v = yield* worth(trial);
+        tried += 1;
+        if (v > total + margin) { total = v; dials.set(turn.uid, timing); moved = true; }
+      }
+    }
+    if (!moved) break;
+  }
+  return { dials, total, alone, tried };
 }
