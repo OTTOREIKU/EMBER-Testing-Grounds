@@ -731,7 +731,7 @@ function landed(o: Option, c: Ctx): { value: number; why: string; soon: boolean 
 // that may have moved, and one that owes Interception may not land at all:
 // either counts for less (`launch`). One that detonates as it lands, with
 // nobody to intercept it, counts whole.
-function launch(options: Option[], c: Ctx): Deed | null {
+function launch(options: Option[], c: Ctx, whole = false): Deed | null {
   // One Landing Point for each enemy AND each card: a unit that carries a
   // Grenade, a Stun Grenade and a Pholcus is asked about all three.
   const nearest = new Map<string, { o: Option; gap: number; foe: UnitView; strike: number }>();
@@ -746,11 +746,15 @@ function launch(options: Option[], c: Ctx): Deed | null {
     for (const f of c.foes) {
       const gap = apart(at, f.grid);
       if (f.camouflaged || gap > strike) continue;
-      const spot = `${f.uid}:${String(o.facts?.cardId ?? '')}`;
+      // (With `volleyLaunch`, one for each Action too: two launchers putting down the same card, the ML-34 Quad
+      // Missile Rack's Volley 2 beside the ML-32B Dual Launcher's one, are two different launches.)
+      const spot = `${f.uid}:${c.w.volleyLaunch > 0 ? `${String(o.facts?.actionId ?? '')}:` : ''}${String(o.facts?.cardId ?? '')}`;
       if (gap < (nearest.get(spot)?.gap ?? Infinity)) nearest.set(spot, { o, gap, foe: f, strike });
     }
   }
   let best: Deed | null = null;
+  // Each Action's best Landing Point, for a Volley's later Projectiles (`volleyLaunch`).
+  const byAction = new Map<string, { o: Option; value: number; why: string }>();
   for (const { o, gap, foe, strike } of nearest.values()) {
     const blast = landed(o, c);
     if (!blast) continue;
@@ -767,6 +771,21 @@ function launch(options: Option[], c: Ctx): Deed | null {
     const through = c.w.interceptOdds > 0 && o.survive ? o.survive() : null;
     const value = blast.value * (blast.soon && !o.facts?.intercepts ? 1 : c.w.launch) * (1 - c.w.launchMove * (1 - stays)) * (through === null ? 1 : through ** c.w.interceptOdds);
     if (value > EXACT && (!best || value > best.value + EXACT)) best = { option: o, value, why: `a Projectile for ${blast.why}`, reason: 'launch_value' };
+    const key = String(o.facts?.actionId ?? o.facts?.cardId ?? '');
+    const held = byAction.get(key);
+    if (value > EXACT && (!held || value > held.value + EXACT)) byAction.set(key, { o, value, why: `a Projectile for ${blast.why}` });
+  }
+  // A VOLLEY'S LATER PROJECTILES (`volleyLaunch`): where the whole of the activation is worked out, a launch whose
+  // Action may launch again at once is worth its own Projectile and the best launch the Volley offers next, on the
+  // table this one leaves (that one counted the same way, so a Volley 3 is counted to its third).
+  if (whole && c.w.volleyLaunch > 0) {
+    for (const { o, value, why } of byAction.values()) {
+      const more = (o.then?.(['launch'])?.options ?? []).filter((x) => kindOf(x) === 'launch' && x.tags.includes('volley'));
+      const follow = more.length ? launch(more, c, true) : null;
+      if (!follow || follow.reason !== 'launch_value') continue;
+      const total = value + c.w.volleyLaunch * follow.value;
+      if (!best || total > best.value + EXACT) best = { option: o, value: total, why: `${why}, and more in its Volley`, reason: 'launch_value' };
+    }
   }
   if (c.w.patch > 0) {
     // Of the Landing Points that would mend the same, the nearest the ally: an
@@ -1168,7 +1187,7 @@ function breakIn(options: Option[], c: Ctx): Deed | null {
 // The best thing to do at a table, of the five kinds.
 function deedAt(options: Option[], c: Ctx, whole: boolean, shock = false): Deed | null {
   let best: Deed | null = null;
-  for (const deed of [volley(options, c, whole, shock), launch(options, c), jam(options, c), access(options, c), blastDeed(options, c), support(options, c), handOff(options, c), strike(options, c), breakIn(options, c), tagDeed(options, c)]) {
+  for (const deed of [volley(options, c, whole, shock), launch(options, c, whole), jam(options, c), access(options, c), blastDeed(options, c), support(options, c), handOff(options, c), strike(options, c), breakIn(options, c), tagDeed(options, c)]) {
     if (deed && (!best || deed.value > best.value + EXACT)) best = deed;
   }
   return best;
@@ -2929,6 +2948,15 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     const whole = volley(p.option?.then?.(DEEDS)?.options ?? [], c, true);
     const mine = p.option ? mineCost(p.option, c) : 0;
     if (whole && whole.value - mine > p.now + EXACT) { p.deed = whole; p.now = whole.value - mine; }
+  }
+  // And the few that lead with a launch: a Volley's later Projectiles as well (`volleyLaunch`).
+  if (c.w.volleyLaunch > 0) {
+    const launches = plans.filter((p) => p.option && p.deed?.reason === 'launch_value').sort((a, b) => sumOf(b) - sumOf(a)).slice(0, LIMITS.VOLLEYS);
+    for (const p of launches) {
+      const whole = launch(p.option?.then?.(DEEDS)?.options ?? [], c, true);
+      const mine = p.option ? mineCost(p.option, c) : 0;
+      if (whole && whole.value - mine > p.now + EXACT) { p.deed = whole; p.now = whole.value - mine; }
+    }
   }
   return plans;
 }

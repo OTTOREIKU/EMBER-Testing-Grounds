@@ -573,6 +573,15 @@ export interface Weights {
   // outweigh its guns (`bladed`), while an enemy that can reach it outranges it (`outranged`), each Grid of the
   // road to the enemy it walks to, beyond its blades' reach, costs `bladeIn`, zone or no zone. At 0 nothing.
   bladeIn: number;
+  // A VOLLEY'S LATER PROJECTILES (2026-10-07; OTTO: "look into why the Quad Missile Rack never fires": the ML-34
+  // Quad Missile Rack's Missile, 004_A, launched 0 times in 67 offers in the community kit census). A Projectile
+  // Action with Volley X launches up to X Projectiles, one question at a time; a launch was priced as its one
+  // Projectile, so the Rack's Volley 2 tied with the Dual Launcher beside it on the same Mech (the same MC-3
+  // "Razor" Missile, Volley 1), and the first answer listed won every tie. With it, where the whole of what an
+  // activation does is worked out (the question asked now, and the few plans that lead), a launch is worth its
+  // Projectile and `volleyLaunch` of what the Volley's next launch would be worth on the table it leaves (each
+  // later one counted the same way). At 0 nothing.
+  volleyLaunch: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -674,6 +683,7 @@ export const TACTICIAN: Weights = {
   lockDeny: 0,
   targetTag: 0,
   bladeIn: 0,
+  volleyLaunch: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
