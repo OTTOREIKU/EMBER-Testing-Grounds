@@ -73,15 +73,17 @@ async function planning(policy = AI.eagerPolicy) {
   t.close();
 }
 {
-  // The skill in play: the Blade's dial question, answered by the Tactician with it and without.
+  // The skill in play (its third form): the Blade's dial question, answered by the Tactician with it and without.
+  // Read as `dial` reads it, the Blade's own Melee (the Drone struck first) is worth more to it than the Drone left to
+  // the Gun, by more than the round gains: the squad finds nothing better, and the question is left to `dial`.
   const off = await planning();
   const plain = AI.makeTactician().choose(off.d, off.view, new AI.Rng('dial'));
   off.t.close();
   const on = await planning();
   const together = AI.makeTactician({ squadDials: true }).choose(on.d, on.view, new AI.Rng('dial'));
   const timing = (q, c) => q.options.find((o) => o.id === c.option)?.tags.find((x) => x.startsWith('timing:'))?.slice(7);
-  check('IN PLAY: alone the Blade is dialled Melee; with `squadDials` the same question answers Movement, the squad\'s choice',
-    [on.d.unit === on.U.Blade.uid, timing(off.d, plain), plain.reason, timing(on.d, together), together.reason], [true, 'melee', 'dial_by_plan', 'movement', 'dial_by_squad']);
+  check('IN PLAY: where the squad finds nothing better, its dial is the one each sets alone (the Blade on Melee, by `dial`)',
+    [on.d.unit === on.U.Blade.uid, timing(off.d, plain), plain.reason, timing(on.d, together), together.reason], [true, 'melee', 'dial_by_plan', 'melee', 'dial_by_plan']);
   on.t.close();
 }
 {
@@ -101,9 +103,21 @@ async function planning(policy = AI.eagerPolicy) {
   const choice = run(AI.chooseDials(d.here(), v, new Map([[U.Blade.uid, ['movement', 'melee']], [U.Gun.uid, ['firing', 'movement']]]), base));
   check('and chosen together from the Blade\'s Movement, its dial goes to Melee: the squad worth far more (the harm withheld)',
     [choice.dials.get(U.Blade.uid), choice.dials.get(U.Gun.uid), choice.total > choice.alone + 1], ['melee', 'firing', true]);
+  // THE THIRD FORM (`own`, 2026-10-07): the Blade's own Timings as `dial` would read them alone, its Movement ahead of
+  // its Melee. A little ahead (0.1), the Gun's harm withheld by the Lock outweighs it: Melee. Far ahead (5), the
+  // Blade's own reading carries it: Movement kept, whatever the round gains besides.
+  const worth = (uid, tm) => run(base(d.here().turnOf(uid, undefined, tm), v)).worth;
+  const own = (lead) => new Map([[U.Blade.uid, new Map([
+    ['movement', { value: 5, worth: worth(U.Blade.uid, 'movement') }], ['melee', { value: 5 - lead, worth: worth(U.Blade.uid, 'melee') }],
+  ])]]);
+  const third = (lead) => run(AI.chooseDials(d.here(), v, new Map([[U.Blade.uid, ['movement', 'melee']], [U.Gun.uid, ['firing']]]), base, AI.TACTICIAN, 1, 0.5, undefined, own(lead)));
+  const near = third(0.1);
+  const far = third(5);
+  check('THE THIRD FORM: the Blade\'s own reading a little for Movement, the Lock before the gun outweighs it; far for Movement, it stays',
+    [near.dials.get(U.Blade.uid), near.total > near.alone + 0.5, far.dials.get(U.Blade.uid), far.total === far.alone], ['melee', true, 'movement', true]);
   t.close();
 }
-check('the skill ships off until it is measured', AI.SKILLS.squadDials, false);
+check('the skill ships off until it is measured; the margin it reads', [AI.SKILLS.squadDials, AI.TACTICIAN.squadMargin], [false, 0.5]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
