@@ -580,7 +580,10 @@ export interface Weights {
   // "Razor" Missile, Volley 1), and the first answer listed won every tie. With it, where the whole of what an
   // activation does is worked out (the question asked now, and the few plans that lead), a launch is worth its
   // Projectile and `volleyLaunch` of what the Volley's next launch would be worth on the table it leaves (each
-  // later one counted the same way). At 0 nothing.
+  // later one counted the same way). At 0 nothing. MEASURED (2026-10-07): at 1, level (random squads 95 of 200
+  // against 90, the melee bed 87 of 168 against 94: counted whole, every Volley launch outweighs the gun or the step
+  // beside it more than it did); ADOPTED AT 0.05, A TIE-BREAK (random squads 91 against 90, 199 of 200 the very same
+  // games; the melee bed 94 against 94, 164 of 168 the same; the Rack fired at 28 of 109 offers, against 0 of 67).
   volleyLaunch: number;
 }
 
@@ -683,7 +686,7 @@ export const TACTICIAN: Weights = {
   lockDeny: 0,
   targetTag: 0,
   bladeIn: 0,
-  volleyLaunch: 0,
+  volleyLaunch: 0.05,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
