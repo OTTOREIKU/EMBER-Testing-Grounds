@@ -28,7 +28,7 @@ import { normaliseSetup, type SetupStage } from './setup';
 import { boxHands, controlOf, normaliseTasks } from './tasks';
 import { canManeuver, extrasLeft, lengthOf, timingOf, type ActionLength } from './ticks';
 import { actionRoute, shockWalk, type ActionRoute } from './turn';
-import { PHASES, statusCount, zonesOf } from './types';
+import { PHASES, statusCount, TIMINGS, zonesOf } from './types';
 import type { CardAction, Facing, GameState, PartState, Side, Stance, Timing, Token } from './types';
 import { extraActivationOf, freehandSlots, isGroundUnit, maneuverRange, maxLink, onHitRiders, structureOf, tokenCards } from './units';
 
@@ -139,6 +139,10 @@ export interface UnitView {
   health: number;
   points: number;
   weapons: WeaponView[];
+  // Its Initiative on each Timing, off its pilot's card (a Mech that has one): loop.ts activationOrder plays a
+  // Timing's Mechs by it, the lowest first, ties alternating from the First Player. What a seat orders the round
+  // it plans by (M18).
+  init?: Partial<Record<Timing, number>>;
   // How far its Maneuver goes, in Grids (a Mech; 0 otherwise).
   maneuver: number;
   // How far one Movement of its own takes it, in Grids: a Mech's Maneuver, a
@@ -383,6 +387,7 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
     health: parts.length ? parts.reduce((n, p) => n + (HEALTH[p.state] ?? 1), 0) / parts.length : 0,
     points: cards.reduce((n, c) => n + (c.card.score ?? 0), 0),
     weapons,
+    ...(initOf(data, t) ? { init: initOf(data, t) } : {}),
     maneuver: t.kind === 'mech' ? maneuverRange(data, t) : 0,
     move: t.kind === 'projectile' ? 0 : maneuverRange(data, t),
     commander,
@@ -396,6 +401,15 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
 
 // The table as `seat` may see it. A fresh object every call, sharing nothing
 // with the state, so a reader can keep it or pick it apart freely.
+// A Mech's Initiative on each Timing, off its pilot's card (glue.ts makeInit reads the same field), or nothing.
+function initOf(data: GameData, t: Token): Partial<Record<Timing, number>> | undefined {
+  const pilot = t.kind === 'mech' && t.mech?.pilot ? (data.byId.get(t.mech.pilot) as unknown as Record<string, unknown> | undefined) : undefined;
+  if (!pilot) return undefined;
+  const out: Partial<Record<Timing, number>> = {};
+  for (const d of TIMINGS) { const v = pilot[d.pilotKey]; if (typeof v === 'number') out[d.id as Timing] = v; }
+  return Object.keys(out).length ? out : undefined;
+}
+
 export function viewOf(data: GameData, state: GameState, seat: Side): SeatView {
   const other: Side = seat === 's1' ? 's2' : 's1';
   const tasks = normaliseTasks(state.tasks);

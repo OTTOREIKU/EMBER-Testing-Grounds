@@ -28,6 +28,7 @@
 // the Brawler's fighter with a different price list.
 import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, WeaponView, ZoneView } from '../seat';
 import type { Choice, Policy } from './policy';
+import type { Planner } from './squad';
 import {
   apart, attacking, beside, brawlerPolicy, couldStrike, declare, endOf, facingAt, facingOf, foesOf, hitLocation, lockedAt, percent, reaches, ready, reroll,
   same, standing, strikers, surplus, unitOf, type Grid, type Road, type Worth,
@@ -4243,6 +4244,21 @@ function* instructions(d: Decision, view: SeatView, w: Weights, skills: Skills, 
     if (gain > w.card + EXACT && (!best || gain > best.gain + EXACT)) best = { o, gain };
   }
   return best ? { option: best.o.id, reason: 'tactic_command', score: best.gain, why: `${best.o.label}: a Command no Token pays for (${best.gain.toFixed(2)})` } : null;
+}
+
+// THE TACTICIAN AS A PLANNER OF TURNS (M18): its own plan of a unit's turn, the plan its activation would answer by,
+// for squad.ts to lay on the round it projects. A fresh Memo for each table: a Memo holds nothing of an earlier one.
+export function turnPlanner(weights: Partial<Weights> = {}, skills: Partial<Skills> = {}): Planner {
+  const w: Weights = { ...TACTICIAN, ...weights };
+  const s: Skills = { ...SKILLS, ...skills };
+  return function* plan(d: Decision, view: SeatView) {
+    const c = context(d, view, w, s, newMemo());
+    if (!c) return null;
+    const found = yield* bestSteps(c);
+    if (!found) return null;
+    const b = found.best;
+    return { option: b.option, via: b.via, deed: b.deed ? { option: b.deed.option, value: b.deed.value } : null, at: b.at, worth: worthOf(b) };
+  };
 }
 
 // ---------- the policy ----------
