@@ -64,7 +64,9 @@ check('WITHOUT `volleyLaunch` the Mech launches one Missile, from the Dual Launc
 const on = await played({ volleyLaunch: 1 });
 check('WITH IT the Quad Missile Rack fires, both Missiles of its Volley',
   [on.launches, on.refused], [['004_A', '004_A'], []]);
-check('the weight ships at 0 until it is measured', AI.TACTICIAN.volleyLaunch, 0);
+const shipped = await played({});
+check('AS IT SHIPS (0.05, a tie-break: measured 199 of 200 random games and 164 of 168 melee games the very same) the Rack fires both of its Volley too',
+  [AI.TACTICIAN.volleyLaunch, shipped.launches, shipped.refused], [0.05, ['004_A', '004_A'], []]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
