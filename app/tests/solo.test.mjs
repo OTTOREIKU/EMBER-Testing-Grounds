@@ -650,7 +650,7 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
   // the match begins".
   check('A GAME AGAINST THE COMPUTER loads its table\'s pictures before the computer is seated, and before the site\'s art warm-up begins',
     [/const pictures = tablePictures\(state\);[\s\S]{0,200}await loadPictures\(pictures, [\s\S]{0,300}?loopback\.open\(\{/.test(src('match.ts')),
-      /if \(soloWanted\) await startSolo\(\);[\s\S]{0,600}?warmAllImagesWhenIdle\(\)/.test(src('match.ts'))],
+      /if \(soloWanted\) (?:\{\s*)?await startSolo\(\);[\s\S]{0,600}?warmAllImagesWhenIdle\(\)/.test(src('match.ts'))],
     [true, true]);
   check('WATCHED, the notice line says nothing of what the computers do (the Thinking tab does), and the watched seat\'s moves walk across the board as the other seat\'s do',
     [/if \(kind === 'event' && solo\?\.spec\.watch\) return;/.test(src('match.ts')),
