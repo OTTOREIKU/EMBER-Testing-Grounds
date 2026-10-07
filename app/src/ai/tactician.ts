@@ -3286,6 +3286,24 @@ export function weighed(d: Decision, view: SeatView, skills: Partial<Skills> = {
     .sort((a, b) => Number(b.priced) - Number(a.priced) || b.worth - a.worth);
 }
 
+// THE FIRST ANSWERS OF ITS BEST PLANS (M16 E1, what another answer would have won; for a probe): the plans it weighed
+// for one activation that were priced, the best first, each by the answer it would give first (an Option's id; null
+// to stay as it is) and its worth, one plan for each first answer.
+export function firstAnswers(d: Decision, view: SeatView, skills: Partial<Skills> = {}, weights: Partial<Weights> = {}): { first: string | null; label: string; worth: number }[] {
+  const c = context(d, view, { ...TACTICIAN, ...weights }, { ...SKILLS, ...skills }, newMemo());
+  const found = c ? bestPlan(c) : null;
+  if (!found) return [];
+  const seen = new Set<string | null>();
+  const out: { first: string | null; label: string; worth: number }[] = [];
+  for (const p of found.plans.filter((x) => x.priced).sort((a, b) => worthOf(b) - worthOf(a))) {
+    const first = p.option?.id ?? p.deed?.option.id ?? null;
+    if (seen.has(first)) continue;
+    seen.add(first);
+    out.push({ first, label: p.option ? p.option.label : p.deed ? p.deed.option.label : 'stay', worth: worthOf(p) });
+  }
+  return out;
+}
+
 // Why a plan was chosen, as a rule's name: its largest term.
 function reasonOf(p: Plan, stay: Plan): string {
   if (!p.option) return p.deed?.reason ?? 'end_activation';

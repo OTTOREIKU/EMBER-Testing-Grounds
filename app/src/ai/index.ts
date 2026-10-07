@@ -6,7 +6,7 @@ export { eagerPolicy } from './eager';
 export { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stakesOf, standingFor, swingOf, TACTICIAN, tieWorth, unitWorth, zoned, type Weights } from './evaluate';
 export { legalPolicy } from './legal';
 export { blundering, RECRUIT_RATE, recruitPolicy, VETERAN_SKILLS, VETERAN_WEIGHTS, veteranPolicy } from './levels';
-export { exposureAt, makeTactician, races, SKILLS, TACTICIAN_LIMITS, tacticianPolicy, DIALS, TIES, turnPlanner, weighed, type DialInfo, type Skills, type TieInfo, type Weighed } from './tactician';
+export { exposureAt, firstAnswers, makeTactician, races, SKILLS, TACTICIAN_LIMITS, tacticianPolicy, DIALS, TIES, turnPlanner, weighed, type DialInfo, type Skills, type TieInfo, type Weighed } from './tactician';
 export { chooseDials, likelyTiming, projectRound, ROUND_KILL, roundOrder, type DialOwn, type Planner, type ProjectedRound, type RoundCut, type RoundStep, type SquadChoice, type TurnPlan } from './squad';
 export { safePolicy, type Choice, type Policy } from './policy';
 export { Rng, seedOf } from './rng';
