@@ -3764,10 +3764,18 @@ function* dial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Me
 // ones each would set alone, a Mech's changed only where the round gains by more than `squadMargin` (squad.ts
 // chooseDials with `own`, its third form). Kept for the round in `squads`: the dial question of a Mech the squad
 // moved answers from it, and every other Mech's is left to `dial`, answered as it would be without the skill.
+// KEPT BY THE TABLE, not the round's number alone (`dialTable`): one policy plays game after game (a probe's run, a
+// page's next game), and round 2 of an earlier game is another table. (Kept by seat and round, every game after the
+// first a policy played answered its dials from the first one's: the first and second forms were measured so.)
 type SquadDials = Map<number, { timing: string; plan: Plan }>;
-function* squadDial(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Memo, squads: Map<string, SquadDials | null>): Steps<Choice | null> {
-  const key = `${view.seat}:${view.round}`;
-  if (!squads.has(key)) {
+const dialTable = (view: SeatView): string => JSON.stringify([view.seat, view.round, view.units.map((u) => [
+  u.uid, u.cell.col, u.cell.row, u.facing, u.stance, u.alive, u.deployed, u.parts.map((x) => x.state[0]).join(''),
+])]);
+function* squadDial(
+  d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Memo, squads: Map<string, { table: string; moved: SquadDials | null }>,
+): Steps<Choice | null> {
+  const table = dialTable(view);
+  if (squads.get(view.seat)?.table !== table) {
     let moved: SquadDials | null = null;
     const here = d.here?.();
     if (here) {
@@ -3803,10 +3811,10 @@ function* squadDial(d: Decision, view: SeatView, w: Weights, skills: Skills, mem
         }
       }
     }
-    squads.set(key, moved);
+    squads.set(view.seat, { table, moved });
   }
   const uid = d.unit ?? -1;
-  const set = squads.get(key)?.get(uid);
+  const set = squads.get(view.seat)?.moved?.get(uid);
   const o = set ? d.options.find((x) => x.tags.includes(`timing:${set.timing}`)) : undefined;
   if (!o || !set) return null;
   heardDial(view, uid, set.timing, set.plan);
@@ -4376,8 +4384,8 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
   // is only watched), and one seat's thought may be put down while the other
   // seat is asked something.
   const memos = new Map<string, Memo>();
-  // The squad's dials chosen together, for each seat and round (`squadDials`).
-  const squads = new Map<string, SquadDials | null>();
+  // The squad's dials chosen together, for each seat: the round's, and the table they were chosen on (`squadDials`).
+  const squads = new Map<string, { table: string; moved: SquadDials | null }>();
   const memoOf = (view: SeatView): Memo => {
     let memo = memos.get(view.seat);
     if (!memo) memos.set(view.seat, memo = newMemo());
