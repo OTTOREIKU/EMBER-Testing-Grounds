@@ -268,6 +268,13 @@ export interface SoloHost {
   told?(seat: Side, line: string): void;
   // What the computers have thought has grown or changed (`thinking`).
   thought?(): void;
+  // A computer seat has answered a question, the table taking it or not: its
+  // log's entry for it (the game's log, botlog.ts).
+  decided?(seat: Side, entry: LogEntry): void;
+  // A computer seat has stopped and waits for the player (`trouble`).
+  halted?(seat: Side, kind: 'refused' | 'stuck', why: string): void;
+  // The game is over (`over`): said once.
+  ended?(): void;
   // The page's own door and dice, for a game the player only watches: the
   // computer in the page's seat sends as a press on the page does.
   page?: {
@@ -726,6 +733,7 @@ export class SoloTable {
 
   private halt(seat: Side, kind: 'refused' | 'stuck', why: string): void {
     this.trouble = { seat, kind, why };
+    this.h.halted?.(seat, kind, why);
     for (const r of this.runners) this.h.status?.(r.seat, null);
     this.h.changed();
   }
@@ -750,6 +758,10 @@ export class SoloTable {
         if (step.kind === 'acted') this.gave(r.seat, 'done', step.option.id);
         else if (step.kind === 'refused') this.gave(r.seat, 'refused', step.option.id);
         else if (step.kind === 'moot') this.gave(r.seat, null);
+        if (step.kind === 'acted' || step.kind === 'refused') {
+          const entry = r.driver.log.at(-1);
+          if (entry) this.h.decided?.(r.seat, entry);
+        }
         if (step.kind === 'acted') {
           r.refusals = 0;
           const unit = step.decision.unit;
@@ -763,6 +775,7 @@ export class SoloTable {
           if (!this.over) {
             this.over = true;
             for (const x of this.runners) this.h.status?.(x.seat, null);
+            this.h.ended?.();
             this.h.changed();
           }
           return;

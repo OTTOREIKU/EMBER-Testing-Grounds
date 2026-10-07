@@ -34,6 +34,9 @@ export class LoopbackRelay implements TableRelay {
   // What the page that hosts the table adds to its report: there is no line to
   // describe, so the report says what game this is instead.
   about: (() => Record<string, unknown>) | null = null;
+  // Told of every command that crosses the table, either seat's, in the order
+  // they land (the game's log, botlog.ts).
+  tap: ((cmd: Command, seat: Side) => void) | null = null;
 
   constructor(private readonly hooks: NetHooks) {}
 
@@ -99,6 +102,7 @@ export class LoopbackRelay implements TableRelay {
   publish(cmd: Command): void {
     if (!this.view.room || !this.view.seat) return;
     this.rev += 1;
+    this.tap?.(cmd, this.view.seat);
     this.outbox.push(cmd);
     if (this.flushing) return;
     this.flushing = true;
@@ -117,6 +121,7 @@ export class LoopbackRelay implements TableRelay {
   deliver(cmd: Command, seat: Side): void {
     if (!this.view.room) return;
     this.rev += 1;
+    this.tap?.(cmd, seat);
     this.hooks.onCommand(cmd, seat);
   }
 

@@ -18,6 +18,7 @@ import { MultiplayerDialog } from './multiplayer';
 import { Inventory } from './inventory';
 import { bindCollection, collectionOn, hasAny, inUse, loadCollection, shortfalls } from './collection';
 import { bindLibrary } from './library';
+import { bindBotLogs } from './botsend';
 import {
   boardTheme, clampBoardArt, clampGridColour, DEFAULT_GRID_COLOUR, themeHasArt, themesFor,
 } from './boards';
@@ -9248,6 +9249,9 @@ async function init() {
   // The collection follows the account: pulled on sign-in, pushed on change.
   bindCollection(emberApi);
   bindLibrary(emberApi);
+  // A game against the computer left before its end goes to the account from
+  // here too (botsend.ts).
+  bindBotLogs(emberApi);
   void emberApi.refresh();
 
   document.getElementById('btn-clear')!.addEventListener('click', async () => {

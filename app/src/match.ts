@@ -1,5 +1,6 @@
 import { openAccount } from './account';
 import { ApiError, EmberApi, type Account, type AdminInvite, type RegistrationInfo, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type SquadEntry, type StatsSummary } from './api';
+import { bindBotLogs, BotLog, fileLog, keepLog, type BotGameEnd } from './botlog';
 import { bindCollection } from './collection';
 import { bindLibrary, onLibrary } from './library';
 import { Relay, type NetHooks, type RolledDie, type RollKind, type TableRelay } from './net';
@@ -95,6 +96,9 @@ const api = new EmberApi();
 // pages had been opened first.
 bindCollection(api);
 bindLibrary(api);
+// A game against the computer left before its end goes to the account from
+// here, as from the board (botsend.ts).
+bindBotLogs(api);
 // The account's copy can land while the list is already open.
 onLibrary(() => { if (pickerOpen) render(); });
 
@@ -150,6 +154,11 @@ let soloDoing: { seat: Side; doing: string } | null = null;
 // The player is sitting in the computer's seat for a moment, to get it past
 // something it could not do.
 let soloTaken = false;
+// The game's log for the computer's tuning, kept only for a signed-in player
+// and never for a game the player only watches (botlog.ts), and how the page
+// is being left when it goes before the game's end.
+let botlog: BotLog | null = null;
+let botlogLeaving: BotGameEnd = 'left';
 // The zone overlay is a per-player view preference, held here rather than in
 // GameState so a checkpoint can never overwrite it. Always starts on.
 let zonesVisible = true;
@@ -2956,6 +2965,22 @@ async function startSolo(): Promise<void> {
   if (typeof spec === 'string') { soloErr = spec; return; }
   const dice = diceData;
   if (!dice) { soloErr = 'The dice did not load, so a game cannot be played. Reload the page to try again.'; return; }
+  // The game's log, from its first command (botlog.ts).
+  botlog = spec.watch ? null : new BotLog({
+    data,
+    state: () => state,
+    errors: diagErrors,
+    spec: {
+      scenario: spec.scenario.id,
+      map: spec.scenario.map ?? null,
+      mission: spec.scenario.mission ?? null,
+      opponent: spec.opponent,
+      speed: () => solo?.table.speed ?? spec.speed,
+      human: spec.human,
+      bot: spec.bot,
+      seed: spec.seed,
+    },
+  });
   // The host sets the table while no seat is held, as a lobby does before its
   // Launch. Nothing here is published: there is no room yet. Each squad's
   // Tactics Cards are dealt sealed, the computer's salts to its seat alone.
@@ -2963,6 +2988,7 @@ async function startSolo(): Promise<void> {
   for (const cmd of soloSetup(data, spec.scenario, spec.squads, hands.commands, spec.season)) {
     const v = send(cmd);
     if (!v.ok) { soloErr = `The table could not be set: ${v.why}`; return; }
+    botlog?.host(cmd);
   }
   // The squads are on the table: their pictures first, and only then a seat
   // for the computer.
@@ -2976,6 +3002,7 @@ async function startSolo(): Promise<void> {
     if (line) line.textContent = loadingText();
   });
   soloLoading = null;
+  loopback.tap = (cmd, seat) => botlog?.landed(cmd, seat);
   loopback.open({
     id: SOLO_ROOM,
     seat: spec.human,
@@ -2996,6 +3023,9 @@ async function startSolo(): Promise<void> {
     loop: loopback,
     walking,
     changed: () => render(),
+    decided: (seat, entry) => botlog?.decided(seat, entry),
+    halted: (seat, kind, why) => botlog?.stopped(seat, kind, why),
+    ended: () => fileBotLog('over'),
     status: (seat, doing) => {
       if (doing) soloDoing = { seat, doing };
       else if (soloDoing?.seat === seat) soloDoing = null;
@@ -3039,7 +3069,7 @@ async function startSolo(): Promise<void> {
   // last decided.
   loopback.about = () => ({ game: spec.scenario.id, seed: spec.seed, opponent: spec.opponent, ...(spec.watch ? { watched: true, opponent2: spec.opponent2 } : {}), speed: table.speed, computer: table.log.slice(-80) });
   // On the dev server only: the game in hand for whoever is testing the page.
-  if (import.meta.env.DEV) (window as unknown as { __solo?: unknown }).__solo = { spec, table, state: () => state, refusals: diagRefusals, errors: diagErrors };
+  if (import.meta.env.DEV) (window as unknown as { __solo?: unknown }).__solo = { spec, table, state: () => state, data, send, loopback, refusals: diagRefusals, errors: diagErrors, botlog: () => botlog };
   table.start();
 }
 
@@ -3053,6 +3083,23 @@ function levelName(id: string): string {
 function loadingText(): string {
   return soloLoading ? `Loading the pictures: ${soloLoading.done} of ${soloLoading.total}` : 'Setting the table…';
 }
+
+// The game's log, filed once (botlog.ts): sent as the game ends, or kept on
+// this device for the next page when this one is left before the end. Only
+// for a signed-in player.
+function fileBotLog(ended: BotGameEnd): void {
+  const me = api.user;
+  if (!botlog || botlog.filed || !me) return;
+  if (ended !== 'over' && !botlog.begun) return;
+  botlog.filed = true;
+  const body = botlog.body(ended);
+  if (body.ended === 'over') void fileLog(api, body);
+  else keepLog(me.id, body);
+}
+
+// The page going away mid-game (left, reloaded, started again) keeps the log
+// for the next page: there is no time to send it now.
+window.addEventListener('pagehide', () => fileBotLog(botlogLeaving));
 
 // Before the table is up, or when it could not be set.
 function soloPane(): string {
@@ -3164,6 +3211,7 @@ async function soloRestart(ask = true): Promise<void> {
   }
   const { spec, table } = solo;
   table.stop();
+  botlogLeaving = 'restarted';
   location.assign(`./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: Math.floor(Math.random() * 1e9), speed: table.speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2, season: spec.season ?? undefined })}`);
 }
 
@@ -3194,11 +3242,13 @@ function wireSolo($: (id: string) => HTMLElement | null): void {
   // seat is handed back, and the computer is asked again from there.
   $('mc-solotake')?.addEventListener('click', () => {
     soloTaken = true;
+    botlog?.stopped(spec.bot, 'taken');
     loopback?.sit(spec.bot);
     render();
   });
   $('mc-sologive')?.addEventListener('click', () => {
     soloTaken = false;
+    botlog?.stopped(spec.bot, 'given');
     loopback?.sit(spec.human);
     table.retry();
   });
@@ -3710,8 +3760,9 @@ speakInPlace(document.body, { keep: '#card-tip, .ref-mech' });
 
 render();
 void (async () => {
-  // A game against the computer asks the server nothing: it needs no account,
-  // and plays with no connection at all.
+  // A game against the computer needs no account, and plays with no connection
+  // at all: the account is asked only once the table is set, and only for
+  // whether the game's log is kept (botlog.ts).
   const [d, user, dice, mode] = await Promise.all([
     loadData(),
     soloWanted ? Promise.resolve(null) : api.refresh(),
@@ -3724,7 +3775,10 @@ void (async () => {
   reg = mode;
   // A game against the computer loads its table's pictures before anything
   // else asks for art (the warm-up below fetches every picture the site has).
-  if (soloWanted) await startSolo();
+  if (soloWanted) {
+    await startSolo();
+    if (botlog) void api.refresh();
+  }
   // The squad list and the card panel already tag their rows with
   // `data-tip-card`; this is the delegated listener that turns those into the
   // hover previews the freeplay board has. Nothing else was missing.

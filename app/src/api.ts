@@ -1,3 +1,4 @@
+import type { BotGameBody } from './botsend';
 import type { MechPreset } from './presets';
 import type { SavedSquad } from './squadstore';
 import { forgetRoomsAndSecrets } from './devicedata';
@@ -292,6 +293,11 @@ export class EmberApi {
 
   async recordGame(report: GameReport): Promise<{ id: number }> {
     return this.call<{ id: number }>('/games', { method: 'POST', body: report });
+  }
+
+  // A game against the computer, kept for its tuning (botlog.ts); never shown.
+  async postBotGame(body: BotGameBody): Promise<{ id: number }> {
+    return this.call<{ id: number }>('/botgames', { method: 'POST', body });
   }
 
   // The player's collection on the account; collection.ts owns the store.

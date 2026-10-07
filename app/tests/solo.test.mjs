@@ -363,9 +363,13 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
     [/const soloWanted = soloAsk\(location\.search\);/.test(m), /const hands = soloHands\(spec\);\n\s*for \(const cmd of soloSetup\(data, spec\.scenario, spec\.squads, hands\.commands, spec\.season\)\) \{\n\s*const v = send\(cmd\);/.test(m),
       /loopback\.open\(\{\n\s*id: SOLO_ROOM,\n\s*seat: spec\.human,/.test(m), /const table = new SoloTable\(\{/.test(m), /table\.start\(\);/.test(m)], [true, true, true, true, true]);
   check('and deals the computer\'s hand to its seat alone', /\}, spec, hands\.held\);/.test(m), true);
-  check('it asks the server nothing: no session, no registration, no record of the game',
+  check('it waits on the server for nothing: no session, no registration and no record before the table is set, and none of the game kept as a record',
     [/soloWanted \? Promise\.resolve\(null\) : api\.refresh\(\),/.test(m), /soloWanted \? Promise\.resolve\(null\) : api\.registration\(\)\.catch\(\(\) => null\),/.test(m),
       /if \(loopback\) return 'A game against the computer is not kept on a record\.';/.test(m)], [true, true, true]);
+  check('the account is asked once the table is set, and only for a game whose log may be kept (botlog.ts): filed once, as it ends or as the page goes',
+    [/startSolo\(\);\n\s*if \(botlog\) void api\.refresh\(\);/.test(m), /botlog = spec\.watch \? null : new BotLog\(\{/.test(m),
+      /ended: \(\) => fileBotLog\('over'\),/.test(m), /window\.addEventListener\('pagehide', \(\) => fileBotLog\(botlogLeaving\)\);/.test(m),
+      /const me = api\.user;\n\s*if \(!botlog \|\| botlog\.filed \|\| !me\) return;/.test(m)], [true, true, true, true, true]);
   check('and keeps nothing of it on the device: no room to rejoin, no dial secret',
     [/if \(view\.room\) \{ if \(!loopback\) rememberRoom\(view\.room\.id\); \}/.test(m), /function dialSecretKey\(\): string \| null \{\n(?:\s*\/\/[^\n]*\n)*\s*if \(soloWanted\) return null;/.test(m)], [true, true]);
   // And for a Projectile's flight, launched or flying at its target (OTTO,
