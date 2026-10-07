@@ -57,5 +57,30 @@ check('WITH IT SET, as the Ace ships, the Rack and the Dual Launcher are heard t
 check('and hearing changes no answer', loud, quiet);
 t.close();
 
+// THE DIAL CENSUS (tactician.ts `DIALS`; M18's S0, OTTO: "go ahead and start the S0 census"): what each Mech's dial
+// was set for. The same Mech at the round's Planning Phase.
+{
+  const t2 = botTable(M, data, scenario, { seed: 3, policies: AI.eagerPolicy });
+  await t2.run({ until: (st) => M.SU.normaliseSetup(st.setup)?.stage === 'done' && st.round.phase === 1 });
+  const s2 = t2.state;
+  const V = Object.fromEntries(s2.tokens.map((x) => [x.label, x]));
+  at(V.Rack, 4, 2, 2); at(V.Rifle, 4, 6, 0);
+  const dq = t2.drivers.s1.pending();
+  const dview = M.SEAT.viewOf(data, s2, 's1');
+  const dask = () => AI.makeTactician({}, {}).choose(dq, dview, new AI.Rng('dial'));
+  check('the dial hook ships unset, and the question is the Rack\'s dial', [AI.DIALS.hook, dq?.kind, dq?.unit === V.Rack.uid], [null, 'planning.dial', true]);
+  const plain = dask();
+  const dials = [];
+  AI.DIALS.hook = (x) => dials.push(x);
+  const told = dask();
+  AI.DIALS.hook = null;
+  const chosen = dq.options.find((o) => o.id === told.option)?.tags.find((x) => x.startsWith('timing:'))?.slice(7);
+  check('WITH IT SET, the Rack\'s dial is heard with what it was set for: its Timing, the Rifle it means to attack, where it means to end',
+    [dials.length, dials[0]?.uid === V.Rack.uid, dials[0]?.timing === chosen, dials[0]?.target === V.Rifle.uid, typeof dials[0]?.end?.col],
+    [1, true, true, true, 'number']);
+  check('and hearing changes no dial', told.option, plain.option);
+  t2.close();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
