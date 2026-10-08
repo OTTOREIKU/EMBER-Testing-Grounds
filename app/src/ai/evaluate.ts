@@ -596,7 +596,10 @@ export interface Weights {
   // Camouflage must be Scanned before it can be attacked for as long as it stays hidden, not only this round, which is
   // all that what standing somewhere costs prices. A plan that gives the camouflage up (an Action or a Maneuver
   // without Silence, a Movement ending in Contact) pays `hiddenWorth` for each round after this one; a plan that puts
-  // it back on (the Activation) earns as much. At 0 nothing.
+  // it back on (the Activation) earns as much; a Remote Access at a Terminal pays nothing (the Main Task first). At 0
+  // nothing. MEASURED without that last clause (OTTO's camouflage squads, 120 games paired): at 0.5, 52 against 55; at
+  // 1.5, 44 against 55 (p 0.03), the squads hidden at 90% of the rounds they began against 76% and trading 1.38 against
+  // 1.21, but making 13 Remote Accesses against 33.
   hiddenWorth: number;
 }
 

@@ -3186,8 +3186,12 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
     }
     // HIDDEN, AS AN ASSET (`hiddenWorth`): where the plan leaves the unit, hidden or seen, against where it is now,
     // for each round after this one (this round's part is what standing there costs). Read off the table the plan
-    // leaves: its deed's, else its walk's; a unit owing its Reveal there is seen (`revealing`).
-    if (hiddenAfter > 0 && (hiddenNow || p.option?.tags.includes('token:camouflage'))) {
+    // leaves: its deed's, else its walk's; a unit owing its Reveal there is seen (`revealing`). A plan that accesses a
+    // Terminal (a Remote Access, which has no Silence) pays nothing for it: the Main Task first (OTTO, 2026-10-08: "try
+    // the variant that keeps the terminal play"; charged, the camouflage squads made 13 Remote Accesses in 120 games
+    // where they had made 33, and won 44 where they had won 55).
+    const scores = p.deed?.option.tags[0] === 'terminal' || p.option?.tags[0] === 'terminal';
+    if (hiddenAfter > 0 && !scores && (hiddenNow || p.option?.tags.includes('token:camouflage'))) {
       const left = p.deed ? p.deed.option.after?.() ?? p.deed.option.then?.(['end'])?.here?.() : p.via ? p.via.after?.() : p.option ? p.option.after?.() : undefined;
       const u = left ? unitOf(left.view(), c.me.uid) : undefined;
       const then = u ? u.camouflaged && !u.revealing : hiddenNow;
