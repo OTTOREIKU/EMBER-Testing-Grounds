@@ -48,11 +48,14 @@ const leaves = (o, uid) => {
   const u = left?.view().units.find((x) => x.uid === uid);
   return u ? { camouflaged: u.camouflaged, revealing: u.revealing } : null;
 };
-// Each priced plan's worth with `hiddenWorth` 1 less its worth at 0, by label.
+// Each priced plan's worth with `hiddenWorth` 1 less its worth at 0, by what it is and does.
 const moved = (turn, view) => {
   const at0 = AI.weighed(turn, view, {}, { hiddenWorth: 0 }).filter((r) => r.priced);
   const at1 = AI.weighed(turn, view, {}, { hiddenWorth: 1 }).filter((r) => r.priced);
-  return at1.map((r) => { const o = at0.find((x) => x.label === r.label && x.how === r.how); return o ? { label: r.label, d: Math.round((r.worth - o.worth) * 1e6) / 1e6 } : null; }).filter(Boolean);
+  return at1.map((r) => {
+    const o = at0.find((x) => x.label === r.label && x.how === r.how && x.does === r.does);
+    return o ? { label: r.label, does: r.does, d: Math.round((r.worth - o.worth) * 1e6) / 1e6 } : null;
+  }).filter(Boolean);
 };
 
 {
@@ -87,6 +90,29 @@ const moved = (turn, view) => {
   const { t, view, turnOn } = await staged({ round: 5 });
   const m = moved(turnOn('melee'), view);
   check('THE LAST ROUND: no round after it for the camouflage to pay for, so nothing moves', m.every((x) => x.d === 0) && m.length > 0, true);
+  t.close();
+}
+{
+  // THE TERMINALS (OTTO, 2026-10-08: "try the variant that keeps the terminal play"): a Remote Access has no Silence,
+  // so it costs the camouflage, and it scores the Main Task: it pays nothing for it. On the first scenario's map with
+  // the Terminals Task "Signal Reception", the hidden Octopus two Grids from Echo, the gunner far off.
+  const terminals = { ...data.solo.scenarios[0], id: 't-hidden-terminal', mission: 'terminal-signal-reception', seats: { s1: 't-camo', s2: 't-hunters' } };
+  const t = botTable(M, data, terminals, { seed: 5, policies: { s1: AI.eagerPolicy, s2: AI.eagerPolicy }, glue: M.HUD.glueAfter });
+  await t.run({ until: (st) => M.SU.normaliseSetup(st.setup)?.stage === 'done' && st.round.phase === 1 });
+  const U = Object.fromEntries(t.state.tokens.map((x) => [x.label, x]));
+  const echo = M.SEAT.viewOf(data, t.state, 's1').zones.find((z) => z.name === 'Echo');
+  const [ec, er] = echo.cells[0].split(',').map(Number);
+  U.Octopus.col = ec * 3; U.Octopus.row = (er >= 2 ? er - 2 : er + 2) * 3; U.Octopus.facing = 2;
+  U.Dune.col = 0; U.Dune.row = 0;
+  U.Octopus.statuses = [...(U.Octopus.statuses ?? []).filter((s) => s !== 'camouflage'), 'camouflage'];
+  const d = t.drivers.s1.pending();
+  const view = M.SEAT.viewOf(data, t.state, 's1');
+  const turn = d.options.find((o) => o.tags.includes('timing:tactical'))?.then?.();
+  const access = turn?.options.find((o) => o.tags[0] === 'terminal' && /Echo/.test(o.label));
+  check('a Remote Access at Echo is offered the hidden Octopus, and it costs the camouflage (no Silence)',
+    [!!access, access ? leaves(access, U.Octopus.uid) : null], [true, { camouflaged: true, revealing: true }]);
+  const m = moved(turn, view).filter((x) => /Remote Access/.test(x.does) || /Remote Access/.test(x.label));
+  check('and the plan that makes it pays nothing for the camouflage: the Main Task first', [m.length > 0, m.every((x) => x.d === 0)], [true, true]);
   t.close();
 }
 check('the weight ships at 0', AI.TACTICIAN.hiddenWorth, 0);
