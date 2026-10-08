@@ -6,7 +6,11 @@
 // Mech set its dial for a Rail Gun shot at RDL's Tactical Core and, when its
 // Opportunity came, Maneuvered instead: the shot now (1.20) against the walk's
 // shot a turn later (1.24), as if firing now gave that up. Staged here as that
-// game was dealt.
+// game was dealt, stopped at that Opportunity; since each line of sight is
+// walked cell by cell (2026-10-08, losexact.test.mjs) the walk's shot a turn
+// later went through a corner at the Tactical Core where it stands, in C1, so
+// the Tactical Core is put in C4 for the question, where the lines from C11
+// reach it, and the numbers are the game's again.
 import { botTable, loadEngine } from './_engine.mjs';
 
 let pass = 0, fail = 0;
@@ -30,25 +34,35 @@ const ace = AI.makeTactician({}, { press: 0, nextAfter: 0 });
 const after = AI.makeTactician({}, { nextAfter: 1, press: 0 });
 
 let seen = null;
+let t = null;
 const watch = {
   name: 'watch',
-  choose(d, view, rng) {
-    const pick = ace.choose(d, view, rng);
-    if (!seen && d.kind === 'opp.act' && view.round === 1 && d.options.some((o) => String(o.label).startsWith('(Cruise Mode)'))) {
+  choose(asked, seenFrom, rng) {
+    const pick = ace.choose(asked, seenFrom, rng);
+    if (!seen && asked.kind === 'opp.act' && seenFrom.round === 1 && asked.options.some((o) => String(o.label).startsWith('(Cruise Mode)'))) {
+      // The question asked again of the table with the Tactical Core in C4.
+      const s = t.state;
+      const core = s.tokens.find((x) => x.label === 'Tactical Core');
+      const was = { col: core.col, row: core.row };
+      core.col = 6; core.row = 9;
+      const drv = t.drivers.s1;
+      const d = drv.withOdds(M.SEAT.owed(data, s, 's1', drv.mind));
+      const view = M.SEAT.viewOf(data, s, 's1');
       const label = (id) => d.options.find((o) => o.id === id)?.label;
       const rows = (w) => AI.weighed(d, view, {}, w);
       const stay = (w) => rows(w).find((r) => r.how === 'stay');
       const walk = (w) => rows(w).find((r) => r.label === '(Cruise Mode): Maneuver to C11, facing north');
       seen = {
-        ace: label(pick.option), after: label(after.choose(d, view, new AI.Rng('after')).option),
+        ace: label(ace.choose(d, view, new AI.Rng('ace')).option), after: label(after.choose(d, view, new AI.Rng('after')).option),
         stay: [stay({ nextAfter: 0 }).does.startsWith('Rail Gun at Tactical Core'), stay({ nextAfter: 0 }).next, stay({ nextAfter: 1 }).next > 0, Math.round(stay({ nextAfter: 1 }).next / stay({ nextAfter: 0.5 }).next * 1e9) / 1e9],
         walk: [walk({ nextAfter: 0 }).next, walk({ nextAfter: 1 }).next],
       };
+      core.col = was.col; core.row = was.row;
     }
     return pick;
   },
 };
-const t = botTable(M, data, scenario, { seed: 48056, policies: { s1: watch, s2: ace }, glue: M.HUD.glueAfter });
+t = botTable(M, data, scenario, { seed: 48056, policies: { s1: watch, s2: ace }, glue: M.HUD.glueAfter });
 await t.run({ maxSteps: 12000, until: () => !!seen });
 t.close();
 

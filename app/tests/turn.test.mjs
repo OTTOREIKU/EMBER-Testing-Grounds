@@ -10,6 +10,7 @@
 // else.
 import { readFileSync } from 'node:fs';
 import { loadEngine, tableAtRoundOne } from './_engine.mjs';
+import { reckonLines } from './_sightref.mjs';
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -720,76 +721,21 @@ const droneAt = (s, id, side, c, r, extra = {}) => { const t = { ...M.U.makeDron
     check('a thought that throws leaves nothing kept behind it',
       [(() => { try { R.thinking(() => { throw new Error('x'); }); } catch { /* the point */ } const n = R.walked(); counted(); counted(); return R.walked() - n; })()], [2]);
   }
-  // THE WALK ITSELF, held to the one it replaced (2026-10-03). A line of sight
-  // is the engine's (4.2.4): 81 lines from base to base, each sampled along its
-  // length. The walk was made cheaper (the two bases read once in place of once
-  // a sample), and a reader that asks only "is there a line at all" is stopped
-  // at the first (rules.ts sightBetween: where a Projectile may land is asked of
-  // every Grid in Range, at every look a computer seat takes ahead). Here is
-  // the walk as it stood, word for word, and every answer of the new one held
-  // to it: every pair of units on every battlefield, a wall and an Aerial unit
-  // among them, moved about; and every Grid a unit could be asked the sight of.
+  // THE WALK ITSELF, held to a second reckoning of the lines. A line of sight
+  // is the engine's (4.2.4): 81 lines from base to base. The walk was made
+  // cheaper (2026-10-03: the two bases read once in place of once a sample),
+  // and a reader that asks only "is there a line at all" is stopped at the
+  // first (rules.ts sightBetween: where a Projectile may land is asked of every
+  // Grid in Range, at every look a computer seat takes ahead). It was held then
+  // to the walk as it stood, word for word; since each line is walked cell by
+  // cell (2026-10-08, losexact.test.mjs) it is held to the lines reckoned a
+  // second way (_sightref.mjs): every pair of units on every battlefield, a
+  // wall and an Aerial unit among them, moved about; and every Grid a unit
+  // could be asked the sight of.
   {
     const R = M.R;
     const TY = M.TY;
-    const reference = (a, b, terrain, tokens, smokeGrids) => {
-      const aerial = !!((a.aerial && !a.mine) || (b.aerial && !b.mine));
-      if (aerial && !smokeGrids) return 'clear';
-      const losCells = new Set();
-      const obstructCells = new Set();
-      if (!aerial) {
-        for (const p of terrain) {
-          for (const c of p.subCells) {
-            obstructCells.add(`${c.col},${c.row}`);
-            if (p.blocksLos) losCells.add(`${c.col},${c.row}`);
-          }
-        }
-        for (const t of tokens) {
-          if (t.uid === a.uid || t.uid === b.uid || t.aerial) continue;
-          const wall = R.blocksAsTerrain(t);
-          for (const cell of TY.baseCells(t)) {
-            obstructCells.add(`${cell.col},${cell.row}`);
-            if (wall) losCells.add(`${cell.col},${cell.row}`);
-          }
-        }
-      }
-      const basePoints = (t) => {
-        const b2 = TY.baseBox(t);
-        const pts = [];
-        for (let i = 0; i <= 2; i++) for (let j = 0; j <= 2; j++) pts.push({ x: b2.col + 0.08 + (i * (b2.w - 0.16)) / 2, y: b2.row + 0.08 + (j * (b2.h - 0.16)) / 2 });
-        return pts;
-      };
-      const inBase = (x, y, t) => {
-        const b2 = TY.baseBox(t);
-        return x >= b2.col && x < b2.col + b2.w && y >= b2.row && y < b2.row + b2.h;
-      };
-      let anySight = false;
-      let smokeTook = false;
-      let anyObstruct = false;
-      for (const pa of basePoints(a)) {
-        for (const pb of basePoints(b)) {
-          const len = Math.hypot(pb.x - pa.x, pb.y - pa.y);
-          const n = Math.max(2, Math.ceil(len * 3));
-          let lineBlocked = false;
-          let lineObstruct = false;
-          let lineSmoked = false;
-          for (let i = 1; i < n; i++) {
-            const x = pa.x + ((pb.x - pa.x) * i) / n;
-            const y = pa.y + ((pb.y - pa.y) * i) / n;
-            if (inBase(x, y, a) || inBase(x, y, b)) continue;
-            const key = `${Math.floor(x)},${Math.floor(y)}`;
-            if (losCells.has(key)) lineBlocked = true;
-            if (obstructCells.has(key)) lineObstruct = true;
-            if (smokeGrids?.has(`${Math.floor(x / 3)},${Math.floor(y / 3)}`)) lineSmoked = true;
-          }
-          if (!lineBlocked && !lineSmoked) anySight = true;
-          if (!lineBlocked && lineSmoked) smokeTook = true;
-          if (lineBlocked || lineObstruct) anyObstruct = true;
-        }
-      }
-      if (!anySight) return smokeTook ? 'smoked' : 'blocked';
-      return anyObstruct ? 'obstructed' : 'clear';
-    };
+    const reference = (a, b, terrain, tokens, smokeGrids) => reckonLines(M, a, b, terrain, tokens, smokeGrids);
     const fired = (a, b, terrain, tokens, smoke) => {
       if (!smoke.length) return reference(a, b, terrain, tokens, null);
       const grids2 = new Set(smoke.map((x) => `${x.col},${x.row}`));
@@ -845,7 +791,7 @@ const droneAt = (s, id, side, c, r, extra = {}) => { const t = { ...M.U.makeDron
         }
       }
     }
-    check('THE WALK IS THE WALK IT REPLACED: every line of sight between two units on every battlefield, a wall and an Aerial unit among them, with smoke and without, kept and afresh, is what the old walk answers; and "is there a line at all" is that answer asked only whether it is blocked',
+    check('THE WALK IS THE LINES RECKONED: every line of sight between two units on every battlefield, a wall and an Aerial unit among them, with smoke and without, kept and afresh, is what the second reckoning answers; and "is there a line at all" is that answer asked only whether it is blocked',
       [wrong.slice(0, 5), asked, Object.values(seen).every((n) => n > 50)], [[], data.terrain.maps.length * TURNS * 3 * 8 * 7, true]);
     check('and so is the sight of every Grid from where a launcher stands, in a thought and out of one (some of them dark, or it would prove nothing)',
       [probes, dark > 500, dark < probes / 2], [data.terrain.maps.length * TURNS * 2 * 2 * 144, true, true]);

@@ -24,32 +24,69 @@ data.solo.squads['carded-s1'] = { name: 'COLLABORATION 460', faction: 'COLLABORA
 data.solo.squads['carded-s2'] = { name: 'COLLABORATION 340', faction: 'COLLABORATION', points: 340, mechs: [dwarf], drones: [] };
 const scenario = { id: 'probe-51040', map: 'alley', mission: 'control-flank-attack', rounds: 5, secondaries: false, tactics: false, seats: { s1: 'carded-s1', s2: 'carded-s2' } };
 
-// The answers of s2's White Dwarf in the second round, with each policy on both seats.
+// The answers of s2's White Dwarf in the second round, with each policy on both
+// seats, staged where the game was found: played as dealt to that White Dwarf's
+// first answer of the round, then the table put back as the game had it there
+// (the other White Dwarf in (12,27), this one's dial on Swift) and its first two
+// answers the game's (the Mobility Stance, the Maneuver to C5 that crushes the
+// terrain there), because since each line of sight is walked cell by cell
+// (2026-10-08, losexact.test.mjs) the round goes otherwise before it. From
+// there each answer is the policy's own, and the one right after a change of
+// Mode is asked too of a policy that has worked nothing out yet.
 async function round2(skills) {
-  // (Played as the game was found, before `press` 10 and `nextAfter` 1 were adopted.)
-  const policy = AI.makeTactician(skills, { press: 0, nextAfter: 0 });
+  const W = { press: 0, nextAfter: 0 };
+  const policy = AI.makeTactician(skills, W);
+  let snap = null;
+  let t = null;
+  const first = {
+    name: 'first',
+    choose(d, view, rng) {
+      if (!snap && view.seat === 's2' && view.round === 2 && d.kind === 'opp.act' && d.options.length > 1) snap = JSON.parse(JSON.stringify(t.state));
+      return policy.choose(d, view, rng);
+    },
+  };
+  t = botTable(M, data, scenario, { seed: 51040, policies: { s1: first, s2: first }, glue: M.HUD.glueAfter });
+  await t.run({ maxSteps: 12000, until: () => !!snap });
+  const s = t.state;
+  for (const k of Object.keys(s)) delete s[k];
+  Object.assign(s, snap);
+  s.tokens.find((x) => x.uid === 1).col = 12;
+  s.tokens.find((x) => x.uid === 4).timing = 'swift';
+  s.script.opp.timing = 'swift';
+  const force = ['Core Part: mobility Stance', 'Core Part: Maneuver to C5, crushing the terrain there, facing south'];
   const said = [];
+  let asFresh = null;
   const watch = {
     name: 'watch',
     choose(d, view, rng) {
-      const pick = policy.choose(d, view, rng);
-      if (view.seat === 's2' && view.round === 2 && d.kind === 'opp.act' && d.options.length > 1) said.push(String(d.options.find((o) => o.id === pick.option)?.label ?? ''));
+      const mine = view.seat === 's2' && view.round === 2 && d.kind === 'opp.act' && d.options.length > 1;
+      if (mine && asFresh === null && / Mode, ACE-001/.test(said[said.length - 1] ?? '')) {
+        asFresh = policy.choose(d, view, new AI.Rng('asked')).why === AI.makeTactician(skills, W).choose(d, view, new AI.Rng('asked')).why;
+      }
+      const forced = mine ? force.shift() : undefined;
+      const pick = forced ? { option: d.options.find((o) => o.label === forced)?.id, why: 'as the game had it' } : policy.choose(d, view, rng);
+      if (mine) said.push(String(d.options.find((o) => o.id === pick.option)?.label ?? ''));
       return pick;
     },
   };
-  const t = botTable(M, data, scenario, { seed: 51040, policies: { s1: watch, s2: watch }, glue: M.HUD.glueAfter });
+  t.drivers.s1.policy = watch;
+  t.drivers.s2.policy = watch;
   await t.run({ maxSteps: 12000, until: (st) => st.round.n > 2 });
   t.close();
-  return said;
+  return { said, asFresh };
 }
 const now = await round2({});
 const then = await round2({ carded: false });
-const modes = (said) => said.filter((x) => / Mode, ACE-001/.test(x)).length;
+const modes = (r) => r.said.filter((x) => / Mode, ACE-001/.test(x)).length;
 
 // (The launch is the Bit's: the Beam Cannon 'Hodr' rides it, `"White Dwarf" Bit (...) to <Grid>`.)
 check('THE WHITE DWARF CHANGES TO CRUISE MODE FOR THE BEAM CANNON, AND LAUNCHES IT',
-  [modes(now), now.some((x) => /Cruise Mode, ACE-001/.test(x)), now.some((x) => /"White Dwarf" Bit .* to [A-L]\d+/.test(x))], [1, true, true]);
-check('WITHOUT IT (the old key) it changed back the next Action, the launch unmade', modes(then), 2);
+  [modes(now), now.said.some((x) => /Cruise Mode, ACE-001/.test(x)), now.said.some((x) => /"White Dwarf" Bit .* to [A-L]\d+/.test(x))], [1, true, true]);
+// On the old key it changed back the next Action in the game, the launch unmade;
+// on this table the price it read is still the old one, though it no longer
+// turns the answer.
+check('RIGHT AFTER THE CHANGE IT ANSWERS AS A POLICY ASKED AFRESH; WITHOUT IT (the old key) its answer is priced with what it worked out in Assault Mode',
+  [now.asFresh, then.asFresh], [true, false]);
 
 // A DESTROYED PART IS NOT A DAMAGED ONE (2026-10-04 night): the key read each
 // Part's state by its first letter, and "damaged" and "destroyed" share it.

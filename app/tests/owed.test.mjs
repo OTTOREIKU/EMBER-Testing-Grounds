@@ -414,8 +414,8 @@ M.L.setLocalSeat('s1');
   const cat = U['Wild Cat'].uid;
   const F4 = { c: 5, r: 3 }, F1 = { c: 5, r: 0 }, D1 = { c: 3, r: 0 }, E2 = { c: 4, r: 1 }, E3 = { c: 4, r: 2 };
   const seen = sightedIn(data, s, U.Mire.uid, [F4, F1, D1, E2, E3]);
-  check('for each Grid, the enemy units with line of sight to the unit standing there: up the open lane the Wild Cat sees it, and behind the wall at F3 it does not',
-    [seen[0].includes(cat), seen[1].includes(cat), seen[1].length > 0, seen[2]], [true, false, true, [cat]]);
+  check('for each Grid, the enemy units with line of sight to the unit standing there: up the open lane the Wild Cat sees it, and behind the wall at F3 nobody does (each far drone\'s line cuts a wall\'s corner, which the walk once stepped over: losexact.test.mjs)',
+    [seen[0].includes(cat), seen[1], seen[2]], [true, [], [cat]]);
   check('a Grid it could not stand in is seen by nobody (the Dune stands in E2), and the Grid it stands in is judged where it stands',
     [seen[3], seen[4].includes(cat)], [[], true]);
   // The board's own reading of each line, the unit put down where the board
