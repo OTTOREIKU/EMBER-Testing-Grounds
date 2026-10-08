@@ -65,7 +65,7 @@ const read = (seat) => AI.featureMap(M.SEAT.viewOf(data, t.state, seat));
   at(U.Blade, 9, 10, 2);
   const a = read('s1');
   const b = read('s2');
-  check('A MELEE LOCK, counted from both seats: the Rifle beside the Blade is UN\'s locked Mech, RDL\'s none',
+  check('A MELEE LOCK, counted from both seats: the Rifle beside the Blade is a locked Mech of UN\'s, and each seat counts the other\'s as it counts its own',
     [b.my_locked, a.their_locked, a.my_locked === b.their_locked], [1, 1, true]);
   at(U.Blade, 4, 4, 2);
 }
