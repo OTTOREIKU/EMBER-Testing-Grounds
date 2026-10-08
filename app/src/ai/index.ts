@@ -4,6 +4,7 @@ export { attackWorth, BRAWLER, brawlerPolicy, COPY as BRAWLER_COPY, makeBrawler,
 export { Driver, type DriverOptions, type Host, type LogEntry, type Step } from './driver';
 export { eagerPolicy } from './eager';
 export { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stakesOf, standingFor, swingOf, TACTICIAN, tieWorth, unitWorth, zoned, type Weights } from './evaluate';
+export { FEATURES, featureMap, featuresOf } from './features';
 export { legalPolicy } from './legal';
 export { blundering, RECRUIT_RATE, recruitPolicy, VETERAN_SKILLS, VETERAN_WEIGHTS, veteranPolicy } from './levels';
 export { exposureAt, firstAnswers, makeTactician, races, SKILLS, TACTICIAN_LIMITS, tacticianPolicy, DIALS, TIES, turnPlanner, weighed, type DialInfo, type Skills, type TieInfo, type Weighed } from './tactician';
