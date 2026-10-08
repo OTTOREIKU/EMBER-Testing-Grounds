@@ -50,7 +50,7 @@ import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
 import { smokePerGroup, syncSeason } from './season';
 import { handCommand, handCount, handIds, saltFor, setHandRoom } from './tactichand';
-import { boxDropCellIn, boxDropCells, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot, mineSpot } from './rules';
+import { boxDropCellIn, boxDropCells, fitsAt, routeStops, spotInGrid, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot, mineSpot } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, crawlHolders, lockersOf, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -1175,9 +1175,14 @@ async function init() {
     },
     onCellClick(col, row, erase) {
       if (movePlan) {
-        // Right-click steps back a waypoint, left-click takes the preview.
+        // Right-click steps back a waypoint, left-click takes the preview: the
+        // one for the cell clicked, as a hover there would draw it, since a tap
+        // on a touch screen comes with no hover first.
         if (erase) undoWaypoint();
-        else commitWaypoint();
+        else {
+          previewMove(Math.floor(col / 3), Math.floor(row / 3), { col, row });
+          commitWaypoint();
+        }
         return;
       }
       // An armed Environment Card lands on the LARGE Grid the clicked cell
@@ -1234,7 +1239,7 @@ async function init() {
     },
     onCellHover(col, row) {
       if (movePlan) {
-        previewMove(Math.floor(col / 3), Math.floor(row / 3));
+        previewMove(Math.floor(col / 3), Math.floor(row / 3), { col, row });
         return;
       }
       if (!editor.active) return;
@@ -2760,7 +2765,17 @@ async function init() {
     // The Red Shoes' controller, when the unit moving is the one it steers:
     // its seat records the Movement (audit Phase 7, P7D).
     controller?: { uid: number; side: Side };
+    // WHERE IN THE GRID (OTTO, 2026-10-08: "when moving a drone you can adjust where it moves inside of the grid
+    // like we do when placing them"): where in the route's last Grid a unit smaller than its Grid will stand, as a
+    // click there put it; and where the pointer would put it now.
+    spot?: { col: number; row: number } | null;
+    hoverSpot?: { col: number; row: number } | null;
   } | null = null;
+
+  // The base drawn where the route ends (board.showMovePath `spot`), lit where it fits.
+  function spotMark(t: Token, flying: boolean, spot: { col: number; row: number } | null | undefined): { col: number; row: number; size: number; ok: boolean } | null {
+    return spot ? { ...spot, size: t.size, ok: fitsAt(spot, t.size, flying || !!t.aerial, currentTerrain(), state.tokens, t.uid) } : null;
+  }
 
   // Hovering only PREVIEWS. The route used to follow the bare cursor and commit
   // as it went, which meant moving the mouse rewrote where the unit was going
@@ -2771,17 +2786,21 @@ async function init() {
   // extendPath solves the run from the committed end to the hovered Grid, so a
   // distant Grid is one click away; clicking on along the way chains waypoints
   // and keeps the deliberate zigzag the old freehand trace existed for.
-  function previewMove(c: number, r: number): void {
+  function previewMove(c: number, r: number, cell?: { col: number; row: number }): void {
     const m = movePlan;
     if (!m) return;
     const t = state.tokens.find((x) => x.uid === m.uid);
     if (!t) return;
-    const cand = extendPath(m.path, { c, r }, t, m.steps, currentTerrain(), state.tokens, m.flying, moveOpts(t, m.flying, m.action));
+    // The Grid the route already ends in asks for no new run; the unit's place inside it may still be moved.
+    const end = m.path[m.path.length - 1];
+    const same = m.path.length > 1 && end.c === c && end.r === r;
+    const cand = same ? null : extendPath(m.path, { c, r }, t, m.steps, currentTerrain(), state.tokens, m.flying, moveOpts(t, m.flying, m.action));
     // Unreachable from here: keep showing what is committed rather than
     // blanking the board, so the drawn route does not flicker as the cursor
     // crosses terrain.
     m.preview = cand;
-    board.showMovePath(cand ?? m.path, m.side, !cand);
+    m.hoverSpot = (cand || same) && cell && t.size < 3 ? spotInGrid(c, r, cell, t.size) : null;
+    board.showMovePath(cand ?? m.path, m.side, !cand, spotMark(t, m.flying, m.hoverSpot ?? (cand ? null : m.spot)));
     renderMoveCtrl();
   }
 
@@ -2789,11 +2808,21 @@ async function init() {
   // ever changes when the player says so.
   function commitWaypoint(): void {
     const m = movePlan;
-    if (!m || !m.preview) return;
+    if (!m) return;
+    const t = state.tokens.find((x) => x.uid === m.uid);
+    if (!m.preview) {
+      // A click in the Grid the route ends in puts the unit's base where the pointer is.
+      if (m.hoverSpot && m.path.length > 1 && t) {
+        m.spot = m.hoverSpot;
+        board.showMovePath(m.path, m.side, true, spotMark(t, m.flying, m.spot));
+      }
+      return;
+    }
     m.path = m.preview;
     m.marks.push(m.path.length);
     m.preview = null;
-    board.showMovePath(m.path, m.side, true);
+    m.spot = m.hoverSpot ?? null;
+    board.showMovePath(m.path, m.side, true, t ? spotMark(t, m.flying, m.spot) : null);
     renderMoveCtrl();
   }
 
@@ -2805,6 +2834,7 @@ async function init() {
     m.marks.pop();
     m.path = m.path.slice(0, m.marks[m.marks.length - 1]);
     m.preview = null;
+    m.spot = null;
     board.showMovePath(m.path, m.side, true);
     renderMoveCtrl();
   }
@@ -3130,16 +3160,7 @@ async function init() {
     // Each stop takes the free part of its Grid rather than the middle, so a unit
     // crossing a Grid that holds a low wall walks past it instead of onto it.
     const terrain = currentTerrain();
-    const stops: { col: number; row: number }[] = [];
-    let from = { col: t.col, row: t.row };
-    for (const g of path) {
-      const spot =
-        standingSpot(g.c, g.r, t.size, m.flying || t.aerial, terrain, state.tokens, t.uid, from) ??
-        snapPlacement(g.c * 3 + 1, g.r * 3 + 1, t.size, gridsOf(state));
-      if (!spot) continue;
-      stops.push(spot);
-      from = spot;
-    }
+    const stops = routeStops(t, path, m.flying || !!t.aerial, terrain, state.tokens, gridsOf(state), m.spot);
     const last = stops[stops.length - 1];
     if (!last) return;
     const goal = path[path.length - 1];

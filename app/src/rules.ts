@@ -221,6 +221,62 @@ export function standingSpot(
   return null;
 }
 
+// Whether a unit of this size could stand with its base's corner on (col, row): every cell of the base on the
+// board, none filled by terrain, none under another unit's base. An aerial unit stands over anything, as
+// standingSpot has it. The test standingSpot makes of each spot it tries.
+export function fitsAt(
+  spot: { col: number; row: number }, size: 1 | 2 | 3, aerial: boolean, terrain: TerrainPiece[], tokens: Token[], ignoreUid?: number,
+): boolean {
+  const cells = boardGrids() * 3;
+  if (spot.col < 0 || spot.row < 0 || spot.col + size > cells || spot.row + size > cells) return false;
+  if (aerial) return true;
+  const ground = groundCells(terrain);
+  const bases: { col: number; row: number; w: number; h: number }[] = [];
+  for (const t of tokens) {
+    if (t.uid === ignoreUid || t.aerial) continue;
+    const b = baseBox(t);
+    if (Number.isInteger(b.col) && Number.isInteger(b.row)) bases.push(b);
+  }
+  for (let dc = 0; dc < size; dc++) {
+    for (let dr = 0; dr < size; dr++) {
+      const col = spot.col + dc;
+      const row = spot.row + dr;
+      if (ground.has(cellNo(col, row)) || bases.some((b) => col >= b.col && col < b.col + b.w && row >= b.row && row < b.row + b.h)) return false;
+    }
+  }
+  return true;
+}
+
+// The corner inside Large Grid (c, r) of a base of this size put down at a cell: the cell is the base's corner,
+// kept inside the Grid (a 2x2 base has four places in a 3x3 Grid, a 1x1 nine, a Large one one). Null for a cell
+// outside the Grid. What a player's pointer chooses where a Movement ends.
+export function spotInGrid(c: number, r: number, cell: { col: number; row: number }, size: 1 | 2 | 3): { col: number; row: number } | null {
+  if (Math.floor(cell.col / 3) !== c || Math.floor(cell.row / 3) !== r) return null;
+  const keep = (v: number, o: number): number => o + Math.max(0, Math.min(3 - size, v - o));
+  return { col: keep(cell.col, c * 3), row: keep(cell.row, r * 3) };
+}
+
+// Where a unit stands in each Grid of a route (both boards' and every seat's reading): the free part of each Grid
+// rather than its middle, so a unit crossing a Grid that holds a low wall walks past it instead of onto it
+// (standingSpot, leaning toward where it came from); and in the route's last Grid the spot chosen there (`spot`;
+// OTTO, 2026-10-08: a unit smaller than its Grid stands where it is put, as at deployment), where it fits.
+export function routeStops(
+  t: Token, path: LargeGrid[], aerial: boolean, terrain: TerrainPiece[], tokens: Token[], grids: number, spot?: { col: number; row: number } | null,
+): { col: number; row: number }[] {
+  const size = t.size as 1 | 2 | 3;
+  const stops: { col: number; row: number }[] = [];
+  let from = { col: t.col, row: t.row };
+  for (const [i, g] of path.entries()) {
+    const corner = spot && i === path.length - 1 ? spotInGrid(g.c, g.r, spot, size) : null;
+    const chosen = spot && corner && corner.col === spot.col && corner.row === spot.row && fitsAt(spot, size, aerial, terrain, tokens, t.uid) ? spot : null;
+    const at = chosen ?? standingSpot(g.c, g.r, size, aerial, terrain, tokens, t.uid, from) ?? snapPlacement(g.c * 3 + 1, g.r * 3 + 1, size, grids);
+    if (!at) continue;
+    stops.push(at);
+    from = at;
+  }
+  return stops;
+}
+
 // A footprint snapped onto the board's cells, with no occupancy and no terrain
 // test at all: the fallback when standingSpot finds no free spot in a Grid.
 // Here, beside standingSpot, since 2026-10-01: it is pure geometry, and

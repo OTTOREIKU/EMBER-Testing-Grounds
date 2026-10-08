@@ -1178,9 +1178,16 @@ export class Board {
 
   // The route a unit will walk, drawn through the centre of each Large Grid and
   // tinted to the owning side so it is obvious whose move is being planned.
-  showMovePath(path: { c: number; r: number }[], side: Side, locked = false): void {
+  // `spot`: where in the route's last Grid a unit smaller than its Grid would stand, its base drawn there (lit as
+  // at deployment, red where it does not fit). Drawn and cleared with the route.
+  showMovePath(path: { c: number; r: number }[], side: Side, locked = false, spot?: { col: number; row: number; size: number; ok: boolean } | null): void {
     this.gOverlay.replaceChildren();
     if (path.length < 2) return;
+    if (spot) {
+      for (const c of footprint(spot)) {
+        this.gOverlay.appendChild(el('rect', { x: c.col * CELL + 1, y: c.row * CELL + 1, width: CELL - 2, height: CELL - 2, rx: 2, class: spot.ok ? 'ghost-ok' : 'ghost-bad' }));
+      }
+    }
     const pt = (g: { c: number; r: number }) => `${g.c * 3 * CELL + 1.5 * CELL},${g.r * 3 * CELL + 1.5 * CELL}`;
     const g = el('g', { class: `move-path side-${side}${locked ? ' locked' : ''}` });
     g.appendChild(el('polyline', { points: path.map(pt).join(' '), class: 'move-path-line' }));

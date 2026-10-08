@@ -12,7 +12,7 @@ import { contestAct as sendContestAct, counterResponder as contestResponder } fr
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
 import { smokePerGroup, syncSeason } from './season';
 import { handIds, saltFor } from './tactichand';
-import { boxDropCellIn, boxDropCells, inContact, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSight, losNote, smokeBlocks, pathCost, rangeBetween, reachableGrids, standingSpot, mineSpot, type LargeGrid } from './rules';
+import { boxDropCellIn, boxDropCells, fitsAt, spotInGrid,  inContact, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSight, losNote, smokeBlocks, pathCost, rangeBetween, reachableGrids, standingSpot, mineSpot, type LargeGrid } from './rules';
 import { breakAwayNote, canBeForceMoved, crawlHolders, tetherNote } from './melee';
 import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
@@ -237,6 +237,12 @@ let movePlan: {
   marks: number[];
   // The candidate under the cursor: drawn dashed, never committed until a click.
   preview: LargeGrid[] | null;
+  // WHERE IN THE GRID (OTTO, 2026-10-08: "when moving a drone you can adjust where it moves inside of the grid
+  // like we do when placing them"): where in the route's last Grid a unit smaller than its Grid will stand, as a
+  // click there put it; and where the pointer would put it now.
+  spot?: { col: number; row: number } | null;
+  hoverSpot?: { col: number; row: number } | null;
+
   // ZHDR-304 Harpy: the Ally being towed and the Mech whose Command Token pays,
   // declared before the route was drawn (the -2 already came off `steps`).
   drag?: { allyUid: number; funderUid: number };
@@ -466,25 +472,44 @@ function rotate(ctx: HudCtx, dir: 1 | 3): boolean {
 // Hovering PREVIEWS, clicking commits — the same split the freeplay board uses.
 // The route used to follow the bare cursor and commit as it went, so moving the
 // mouse rewrote where the unit was going.
-function previewMove(ctx: HudCtx, c: number, r: number): void {
+// The base drawn where the route ends (board.showMovePath `spot`), lit where it fits.
+function spotMark(ctx: HudCtx, t: Token, flying: boolean, spot: { col: number; row: number } | null | undefined): { col: number; row: number; size: number; ok: boolean } | null {
+  return spot ? { ...spot, size: t.size, ok: fitsAt(spot, t.size, flying || !!t.aerial, terrainOf(ctx), ctx.state.tokens, t.uid) } : null;
+}
+
+function previewMove(ctx: HudCtx, c: number, r: number, cell?: { col: number; row: number }): void {
   const m = movePlan;
   if (!m || !board) return;
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
   if (!t) return;
-  const cand = turn.extendRoute(ctx.data, ctx.state, t, m.path, { c, r }, m.steps, m.flying, m.actionId);
+  // The Grid the route already ends in asks for no new run; the unit's place inside it may still be moved.
+  const end = m.path[m.path.length - 1];
+  const same = m.path.length > 1 && end.c === c && end.r === r;
+  const cand = same ? null : turn.extendRoute(ctx.data, ctx.state, t, m.path, { c, r }, m.steps, m.flying, m.actionId);
   m.preview = cand;
-  board.showMovePath(cand ?? m.path, m.side, !cand);
+  m.hoverSpot = (cand || same) && cell && t.size < 3 ? spotInGrid(c, r, cell, t.size) : null;
+  board.showMovePath(cand ?? m.path, m.side, !cand, spotMark(ctx, t, m.flying, m.hoverSpot ?? (cand ? null : m.spot)));
   ctx.refresh();
 }
 
-// A click takes the previewed run; clicking on further chains a waypoint.
+// A click takes the previewed run; clicking on further chains a waypoint. A click in the Grid the route ends in puts
+// the unit's base where the pointer is.
 function commitWaypoint(ctx: HudCtx): void {
   const m = movePlan;
-  if (!m || !m.preview || !board) return;
+  if (!m || !board) return;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  if (!m.preview) {
+    if (m.hoverSpot && m.path.length > 1 && t) {
+      m.spot = m.hoverSpot;
+      board.showMovePath(m.path, m.side, true, spotMark(ctx, t, m.flying, m.spot));
+    }
+    return;
+  }
   m.path = m.preview;
   m.marks.push(m.path.length);
   m.preview = null;
-  board.showMovePath(m.path, m.side, true);
+  m.spot = m.hoverSpot ?? null;
+  board.showMovePath(m.path, m.side, true, t ? spotMark(ctx, t, m.flying, m.spot) : null);
   ctx.refresh();
 }
 
@@ -495,6 +520,7 @@ function undoWaypoint(ctx: HudCtx): void {
   m.marks.pop();
   m.path = m.path.slice(0, m.marks[m.marks.length - 1]);
   m.preview = null;
+  m.spot = null;
   board.showMovePath(m.path, m.side, true);
   ctx.refresh();
 }
@@ -886,7 +912,7 @@ function boardCallbacks(): BoardCallbacks {
         const snap = snapPlacement(col, row, size, gridsOf(ctx.state)) ?? { col, row };
         board.showGhost(footprint({ ...snap, size }), fitsZone(ctx, t, snap, size));
       } else if (movePlan) {
-        previewMove(ctx, Math.floor(col / 3), Math.floor(row / 3));
+        previewMove(ctx, Math.floor(col / 3), Math.floor(row / 3), { col, row });
       }
     },
     onCellClick(col, row, erase) {
@@ -898,9 +924,14 @@ function boardCallbacks(): BoardCallbacks {
       // arrive landed on an illegal Grid and must do nothing at all.
       if (launchPlan) return;
       if (movePlan) {
-        // Right-click steps back a waypoint, left-click takes the preview.
+        // Right-click steps back a waypoint, left-click takes the preview: the
+        // one for the cell clicked, as a hover there would draw it, since a tap
+        // on a touch screen comes with no hover first.
         if (erase) undoWaypoint(ctx);
-        else commitWaypoint(ctx);
+        else {
+          previewMove(ctx, Math.floor(col / 3), Math.floor(row / 3), { col, row });
+          commitWaypoint(ctx);
+        }
         return;
       }
       // An armed Environment Card lands on the LARGE Grid the clicked cell

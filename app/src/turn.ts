@@ -19,7 +19,7 @@ import { alive, droneActionWhy, droneLockPhase, droneMoveWhy, isLoopPhase, onExt
 import { breakAwayCost, breakAwayLinkBudget, canBeForceMoved, crawlHolders, obstructSurcharge, tetherCap } from './melee';
 import {
   attackDirection, boardGrids, boxDropCells, breakAwayLinkDue, crushTargets, extendPath, firingSight, inArc, knockbackPath, largeGridOf, lineSpot, losNote, mineSpot, movePaths, pathCost, protectionFor,
-  reachableGrids, sightBetween, snapPlacement, standingSpot, type CrushVictims, type LargeGrid,
+  reachableGrids, routeStops, sightBetween, standingSpot, type CrushVictims, type LargeGrid,
 } from './rules';
 import { zoneCellsOf } from './scoring';
 import { normaliseSetup } from './setup';
@@ -786,6 +786,9 @@ export interface MoveDraft {
   // this ENEMY unit. The move travels as controlledMove from its seat, spends
   // no Tick, and ends in no Crush (audit Phase 3, D3).
   controller?: { uid: number; side: Side };
+  // Where in the route's last Grid the unit stands, chosen by the player (a unit smaller than its Grid; OTTO,
+  // 2026-10-08): rules.ts routeStops, where it fits. None: the free part of the Grid, as ever.
+  spot?: { col: number; row: number } | null;
 }
 
 // What a planned Movement comes to.
@@ -847,16 +850,7 @@ export function moveOrder(data: GameData, state: GameState, t: Token, m: MoveDra
     : undefined;
   const path = cut > 0 ? m.path.slice(0, cut + 1) : m.path;
   const terrain = terrainOf(data, state);
-  const stops: { col: number; row: number }[] = [];
-  let from = { col: t.col, row: t.row };
-  for (const g of path) {
-    const spot =
-      standingSpot(g.c, g.r, t.size, m.flying || t.aerial, terrain, state.tokens, t.uid, from)
-      ?? snapPlacement(g.c * 3 + 1, g.r * 3 + 1, t.size as 1 | 2 | 3, gridsOf(state));
-    if (!spot) continue;
-    stops.push(spot);
-    from = spot;
-  }
+  const stops = routeStops(t, path, m.flying || !!t.aerial, terrain, state.tokens, gridsOf(state), m.spot);
   const last = stops[stops.length - 1] as { col: number; row: number } | undefined;
   const facing = m.turned ? m.facing : undefined;
   const goal = path[path.length - 1];
