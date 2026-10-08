@@ -1179,6 +1179,76 @@ function obstructorNames(a: Token, b: Token, terrain: TerrainPiece[], tokens: To
   return names.length > 4 ? `${names.slice(0, 4).join(', ')} and ${names.length - 4} more` : names.join(', ');
 }
 
+// The points of a Base the lines are drawn between: nine, its corners drawn in
+// a little and the middles of its sides and of itself, for every reader of a
+// line between two Bases (walkLinesNow, lineCrossesUnit).
+type Box = { col: number; row: number; w: number; h: number };
+function basePoints(b: Box): { x: number; y: number }[] {
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i <= 2; i++) {
+    for (let j = 0; j <= 2; j++) {
+      pts.push({ x: b.col + 0.08 + (i * (b.w - 0.16)) / 2, y: b.row + 0.08 + (j * (b.h - 0.16)) / 2 });
+    }
+  }
+  return pts;
+}
+
+// THE CELLS A LINE PASSES THROUGH (4.2.4), for every reader of a line between
+// two Bases: each cell it enters, and each cell whose corner it touches, since
+// "a line that passes through the edge or corner of an occupied Grid" counts;
+// never a cell of either Base. A line that runs along a Grid's edge (only a
+// Medium Base's middle point draws one) "will not be considered as
+// Obstructing", so it is handed the two cells either side together: it passes
+// through what fills both, as a line down the middle of a building does, and
+// skims what fills one. Exact, column by column: the walk this replaces read a
+// point every third of a cell and could step over a line's crossing of a
+// cell's corner (OTTO, 2026-10-08: a Wild Cat saw a Dune past two 3-inch
+// buildings). `visit` answers true to end the line there.
+const ON_GRID = 1e-9;
+const toGrid = (v: number): number => {
+  const r = Math.round(v);
+  return Math.abs(v - r) < ON_GRID ? r : v;
+};
+function lineCells(
+  x0: number, y0: number, x1: number, y1: number, boxA: Box, boxB: Box,
+  visit: (col: number, row: number, col2?: number, row2?: number) => boolean,
+): void {
+  const inBases = (c: number, r: number): boolean =>
+    (c >= boxA.col && c < boxA.col + boxA.w && r >= boxA.row && r < boxA.row + boxA.h)
+    || (c >= boxB.col && c < boxB.col + boxB.w && r >= boxB.row && r < boxB.row + boxB.h);
+  const gx = toGrid(x0);
+  const gy = toGrid(y0);
+  if (Math.abs(x1 - x0) < ON_GRID && Number.isInteger(gx)) {
+    for (let r = Math.floor(Math.min(y0, y1)); r < Math.ceil(Math.max(y0, y1)); r++) {
+      if (!inBases(gx - 1, r) && !inBases(gx, r) && visit(gx - 1, r, gx, r)) return;
+    }
+    return;
+  }
+  if (Math.abs(y1 - y0) < ON_GRID && Number.isInteger(gy)) {
+    for (let c = Math.floor(Math.min(x0, x1)); c < Math.ceil(Math.max(x0, x1)); c++) {
+      if (!inBases(c, gy - 1) && !inBases(c, gy) && visit(c, gy - 1, c, gy)) return;
+    }
+    return;
+  }
+  // Each column the line meets, edges included, and in it the rows the line
+  // spans there, edges included: a corner the line passes through is in the
+  // columns and the rows on both sides of it.
+  const upright = Math.abs(x1 - x0) < ON_GRID;
+  const slope = upright ? 0 : (y1 - y0) / (x1 - x0);
+  const lo = Math.min(x0, x1);
+  const hi = Math.max(x0, x1);
+  for (let c = Math.ceil(toGrid(lo)) - 1; c <= Math.floor(toGrid(hi)); c++) {
+    const xa = Math.max(lo, c);
+    const xb = Math.min(hi, c + 1);
+    if (xa > xb) continue;
+    const ya = upright ? Math.min(y0, y1) : toGrid(y0 + (xa - x0) * slope);
+    const yb = upright ? Math.max(y0, y1) : toGrid(y0 + (xb - x0) * slope);
+    for (let r = Math.ceil(Math.min(ya, yb)) - 1; r <= Math.floor(Math.max(ya, yb)); r++) {
+      if (!inBases(c, r) && visit(c, r)) return;
+    }
+  }
+}
+
 // `first` stops the walk at the first line that is sight, for a reader that
 // asks only whether there is one (sightBetween): the answer is then 'clear'
 // for "some line is", and says nothing of what obstructs the others.
@@ -1238,26 +1308,12 @@ function walkLinesNow(
     }
   }
 
-  // The two bases, read once: every point of every line is held against both.
-  type Box = { col: number; row: number; w: number; h: number };
+  // The two bases, read once.
   const boxA: Box = baseBox(a);
   const boxB: Box = baseBox(b);
-  const basePoints = (b: Box): { x: number; y: number }[] => {
-    const pts: { x: number; y: number }[] = [];
-    for (let i = 0; i <= 2; i++) {
-      for (let j = 0; j <= 2; j++) {
-        pts.push({ x: b.col + 0.08 + (i * (b.w - 0.16)) / 2, y: b.row + 0.08 + (j * (b.h - 0.16)) / 2 });
-      }
-    }
-    return pts;
-  };
-
-  const inBase = (x: number, y: number, b: Box): boolean => x >= b.col && x < b.col + b.w && y >= b.row && y < b.row + b.h;
-  // Bases that stand on whole cells, as every unit does: whether a point of a
-  // line is inside one is then the cell's to say, as everything else read of
-  // a point is, so a line's next point in the cell just read is read already.
-  const whole = (b: Box): boolean => Number.isInteger(b.col) && Number.isInteger(b.row) && Number.isInteger(b.w) && Number.isInteger(b.h);
-  const byCell = whole(boxA) && whole(boxB);
+  const blocks = (key: number): boolean => losCells.has(key) || !!ground?.los.has(key);
+  const fills = (key: number): boolean => obstructCells.has(key) || !!ground?.all.has(key);
+  const smoky = (c: number, r: number): boolean => !!smoke?.has(cellNo(Math.floor(c / 3), Math.floor(r / 3)));
 
   let anySight = false;
   let smokeTook = false;
@@ -1265,25 +1321,24 @@ function walkLinesNow(
   const pointsB = basePoints(boxB);
   for (const pa of basePoints(boxA)) {
     for (const pb of pointsB) {
-      const len = Math.hypot(pb.x - pa.x, pb.y - pa.y);
-      const n = Math.max(2, Math.ceil(len * 3));
       let lineBlocked = false;
       let lineObstruct = false;
       let lineSmoked = false;
-      let last = NaN;
-      for (let i = 1; i < n; i++) {
-        const x = pa.x + ((pb.x - pa.x) * i) / n;
-        const y = pa.y + ((pb.y - pa.y) * i) / n;
-        const cx = Math.floor(x);
-        const cy = Math.floor(y);
-        const key = cellNo(cx, cy);
-        if (byCell && key === last) continue;
-        last = key;
-        if (inBase(x, y, boxA) || inBase(x, y, boxB)) continue;
-        if (losCells.has(key) || ground?.los.has(key)) lineBlocked = true;
-        if (obstructCells.has(key) || ground?.all.has(key)) lineObstruct = true;
-        if (smoke?.has(cellNo(Math.floor(cx / 3), Math.floor(cy / 3)))) lineSmoked = true;
-      }
+      // A line blocked is no sight whatever else it crosses, and is obstructed.
+      lineCells(pa.x, pa.y, pb.x, pb.y, boxA, boxB, (c, r, c2, r2) => {
+        const key = cellNo(c, r);
+        if (c2 === undefined || r2 === undefined) {
+          if (blocks(key)) return (lineBlocked = true);
+          if (fills(key)) lineObstruct = true;
+          if (smoky(c, r)) lineSmoked = true;
+          return false;
+        }
+        const key2 = cellNo(c2, r2);
+        if (blocks(key) && blocks(key2)) return (lineBlocked = true);
+        if (fills(key) && fills(key2)) lineObstruct = true;
+        if (smoky(c, r) && smoky(c2, r2)) lineSmoked = true;
+        return false;
+      });
       if (first && !lineBlocked && !lineSmoked) return 'clear';
       if (!lineBlocked && !lineSmoked) anySight = true;
       if (!lineBlocked && lineSmoked) smokeTook = true;
@@ -1353,36 +1408,22 @@ export function unitTerrain(tokens: Token[]): TerrainPiece[] {
 // is still the caller's business -- 4.2.4 says LoS to or from an Aerial Unit is
 // never Obstructed, and automaticShieldFor keeps honouring that.
 //
-// Sampling is `losBetween`'s, deliberately: the same 9x9 base points, the same
-// step count, and the same exemption for the endpoints' own footprints. A
-// second, subtly different line-walk would be two answers to one question.
+// The lines are `losBetween`'s, deliberately: the same 9x9 base points, walked
+// cell by cell the same way (lineCells), and the same exemption for the
+// endpoints' own footprints. A second, subtly different line-walk would be two
+// answers to one question.
 export function lineCrossesUnit(a: Token, b: Token, unit: Token): boolean {
   if (unit.uid === a.uid || unit.uid === b.uid) return false;
-  const cells = new Set(baseCells(unit).map((c) => `${c.col},${c.row}`));
-  const basePoints = (t: Token): { x: number; y: number }[] => {
-    const bx = baseBox(t);
-    const pts: { x: number; y: number }[] = [];
-    for (let i = 0; i <= 2; i++) {
-      for (let j = 0; j <= 2; j++) {
-        pts.push({ x: bx.col + 0.08 + (i * (bx.w - 0.16)) / 2, y: bx.row + 0.08 + (j * (bx.h - 0.16)) / 2 });
-      }
-    }
-    return pts;
-  };
-  const inBase = (x: number, y: number, t: Token) => {
-    const bx = baseBox(t);
-    return x >= bx.col && x < bx.col + bx.w && y >= bx.row && y < bx.row + bx.h;
-  };
-  for (const pa of basePoints(a)) {
-    for (const pb of basePoints(b)) {
-      const len = Math.hypot(pb.x - pa.x, pb.y - pa.y);
-      const n = Math.max(2, Math.ceil(len * 3));
-      for (let i = 1; i < n; i++) {
-        const x = pa.x + ((pb.x - pa.x) * i) / n;
-        const y = pa.y + ((pb.y - pa.y) * i) / n;
-        if (inBase(x, y, a) || inBase(x, y, b)) continue;
-        if (cells.has(`${Math.floor(x)},${Math.floor(y)}`)) return true;
-      }
+  const cells = new Set(baseCells(unit).map((c) => cellNo(c.col, c.row)));
+  const boxA = baseBox(a);
+  const boxB = baseBox(b);
+  const pointsB = basePoints(boxB);
+  for (const pa of basePoints(boxA)) {
+    for (const pb of pointsB) {
+      let hit = false;
+      lineCells(pa.x, pa.y, pb.x, pb.y, boxA, boxB, (c, r, c2, r2) =>
+        (hit = cells.has(cellNo(c, r)) && (c2 === undefined || r2 === undefined || cells.has(cellNo(c2, r2)))));
+      if (hit) return true;
     }
   }
   return false;
