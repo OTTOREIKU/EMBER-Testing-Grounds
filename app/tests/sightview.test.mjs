@@ -77,6 +77,15 @@ const board = readFileSync(new URL('../src/board.ts', import.meta.url), 'utf8');
 check('THE PAGE: the Firing Arc button sits beside Zones; on, the board draws where the picked unit can aim, and with none picked the player\'s own unit whose turn it is, never the other squad\'s as it acts',
   [/<button id="btn-arc"[^>]*aria-pressed="false">Firing Arc<\/button>/.test(hud), /board\.showArc\(aimer \? turn\.arcOf\(s, aimer\) : null\)/.test(hud),
     /const arcUid = inspectUid \?\? \(actor && mine\(ctx, actor\.side\) \? actor\.uid : null\);/.test(hud), /btn-los|showSight/.test(hud + board)], [true, true, true, false]);
+const table = readFileSync(new URL('../table/index.html', import.meta.url), 'utf8');
+const mainSrc = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+check('THE TABLE TOO (OTTO, 2026-10-08: "we might want to have it on the freeplay table"): the Firing Arc button beside Zones, drawing the selected unit\'s arc, again as the table changes or another unit is selected',
+  [/<button id="btn-zones"[^>]*>Zones<\/button>\s*\n\s*<button id="btn-arc"[^>]*aria-pressed="false">Firing Arc<\/button>/.test(table),
+    /board\.showArc\(t \? arcGrids\(t, gridsOf\(state\)\) : null\);/.test(mainSrc),
+    /board\.setSelected\(uid\);\s*\n\s*renderArc\(\);/.test(mainSrc),
+    /board\.renderTokens\(state\);\s*\n\s*renderArc\(\);/.test(mainSrc)],
+  [true, true, true, true]);
+check('and both boards read the one arc (rules.ts arcGrids)', JSON.stringify(M.TURN.arcOf(s, mire)) === JSON.stringify(M.R.arcGrids(mire, 12)) && east.length > 0, true);
 check('and the arc has its own layer, under the highlights, which clearHighlights does not touch',
   [/this\.gWorld\.appendChild\(this\.gSight\);\s*\n\s*this\.gWorld\.appendChild\(this\.gHighlight\);/.test(board), /clearHighlights\(\): void \{\s*\n\s*this\.gHighlight\.replaceChildren\(\);\s*\n\s*this\.gPick\.replaceChildren\(\);\s*\n\s*\}/.test(board)],
   [true, true]);
