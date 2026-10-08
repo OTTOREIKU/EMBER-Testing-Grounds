@@ -588,6 +588,10 @@ export interface Weights {
   // THE SQUAD'S DIALS CHOSEN TOGETHER (the skill `squadDials`, M18 S3): how much the round projected must gain before
   // a Mech's dial is changed from the one it would set alone. Read only with the skill.
   squadMargin: number;
+  // THE LEARNED JUDGE (M17 L3): what a plan is worth for the position its walk leaves, as trees trained on finished
+  // games read the squad's chance to win there (learned.ts `judge`), against the position now: `learned` x the change
+  // in that chance. At 0, or with no model set, nothing.
+  learned: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -691,6 +695,7 @@ export const TACTICIAN: Weights = {
   bladeIn: 0,
   volleyLaunch: 0.05,
   squadMargin: 0.5,
+  learned: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way

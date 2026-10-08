@@ -28,6 +28,7 @@
 // the Brawler's fighter with a different price list.
 import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, WeaponView, ZoneView } from '../seat';
 import type { Choice, Policy } from './policy';
+import { judge } from './learned';
 import { chooseDials, type DialOwn, type Planner, type TurnPlan } from './squad';
 import {
   apart, attacking, beside, brawlerPolicy, couldStrike, declare, endOf, facingAt, facingOf, foesOf, hitLocation, lockedAt, percent, reaches, ready, reroll,
@@ -2254,6 +2255,9 @@ interface Plan {
   risk: number;
   // What standing there would cost has been asked.
   priced?: boolean;
+  // The learned judge's reading of where its walk leaves the squad, against where it stands now (`learned`; asked
+  // with the cost).
+  judged?: number;
 }
 
 // The most a plan could be worth: every term, with nothing taken off for what
@@ -2263,7 +2267,7 @@ const sumOf = (p: Plan): number => p.now + p.next + p.mission + p.shape;
 // and the zone it would take, come only if it is still there when the round
 // ends.
 const worthOf = (p: Plan): number =>
-  p.now + (p.next + Math.max(0, p.mission)) * (1 - p.risk) + Math.min(0, p.mission) + p.shape - p.cost;
+  p.now + (p.next + Math.max(0, p.mission)) * (1 - p.risk) + Math.min(0, p.mission) + p.shape - p.cost + (p.judged ?? 0);
 
 // The Grids the Main Task scores: its zones, or for Black Boxes the one zone a
 // Box must be carried into, where the card names one.
@@ -3144,6 +3148,8 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
   const plans = (yield* plansSteps(c)).sort((a, b) => sumOf(b) - sumOf(a));
   const stay = plans.find((p) => !p.option);
   if (!stay) return null;
+  // The chance the squad wins from the position now, as the learned judge reads it (`learned`; null: not asked).
+  const judgedNow = c.w.learned > 0 ? judge(c.view) : null;
   // A Stance changes what a hit costs, and a Screen who can make one, so each
   // is asked for itself; every other plan that leaves it in one Grid costs
   // what that Grid costs.
@@ -3157,6 +3163,21 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
   // the table once it is paid for (the question `then` asks there).
   const hiding = c.skills.shown && c.me.statuses.includes('camouflage');
   const price = (p: Plan, budget = Infinity): void => {
+    // THE LEARNED JUDGE (`learned`, M17 L3): the position the plan leaves, the whole squad's chance there as the
+    // trees read it, against the chance now. Where its walk leaves the squad; and where its deed is an attack that may
+    // destroy its target, the position without the target as much as the attack is likely to destroy it (the trees
+    // read the score most: a walk alone seldom moves it, a unit destroyed does).
+    if (judgedNow !== null) {
+      const left = p.via ? p.via.after?.() : p.option ? p.option.after?.() : c.d.here?.();
+      let v = left ? judge(left.view()) : null;
+      const target = p.deed?.option.facts?.targetUid;
+      const kill = p.deed && typeof target === 'number' ? p.deed.option.chance?.()?.kill ?? 0 : 0;
+      if (v !== null && left && typeof target === 'number' && kill > 0) {
+        const gone = judge(left.without(target).view());
+        if (gone !== null) v = (1 - kill) * v + kill * gone;
+      }
+      p.judged = v === null ? 0 : c.w.learned * (v - judgedNow);
+    }
     if (!c.skills.exposure) return;
     const mark = hiding ? (p.option ? '|acts' : p.deed ? '|deed' : '') : '';
     // A Bit's face changes what a hit costs it, wherever it ends.
