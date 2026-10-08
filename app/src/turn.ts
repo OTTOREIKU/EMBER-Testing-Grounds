@@ -2089,6 +2089,25 @@ export function forcedCommands(
 // and the Smoke on the line; the units standing in that Grid are what would be
 // looked at, never in the way), and whether the Grid lies in its Forward Arc
 // (4.2.5). A line through cover is `clear: false`. Its own Grid is not listed.
+// THE GRIDS A UNIT CAN AIM AT, for the board's Firing Arc control (OTTO,
+// 2026-10-08: "change the LOS button to actually be firing arc ... it'll help
+// the user know where his mech can hit vs LOS shows a lot of details the user
+// probably doesnt need"): every Grid of its Forward Arc (4.2.5, as rules.ts
+// inArc reads it, the Grids the sector's edges cut included), where its Melee
+// and Firing Actions may pick a target. Its own Grid is not listed.
+export function arcOf(state: GameState, t: Token): { c: number; r: number }[] {
+  const here = largeGridOf(t);
+  const size = gridsOf(state);
+  const out: { c: number; r: number }[] = [];
+  for (let c = 0; c < size; c++) {
+    for (let r = 0; r < size; r++) {
+      if (c === here.c && r === here.r) continue;
+      if (inArc(t, { ...t, uid: -1, col: c * 3, row: r * 3, size: 3, aerial: false } as Token, 'forward')) out.push({ c, r });
+    }
+  }
+  return out;
+}
+
 export function sightOf(data: GameData, state: GameState, t: Token): { c: number; r: number; arc: boolean; clear: boolean }[] {
   const terrain = terrainOf(data, state);
   const smoke = state.smoke ?? [];

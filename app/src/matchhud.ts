@@ -278,9 +278,9 @@ let movePlan: {
 // Whose card the Details tab is showing, when the player has asked for one
 // rather than taking the active unit's.
 let inspectUid: number | null = null;
-// The Line of Sight control is on: the board shows what the unit whose card is
-// open can see (turn.ts sightOf), or failing one the unit whose turn it is.
-let sightOn = false;
+// The Firing Arc control is on: the board shows where the unit whose card is
+// open can aim (turn.ts arcOf), or failing one the unit whose turn it is.
+let arcOn = false;
 // A card asking the board to show what an Action reaches. Held rather than
 // drawn once, because every refresh clears the highlight layer.
 let rangeOverlay: { uid: number; kind: 'move' | 'range'; n: number } | null = null;
@@ -1204,21 +1204,21 @@ function renderBoard(ctx: HudCtx): void {
   board.renderSmoke(s.smoke ?? []);
   board.renderMarkers(s.markers ?? []);
   board.setSelected(ensureScript(s).opp?.uid ?? null);
-  // What one unit can see, with the Line of Sight control on: the unit the
+  // Where one unit can aim, with the Firing Arc control on: the unit the
   // player picked (its card open), and that one only; with none picked, the
   // unit whose turn it is if it is the player's own. It used to follow
-  // whichever unit was acting, so the other squad's turn drew one sight after
+  // whichever unit was acting, so the other squad's turn drew one after
   // another over the board (OTTO, 2026-10-05: "if you select a mech/unit ...
   // it should only show LOS for that unit").
   const acting = ensureScript(s).opp?.uid;
   const actor = acting !== undefined ? s.tokens.find((x) => x.uid === acting) : undefined;
-  const sightUid = inspectUid ?? (actor && mine(ctx, actor.side) ? actor.uid : null);
-  const eyes = sightOn && sightUid !== null ? s.tokens.find((x) => x.uid === sightUid && x.deployed !== false) : undefined;
-  board.showSight(eyes ? turn.sightOf(ctx.data, s, eyes) : null);
-  const lb = document.getElementById('btn-los');
-  if (lb) {
-    lb.classList.toggle('on', sightOn);
-    lb.setAttribute('aria-pressed', sightOn ? 'true' : 'false');
+  const arcUid = inspectUid ?? (actor && mine(ctx, actor.side) ? actor.uid : null);
+  const aimer = arcOn && arcUid !== null ? s.tokens.find((x) => x.uid === arcUid && x.deployed !== false) : undefined;
+  board.showArc(aimer ? turn.arcOf(s, aimer) : null);
+  const ab = document.getElementById('btn-arc');
+  if (ab) {
+    ab.classList.toggle('on', arcOn);
+    ab.setAttribute('aria-pressed', arcOn ? 'true' : 'false');
   }
 }
 
@@ -5961,15 +5961,16 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     // Environment Cards ride the same rail: they are laid on the battlefield
     // while it is being set up, so the control lives on the board rather than
     // in the turn panel, and it goes away once Round 1 starts.
-    // The Line of Sight control rides it too (OTTO's playtest, 2026-10-03:
-    // "maybe above or next to the zone button").
+    // The Firing Arc control rides it too (OTTO's playtest, 2026-10-03:
+    // "maybe above or next to the zone button"; the Line of Sight control it
+    // was until 2026-10-08).
     zc.innerHTML = '<button id="btn-zones" title="Shows or hides the tactical zone and deployment overlay drawn on the board." aria-pressed="true">Zones</button>'
-      + '<button id="btn-los" title="Shows what the unit you picked can see (click a unit to open its card), and that unit only; with none picked, your unit whose turn it is: the Grids in its Forward Arc in the stronger tint, the Grids it would have to turn to see in the fainter one, and a Grid seen through cover lighter than one seen clear." aria-pressed="false">Line of Sight</button>'
+      + '<button id="btn-arc" title="Shows the Forward Arc of the unit you picked (click a unit to open its card), or with none picked, your unit whose turn it is: the Grids it can target with Melee and Firing Actions." aria-pressed="false">Firing Arc</button>'
       + '<button id="btn-envs" title="Lays Environment Cards on the battlefield. Both players place them alternately while setting up (5.4.1)." hidden>Environments</button>';
     host.querySelector('#mc-board')!.appendChild(zc);
     zc.querySelector('#btn-zones')!.addEventListener('click', () => hudRef?.toggleZones());
-    zc.querySelector('#btn-los')!.addEventListener('click', () => {
-      sightOn = !sightOn;
+    zc.querySelector('#btn-arc')!.addEventListener('click', () => {
+      arcOn = !arcOn;
       if (hudRef) renderBoard(hudRef);
     });
     zc.querySelector('#btn-envs')!.addEventListener('click', () => {

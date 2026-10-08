@@ -318,7 +318,7 @@ export class Board {
     this.gMarkers = el('g', { class: 'markers' });
     this.gTaskItems = el('g', { class: 'task-items', 'pointer-events': 'none' });
     this.gSmoke = el('g', { class: 'smoke-layer' });
-    // What one unit can see (showSight): under every pick and highlight, which
+    // Where one unit can aim (showArc): under every pick and highlight, which
     // clear their own layer and must not take this one with them.
     this.gSight = el('g', { class: 'sight-layer', 'pointer-events': 'none' });
     this.gHighlight = el('g', { class: 'highlight', 'pointer-events': 'none' });
@@ -1386,11 +1386,12 @@ export class Board {
     this.gPick.replaceChildren();
   }
 
-  // WHAT ONE UNIT CAN SEE (the Line of Sight control; OTTO's playtest,
-  // 2026-10-03: "so I know to turn the unit if needed"): each Grid it has a
-  // line of sight to, in its Forward Arc in the stronger tint and outside it in
-  // the fainter, a line through cover lighter than a clear one. Null clears it.
-  showSight(grids: { c: number; r: number; arc: boolean; clear: boolean }[] | null): void {
+  // WHERE ONE UNIT CAN AIM (the Firing Arc control; OTTO, 2026-10-08: "show
+  // the firing arc it'll help the user know where his mech can hit"): each Grid
+  // of its Forward Arc (turn.ts arcOf), in one tint. It used to draw every Grid
+  // the unit could see, in four tints (in or out of the arc, clear or through
+  // cover), which read as a board of boxes. Null clears it.
+  showArc(grids: { c: number; r: number }[] | null): void {
     this.gSight.replaceChildren();
     for (const cell of grids ?? []) {
       this.gSight.appendChild(el('rect', {
@@ -1399,7 +1400,7 @@ export class Board {
         width: 3 * CELL - 4,
         height: 3 * CELL - 4,
         rx: 4,
-        class: `sight-cell ${cell.arc ? 'sight-arc' : 'sight-turn'}${cell.clear ? '' : ' sight-cover'}`,
+        class: 'arc-cell',
       }));
     }
   }

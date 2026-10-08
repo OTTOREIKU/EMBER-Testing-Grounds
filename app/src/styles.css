@@ -940,16 +940,11 @@ main { display: flex; flex: 1; min-height: 0; }
 #btn-zones.empty { color: var(--text3); cursor: default; }
 #btn-zones.empty:hover { background: var(--surface2); color: var(--text3); }
 #btn-envs.on { background: var(--accent-lt); color: var(--accent); }
-#btn-los.on { background: var(--accent-lt); color: var(--accent); }
-/* WHAT ONE UNIT CAN SEE (the Line of Sight control, board.ts showSight): flat
-   tints in blue, so it is never read as the green of a Movement or the pink of a
-   zone; stronger inside the unit's Forward Arc, fainter where it would have to
-   turn, and lighter again where the line runs through cover. */
-.sight-cell { fill: var(--blue); stroke: none; }
-.sight-arc { fill-opacity: 0.42; }
-.sight-turn { fill-opacity: 0.16; }
-.sight-arc.sight-cover { fill-opacity: 0.26; }
-.sight-turn.sight-cover { fill-opacity: 0.09; }
+#btn-arc.on { background: var(--accent-lt); color: var(--accent); }
+/* WHERE ONE UNIT CAN AIM (the Firing Arc control, board.ts showArc): the Grids
+   of its Forward Arc in one flat blue tint, so it is never read as the green of
+   a Movement or the pink of a zone. */
+.arc-cell { fill: var(--blue); fill-opacity: 0.32; stroke: none; }
 
 /* Sits above its own button rather than over the middle of the board: the
    Grids being clicked have to stay visible while a card is armed. */
