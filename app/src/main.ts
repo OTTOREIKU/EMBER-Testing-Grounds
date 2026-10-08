@@ -50,7 +50,7 @@ import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
 import { smokePerGroup, syncSeason } from './season';
 import { handCommand, handCount, handIds, saltFor, setHandRoom } from './tactichand';
-import { boxDropCellIn, boxDropCells, fitsAt, routeStops, spotInGrid, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot, mineSpot } from './rules';
+import { arcGrids, boxDropCellIn, boxDropCells, fitsAt, routeStops, spotInGrid, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot, mineSpot } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, crawlHolders, lockersOf, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -98,6 +98,9 @@ async function init() {
   // set by the relay as a room is joined or left; none at a local table.
   let handRoom: string | null = null;
   let selectedUid: number | null = null;
+  // The Firing Arc control is on: the board shows the selected unit's Forward
+  // Arc (renderArc).
+  let arcOn = false;
   let replayActive = false;
   // Blasts waiting for the combat panel (startBlastWhenFree).
   const heldBlasts: { uid: number; actionId: string }[] = [];
@@ -2690,6 +2693,7 @@ async function init() {
   function selectToken(uid: number | null): void {
     selectedUid = uid;
     board.setSelected(uid);
+    renderArc();
     board.clearRange();
     board.clearHighlights();
     const t = state.tokens.find((x) => x.uid === uid);
@@ -7479,6 +7483,7 @@ async function init() {
     save();
     board.renderZones(overlayZones(), overlayDeployment(), claimedZones());
     board.renderTokens(state);
+    renderArc();
     board.renderTaskItems(normaliseTasks(state.tasks).items, zoneCentre);
     board.renderEnvironments(state.environments ?? [], environmentLookup(data));
     board.renderSmoke(state.smoke ?? []);
@@ -8415,6 +8420,25 @@ async function init() {
     state.showZones = state.showZones === false;
     save();
     renderZoneOverlay();
+  });
+
+  // THE FIRING ARC (OTTO, 2026-10-08: "we might want to have it on the
+  // freeplay table so when people are messing around they can still use that
+  // function"): the Grids of the selected unit's Forward Arc (rules.ts
+  // arcGrids), drawn on the board's own layer as the Match Centre's control
+  // draws them, again whenever the table changes or another unit is selected.
+  function renderArc(): void {
+    const t = arcOn && selectedUid !== null ? state.tokens.find((x) => x.uid === selectedUid && x.deployed !== false) : undefined;
+    board.showArc(t ? arcGrids(t, gridsOf(state)) : null);
+    const b = document.getElementById('btn-arc');
+    if (b) {
+      b.classList.toggle('on', arcOn);
+      b.setAttribute('aria-pressed', arcOn ? 'true' : 'false');
+    }
+  }
+  document.getElementById('btn-arc')!.addEventListener('click', () => {
+    arcOn = !arcOn;
+    renderArc();
   });
 
   function openMissions(): void {

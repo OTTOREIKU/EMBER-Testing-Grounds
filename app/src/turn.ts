@@ -18,7 +18,7 @@ import { idleWorldFor } from './glue';
 import { alive, droneActionWhy, droneLockPhase, droneMoveWhy, isLoopPhase, onExtraOpportunity } from './loop';
 import { breakAwayCost, breakAwayLinkBudget, canBeForceMoved, crawlHolders, obstructSurcharge, tetherCap } from './melee';
 import {
-  attackDirection, boardGrids, boxDropCells, breakAwayLinkDue, crushTargets, extendPath, firingSight, inArc, knockbackPath, largeGridOf, lineSpot, losNote, mineSpot, movePaths, pathCost, protectionFor,
+  arcGrids, attackDirection, boardGrids, boxDropCells, breakAwayLinkDue, crushTargets, extendPath, firingSight, inArc, knockbackPath, largeGridOf, lineSpot, losNote, mineSpot, movePaths, pathCost, protectionFor,
   reachableGrids, routeStops, sightBetween, standingSpot, type CrushVictims, type LargeGrid,
 } from './rules';
 import { zoneCellsOf } from './scoring';
@@ -2082,32 +2082,23 @@ export function forcedCommands(
 
 // ---------- what a unit can see ----------
 
-// EVERY GRID A UNIT HAS A LINE OF SIGHT TO, for the board's Line of Sight
-// control (OTTO's playtest, 2026-10-03: "This would help to see what each
-// unit's line of sight covers so I know to turn the unit if needed"): seen as a
-// unit filling that Grid would be (rules.ts firingSight: the terrain, the units
-// and the Smoke on the line; the units standing in that Grid are what would be
-// looked at, never in the way), and whether the Grid lies in its Forward Arc
-// (4.2.5). A line through cover is `clear: false`. Its own Grid is not listed.
 // THE GRIDS A UNIT CAN AIM AT, for the board's Firing Arc control (OTTO,
 // 2026-10-08: "change the LOS button to actually be firing arc ... it'll help
 // the user know where his mech can hit vs LOS shows a lot of details the user
-// probably doesnt need"): every Grid of its Forward Arc (4.2.5, as rules.ts
-// inArc reads it, the Grids the sector's edges cut included), where its Melee
-// and Firing Actions may pick a target. Its own Grid is not listed.
+// probably doesnt need"): every Grid of its Forward Arc on this table's board
+// (rules.ts arcGrids, which the freeplay table reads too).
 export function arcOf(state: GameState, t: Token): { c: number; r: number }[] {
-  const here = largeGridOf(t);
-  const size = gridsOf(state);
-  const out: { c: number; r: number }[] = [];
-  for (let c = 0; c < size; c++) {
-    for (let r = 0; r < size; r++) {
-      if (c === here.c && r === here.r) continue;
-      if (inArc(t, { ...t, uid: -1, col: c * 3, row: r * 3, size: 3, aerial: false } as Token, 'forward')) out.push({ c, r });
-    }
-  }
-  return out;
+  return arcGrids(t, gridsOf(state));
 }
 
+// EVERY GRID A UNIT HAS A LINE OF SIGHT TO, the board's Line of Sight control
+// as it was (OTTO's playtest, 2026-10-03: "This would help to see what each
+// unit's line of sight covers so I know to turn the unit if needed"; the Firing
+// Arc took its place 2026-10-08): seen as a unit filling that Grid would be
+// (rules.ts firingSight: the terrain, the units and the Smoke on the line; the
+// units standing in that Grid are what would be looked at, never in the way),
+// and whether the Grid lies in its Forward Arc (4.2.5). A line through cover is
+// `clear: false`. Its own Grid is not listed.
 export function sightOf(data: GameData, state: GameState, t: Token): { c: number; r: number; arc: boolean; clear: boolean }[] {
   const terrain = terrainOf(data, state);
   const smoke = state.smoke ?? [];

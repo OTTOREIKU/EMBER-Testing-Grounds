@@ -1493,6 +1493,22 @@ export function rangeBetween(a: Token, b: Token): { range: number; adjacent: boo
   return { range: dc + dr, adjacent: dc <= 1 && dr <= 1, sameGrid: dc === 0 && dr === 0 };
 }
 
+// THE GRIDS OF A UNIT'S FORWARD ARC (4.2.5, as inArc reads it, the Grids the
+// sector's edges cut included), its own Grid left out: where its Melee and
+// Firing Actions may pick a target. What both boards' Firing Arc control draws
+// (turn.ts arcOf for the Match Centre, the table's own for freeplay).
+export function arcGrids(t: Token, grids: number): LargeGrid[] {
+  const here = largeGridOf(t);
+  const out: LargeGrid[] = [];
+  for (let c = 0; c < grids; c++) {
+    for (let r = 0; r < grids; r++) {
+      if (c === here.c && r === here.r) continue;
+      if (inArc(t, { ...t, uid: -1, col: c * 3, row: r * 3, size: 3, aerial: false }, 'forward')) out.push({ c, r });
+    }
+  }
+  return out;
+}
+
 export function inArc(a: Token, b: Token, arc: 'forward' | 'rear'): boolean {
   const ga = largeGridOf(a);
   const gb = largeGridOf(b);
