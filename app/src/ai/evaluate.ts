@@ -592,6 +592,12 @@ export interface Weights {
   // games read the squad's chance to win there (learned.ts `judge`), against the position now: `learned` x the change
   // in that chance. At 0, or with no model set, nothing.
   learned: number;
+  // HIDDEN, AS AN ASSET (2026-10-08; OTTO: "put in some usage settings for a camo team"): a unit in Optical
+  // Camouflage must be Scanned before it can be attacked for as long as it stays hidden, not only this round, which is
+  // all that what standing somewhere costs prices. A plan that gives the camouflage up (an Action or a Maneuver
+  // without Silence, a Movement ending in Contact) pays `hiddenWorth` for each round after this one; a plan that puts
+  // it back on (the Activation) earns as much. At 0 nothing.
+  hiddenWorth: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -696,6 +702,7 @@ export const TACTICIAN: Weights = {
   volleyLaunch: 0.05,
   squadMargin: 0.5,
   learned: 0,
+  hiddenWorth: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way

@@ -2258,6 +2258,8 @@ interface Plan {
   // The learned judge's reading of where its walk leaves the squad, against where it stands now (`learned`; asked
   // with the cost).
   judged?: number;
+  // The camouflage it gives up or puts back on, for the rounds after this one (`hiddenWorth`; asked with the cost).
+  hid?: number;
 }
 
 // The most a plan could be worth: every term, with nothing taken off for what
@@ -2267,7 +2269,7 @@ const sumOf = (p: Plan): number => p.now + p.next + p.mission + p.shape;
 // and the zone it would take, come only if it is still there when the round
 // ends.
 const worthOf = (p: Plan): number =>
-  p.now + (p.next + Math.max(0, p.mission)) * (1 - p.risk) + Math.min(0, p.mission) + p.shape - p.cost + (p.judged ?? 0);
+  p.now + (p.next + Math.max(0, p.mission)) * (1 - p.risk) + Math.min(0, p.mission) + p.shape - p.cost + (p.judged ?? 0) + (p.hid ?? 0);
 
 // The Grids the Main Task scores: its zones, or for Black Boxes the one zone a
 // Box must be carried into, where the card names one.
@@ -3150,6 +3152,10 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
   if (!stay) return null;
   // The chance the squad wins from the position now, as the learned judge reads it (`learned`; null: not asked).
   const judgedNow = c.w.learned > 0 ? judge(c.view) : null;
+  // The rounds after this one that camouflage would go on paying for, and whether the unit is hidden now
+  // (`hiddenWorth`).
+  const hiddenAfter = c.w.hiddenWorth > 0 ? Math.max(0, c.view.roundLimit - c.view.round) : 0;
+  const hiddenNow = c.me.camouflaged && !c.me.revealing;
   // A Stance changes what a hit costs, and a Screen who can make one, so each
   // is asked for itself; every other plan that leaves it in one Grid costs
   // what that Grid costs.
@@ -3177,6 +3183,15 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
         if (gone !== null) v = (1 - kill) * v + kill * gone;
       }
       p.judged = v === null ? 0 : c.w.learned * (v - judgedNow);
+    }
+    // HIDDEN, AS AN ASSET (`hiddenWorth`): where the plan leaves the unit, hidden or seen, against where it is now,
+    // for each round after this one (this round's part is what standing there costs). Read off the table the plan
+    // leaves: its deed's, else its walk's; a unit owing its Reveal there is seen (`revealing`).
+    if (hiddenAfter > 0 && (hiddenNow || p.option?.tags.includes('token:camouflage'))) {
+      const left = p.deed ? p.deed.option.after?.() ?? p.deed.option.then?.(['end'])?.here?.() : p.via ? p.via.after?.() : p.option ? p.option.after?.() : undefined;
+      const u = left ? unitOf(left.view(), c.me.uid) : undefined;
+      const then = u ? u.camouflaged && !u.revealing : hiddenNow;
+      p.hid = then === hiddenNow ? 0 : c.w.hiddenWorth * hiddenAfter * (then ? 1 : -1);
     }
     if (!c.skills.exposure) return;
     const mark = hiding ? (p.option ? '|acts' : p.deed ? '|deed' : '') : '';

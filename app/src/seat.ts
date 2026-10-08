@@ -134,6 +134,10 @@ export interface UnitView {
   // unit beside it (unless it is in Optical Camouflage).
   locks: boolean;
   camouflaged: boolean;
+  // In Optical Camouflage and owing its Reveal (4.12.2): it performed an Action or a Maneuver without Silence, or a
+  // Movement of its ended in Contact with an enemy, or an enemy's Scan of it was won. It is seen once the Reveal is
+  // made, which comes before any later turn: still camouflaged on the table, but no longer hidden.
+  revealing: boolean;
   parts: PartView[];
   // 1 whole, 0 gone: each Part counting 1 intact, a half damaged, 0 destroyed.
   health: number;
@@ -383,6 +387,8 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
     ground: isGroundUnit(data, t),
     locks: meleeCapable(data, t),
     camouflaged: statusCount(t.statuses, 'camouflage') > 0,
+    revealing: statusCount(t.statuses, 'camouflage') > 0 && ((state.script?.revealDue ?? []).some((x) => x.uid === t.uid)
+      || (state.script?.reactions ?? []).some((r) => r.kind === 'manifest' && r.uid === t.uid)),
     parts,
     health: parts.length ? parts.reduce((n, p) => n + (HEALTH[p.state] ?? 1), 0) / parts.length : 0,
     points: cards.reduce((n, c) => n + (c.card.score ?? 0), 0),
