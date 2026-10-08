@@ -154,8 +154,9 @@ export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadR
   const games = data.solo.scenarios;
   const own = pick.scenario === SOLO_OWN && squads.length > 0;
   const game = games.find((g) => g.id === pick.scenario) ?? games[0];
-  const row = (group: string, id: string, label: { name: string; note: string }, on: boolean): string =>
-    `<button type="button" class="dlg-pick" data-${group}="${esc(id)}" aria-pressed="${on}"><span>${esc(label.name)}</span><em>${esc(label.note)}</em></button>`;
+  // `long`: a note that is a line of its own (what a Season changes), set under the name and wrapping.
+  const row = (group: string, id: string, label: { name: string; note: string }, on: boolean, long = false): string =>
+    `<button type="button" class="dlg-pick${long ? ' dlg-pick-long' : ''}" data-${group}="${esc(id)}" aria-pressed="${on}"><span>${esc(label.name)}</span><em>${esc(label.note)}</em></button>`;
   // A row that shows what is chosen and opens the list it was chosen from.
   const opens = (what: string, label: string, value: string): string =>
     `<button type="button" class="dlg-pick dlg-open" data-open="${esc(what)}"><span>${esc(label)}</span><span class="dlg-pick-end"><em>${esc(value)}</em><span class="ui-go" aria-hidden="true">›</span></span></button>`;
@@ -195,8 +196,8 @@ export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadR
   const seasons = data.seasons ?? [];
   const rules = seasons.length
     ? `<p class="dlg-eyebrow">Rules</p>
-    <div class="dlg-picks">${row('season', '', { name: 'Main rules', note: 'the rulebook and its updates' }, !pick.season)}${
-      seasons.map((s) => row('season', s.id, { name: s.label, note: s.rules.map((r) => r.basic.replace(/:.*$/, '').replace(/\.$/, '')).join('; ') }, pick.season === s.id)).join('')}</div>`
+    <div class="dlg-picks">${row('season', '', { name: 'Main rules', note: 'the rulebook and its updates' }, !pick.season, true)}${
+      seasons.map((s) => row('season', s.id, { name: s.label, note: s.rules.map((r) => r.basic.replace(/:.*$/, '').replace(/\.$/, '')).join('; ') }, pick.season === s.id, true)).join('')}</div>`
     : '';
   return `<h3 class="dlg-title">Play the computer</h3>
     <p class="dlg-body">${watch
