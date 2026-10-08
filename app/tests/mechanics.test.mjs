@@ -50,15 +50,19 @@ check('no match term is too short to be a term',
     .filter((p) => p.trim().length < (CJK_ANY.test(p) ? 2 : 3))
     .map((p) => `${m.id}: ${JSON.stringify(p)}`)),
   []);
-// One entry's term sitting inside another's is usually a copy-paste, but twice
-// it is the point: a card reading "Extra Action Opportunity" wants the Ticks
-// rules as well, and a Pholcus really is a mine. Anything else is a mistake.
-check('the only nested match terms are the two intended ones',
+// One entry's term sitting inside another's is usually a copy-paste, but a few
+// times it is the point: a card reading "Extra Action Opportunity" wants the
+// Ticks rules as well, a Pholcus really is a mine, and a card printing
+// Electronic Support is Electronic Warfare, which the Counter-roll entry's
+// broad "electronic" already brought to it (OTTO, 2026-10-08, asked what
+// Electronic Support does). Anything else is a mistake.
+check('the only nested match terms are the intended ones',
   list.flatMap((m) => m.match.flatMap((p) => list
     .filter((o) => o.id !== m.id)
     .flatMap((o) => o.match.filter((q) => q !== p && q.toLowerCase().includes(p.toLowerCase()))
       .map((q) => `${m.id}:${p} inside ${o.id}:${q}`)))).sort(),
-  ['mines:地雷 inside pholcus:自行地雷', 'ticks:action opportunity inside extra_action_opportunity:extra action opportunity']);
+  ['electronic_counter_roll:electronic inside electronic_support:electronic support', 'electronic_counter_roll:电子 inside electronic_support:电子支援',
+   'mines:地雷 inside pholcus:自行地雷', 'ticks:action opportunity inside extra_action_opportunity:extra action opportunity']);
 
 // ---------- mechanicsFor, replicated exactly (data.ts: hay.includes(p))
 
@@ -112,6 +116,9 @@ check('black_box reaches the carrying pack and its three missions', hitCount('bl
 check('remote_access reaches the three Terminals missions', hitCount('remote_access'), 3);
 check('extra_action_opportunity reaches only the Echoes backpack', hitCount('extra_action_opportunity'), 1);
 check('smoke_screen reaches the ten smoke cards', hitCount('smoke_screen'), 10);
+// Electronic Support: the five cards printing an Electronic Support Action (the Aurora, the Nimbus, the Echoes
+// backpack, the Black Cat, the Patrol Eagle) and the KeyHole whose Amplify lengthens it.
+check('electronic_support reaches the five cards that print it and the Amplify pilot', hitCount('electronic_support'), 6);
 // The same pin for Armor Piercing. Nine, not eleven: 穿甲 also appears inside
 // the NAME of the shell ZHLA-201 launches, and the zh match term is 穿甲1 with
 // the digit precisely so the mortar and the shell itself stay out. A count of
