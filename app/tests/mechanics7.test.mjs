@@ -1240,7 +1240,7 @@ export const promptDialog = async () => null;
 // commands, where the engine can hear them.
 writeFileSync(new URL('./_mechanics7.tabletop.ts', import.meta.url), `
 import { check, perform as performReal } from '../src/commands';
-import { crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, pathCost, breakAwayLinkDue, standingSpot } from '../src/rules';
+import { crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, pathCost, breakAwayLinkDue, routeStops, standingSpot } from '../src/rules';
 import { canBeForceMoved } from '../src/melee';
 import { mineStopIndex, nonHumanoidCost, envHotEntries, isSilentAction, maneuverIsSilent, actionSilenceDenier, interceptsOwed, isGroundUnit, envCardAt } from '../src/units';
 import { statusCount, gridsOf } from '../src/types';
