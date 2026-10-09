@@ -331,6 +331,11 @@ export interface Skills {
   // squadmate still to act and the enemy it would shoot is charged what that shot loses (`linesCost`, the weight
   // `clearLines`). OFF until measured.
   clearLines: boolean;
+  // THE CARRIER KEPT BY ITS MECH (2026-10-09; OTTO, the same game: "we need to build a leash system for the drone
+  // where if it can move it should stay nearby or get out of the way"; "The leash system makes more sense for the
+  // drones with load"): a Drone carrying a Load stands in Contact with an Ally Mech, behind it where it can, or walks
+  // back to one, though no enemy is yet in reach to say what the Load adds (`leashOf`). OFF until measured.
+  leash: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -339,7 +344,7 @@ export const SKILLS: Skills = {
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
-  squadDials: false, secName: true, hunter: false, clearLines: false,
+  squadDials: false, secName: true, hunter: false, clearLines: false, leash: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -2616,6 +2621,44 @@ function lender(c: Ctx): (out: Outlook | null | undefined, at: Grid) => number {
 // `tempo` and `zoneStep` are.
 const LEND_TIE = 0.25;
 
+// THE CARRIER KEPT BY ITS MECH (`leash`). What `lend` reads is what the Load
+// adds to a Mech's NEXT deed, so with no enemy in reach yet it reads 0 at every
+// Grid: the Carrier is worth no Command and is left where it stood while its
+// Mech walks on (OTTO, 2026-10-09, watching the Ace play itself: "the tarantula
+// with the backpack is still sitting still"). With the skill, a Grid where it
+// touches an Ally Mech is worth the deployment's tie-break (`LEND_TIE` of
+// `lend`), a share more where it stands further from the nearest enemy than
+// the Mech does (behind its Large base, which Obstructs the lines to it,
+// 4.5.3); a Grid from which a Mech is touched only after more Commands, that at
+// `future` for each Command it takes (the engine's walk to the Grids beside the
+// Mech, at least one). What `lend` reads where an enemy is in reach is taken
+// where it is more.
+const LEASH_BEHIND = 0.25;
+function leashOf(c: Ctx): ((at: Grid, touching: boolean) => number) | null {
+  const mechs = c.view.units.filter((u) => u.side === c.view.seat && u.kind === 'mech' && u.alive && u.deployed);
+  if (!mechs.length) return null;
+  const tie = c.w.lend * LEND_TIE;
+  const nearest = (g: Grid): number => (c.foes.length ? Math.min(...c.foes.map((e) => apart(g, e.grid))) : 0);
+  const around: Grid[] = [];
+  for (const m of mechs) {
+    for (let dc = -1; dc <= 1; dc++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        const g = { col: m.grid.col + dc, row: m.grid.row + dr };
+        if ((dc || dr) && g.col >= 0 && g.row >= 0 && !around.some((x) => same(x, g))) around.push(g);
+      }
+    }
+  }
+  const out = c.d.here?.();
+  return (at, touching) => {
+    if (touching) {
+      const m = mechs.find((x) => chebyshev(x.grid, at) <= 1);
+      return tie * (1 + (m && c.foes.length && nearest(at) > nearest(m.grid) ? LEASH_BEHIND : 0));
+    }
+    const walk = out ? out.walk(c.me.uid, [at], around)[0] ?? null : null;
+    return walk ? tie * c.w.future ** Math.max(1, walk.turns) : 0;
+  };
+}
+
 // The Timings a Mech is asked on to see what a Load adds to it: those of the
 // attacks it has ready, Firing first, two at most. (A Movement Action's Timing
 // asked here found no attack at all, and the Load was worth nothing.)
@@ -2812,6 +2855,8 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
   // A Drone carrying a Load: what each Grid is worth to the Mechs it would
   // touch there (`lender`).
   const loan = me.lends && w.lend > 0 ? lender(c) : null;
+  // And what each is worth for the Contact it keeps or wins back (`leash`).
+  const tether = loan && c.skills.leash ? leashOf(c) : null;
 
   // The Tactic that is a Command Coordination, and an Extra Action Opportunity
   // handed to an Ally Mech: what each unit would gain by it, for `handOff` to
@@ -2837,7 +2882,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
   const plans: Plan[] = [{
     option: null, how: 'stay', at: me.grid, deed: here,
     now: here?.value ?? 0,
-    next: (here ? after(end, me.grid) : !end ? 0 : nextTurn(end, me.grid, c)) + (loan ? loan(d.here?.(), me.grid) : 0),
+    next: (here ? after(end, me.grid) : !end ? 0 : nextTurn(end, me.grid, c)) + Math.max(loan ? loan(d.here?.(), me.grid) : 0, tether ? tether(me.grid, !!me.touches?.length) : 0),
     mission: pickup ? missionOf(pickup.after?.()?.view() ?? view, w) - c.mission + stealOf(pickup, c) : 0,
     shape: shapeAt(me.grid, c, led, undefined, tookBy(pickup)) + w.better,
     cost: 0, risk: 0,
@@ -2954,7 +2999,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     plans.push({
       option: l.o, how: 'move', at: l.at, deed,
       now: (deed?.value ?? 0) - mineCost(l.o, c) + (drag?.value ?? 0) + shield,
-      next: (deed ? afters.get(l.o) ?? 0 : nexts.get(l.o) ?? 0) + (loan ? loan(l.o.after?.(), l.at) : 0),
+      next: (deed ? afters.get(l.o) ?? 0 : nexts.get(l.o) ?? 0) + Math.max(loan ? loan(l.o.after?.(), l.at) : 0, tether ? tether(l.at, l.o.facts?.lendsTo !== undefined) : 0),
       mission: (scores ? missionOf(l.o.after?.()?.view() ?? view, w) - c.mission : 0) + (l.take ? stealOf(l.o, c) : 0),
       // With nothing to do there, what is left of the activation goes on the
       // walk: a Movement still unspent is counted before the walk is.

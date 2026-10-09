@@ -28,6 +28,7 @@ import { normaliseSetup, type SetupStage } from './setup';
 import { boxHands, controlOf, normaliseTasks } from './tasks';
 import { canManeuver, extrasLeft, lengthOf, timingOf, type ActionLength } from './ticks';
 import { actionRoute, shockWalk, type ActionRoute } from './turn';
+import { inContact } from './rules';
 import { PHASES, statusCount, TIMINGS, zonesOf } from './types';
 import type { CardAction, Facing, GameState, PartState, Side, Stance, Timing, Token } from './types';
 import { extraActivationOf, freehandSlots, isGroundUnit, maneuverRange, maxLink, onHitRiders, structureOf, tokenCards } from './units';
@@ -172,6 +173,9 @@ export interface UnitView {
   // perform actions"). The Load's Actions are the Mech's it is lent to, never
   // the Drone's own, so they are not among its weapons.
   lends: boolean;
+  // For a Drone that lends, the Ally Mechs whose bases its own meets where it
+  // stands (Contact, rules.ts inContact): the Mechs its Load is lent to.
+  touches?: number[];
 }
 
 // A Black Box, on a table whose Main Task put some there (5.3.1): lying in a
@@ -433,7 +437,14 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
     done: turnDone(state, t),
     hands,
     lends: t.kind === 'drone' && cards.some((c) => c.slot !== 'main' && c.slot !== 'pilot'),
+    ...(t.kind === 'drone' && t.deployed !== false && cards.some((c) => c.slot !== 'main' && c.slot !== 'pilot') ? { touches: touching(state, t) } : {}),
   };
+}
+
+// The Ally Mechs a unit's base meets (rules.ts inContact): those a Carrier's
+// Load is lent to (162).
+function touching(state: GameState, t: Token): number[] {
+  return state.tokens.filter((m) => m.uid !== t.uid && m.side === t.side && m.kind === 'mech' && m.deployed !== false && alive(m) && inContact(t, m)).map((m) => m.uid);
 }
 
 // The table as `seat` may see it. A fresh object every call, sharing nothing
