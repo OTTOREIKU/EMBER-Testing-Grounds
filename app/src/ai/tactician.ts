@@ -336,6 +336,11 @@ export interface Skills {
   // drones with load"): a Drone carrying a Load stands in Contact with an Ally Mech, behind it where it can, or walks
   // back to one, though no enemy is yet in reach to say what the Load adds (`leashOf`). OFF until measured.
   leash: boolean;
+  // THE LONE WOLF (2026-10-09; a community player: "if you are able to contest 2 lanes you tend to win most of the
+  // time"; OTTO: "try the strategy of hold 1 and push off enemy with solo unit"): on a Main Task that scores zones, the
+  // squad's fastest unit that holds zones leaves the zone the rest of the squad is around to them, and walks for another
+  // (`wolfAvoids`). OFF until measured.
+  lanes: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -344,7 +349,7 @@ export const SKILLS: Skills = {
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
-  squadDials: false, secName: true, hunter: false, clearLines: false, leash: false,
+  squadDials: false, secName: true, hunter: false, clearLines: false, leash: false, lanes: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -2049,6 +2054,11 @@ function targetsOf(c: Ctx, took: readonly string[] = NONE): Target[] {
       share: 1,
       held: view.units.some((u) => u.side === view.other && holds(u) && z.cells.includes(key(u.grid))),
     }));
+  // The lone wolf (`lanes`): the zone the rest of the squad is around is not its to walk to.
+  if (c.skills.lanes && view.task?.family === 'control') {
+    const left = wolfAvoids(view, me);
+    if (left) for (const t of all) if (t.zone.id === left) t.share = 0;
+  }
   if (c.w.zoneShare >= 1) {
     c.targets.set(spot, all);
     return all;
@@ -2075,6 +2085,35 @@ function targetsOf(c: Ctx, took: readonly string[] = NONE): Target[] {
   }
   c.targets.set(spot, all);
   return all;
+}
+
+// THE LONE WOLF (`lanes`; a community player's notes with RDL_DroneEscort, 2026-10-09: most squads hold one lane and
+// contest the middle, "if you are able to contest 2 lanes you tend to win most of the time", so keep one "Lone Wolf" to
+// take or deny objectives; OTTO: "try the strategy of hold 1 and push off enemy with solo unit"). On a Main Task that
+// scores zones, of the squad's units that hold zones (two at least) the one with the longest walk (`stride`), and of
+// equals the one with the most points still standing, goes alone: the zone the rest of the squad stands nearest (the
+// fewest Grids from its units in all, along the rows and the columns) is not its to walk to, so it walks for another,
+// held by nobody or by the other squad. Where it stands is the mission's own reading (a zone left open to an enemy
+// counts less, `contest`). Null for every other unit.
+function wolfAvoids(view: SeatView, me: UnitView): string | null {
+  const squad = view.units.filter((u) => u.side === view.seat && holds(u));
+  if (squad.length < 2) return null;
+  const standing = (u: UnitView): number => u.points * u.health;
+  const wolf = squad.reduce((a, b) => {
+    if (stride(b) !== stride(a)) return stride(b) > stride(a) ? b : a;
+    if (standing(b) !== standing(a)) return standing(b) > standing(a) ? b : a;
+    return b.uid < a.uid ? b : a;
+  });
+  if (wolf.uid !== me.uid) return null;
+  const body = squad.filter((u) => u.uid !== wolf.uid);
+  let best: { id: string; far: number } | null = null;
+  for (const z of view.zones) {
+    if (!z.scoring || !z.cells.length) continue;
+    const cells = z.cells.map(cellOf);
+    const far = body.reduce((n, u) => n + Math.min(...cells.map((g) => apart(u.grid, g))), 0);
+    if (!best || far < best.far) best = { id: z.id, far };
+  }
+  return best?.id ?? null;
 }
 
 // A Main Task there is somewhere to walk to for: its zones, or its Boxes.
