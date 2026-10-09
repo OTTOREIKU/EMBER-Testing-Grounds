@@ -717,7 +717,7 @@ const plain = only({});
     [c.option, c.reason, near(c.score, gainOf(odds(0.5, 0.5, 0), foe, v, W) * W.futureSoon - W.better)], ['designate:1', 'command_by_value', true]);
   const none = only({ command: true }).choose({ ...d, options: [idle, pass] }, v, rng);
   check('and where no Drone would gain by one, none is given', [none.option, none.reason], ['pass', 'command_withheld']);
-  check('a policy with no thought for it gives a Command as the Brawler does: always', plain.choose({ ...d, options: [idle, pass] }, v, rng).option, 'designate:3');
+  check('a policy with no thought for it gives the safe answer, the one the engine names (no Command)', plain.choose({ ...d, options: [idle, pass] }, v, rng).option, 'pass');
   let breaths = 0;
   const pondered = await made({ command: true }).ponder(d, v, rng, async () => { breaths += 1; });
   check('worked out in steps, with a pause offered at each step of each Drone planned, it is the same Command', [pondered.option, pondered.reason, near(pondered.score, c.score), breaths >= 2], [c.option, c.reason, true, true]);
@@ -793,7 +793,7 @@ const plain = only({});
     [slow.option, slow.reason, slow.why === fast.why, pauses >= 3], [fast.option, 'dial_by_plan', true, true]);
   const taken = pauses;
   const handed = await made({}).ponder(d({ firing: opened([fire, end()]) }), v, rng, async () => { pauses += 100; });
-  check('and a question it leaves to the Brawler is handed over in one go, with no pause taken', [handed.reason, pauses - taken], ['intent_opening', 0]);
+  check('and a question it has no answer of its own for gets the safe answer in one go, with no pause taken', [handed.reason, pauses - taken], ['safe_answer', 0]);
   // WHO ACTS FIRST. An enemy Mech with this one in its sights, on Firing: a
   // Firing dial is shot before it acts, where it stands; a Melee dial moves
   // out first.
@@ -821,7 +821,7 @@ const plain = only({});
       options: t === 'firing' ? [big, end()] : [step(0, 1, 1, { after: () => outlook(lane, {}) }), end()] })) };
   check('and where what the enemy could do first is worth less than the attack, the attack\'s dial is set and the charge is paid once',
     only({ dials: true, exposure: true }).choose(brave, lane, rng).option, 'dial:firing');
-  check('a policy with no thought for it sets the dial as the Brawler does', plain.choose(d({ firing: opened([fire, end()]) }), v, rng).reason, 'intent_opening');
+  check('a policy with no thought for it sets the dial the engine names, the safe answer', plain.choose(d({ firing: opened([fire, end()]) }), v, rng).reason, 'safe_answer');
 }
 {
   // A FOCUS, by what the reroll is worth.
@@ -846,8 +846,8 @@ const plain = only({});
   const lent = { id: 'focus.lent', label: 'lent', tags: ['focus', 'free'], run: {}, chance: () => odds(0.51, 0.5, 0) };
   check('a reroll somebody else pays for is taken whenever it helps at all',
     [only({ focus: true }).choose(q('attack.focus', 'attacker', small, small, { options: [lent] }), v, rng).option, only({ focus: true }).choose(q('attack.focus', 'attacker', small, small, { options: [lent] }), v, rng).reason], ['focus.lent', 'free_reroll']);
-  check('a policy with no thought for it answers as the Brawler does: one chance in four of turning the roll',
-    [plain.choose(q('attack.focus', 'attacker', small, odds(0.8, 0.8, 0)), v, rng).reason, plain.choose(q('attack.focus', 'attacker', small, odds(0.6, 0.6, 0)), v, rng).reason], ['paid_reroll', 'skip_reroll']);
+  check('a policy with no thought for it gives the safe answer, whatever the reroll would turn',
+    [plain.choose(q('attack.focus', 'attacker', small, odds(0.8, 0.8, 0)), v, rng).reason, plain.choose(q('attack.focus', 'attacker', small, odds(0.6, 0.6, 0)), v, rng).reason], ['safe_answer', 'safe_answer']);
   // OTTO's playtest, 2026-10-03: a Link spent to turn a hit that would only
   // have Damaged a Part with Structure left (`focusDamaged`), and one that left
   // the Mech a Link from Shutdown (`focusLow`).
@@ -970,9 +970,9 @@ const plain = only({});
   const spent = { id: 'detonate:x:none', label: 'finds no target', tags: ['detonate', 'destroy'], commands: [{}] };
   const missile = viewOf([{ ...me, kind: 'projectile' }, near1]);
   check('a Projectile with nothing to take resolves its Delayed Action', plain.choose(ask(missile, [spent, end()], { kind: 'activation.act' }), missile, rng).reason, 'delayed_action');
-  check('a question it has no judgement of its own about is answered as the Brawler answers it, and a question about a unit that is not there takes the safe answer',
+  check('a Reboot is its own to answer (the Offensive Stance with an enemy in reach), and a question about a unit that is not there takes the safe answer',
     [plain.choose({ id: 'x', kind: 'opp.reboot', seat: 's1', unit: 1, options: [{ id: 'reboot:offensive', label: 'r', tags: ['reboot', 'stance:offensive'], commands: [{}] }], fallback: 'reboot:offensive', facts: {} }, v, rng).reason,
-      plain.choose(ask(v, [end()], { unit: 99 }), v, rng).reason], ['reboot', 'safe_answer']);
+      plain.choose(ask(v, [end()], { unit: 99 }), v, rng).reason], ['reboot_stance', 'safe_answer']);
 }
 {
   // THE COMMANDER AND THE DEPLOYMENT (a VIP mission).
@@ -985,7 +985,7 @@ const plain = only({});
     [only({ setup: true }).choose(q([name(2), name(1)]), v, rng).option, only({ setup: true }).choose(q([name(2), name(1)]), v, rng).reason], ['mech:1', 'commander_by_reach']);
   const same = viewOf([long, { ...short, weapons: [gun(8)] }], { task: VIP });
   check('of two that reach as far, the one whose Torso is hardest to destroy', only({ setup: true }).choose(q([name(1), name(2)]), same, rng).option, 'mech:2');
-  check('a policy with no thought for it takes the first Mech that may lead, as the Brawler does', plain.choose(q([name(2), name(1)]), v, rng).reason, 'first_eligible_commander');
+  check('a policy with no thought for it takes the safe answer, the first Mech that may lead', [plain.choose(q([name(2), name(1)]), v, rng).option, plain.choose(q([name(2), name(1)]), v, rng).reason], ['mech:2', 'safe_answer']);
 
   // Deployment: the unit that matters least first, and a Commander out of the lanes.
   const lead = { ...long, commander: true };
@@ -1003,7 +1003,7 @@ const plain = only({});
   c = only({ setup: true }).choose(d([put(1, 5, 0, 'offensive'), put(1, 5, 0, 'defensive'), put(1, 2, 0, 'offensive'), put(1, 2, 0, 'defensive')]), dv, rng);
   check('a Commander is kept out of the lanes: each Grid of the other squad\'s Deployment Zone that would see it counts against a Grid, and it is deployed ready to attack',
     [c.option, near(c.score, 0), asked.at(-1)], ['deploy:1:2,0:offensive', true, { uid: 1, from: 2 }]);
-  check('a policy with no thought for it deploys as the Brawler does', plain.choose(d([put(1, 5, 0, 'offensive'), put(1, 2, 0, 'offensive')]), dv, rng).reason, 'deploy_toward_enemy');
+  check('a policy with no thought for it deploys where the engine names, the safe answer', plain.choose(d([put(1, 5, 0, 'offensive'), put(1, 2, 0, 'offensive')]), dv, rng).reason, 'safe_answer');
   let rests = 0;
   const four = [put(1, 5, 0, 'offensive'), put(1, 5, 0, 'defensive'), put(1, 2, 0, 'offensive'), put(1, 2, 0, 'defensive')];
   const placed = await made({ setup: true }).ponder(d(four), dv, rng, async () => { rests += 1; });

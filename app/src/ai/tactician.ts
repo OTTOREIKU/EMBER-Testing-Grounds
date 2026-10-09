@@ -33,7 +33,6 @@ import { chooseDials, type DialOwn, type Planner, type TurnPlan } from './squad'
 import { secondaryName } from './secondary';
 import { apart, beside, couldStrike, endOf, facingAt, facingOf, foesOf, lockedAt, percent, reaches, ready, same, strikers, unitOf, type Grid, type Road } from './geometry';
 import { attacking, declare, hitLocation, reroll, surplus, type Worth } from './fight';
-import { brawlerPolicy, standing, worthIn as copyWorth } from './brawler';
 import { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stride, swingOf, TACTICIAN, testWorth, unitWorth, zoned, type Weights } from './evaluate';
 
 export interface Skills {
@@ -2413,10 +2412,10 @@ function chargeReach(me: UnitView): { grids: number; run: number; timings: (stri
 // Whether geometry says anything could be done from a Grid: an enemy in the
 // Range and the arc of something it carries.
 function claimAt(at: Grid, facing: number, c: Ctx): number {
-  const struck = standing(c.me, at, facing, c.view, c.foes);
+  const struck = strikeClaim(at, facing, c);
   if (struck !== null) return struck;
-  // A unit in Optical Camouflage is nothing to attack as geometry reads it for
-  // the copy. One that could be designated from here is something to do, and
+  // A unit in Optical Camouflage is nothing to attack as geometry reads it.
+  // One that could be designated from here is something to do, and
   // what it comes to is the engine's to say (`stalk`).
   if (c.hidden.length) {
     const locked = lockedAt(c.me, at, c.foes);
@@ -3936,6 +3935,89 @@ function leader(d: Decision, view: SeatView, aimed: boolean): Choice | null {
   return best ? { option: best.o.id, reason: 'commander_by_reach', why: `the longest arm (${best.arm}) and the hardest Torso to destroy` } : null;
 }
 
+// THE ACE'S OWN ANSWERS (M21, 2026-10-09; OTTO: "I want to make sure we are using all our own AI"). Until now these
+// questions were answered by the copy of the other app's AI, and so was any question the Ace had no answer for.
+
+// The safe answer: the one the engine names for the question.
+const safeAnswer = (d: Decision): Choice => ({ option: d.fallback, reason: 'safe_answer', why: 'the safe answer' });
+
+// What a target is worth to destroy, as the Ace ranks targets before it has the odds: its worth, and a unit nearer
+// destroyed counting more (half again for a unit half gone).
+const quarryWorth = (t: UnitView, view: SeatView, w: Weights): number => unitWorth(t, view, w) * (1.5 - t.health / 2);
+
+// WHAT COULD BE STRUCK FROM A GRID, as the Ace ranks the Grids it asks the engine about: a Grid where geometry puts an
+// enemy in the Range and the arc of something the unit carries comes before every Grid where it puts none (1000);
+// then by the target there worth most to destroy; then by the targets there; then by the fewest enemies that could
+// strike back there. Null where nothing could be struck.
+function strikeClaim(at: Grid, facing: number, c: Ctx): number | null {
+  const locked = lockedAt(c.me, at, c.foes);
+  const targets = c.foes.filter((f) => couldStrike(c.me, at, facing, f, locked));
+  if (!targets.length) return null;
+  const best = Math.max(...targets.map((t) => quarryWorth(t, c.view, c.w)));
+  const answers = c.foes.filter((f) => strikers(f).some((x) => reaches(x, f.grid, at))).length;
+  return 1000 + best + 0.01 * targets.length - 0.001 * answers;
+}
+
+// WHAT A HIT GOES ON TO: a bonus attack, always (another attack); else the effect of the hit that takes most from the
+// unit struck, a Shutdown its next turn, a Disarm a weapon, an Immobilize its walk, a turn of its facing; else a
+// drag, the unit left with its back to the attacker (4.2.6), out of a zone the Main Task scores where that is on
+// offer.
+function finishAttack(d: Decision, view: SeatView): Choice | null {
+  const bonus = d.options.find((o) => o.id === 'finish.bonus');
+  if (bonus) return { option: bonus.id, reason: 'bonus_attack', why: 'another attack' };
+  for (const tag of ['shutdown', 'disarm', 'immobilize', 'turn']) {
+    const o = d.options.find((x) => x.tags.includes('rider') && x.tags.includes(tag));
+    if (o) return { option: o.id, reason: 'finish_effect', why: o.label };
+  }
+  const drags = d.options.filter((o) => o.tags.includes('drag'));
+  if (!drags.length) return null;
+  const away = drags.filter((o) => o.tags.includes('away'));
+  const pool = away.length ? away : drags;
+  const scoring = new Set(view.zones.filter((z) => z.scoring).flatMap((z) => z.cells));
+  const outside = (o: Option): boolean => {
+    const to = o.facts?.to as { col: number; row: number } | undefined;
+    return !!to && !scoring.has(`${Math.floor(to.col / 3)},${Math.floor(to.row / 3)}`);
+  };
+  const pick = pool.find(outside) ?? pool[0];
+  return { option: pick.id, reason: 'finish_drag', why: `${pick.label}: its back to us` };
+}
+
+// THE PART DIE THROWN AGAIN: offered only where the die found a Part already destroyed, and such a die lands on the
+// Torso as it stands. Kept.
+function keepPartDie(d: Decision): Choice | null {
+  const keep = d.options.find((o) => o.id === 'part.keep');
+  return keep ? { option: keep.id, reason: 'keep_part_die', why: 'the Part Die stands' } : null;
+}
+
+// WHICH DRONE (the Automatic Phase) OR PROJECTILE (the Delay Phase) ACTS NEXT: the one with the enemy worth most to
+// destroy within a walk and the reach of what it carries; of equals the first offered.
+function nextToAct(d: Decision, view: SeatView, w: Weights): Choice | null {
+  const foes = foesOf(view).filter((f) => !f.camouflaged);
+  let best: { o: Option; s: number } | null = null;
+  for (const o of d.options) {
+    const u = o.tags.includes('designate') ? unitOf(view, o.facts?.uid) : undefined;
+    if (!u) continue;
+    const arm = Math.max(0, ...u.weapons.filter((x) => ready(x) && (x.type === 'Firing' || x.type === 'Melee' || x.type === 'Projectile'))
+      .map((x) => Math.max(1, x.range) + (x.strike ?? 0)));
+    const s = Math.max(0, ...foes.filter((f) => apart(u.grid, f.grid) <= u.move + arm).map((f) => quarryWorth(f, view, w)));
+    if (!best || s > best.s + EXACT) best = { o, s };
+  }
+  return best ? { option: best.o.id, reason: 'next_to_act', score: best.s, why: 'the one with the most to strike' } : null;
+}
+
+// A REBOOT: back in the Offensive Stance where an enemy is within a walk and the Range of what it strikes with,
+// else in the Defensive.
+function rebootStance(d: Decision, view: SeatView): Choice | null {
+  const me = unitOf(view, d.unit);
+  if (!me) return null;
+  const arm = Math.max(0, ...strikers(me).map((x) => Math.max(1, x.range)));
+  const near = foesOf(view).some((f) => !f.camouflaged && apart(me.grid, f.grid) <= me.move + arm);
+  const offensive = d.options.find((o) => o.tags.includes('stance:offensive'));
+  const defensive = d.options.find((o) => o.tags.includes('stance:defensive'));
+  const pick = (near ? offensive : defensive) ?? offensive ?? defensive;
+  return pick ? { option: pick.id, reason: 'reboot_stance', why: near ? 'an enemy in reach' : 'nothing in reach' } : null;
+}
+
 // DEPLOYMENT, a unit at a time and the one that matters least first, so that
 // the units that matter most are put down with more of the other squad on the
 // board. Each Grid of the Deployment Zone is weighed as a plan is: what the
@@ -4487,6 +4569,8 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
     const target = unitOf(view, d.facts.targetUid);
     return target ? (f) => gainOf(f, target, view, w) : undefined;
   };
+  // An attack with no unit to strike (a Container): what it comes to is whether it destroys what it strikes.
+  const alone: Worth = (f) => f.kill;
   function* decide(d: Decision, view: SeatView): Steps<Choice | null> {
     const memo = memoOf(view);
     switch (d.kind) {
@@ -4546,19 +4630,28 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
       case 'shove.make':
         return s.shove ? yield* shove(d, view, w, s, memo) : null;
       case 'attack.part':
-        return hitLocation(d, view, worthIn(d, view) ?? copyWorth(d, view));
+        return hitLocation(d, view, worthIn(d, view) ?? alone);
       case 'defence.declare':
-        return declare(d, view, worthIn(d, view) ?? copyWorth(d, view));
+        return declare(d, view, worthIn(d, view) ?? alone);
       case 'attack.reroll':
       case 'defence.reroll':
-        return reroll(d, view, worthIn(d, view) ?? copyWorth(d, view));
+        return reroll(d, view, worthIn(d, view) ?? alone);
       case 'attack.surplus':
-        return surplus(d, view, worthIn(d, view) ?? copyWorth(d, view));
+        return surplus(d, view, worthIn(d, view) ?? alone);
       case 'attack.focus':
       case 'defence.focus':
         return s.focus ? focus(d, view, w, worthIn(d, view)) : null;
       case 'setup.box':
         return w.boxPlace > 0 ? placeBox(d, view) : null;
+      case 'attack.finish':
+        return finishAttack(d, view);
+      case 'attack.partfocus':
+        return keepPartDie(d);
+      case 'loop.designate.automatic':
+      case 'loop.designate.delay':
+        return nextToAct(d, view, w);
+      case 'opp.reboot':
+        return rebootStance(d, view);
       case 'contest.focus':
         return w.ewFocus > 0 ? counterFocus(d, view, w) : null;
       case 'contest.reroll':
@@ -4570,9 +4663,9 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
   return {
     name: 'tactician',
     choose(d, view, rng) {
-      // What it has no judgement of its own about yet is answered as the
-      // Brawler answers it.
-      return finish(decide(d, view)) ?? brawlerPolicy.choose(d, view, rng);
+      // What it has no judgement of its own about is given the safe answer,
+      // the one the engine names for the question.
+      return finish(decide(d, view)) ?? safeAnswer(d);
     },
     // The same, with a pause wherever the work may be put down.
     async ponder(d, view, rng, breathe) {
@@ -4582,7 +4675,7 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
         await breathe();
         step = steps.next();
       }
-      return step.value ?? brawlerPolicy.choose(d, view, rng);
+      return step.value ?? safeAnswer(d);
     },
   };
 }
