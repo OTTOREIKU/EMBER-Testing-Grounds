@@ -308,6 +308,15 @@ export interface Weights {
   // is behind it does, at `later` x `exposureLater`. At 0 such an enemy costs
   // nothing.
   later: number;
+  // AN ENEMY THAT WALKS UP BESIDE IT (`walkUp`; OTTO, 2026-10-08: "yes go ahead
+  // and build and test it"): an enemy whose attack on a unit this round comes by
+  // a step that ends beside it (its Maneuver, or its Sprint on a Movement dial)
+  // stands there as the next round begins, and may strike first then: that blow
+  // counts again, at `walkUp` x `exposureLater`. On the Alley the Mire Sprinted
+  // into G6, the Wild Cat Sprinted beside it and shot it, and on a Melee dial
+  // finished it the round after; the read had priced the one activation. At 0
+  // nothing more is counted.
+  walkUp: number;
   // THE LAST MECH OF A SQUAD WITH DRONES is worth `keystone` of the Drones'
   // worth besides its own (`keystoneOf`). At 0 it is worth its own.
   keystone: number;
@@ -665,6 +674,7 @@ export const TACTICIAN: Weights = {
   salvo: 0,
   compound: 0,
   later: 0,
+  walkUp: 0,
   keystone: 0,
   tiebreak: 0,
   tieSpread: 1,

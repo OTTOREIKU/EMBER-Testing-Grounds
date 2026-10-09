@@ -1508,37 +1508,44 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
   const shared = pk ? 1 + c.w.pack * pk.able + c.w.packNear * pk.engaged : 1;
   budget *= shared;
   // What an enemy could do to the unit on each of some Timings: the worst.
-  const read = (e: UnitView, timings: (string | undefined)[]): { worst: Barrage; on: string } => {
+  // (`beside`: the worst of them comes by a step that ends beside the unit, `walkUp`.)
+  const read = (e: UnitView, timings: (string | undefined)[]): { worst: Barrage; on: string; beside: boolean } => {
     let worst: Barrage = NO_BARRAGE;
     let on = '';
+    let beside = false;
     for (const timing of timings) {
       // Its attacks on this unit and no other: the line to every other unit of
       // the squad is not this plan's to pay for.
       let shots = shotsOn(out.turnOf(e.uid, [`strike:${c.me.uid}`], timing), c.me.uid);
+      let to: { c: number; r: number } | undefined;
       if (!shots.length && e.kind === 'mech' && e.maneuver > 0) {
         for (const step of out.turnOf(e.uid, [`reach:${c.me.uid}`], timing)?.options ?? []) {
           shots = shotsOn(step.then?.([`strike:${c.me.uid}`]), c.me.uid);
-          if (shots.length) break;
+          if (shots.length) { to = step.facts?.to as typeof to; break; }
         }
       }
       // A Sprint first, on a Movement dial (`sprints`).
       if (!shots.length && e.kind === 'mech' && c.skills.sprints && timing === 'movement' && !e.done) {
         for (const step of out.turnOf(e.uid, [`reachAll:${c.me.uid}`], timing)?.options ?? []) {
           shots = shotsOn(step.then?.([`strike:${c.me.uid}`]), c.me.uid);
-          if (shots.length) break;
+          if (shots.length) { to = step.facts?.to as typeof to; break; }
         }
       }
       const all = barrage(shots, c, true);
-      if (all.value > worst.value) { worst = all; on = timing ?? ''; }
+      if (all.value > worst.value) {
+        worst = all;
+        on = timing ?? '';
+        beside = !!to && Math.abs(to.c - at.col) <= 1 && Math.abs(to.r - at.row) <= 1;
+      }
     }
-    return { worst, on };
+    return { worst, on, beside };
   };
   for (const e of order) {
     if (cost > budget) return { cost, risk: lost(), partial: true };
     // In the last round an enemy whose turn is behind it has none to come
     // (`lastRound`; the engine would ask it nothing: not asked).
     if (e.done && lastRoundOf(c)) continue;
-    let { worst, on } = read(e, timingsOf(e, c.view, at, c.skills.seconds));
+    let { worst, on, beside } = read(e, timingsOf(e, c.view, at, c.skills.seconds));
     // AN ENEMY WHOSE TURN THIS ROUND CANNOT TOUCH THE UNIT (its dial shown, on
     // a Timing with no attack on it: a Movement) is no danger this round, and
     // was no danger at all; its turn a round on is read as an enemy's whose
@@ -1549,6 +1556,7 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
     if (!worst.value && !e.done && e.kind === 'mech' && e.timing && c.w.later > 0) {
       ({ worst, on } = read(e, likelyTimings(e, at)));
       after = true;
+      beside = false;
     }
     // Nor a round on for one whose turn cannot touch the unit.
     if (after && lastRoundOf(c)) continue;
@@ -1565,6 +1573,9 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
     const weight = p * (after ? c.w.exposureLater * (e.done ? 1 : c.w.later) : c.w.exposure);
     const share = weight * (once ? worst.value - worst.box : worst.value);
     cost += share;
+    // AN ENEMY THAT WALKS UP BESIDE IT (`walkUp`): there as the next round
+    // begins, its blow then is the same again, read a round on.
+    if (c.w.walkUp > 0 && beside && !after && !lastRoundOf(c)) cost += p * c.w.walkUp * c.w.exposureLater * (once ? worst.value - worst.box : worst.value);
     if (once) keep *= 1 - Math.min(1, weight) * worst.pen;
     if (!after) {
       survives *= 1 - p * worst.kill;
