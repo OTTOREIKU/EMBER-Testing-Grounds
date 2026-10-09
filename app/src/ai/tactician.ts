@@ -30,10 +30,10 @@ import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, WeaponVie
 import type { Choice, Policy } from './policy';
 import { judge } from './learned';
 import { chooseDials, type DialOwn, type Planner, type TurnPlan } from './squad';
-import {
-  apart, attacking, beside, brawlerPolicy, couldStrike, declare, endOf, facingAt, facingOf, foesOf, hitLocation, lockedAt, percent, reaches, ready, reroll,
-  same, standing, strikers, surplus, unitOf, type Grid, type Road, type Worth,
-} from './brawler';
+import { secondaryName } from './secondary';
+import { apart, beside, couldStrike, endOf, facingAt, facingOf, foesOf, lockedAt, percent, reaches, ready, same, strikers, unitOf, type Grid, type Road } from './geometry';
+import { attacking, declare, hitLocation, reroll, surplus, type Worth } from './fight';
+import { brawlerPolicy, standing, worthIn as copyWorth } from './brawler';
 import { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stride, swingOf, TACTICIAN, testWorth, unitWorth, zoned, type Weights } from './evaluate';
 
 export interface Skills {
@@ -3936,56 +3936,6 @@ function leader(d: Decision, view: SeatView, aimed: boolean): Choice | null {
   return best ? { option: best.o.id, reason: 'commander_by_reach', why: `the longest arm (${best.arm}) and the hardest Torso to destroy` } : null;
 }
 
-// How hard a Mech is to destroy: the Armor and Structure of its Parts still standing.
-const toughness = (u: UnitView): number => u.parts.filter((p) => p.state !== 'destroyed').reduce((n, p) => n + p.armor + p.structure, 0);
-// What it strikes with itself: its Firing and Melee dice (a Projectile's kill is the Projectile's, FAQ P4).
-const armDice = (u: UnitView): number => u.weapons.filter((x) => x.usable && (x.type === 'Firing' || x.type === 'Melee')).reduce((n, x) => n + x.yellow + 1.5 * x.red, 0);
-
-// WHAT A SECONDARY TASK NAMES (`secName`): a Mech or a zone, for the card of the squad the question names (`for`).
-function secondaryName(d: Decision, view: SeatView): Choice | null {
-  const holder = d.facts.for as SeatView['seat'] | undefined;
-  const card = holder ? view.secondary?.[holder] ?? null : null;
-  if (!card) return null;
-  if (d.kind === 'setup.designate.zone') {
-    const cell = (ref: string): Grid => { const [col, row] = ref.split(',').map(Number); return { col, row }; };
-    const ours = ((d.facts.zone as string[] | undefined) ?? []).map(cell);
-    const theirs = ((d.facts.foeZone as string[] | undefined) ?? []).map(cell);
-    const gap = (from: Grid[], to: Grid[]): number => (from.length && to.length
-      ? Math.min(...from.flatMap((a) => to.map((b) => Math.abs(a.col - b.col) + Math.abs(a.row - b.row)))) : 0);
-    let best: { o: Option; score: number } | null = null;
-    for (const o of d.options) {
-      const z = view.zones.find((x) => o.id === `zone:${x.id}`);
-      if (!z) continue;
-      const cells = z.cells.map(cell);
-      const score = gap(theirs, cells) - gap(ours, cells) - (z.scoring ? 2 : 0);
-      if (!best || score > best.score) best = { o, score };
-    }
-    return best ? { option: best.o.id, reason: 'secondary_zone', why: `${card.name}: the zone nearest our deployment` } : null;
-  }
-  const mechs = d.options
-    .map((o) => ({ o, u: o.id.startsWith('mech:') ? unitOf(view, Number(o.id.slice(5))) : undefined }))
-    .filter((x): x is { o: Option; u: UnitView } => !!x.u);
-  if (!mechs.length) return null;
-  const most = (score: (u: UnitView) => number, reason: string, why: string): Choice => {
-    const best = mechs.reduce((a, b) => (score(b.u) > score(a.u) ? b : a));
-    return { option: best.o.id, reason, why: `${card.name}: ${why}` };
-  };
-  const ownMechs = mechs[0].u.side === view.seat;
-  switch (card.kind) {
-    case 'destroy-designated':
-      // Behead is the other squad's card, naming a Mech of ours; Bounty Hunt names theirs; Planned Obsolescence ours.
-      if (holder !== view.seat) return most(toughness, 'secondary_head', 'the Mech hardest to destroy');
-      return ownMechs ? most((u) => -toughness(u), 'secondary_obsolete', 'the Mech likeliest to fall')
-        : most((u) => -toughness(u), 'secondary_bounty', 'the enemy Mech easiest to destroy');
-    case 'survive-designated':
-      return most(toughness, 'secondary_escort', 'the Mech hardest to destroy');
-    case 'per-kill-by-unit':
-      return most(armDice, 'secondary_test', 'the Mech with the most Firing and Melee dice');
-    default:
-      return null;
-  }
-}
-
 // DEPLOYMENT, a unit at a time and the one that matters least first, so that
 // the units that matter most are put down with more of the other squad on the
 // board. Each Grid of the Deployment Zone is weighed as a plan is: what the
@@ -4596,14 +4546,14 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
       case 'shove.make':
         return s.shove ? yield* shove(d, view, w, s, memo) : null;
       case 'attack.part':
-        return hitLocation(d, view, worthIn(d, view));
+        return hitLocation(d, view, worthIn(d, view) ?? copyWorth(d, view));
       case 'defence.declare':
-        return declare(d, view, worthIn(d, view));
+        return declare(d, view, worthIn(d, view) ?? copyWorth(d, view));
       case 'attack.reroll':
       case 'defence.reroll':
-        return reroll(d, view, worthIn(d, view));
+        return reroll(d, view, worthIn(d, view) ?? copyWorth(d, view));
       case 'attack.surplus':
-        return surplus(d, view, worthIn(d, view));
+        return surplus(d, view, worthIn(d, view) ?? copyWorth(d, view));
       case 'attack.focus':
       case 'defence.focus':
         return s.focus ? focus(d, view, w, worthIn(d, view)) : null;

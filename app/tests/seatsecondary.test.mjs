@@ -18,7 +18,7 @@ const check = (name, got, want) => {
 
 console.log('Secondary Tasks for the computer\n');
 
-const { M, data } = await loadEngine('seatsecondary', ["export * as SEAT from '../src/seat';", "export * as AI from '../src/ai/index';", "export * as HUD from '../src/matchhud';"]);
+const { M, data } = await loadEngine('seatsecondary', ["export * as SEAT from '../src/seat';", "export * as AI from '../src/ai/index';", "export * as HUD from '../src/matchhud';", "export * as SOLO from '../src/solo';"]);
 const AI = M.AI;
 const W = AI.TACTICIAN;
 const near = (a, b) => Math.abs(a - b) < 1e-9;
@@ -164,6 +164,25 @@ const units = [hard, soft, theirHard, theirSoft, drone, dragonfly];
     units: units.map((u) => (u.uid === theirSoft.uid ? { ...u, grid: { col: 3, row: 1 }, weapons: [weapon('Firing', 3, 0, { range: 4 })] } : u)),
   });
   check('THEIR BOUNTY on our Mech: the dice they could bring on it next round', [reach.their_secReach, reach.their_secSeen], [3, 0]);
+}
+
+{
+  // THE BRAWLER'S CARD (`hunter`; OTTO, 2026-10-09: it "would probably be more inclined to take secondary tasks that
+  // are related to killing enemy mechs rather than objectives since it's built to be more aggressive").
+  const cards = ['decapitation', 'bounty-hunt', 'annihilation', 'escort', 'weapons-test', 'disposal-procedure', 'mercy', 'potential-excavation-area'];
+  const q = { id: 's', kind: 'setup.secondary', seat: 's1', options: cards.map((c) => ({ id: `secondary:${c}`, label: `Secondary Task: ${c}`, tags: ['secondary'], commands: [{}] })), fallback: 'secondary:decapitation', facts: {} };
+  const hunter = AI.makeBrawler({ hunter: true });
+  const two = viewOf(units);
+  const one = viewOf(units.filter((u) => u.uid !== theirHard.uid));
+  check('THE BRAWLER takes a card that pays for the enemy destroyed: Annihilation, which pays for every one',
+    [hunter.choose(q, two, rng).option, hunter.choose(q, two, rng).reason], ['secondary:annihilation', 'secondary_hunter']);
+  check('against a squad of one Mech, Behead: its Head can only be that Mech', hunter.choose(q, one, rng).option, 'secondary:decapitation');
+  check('the copy (his solo mode plays none) takes the first card offered, as before', AI.brawlerPolicy.choose(q, two, rng).option, 'secondary:decapitation');
+  const bounty = viewOf(units, { secondary: { s1: card('bounty-hunt', 'destroy-designated', 4), s2: null } });
+  const named = hunter.choose(ask('setup.designate.target', [mechOption(theirHard), mechOption(theirSoft)], { what: 'target', for: 's1', owner: 's2' }), bounty, rng);
+  check('and names for its card as the Ace does: its Bounty the enemy Mech easiest to destroy', [named.option, named.reason], [`mech:${theirSoft.uid}`, 'secondary_bounty']);
+  const dialog = M.SOLO.OPPONENTS.brawler.policy;
+  check('THE BRAWLER OF THE SETUP DIALOG is a hunter', dialog.choose(q, two, rng).option, 'secondary:annihilation');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

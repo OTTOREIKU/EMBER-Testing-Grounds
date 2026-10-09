@@ -53,7 +53,9 @@ export { ownGame, RIVAL, RIVALS, SOLO_OWN, SOLO_OWN_KEY, SPEEDS, soloAsk, soloQu
 // (`claim`), and it attacks from where fewest enemies could answer (`kite`).
 // MEASURED on random squads: against the Ace 46 of 200 where the copy wins 27
 // (p .02), against the copy 132 of 200 (p < .01); on the community tournament
-// squads 26 of 100 against 18. The copy itself (brawler.ts `brawlerPolicy`)
+// squads 26 of 100 against 18. With Secondary Tasks on it takes a card that
+// pays for the enemy destroyed (`hunter`; OTTO, 2026-10-09: "it's built to be
+// more aggressive"). The copy itself (brawler.ts `brawlerPolicy`)
 // stays as it was: the Recruit is made of it, and the Ace falls back on it.
 // The other two are for
 // the suite and for comparison: the eager one shoots at anything and weighs
@@ -63,7 +65,7 @@ export const OPPONENTS: Record<string, { name: string; policy: Policy }> = {
   tactician: { name: 'Computer (Ace)', policy: tacticianPolicy },
   veteran: { name: 'Computer (Veteran)', policy: veteranPolicy },
   recruit: { name: 'Computer (Recruit)', policy: recruitPolicy },
-  brawler: { name: 'Computer (Brawler)', policy: makeBrawler({ contest: true, claim: true, kite: true }, 'brawler') },
+  brawler: { name: 'Computer (Brawler)', policy: makeBrawler({ contest: true, claim: true, kite: true, hunter: true }, 'brawler') },
   eager: { name: 'Computer (eager)', policy: eagerPolicy },
   legal: { name: 'Computer (random)', policy: legalPolicy },
 };

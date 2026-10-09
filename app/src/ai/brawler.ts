@@ -41,6 +41,9 @@
 // the worth they weigh by and so serve a policy that weighs differently.
 import type { Decision, Forecast, Option, SeatView, UnitView, WeaponView, ZoneView } from '../seat';
 import type { Choice, Policy } from './policy';
+import { huntersCard, secondaryName } from './secondary';
+import { apart, beside, couldStrike, endOf, facingAt, facingOf, foesOf, inFront, lockedAt, percent, reaches, ready, same, strikers, unitOf, type Grid, type Road } from './geometry';
+import { attacking, declare, forecasts, hitLocation, reroll, surplus, type Worth } from './fight';
 
 // His tuning table, by his names (AI-OPPONENT-STUDY.md, Part 1), with the
 // numbers his ladder and his planner carry in their own code beside them.
@@ -151,8 +154,16 @@ export interface BrawlerSkills {
   // in a scoring zone that is not yet its squad's comes before any other walk,
   // and standing in one it stays there.
   claim: boolean;
+  // A HUNTER'S SECONDARY TASK (`hunter`; OTTO, 2026-10-09: the Brawler "would
+  // probably be more inclined to take secondary tasks that are related to
+  // killing enemy mechs rather than objectives since it's built to be more
+  // aggressive"). It takes a card that pays for the enemy destroyed (Behead
+  // against a squad of one Mech, else Annihilation; secondary.ts huntersCard)
+  // and names for its card as the Ace does (secondaryName). His solo mode plays
+  // no Secondary Tasks, so the copy takes the first card and the first Mech.
+  hunter: boolean;
 }
-export const COPY: BrawlerSkills = { kite: false, screen: false, escort: false, jams: false, safer: false, cover: false, contest: false, claim: false };
+export const COPY: BrawlerSkills = { kite: false, screen: false, escort: false, jams: false, safer: false, cover: false, contest: false, claim: false, hunter: false };
 
 // `contest`: how much more an attack on an enemy holding what the mission pays
 // is worth, how much higher where to stand counts it (his target classes are a
@@ -261,73 +272,6 @@ function jamAt(me: UnitView, at: Grid, foes: UnitView[]): number | null {
 const FACING_EPSILON = 0.0005;
 const EXACT = 1e-9;
 
-// ---------- the board, as far as a view shows it ----------
-
-export interface Grid { col: number; row: number }
-
-export const apart = (a: Grid, b: Grid): number => Math.abs(a.col - b.col) + Math.abs(a.row - b.row);
-export const beside = (a: Grid, b: Grid): boolean => Math.abs(a.col - b.col) <= 1 && Math.abs(a.row - b.row) <= 1;
-export const same = (a: Grid, b: Grid): boolean => a.col === b.col && a.row === b.row;
-
-// 0 north, 1 east, 2 south, 3 west.
-const AHEAD = [[0, -1], [1, 0], [0, 1], [-1, 0]];
-
-// The Forward Arc from a Grid: the quarter of the board in front, its
-// diagonals included (4.2.5). Two units in one Grid are in each other's.
-export function inFront(from: Grid, facing: number, at: Grid): boolean {
-  const dc = at.col - from.col;
-  const dr = at.row - from.row;
-  if (!dc && !dr) return true;
-  const [fc, fr] = AHEAD[facing] ?? AHEAD[0];
-  const along = dc * fc + dr * fr;
-  return along > 0 && Math.abs(dc * fr - dr * fc) <= along;
-}
-
-// The facing that looks from one Grid at another: along whichever axis they
-// are further apart on.
-export function facingAt(from: Grid, at: Grid): number {
-  const dc = at.col - from.col;
-  const dr = at.row - from.row;
-  if (Math.abs(dr) >= Math.abs(dc)) return dr >= 0 ? 2 : 0;
-  return dc >= 0 ? 1 : 3;
-}
-
-// Where an option that ends somewhere ends, and facing which way.
-export function endOf(o: Option): Grid | null {
-  const to = o.facts?.to as { c?: number; r?: number } | undefined;
-  return to && typeof to.c === 'number' && typeof to.r === 'number' ? { col: to.c, row: to.r } : null;
-}
-export const facingOf = (o: Option): number | null => (typeof o.facts?.facing === 'number' ? o.facts.facing : null);
-
-export const unitOf = (view: SeatView, uid: unknown): UnitView | undefined =>
-  (typeof uid === 'number' ? view.units.find((u) => u.uid === uid) : undefined);
-
-// The enemy units on the board that can be fought.
-export const foesOf = (view: SeatView): UnitView[] =>
-  view.units.filter((u) => u.side !== view.seat && u.deployed && u.alive && u.kind !== 'projectile');
-
-// The Actions a unit attacks with, that still work and still have Ammo.
-export const ready = (w: WeaponView): boolean => w.usable && (w.ammo === undefined || w.ammo > 0);
-export const strikers = (u: UnitView): WeaponView[] => u.weapons.filter((w) => ready(w) && (w.type === 'Firing' || w.type === 'Melee'));
-
-// Range as the engine reads it: a printed Range counts Grids along the rows
-// and the columns, and an Action that prints none needs its target in a Grid
-// beside its own, corner to corner included.
-export const reaches = (w: WeaponView, from: Grid, at: Grid): boolean => (w.range > 0 ? apart(from, at) <= w.range : beside(from, at));
-
-// Melee Lock (4.3.5): a Ground unit with an enemy in a Grid beside its own
-// that could strike it in Melee makes no Firing attack from there.
-export const lockedAt = (me: UnitView, at: Grid, foes: UnitView[]): boolean =>
-  me.ground && foes.some((f) => f.locks && !f.camouflaged && beside(at, f.grid));
-
-// Whether `me`, standing in `from` and facing `facing`, could attack `foe` as
-// far as Range, the Forward Arc and a Melee Lock go (`locked`: it would stand
-// Melee Locked there). This is geometry: sight, cover and what the turn still
-// allows are the engine's to say, and it says them in the answers it offers.
-export function couldStrike(me: UnitView, from: Grid, facing: number, foe: UnitView, locked: boolean): boolean {
-  if (foe.camouflaged || !inFront(from, facing, foe.grid)) return false;
-  return strikers(me).some((w) => reaches(w, from, foe.grid) && !(w.type === 'Melee' && foe.aerial) && !(w.type === 'Firing' && locked));
-}
 
 // ---------- his scoring ----------
 
@@ -421,7 +365,6 @@ function bestShot(options: Option[], view: SeatView, from: Grid, k: BrawlerSkill
   return best;
 }
 
-export const percent = (p: number): string => `${Math.round(p * 100)}%`;
 const said = (s: Shot): string => (s.forecast ? `${percent(s.forecast.pen)} to Penetrate` : 'no odds to go by');
 
 // ONE MOVE AHEAD: the move after which the best attack could be made, and
@@ -489,8 +432,6 @@ function reachedBy(d: Decision, view: SeatView, me: UnitView, foes: UnitView[], 
 }
 
 // ---------- closing on the enemy ----------
-
-export type Road = { c: number; r: number }[];
 
 // The road to the enemy it can reach soonest on foot (the seam's `roads`: the
 // walk around a wall, not the line through it).
@@ -1095,52 +1036,10 @@ function activate(d: Decision, view: SeatView): Choice | null {
 // ---------- in the middle of an attack ----------
 
 // What a forecast is worth to the attacker, in the fight this question is
-// about.
-export type Worth = (f: Forecast) => number;
-function worthIn(d: Decision, view: SeatView): Worth {
+// about, by the copy's own reckoning.
+export function worthIn(d: Decision, view: SeatView): Worth {
   const target = unitOf(view, d.facts.targetUid);
   return (f) => attackWorth(f, target);
-}
-
-// Whether one forecast is better for the attacker than another: worth more,
-// or worth the same and likelier to Penetrate.
-export function beats(worth: Worth, a: Forecast, b: Forecast): boolean {
-  const more = worth(a) - worth(b);
-  return more > EXACT || (Math.abs(more) <= EXACT && a.pen > b.pen + EXACT);
-}
-
-export const attacking = (d: Decision): boolean => d.facts.role !== 'defender';
-
-// The answers that have odds on them, each with its forecast.
-export const forecasts = (options: Option[]): { o: Option; f: Forecast }[] =>
-  options.flatMap((o) => { const f = o.chance?.(); return f ? [{ o, f }] : []; });
-
-// WHERE THE HIT LANDS, the attacker's to say: the Part worth most to hit
-// (finishing a Damaged one, by the odds), and of two worth the same the one
-// that cost more.
-export function hitLocation(d: Decision, view: SeatView, worth: Worth = worthIn(d, view)): Choice | null {
-  const picks = forecasts(d.options.filter((o) => o.id.startsWith('part.pick:')));
-  if (!picks.length) return null;
-  const target = unitOf(view, d.facts.targetUid);
-  const cost = (o: Option): number => target?.parts.find((p) => p.slot === o.id.slice('part.pick:'.length))?.points ?? 0;
-  const best = picks.reduce((a, b) => (beats(worth, b.f, a.f) || (!beats(worth, a.f, b.f) && cost(b.o) > cost(a.o)) ? b : a));
-  return { option: best.o.id, reason: 'hit_location', score: worth(best.f), why: 'the Part worth most to hit' };
-}
-
-// WHAT THE DEFENDER DECLARES before the Part Die: the Part, and the Parry on
-// it, that costs the attacker most; nothing, where nothing does better than
-// that. KC Armor spends a Charge, and is never declared.
-export function declare(d: Decision, view: SeatView, worth: Worth = worthIn(d, view)): Choice | null {
-  const none = d.options.find((o) => o.id === 'declare.none');
-  const base = none?.chance?.();
-  if (!none || !base) return null;
-  let best: { o: Option; f: Forecast } = { o: none, f: base };
-  for (const x of forecasts(d.options.filter((o) => o.id.startsWith('declare.designate:')))) {
-    if (beats(worth, best.f, x.f)) best = x;
-  }
-  return best.o === none
-    ? { option: none.id, reason: 'skip_parry', score: worth(best.f), why: 'nothing it could declare would cost the attacker more' }
-    : { option: best.o.id, reason: 'declare_parry', score: worth(best.f), why: 'declared where it costs the attacker most' };
 }
 
 // A FOCUS. One somebody else pays for is taken whenever the reroll it buys
@@ -1167,28 +1066,6 @@ function focus(d: Decision, view: SeatView): Choice | null {
   return { option: pass.id, reason: 'skip_reroll', score: turn(paid), why: 'no reroll worth a Link' };
 }
 
-// THE REROLL a Focus bought: the dice worth most to throw again, by the odds
-// of each selection; the roll is kept where throwing none of them is as good.
-export function reroll(d: Decision, view: SeatView, worth: Worth = worthIn(d, view)): Choice | null {
-  const all = forecasts(d.options);
-  const keep = all.find((x) => x.o.id.startsWith('reroll.keep'));
-  if (!all.length) return null;
-  const mine = attacking(d);
-  let best = keep ?? all[0];
-  for (const x of all) if (mine ? beats(worth, x.f, best.f) : beats(worth, best.f, x.f)) best = x;
-  return best === keep
-    ? { option: best.o.id, reason: 'keep_roll', score: worth(best.f), why: 'no die worth throwing again' }
-    : { option: best.o.id, reason: 'reroll_value', score: worth(best.f), why: 'the dice worth most to throw again' };
-}
-
-// WHAT A SURPLUS IS SPENT ON: the keyword worth most.
-export function surplus(d: Decision, view: SeatView, worth: Worth = worthIn(d, view)): Choice | null {
-  const all = forecasts(d.options.filter((o) => o.id.startsWith('surplus.effect:')));
-  if (!all.length) return null;
-  const best = all.reduce((a, b) => (beats(worth, b.f, a.f) ? b : a));
-  return { option: best.o.id, reason: 'attack_result_value', score: worth(best.f), why: 'the Surplus where it is worth most' };
-}
-
 // ---------- the policy ----------
 
 function decide(d: Decision, view: SeatView, k: BrawlerSkills = COPY): Choice | null {
@@ -1207,13 +1084,18 @@ function decide(d: Decision, view: SeatView, k: BrawlerSkills = COPY): Choice | 
     case 'setup.designate.leader':
       // The Commander is the first eligible unit: no thought goes into it.
       return d.options.length ? { option: d.options[0].id, reason: 'first_eligible_commander', why: 'the first unit that may lead' } : null;
+    case 'setup.secondary':
+      return k.hunter ? huntersCard(d, view) : null;
+    case 'setup.designate.target':
+    case 'setup.designate.zone':
+      return k.hunter ? secondaryName(d, view) : null;
     case 'loop.designate.command':
       return command(d, view);
     case 'loop.designate.automatic':
     case 'loop.designate.delay':
       return activate(d, view);
     case 'attack.part':
-      return hitLocation(d, view);
+      return hitLocation(d, view, worthIn(d, view));
     case 'attack.partfocus': {
       // A Part Die is thrown again only when it found a Part already
       // destroyed, and here that die lands on the Torso by itself.
@@ -1221,15 +1103,15 @@ function decide(d: Decision, view: SeatView, k: BrawlerSkills = COPY): Choice | 
       return keep ? { option: keep.id, reason: 'skip_reroll', why: 'the Part Die stands' } : null;
     }
     case 'defence.declare':
-      return declare(d, view);
+      return declare(d, view, worthIn(d, view));
     case 'attack.focus':
     case 'defence.focus':
       return focus(d, view);
     case 'attack.reroll':
     case 'defence.reroll':
-      return reroll(d, view);
+      return reroll(d, view, worthIn(d, view));
     case 'attack.surplus':
-      return surplus(d, view);
+      return surplus(d, view, worthIn(d, view));
     case 'attack.finish':
       return finishing(d, view);
     default:

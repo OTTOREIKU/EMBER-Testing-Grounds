@@ -17,7 +17,7 @@
 // dials chosen together (S3), and measured before that is adopted.
 
 import type { Decision, Option, Outlook, SeatView, UnitView } from '../seat';
-import { strikers, type Grid } from './brawler';
+import { strikers, type Grid } from './geometry';
 import { gainOf, TACTICIAN, type Weights } from './evaluate';
 
 export type Steps<T> = Generator<void, T, void>;
