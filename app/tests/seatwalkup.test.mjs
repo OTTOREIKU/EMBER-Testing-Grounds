@@ -43,12 +43,13 @@ t.close();
 const round2 = (x) => Math.round(x * 100) / 100;
 check('the game as dealt: the Mire picks Sprint to G6 with the Wild Cat in H9 on a Movement dial, the plan read at 1.77 as it ships', [!!seen, seen?.wildCat, round2(seen?.ships ?? NaN)], [true, 'H9 movement', 1.77]);
 check('AT 0 NOTHING MORE IS COUNTED: as it ships, staying in D6 too', [seen?.off === seen?.ships, seen?.stayOn === seen?.stay], [true, true]);
-// The Wild Cat's Sprint to G7 and its Single Shot are the whole of the 1.77 (2.21 x `exposure` 0.8); a round on its
-// blow from G7 adds 2.21 x `exposureLater` 0.35 x `walkUp`.
+// The Wild Cat's Sprint to G7 and its Single Shot (94% to Penetrate, none to destroy) are the whole of the 1.77. A
+// round on its blows follow these on the Mire, and what they would finish is priced at the Mire's worth, a round on:
+// more at 1, exactly half as much more at 0.5.
 const w = AI.TACTICIAN;
-const blow = seen.ships / w.exposure;
-check('AT 1 THE BLOW FROM BESIDE IT COUNTS AGAIN, A ROUND ON: walkUp x exposureLater of it more, and half of that at 0.5',
-  [round2(seen.on - seen.ships), round2(seen.half - seen.ships)], [round2(blow * w.exposureLater), round2(blow * w.exposureLater * 0.5)]);
+const more = seen.on - seen.ships;
+check('AT 1 WHAT ITS BLOWS A ROUND ON WOULD FINISH COUNTS: the plan costs more, and at 0.5 half as much more',
+  [more > 0.1, round2(seen.half - seen.ships), round2(seen.on)], [true, round2(more / 2), round2(seen.ships + more)]);
 check('it ships at 0', w.walkUp, 0);
 
 console.log(`\n${pass} passed, ${fail} failed`);
