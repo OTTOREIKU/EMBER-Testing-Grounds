@@ -325,6 +325,12 @@ export interface Skills {
   // to be more aggressive"): a card that pays for the enemy destroyed (secondary.ts huntersCard). Without it the card
   // is the engine's safe answer: the Ace's own choice is to be read off the data nights' games.
   hunter: boolean;
+  // A SQUADMATE'S LINE (2026-10-09; OTTO, watching the Ace play itself: a UN Mech stepped in front of its own
+  // Porcupine before it fired). Only a Large unit gives Unit Protection, and it gives it to the target whichever squad
+  // it belongs to: two White Dice more on the Defense Roll (4.5.3). A plan that leaves a Mech of ours between a
+  // squadmate still to act and the enemy it would shoot is charged what that shot loses (`linesCost`, the weight
+  // `clearLines`). OFF until measured.
+  clearLines: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -333,7 +339,7 @@ export const SKILLS: Skills = {
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
-  squadDials: false, secName: true, hunter: false,
+  squadDials: false, secName: true, hunter: false, clearLines: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -458,6 +464,9 @@ interface Ctx {
   // What each enemy's Firing could do to this squad but the unit asked about, by the enemy and that unit
   // (`screenedFire`, the weight `lockDeny`), worked out once a table.
   screens: Map<string, number>;
+  // Each squadmate's best Firing attack on the table without the unit asked about, where it obstructs nobody's line
+  // (`linesCost`), worked out once a table.
+  clears: Map<string, number>;
 }
 
 // FOCUS FIRE (M13): an enemy, as the units of this squad whose turn is still
@@ -502,9 +511,9 @@ export interface Memo {
   table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>;
   walks: Map<string, Stroll | null>; targets: Map<string, Target[]>; holdings: Map<number, number>;
   handed: Map<string, number | null>; aims: Map<number, Map<number, number>>; races: { map: Map<string, Race> | null };
-  backs: { map: Map<number, Back> | null }; calls: Map<number, number>; screens: Map<string, number>;
+  backs: { map: Map<number, Back> | null }; calls: Map<number, number>; screens: Map<string, number>; clears: Map<string, number>;
 }
-export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map() });
+export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map(), clears: new Map() });
 
 // The table as far as those answers depend on it: every unit, where it stands
 // and in what state. Whose activation is open is left out, and so is a Command
@@ -1123,6 +1132,42 @@ function tagDeed(options: Option[], c: Ctx): Deed | null {
 }
 
 // A unit's best Firing attack on a given table (`targetTag`): the engine's turn for it there, at its odds.
+// A SQUADMATE'S LINE (`clearLines`): what the shots of this squad's units still to act lose to this Mech standing at
+// `at` on the table a plan leaves (`left`): for each squadmate between which and an enemy it could shoot the Grid
+// lies (geometry: `between`, the Range of its guns), its best Firing attack on the table without this Mech, where the
+// Mech obstructs nobody's line, less its best on `left`, by the engine's own odds. Never for an Aerial shooter or
+// target (sight to or from one is never Obstructed, 4.2.4). Only a loss: the squadmate's best shot does not gain by
+// this Mech standing anywhere.
+function linesCost(left: Outlook | null | undefined, at: Grid, c: Ctx): number {
+  const here = c.d.here?.();
+  if (!left || !here) return 0;
+  let lost = 0;
+  for (const u of c.view.units) {
+    if (u.side !== c.view.seat || u.uid === c.me.uid || u.done || !u.alive || !u.deployed || u.kind === 'projectile' || u.aerial) continue;
+    if (u.kind === 'mech' && !u.timing) continue;
+    const range = Math.max(0, ...u.weapons.filter((x) => ready(x) && x.type === 'Firing').map((x) => x.range));
+    if (!range) continue;
+    if (!c.foes.some((e) => !e.aerial && !e.camouflaged && apart(u.grid, e.grid) <= range && between(u.grid, e.grid, at))) continue;
+    const k = `${c.me.uid}|${u.uid}`;
+    let clear = c.clears.get(k);
+    if (clear === undefined) c.clears.set(k, clear = squadShot(here.without(c.me.uid), u, c));
+    lost += Math.max(0, clear - squadShot(left, u, c));
+  }
+  return c.w.clearLines * lost;
+}
+
+// A squadmate's best Firing attack on a table, on its own Timing (a Mech's dial, which this squad sees).
+function squadShot(out: Outlook, u: UnitView, c: Ctx): number {
+  let best = 0;
+  const turn = out.turnOf(u.uid, ['attack'], u.kind === 'mech' ? u.timing : undefined);
+  for (const o of turn?.options ?? []) {
+    const target = isShot(o) && o.tags.includes('firing') ? unitOf(c.view, o.facts?.targetUid) : undefined;
+    const f = target && target.side !== c.view.seat ? o.chance?.() : null;
+    if (f && target) best = Math.max(best, gainOf(f, target, c.view, c.w));
+  }
+  return best;
+}
+
 function bestShotOn(out: Outlook, u: UnitView, c: Ctx): number {
   const view = out.view();
   let best = 0;
@@ -2299,6 +2344,8 @@ interface Plan {
   judged?: number;
   // The camouflage it gives up or puts back on, for the rounds after this one (`hiddenWorth`; asked with the cost).
   hid?: number;
+  // What the squadmates' shots lose to its standing in their lines (`clearLines`; asked with the cost): only a loss.
+  lines?: number;
 }
 
 // The most a plan could be worth: every term, with nothing taken off for what
@@ -2308,7 +2355,7 @@ const sumOf = (p: Plan): number => p.now + p.next + p.mission + p.shape;
 // and the zone it would take, come only if it is still there when the round
 // ends.
 const worthOf = (p: Plan): number =>
-  p.now + (p.next + Math.max(0, p.mission)) * (1 - p.risk) + Math.min(0, p.mission) + p.shape - p.cost + (p.judged ?? 0) + (p.hid ?? 0);
+  p.now + (p.next + Math.max(0, p.mission)) * (1 - p.risk) + Math.min(0, p.mission) + p.shape - p.cost + (p.judged ?? 0) + (p.hid ?? 0) - (p.lines ?? 0);
 
 // The Grids the Main Task scores: its zones, or for Black Boxes the one zone a
 // Box must be carried into, where the card names one.
@@ -2773,7 +2820,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     const faces = d.options.filter((o) => handed(o, c) && !c.handed.has(handKey(c, o)));
     if (faces.length) {
       // What this table has been asked already is this decision's own to keep.
-      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens };
+      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens, clears: c.clears };
       for (const o of faces) {
         c.handed.set(handKey(c, o), yield* commandGain(o, view, w, c.skills, kept));
         yield;
@@ -3225,6 +3272,12 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
       }
       p.judged = v === null ? 0 : c.w.learned * (v - judgedNow);
     }
+    // A SQUADMATE'S LINE (`clearLines`): what the squad's shots still to come lose to its standing where the plan
+    // leaves it (a Large unit gives their targets Unit Protection, 4.5.3).
+    if (c.skills.clearLines && c.me.size >= 3 && !c.me.aerial) {
+      const left = p.via ? p.via.after?.() : p.option ? p.option.after?.() : c.d.here?.();
+      p.lines = linesCost(left, p.at, c);
+    }
     // HIDDEN, AS AN ASSET (`hiddenWorth`): where the plan leaves the unit, hidden or seen, against where it is now,
     // for each round after this one (this round's part is what standing there costs). Read off the table the plan
     // leaves: its deed's, else its walk's; a unit owing its Reveal there is seen (`revealing`). A plan that accesses a
@@ -3321,6 +3374,8 @@ const bestPlan = (c: Ctx): { best: Plan; stay: Plan; plans: Plan[] } | null => f
 export interface Weighed {
   label: string; how: string; at: Grid; does: string;
   now: number; next: number; mission: number; shape: number; cost: number; risk: number; worth: number; priced: boolean;
+  // What the squadmates' shots lose to its standing there (`clearLines`).
+  lines: number;
 }
 
 // THE RACES FOR THE LOOSE BOXES as the Tactician reads them for the unit a
@@ -3352,7 +3407,7 @@ export function weighed(d: Decision, view: SeatView, skills: Partial<Skills> = {
     return finish(spotsSteps(d, c))
       .map((x) => ({
         label: x.o.label, how: x.o.tags.includes('stay') ? 'stay' : 'appear', at: x.at, does: '',
-        now: 0, next: x.next, mission: 0, shape: x.shape, cost: x.harm.cost, risk: x.harm.risk, worth: x.value, priced: true,
+        now: 0, next: x.next, mission: 0, shape: x.shape, cost: x.harm.cost, risk: x.harm.risk, worth: x.value, priced: true, lines: 0,
       }))
       .sort((a, b) => b.worth - a.worth);
   }
@@ -3362,7 +3417,7 @@ export function weighed(d: Decision, view: SeatView, skills: Partial<Skills> = {
     .map((p) => ({
       label: p.option ? `${p.option.label}${p.via ? `, then ${p.via.label}` : ''}` : 'stay', how: p.how, at: p.at, does: p.deed?.why ?? '',
       now: p.now, next: p.next, mission: p.mission, shape: p.shape, cost: p.cost, risk: p.risk,
-      worth: p.priced ? worthOf(p) : sumOf(p), priced: !!p.priced,
+      worth: p.priced ? worthOf(p) : sumOf(p), priced: !!p.priced, lines: p.lines ?? 0,
     }))
     .sort((a, b) => Number(b.priced) - Number(a.priced) || b.worth - a.worth);
 }
@@ -3413,6 +3468,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     memo.harms.clear();
     memo.nexts.clear();
     memo.firepower.clear();
+    memo.clears.clear();
     memo.walks.clear();
     memo.targets.clear();
     memo.holdings.clear();
@@ -3434,6 +3490,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     behind: skills.mission && w.press > 0 ? behindNow(view, w, w.erode > 0 ? drift(view, w, skills.aimed) : 0) : false,
     soon: d.kind === 'setup.deploy',
     firepower: memo.firepower,
+    clears: memo.clears,
     harms: memo.harms,
     nexts: memo.nexts,
     walks: memo.walks,

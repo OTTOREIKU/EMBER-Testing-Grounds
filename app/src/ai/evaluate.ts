@@ -623,6 +623,10 @@ export interface Weights {
   // `secName` (tactician.ts): 105 of 183 against 90 (p 0.04). ADOPTED at 1. A game without Secondary Tasks reads
   // nothing of it.
   secondary: number;
+  // A SQUADMATE'S LINE (the skill `clearLines`, tactician.ts): the share of what a squadmate's shot loses, to the
+  // Unit Protection a Mech of ours standing in its line gives the target, that a plan leaving the Mech there is
+  // charged. Read only with the skill.
+  clearLines: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -730,6 +734,7 @@ export const TACTICIAN: Weights = {
   learned: 0,
   hiddenWorth: 0,
   secondary: 1,
+  clearLines: 1,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
