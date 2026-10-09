@@ -13,8 +13,8 @@ import type { CheckResult, Command } from '../commands';
 import type { GameData } from '../data';
 import { hashDials, type DialEntry } from '../secrecy';
 import {
-  gameOver, musing, newMind, owed, owedAfter, owedIfActivated, pondering, sightedIn, tableWithout, viewOf, walkIn, walkedKey,
-  type Decision, type GameOver, type MineOffer, type Option, type Outlook, type SeatMind, type SeatView, type WalkMemo,
+  gameOver, lookOf, musing, newMind, owed, owedAfter, owedIfActivated, pondering, tableWithout, viewOf, walkedKey,
+  type Decision, type GameOver, type MineOffer, type Option, type Outlook, type SeatMind, type WalkMemo,
 } from '../seat';
 import { countHits } from '../setup';
 import type { GameState, Side, Timing } from '../types';
@@ -337,10 +337,12 @@ export class Driver {
 
   // A TABLE THIS SEAT IS ONLY THINKING ABOUT (seat.ts Outlook): its view of
   // it, what it would be asked there, and what any unit would be asked if its
-  // own turn opened there. Each reading is the seam's, made once.
+  // own turn opened there. Each reading is the seam's, made once. Its view,
+  // sight and walks are seat.ts lookOf's, which the probe reads its positions
+  // with (the learned judge's numbers are read one way only).
   private outlook(state: GameState): Outlook {
     const { data } = this.host;
-    let seen: SeatView | undefined;
+    const look = lookOf(data, state, this.seat, this.walks);
     const asked = new Map<string, Decision | null>();
     const gone = new Map<number, Outlook>();
     const kinds = (only?: string[]): string => (only ? only.join(',') : '*');
@@ -349,7 +351,7 @@ export class Driver {
       return asked.get(key) ?? null;
     };
     return {
-      view: () => (seen ??= viewOf(data, state, this.seat)),
+      view: look.view,
       owed: (only) => once(`owed|${kinds(only)}`, () => {
         const d = owed(data, state, this.seat, this.mind, only ? { only } : undefined);
         return d ? this.withOdds(d, state) : null;
@@ -358,8 +360,8 @@ export class Driver {
         const turn = owedIfActivated(data, state, uid, timing as Timing | undefined, only ? { only } : undefined);
         return turn?.decision ? this.withOdds(turn.decision, turn.table) : null;
       }),
-      seen: (uid, grids, from) => sightedIn(data, state, uid, grids.map((g) => ({ c: g.col, r: g.row })), from?.map((g) => ({ c: g.col, r: g.row }))),
-      walk: (uid, from, to, left, via) => walkIn(data, state, uid, from.map((g) => ({ c: g.col, r: g.row })), to.map((g) => ({ c: g.col, r: g.row })), left, this.walks, via ? { c: via.col, r: via.row } : undefined),
+      seen: look.seen,
+      walk: look.walk,
       without: (uid) => {
         let out = gone.get(uid);
         if (!out) gone.set(uid, out = this.outlook(tableWithout(state, uid)));

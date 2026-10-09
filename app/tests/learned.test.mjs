@@ -26,8 +26,11 @@ const fixture = JSON.parse(readFileSync(new URL('./learned.fixture.json', import
   const short = { ...fixture, names: fixture.names.slice(1) };
   check('A MODEL OF OTHER NUMBERS IS REFUSED: its names in another order, or one short, and nothing is set',
     [AI.useModel(shuffled), AI.useModel(short), AI.hasModel(), AI.judgeFeatures(fixture.check[0].f)], [false, false, false, null]);
-  check('the fixture\'s names are the numbers features.ts reads, in order', JSON.stringify(fixture.names) === JSON.stringify(AI.FEATURES), true);
-  check('and it is taken', [AI.useModel(fixture), AI.hasModel()], [true, true]);
+  check('the fixture\'s names are the first reading\'s numbers, in order (the model of the first data nights)',
+    [fixture.names.length === AI.FIRST_READING, JSON.stringify(fixture.names) === JSON.stringify(AI.FEATURES.slice(0, AI.FIRST_READING))], [true, true]);
+  const gap = { ...fixture, names: [...fixture.names.slice(0, 10), ...fixture.names.slice(11)] };
+  check('a model missing a number in the middle is refused (the rest would be read one place off)', AI.useModel(gap), false);
+  check('and the fixture is taken: a model of the first reading reads the first reading alone', [AI.useModel(fixture), AI.hasModel()], [true, true]);
   const worst = Math.max(...fixture.check.map((c) => Math.abs(AI.judgeFeatures(c.f) - c.p)));
   check(`THE TREES READ AS LIGHTGBM READS THEM: ${fixture.check.length} rows, every chance LightGBM's own`, [fixture.check.length >= 20, worst < 1e-12], [true, true]);
 }
@@ -53,7 +56,7 @@ const at = (x, c, r, f) => { x.col = c * 3; x.row = r * 3; x.facing = f; };
 at(U.Blade, 4, 4, 2); at(U.Drone, 4, 6, 0); at(U.Gun, 2, 2, 2); at(U.Rifle, 10, 11, 0);
 const view = M.SEAT.viewOf(data, t.state, 's1');
 {
-  const v = AI.judge(view);
+  const v = AI.judge(M.SEAT.lookOf(data, t.state, 's1'));
   check('ON THE STAGED BOARD the judge reads a chance, between nothing and certain', [typeof v === 'number', v > 0 && v < 1], [true, true]);
 }
 {

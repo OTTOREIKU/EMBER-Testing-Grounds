@@ -3,8 +3,8 @@
 export { attackWorth, BRAWLER, brawlerPolicy, COPY as BRAWLER_COPY, makeBrawler, targetScore, type BrawlerSkills } from './brawler';
 export { Driver, type DriverOptions, type Host, type LogEntry, type Step } from './driver';
 export { eagerPolicy } from './eager';
-export { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stakesOf, standingFor, swingOf, TACTICIAN, tieWorth, unitWorth, zoned, type Weights } from './evaluate';
-export { FEATURES, featureMap, featuresOf } from './features';
+export { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, secondaryStake, stakesOf, standingFor, swingOf, TACTICIAN, testWorth, tieWorth, unitWorth, zoned, type Weights } from './evaluate';
+export { FEATURES, FIRST_READING, featureMap, featuresOf, type Look } from './features';
 export { hasModel, judge, judgeFeatures, useModel, type Model, type Tree } from './learned';
 export { legalPolicy } from './legal';
 export { blundering, RECRUIT_RATE, recruitPolicy, VETERAN_SKILLS, VETERAN_WEIGHTS, veteranPolicy } from './levels';

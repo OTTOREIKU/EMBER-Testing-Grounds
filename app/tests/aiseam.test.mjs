@@ -179,9 +179,13 @@ const imports = (text) => [...text.matchAll(/^import (type )?[^;]*? from '([^']+
   // M7.0: the table an answer would leave, looked at any way a seat likes.
   check('and the table an answer would leave, to be looked at whole: the seat\'s view of it, what any unit would be asked on it, who would see a unit there',
     [/export interface Outlook \{/.test(src('seat.ts')), /after\?: \(\) => Outlook \| null;/.test(src('seat.ts')), /here\?: \(\) => Outlook;/.test(src('seat.ts')),
-      /private outlook\(state: GameState\): Outlook \{/.test(ai['driver.ts']), /view: \(\) => \(seen \?\?= viewOf\(data, state, this\.seat\)\),/.test(ai['driver.ts']),
+      /private outlook\(state: GameState\): Outlook \{/.test(ai['driver.ts']),
+      // Its view, sight and walks are seat.ts lookOf's (2026-10-09: the learned judge's numbers, read one way by the
+      // Ace in play and by the probe that writes its data).
+      /const look = lookOf\(data, state, this\.seat, this\.walks\);/.test(ai['driver.ts']) && /view: look\.view,/.test(ai['driver.ts'])
+        && /view: \(\) => \(seen \?\?= viewOf\(data, state, seat\)\),/.test(src('seat.ts')),
       /const turn = owedIfActivated\(data, state, uid, timing as Timing \| undefined, only \? \{ only \} : undefined\);/.test(ai['driver.ts']),
-      /seen: \(uid, grids, from\) => sightedIn\(data, state, uid, /.test(ai['driver.ts'])], [true, true, true, true, true, true, true]);
+      /seen: look\.seen,/.test(ai['driver.ts']) && /seen: \(uid, grids, from\) => sightedIn\(data, state, uid, /.test(src('seat.ts'))], [true, true, true, true, true, true, true]);
   check('a question put to the other seat is asked as that seat, with none of this seat\'s memory: its dials are its own',
     [/const seat = d\.seat;\n\s+const mind = seat === this\.seat \? this\.mind : this\.nobody;/.test(ai['driver.ts']), /private readonly nobody: SeatMind = newMind\(\);/.test(ai['driver.ts']),
       /owedAfter\(data, state, this\.seat, this\.mind/.test(ai['driver.ts'])], [true, true, false]);
@@ -190,7 +194,8 @@ const imports = (text) => [...text.matchAll(/^import (type )?[^;]*? from '([^']+
   check('how long a walk is is the engine\'s count (turn.ts walkField: the board as its Movement reads it, a Grid stood in where the board would stand it), and the driver keeps each field by what it was read from',
     [/export function walkIn\(/.test(owed), /field = turn\.walkField\(data, state, t, to, via\);/.test(owed),
       /const key = `\$\{turn\.walkKey\(data, state, t\)\}\|/.test(owed), /export function walkField\(/.test(src('turn.ts')), /const stands = standingSpot\(c, r, t\.size, !!t\.aerial, terrain, \[\], t\.uid\) !== null;/.test(src('turn.ts')),
-      /walk: \(uid, from, to, left, via\) => walkIn\(data, state, uid, .*, left, this\.walks, via \? \{ c: via\.col, r: via\.row \} : undefined\),/.test(ai['driver.ts']), /private readonly walks: WalkMemo = new Map\(\);/.test(ai['driver.ts'])],
+      /walk: look\.walk,/.test(ai['driver.ts']) && /walk: \(uid, from, to, left, via\) => walkIn\(data, state, uid, .*, left, walks, via \? \{ c: via\.col, r: via\.row \} : undefined\),/.test(src('seat.ts')),
+      /private readonly walks: WalkMemo = new Map\(\);/.test(ai['driver.ts'])],
     [true, true, true, true, true, true, true]);
   check('the board with a unit gone from it is the seam\'s own copy with the unit off the list, looked at through the same Outlook: nothing is sent to make it',
     [/export function tableWithout\(state: GameState, uid: number\): GameState \{\n  return \{ \.\.\.state, tokens: state\.tokens\.filter\(\(t\) => t\.uid !== uid\) \};/.test(owed),

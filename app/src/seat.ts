@@ -31,6 +31,7 @@ import { actionRoute, shockWalk, type ActionRoute } from './turn';
 import { PHASES, statusCount, TIMINGS, zonesOf } from './types';
 import type { CardAction, Facing, GameState, PartState, Side, Stance, Timing, Token } from './types';
 import { extraActivationOf, freehandSlots, isGroundUnit, maneuverRange, maxLink, onHitRiders, structureOf, tokenCards } from './units';
+import { sightedIn, walkIn, type WalkMemo } from './owed';
 
 // ---------- the view ----------
 
@@ -242,6 +243,34 @@ export interface OpportunityView {
   commanded: boolean;
 }
 
+// A SQUAD'S SECONDARY TASK (3.1.3), shown to both seats: each player chooses and REVEALS theirs, the First Player
+// first (FAQ P1), and the unit or zone a card names carries its Token on the table. How it pays is the scorer's own
+// reading of the card (tasks.ts scoreSecondary), named by `kind`:
+//   'destroy-designated'  the Mech it names destroyed: Behead (one the OTHER squad named of its own), Bounty Hunt (an
+//                         enemy Mech the holder named), Planned Obsolescence (one of the holder's own)
+//   'per-kill'            each enemy Mech destroyed `vp`, each enemy Drone 1 (Annihilation)
+//   'survive-designated'  the holder's Mech it names still standing as the game ends (Escort)
+//   'per-kill-by-unit'    each Part or Drone the holder's Mech it names destroys, `vp` each (Weapons Test; a
+//                         Projectile it launched is not it, FAQ P4)
+//   'no-mech-lost'        no enemy Mech destroyed by the holder as the game ends (Mercy; Integrity Loss aside)
+//   'hold-zone'           only the holder's units in the zone it names as the game ends (Excavation Claim)
+export interface SecondaryView {
+  id: string;
+  name: string;
+  kind: string;
+  vp: number;
+  // The Mech it names (a uid), or null where it names none or none yet.
+  target: number | null;
+  // The zone it names (an id), or null.
+  zone: string | null;
+  // The Victory Points it has paid so far.
+  paid: number;
+  // The enemy Mechs and Drones the holder has destroyed so far (`integrity`: of the Mechs, those lost to Integrity
+  // Loss, which Mercy does not count), and the Parts and Drones its Test Unit has destroyed.
+  kills: { mechs: number; drones: number; integrity: number };
+  testKills: number;
+}
+
 export interface SeatView {
   seat: Side;
   other: Side;
@@ -257,6 +286,8 @@ export interface SeatView {
   // The Main Task's terms, read off its card; null with no Main Task set.
   task: TaskView | null;
   noSecondary: boolean;
+  // Each squad's Secondary Task, once chosen (null before, and in a game played without them).
+  secondary: Record<Side, SecondaryView | null>;
   units: UnitView[];
   zones: ZoneView[];
   // The Black Boxes on the table; none on a table whose Main Task has none.
@@ -416,6 +447,34 @@ function initOf(data: GameData, t: Token): Partial<Record<Timing, number>> | und
   return Object.keys(out).length ? out : undefined;
 }
 
+// A squad's Secondary Task as the table holds it (tasks.ts TaskState): the card, what it names, what it has paid. A
+// card that has paid once is in `scored` by its own key; Annihilation and Weapons Test pay by the count, so their
+// paid share is what the counts paid so far come to.
+function secondaryView(data: GameData, tasks: ReturnType<typeof normaliseTasks>, side: Side): SecondaryView | null {
+  const id = tasks.secondary[side];
+  const card = id ? data.secondary.find((c) => c.id === id) : undefined;
+  if (!id || !card) return null;
+  const vp = card.vp ?? 0;
+  const kind = card.kind ?? '';
+  const kills = tasks.kills[side];
+  const paidKills = tasks.paidKills[side];
+  const once = tasks.scored.includes(`sec:${side}:${card.id}`) ? vp : 0;
+  const paid = kind === 'per-kill' ? paidKills.mechs * vp + paidKills.drones
+    : kind === 'per-kill-by-unit' ? tasks.paidTestKills[side] * vp
+    : once;
+  return {
+    id,
+    name: card.name,
+    kind,
+    vp,
+    target: tasks.secTarget[side] ?? null,
+    zone: tasks.zone[side] ?? null,
+    paid,
+    kills: { mechs: kills.mechs, drones: kills.drones, integrity: kills.integrity ?? 0 },
+    testKills: tasks.testKills[side],
+  };
+}
+
 export function viewOf(data: GameData, state: GameState, seat: Side): SeatView {
   const other: Side = seat === 's1' ? 's2' : 's1';
   const tasks = normaliseTasks(state.tasks);
@@ -468,6 +527,7 @@ export function viewOf(data: GameData, state: GameState, seat: Side): SeatView {
         }
       : null,
     noSecondary: !!state.noSecondary,
+    secondary: { s1: secondaryView(data, tasks, 's1'), s2: secondaryView(data, tasks, 's2') },
     units: state.tokens.map((t) => unitView(data, state, t, seat, tasks.leader[t.side] === t.uid, lowValue(t), hands(t))),
     zones,
     boxes,
@@ -668,3 +728,17 @@ export { thinking as pondering, musing } from './rules';
 // What a seat owes, and when the game is over: built in owed.ts, read from
 // here, so this module stays the whole of what a player of a seat imports.
 export { owed, owedAfter, owedIfActivated, sightedIn, tableWithout, walkIn, gameOver, newMind, walkedKey, type MineOffer, type SeatMind, type GameOver, type WalkMemo, type Want } from './owed';
+
+// A TABLE TO READ (src/ai/features.ts `Look`): the seat's view of it, and the engine's own answers to who would see a
+// unit standing in a Grid and how long a walk is. The very readings a seat's Outlook makes of a table (driver.ts
+// `outlook` is made of them), for a reader holding the state itself: the probe that writes the learned judge's data
+// reads each position with the functions the Ace reads it with in play. `walks` keeps each walk's field while the
+// terrain stands (one for a whole game).
+export function lookOf(data: GameData, state: GameState, seat: Side, walks?: WalkMemo): Pick<Outlook, 'view' | 'seen' | 'walk'> {
+  let seen: SeatView | undefined;
+  return {
+    view: () => (seen ??= viewOf(data, state, seat)),
+    seen: (uid, grids, from) => sightedIn(data, state, uid, grids.map((g) => ({ c: g.col, r: g.row })), from?.map((g) => ({ c: g.col, r: g.row }))),
+    walk: (uid, from, to, left, via) => walkIn(data, state, uid, from.map((g) => ({ c: g.col, r: g.row })), to.map((g) => ({ c: g.col, r: g.row })), left, walks, via ? { c: via.col, r: via.row } : undefined),
+  };
+}

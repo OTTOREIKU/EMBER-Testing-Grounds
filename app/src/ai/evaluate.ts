@@ -613,6 +613,15 @@ export interface Weights {
   // 1.5, 44 against 55 (p 0.03), the squads hidden at 90% of the rounds they began against 76% and trading 1.38 against
   // 1.21, but making 13 Remote Accesses against 33.
   hiddenWorth: number;
+  // SECONDARY TASKS (2026-10-09; OTTO: "we need to start getting secondary tasks in there as much as possible"): what
+  // each squad's Secondary Task pays, counted where it is decided, `secondary` x its Victory Points. A unit is worth
+  // what its destruction moves between the squads (`secondaryStake`): the Mech a Behead or a Bounty Hunt names, each
+  // enemy unit to a squad playing Annihilation, an Escort's Mech (its loss costs its squad the card); less for a
+  // Planned Obsolescence's own Mech (its loss pays its own squad) and for an enemy Mech to a squad playing Mercy while
+  // the card can still be had. An attack by a Weapons Test's Mech is worth the Parts and Drones it may destroy
+  // (`gainOf`). What a card would pay as the game ends (an Escort's Mech standing, Mercy kept, an Excavation Site held
+  // alone) is counted in the margin, as the Main Task's zones are (`marginOf`). At 0 nothing.
+  secondary: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -719,6 +728,7 @@ export const TACTICIAN: Weights = {
   squadMargin: 0.5,
   learned: 0,
   hiddenWorth: 0,
+  secondary: 0,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way
@@ -737,7 +747,57 @@ export function unitWorth(u: UnitView, view: SeatView, w: Weights): number {
   const lead = task?.family === 'vip' && u.commander ? task.vp * (u.side === view.seat ? w.vipOwn : w.vipKill) : 0;
   // A jammer counts the jams it has still to make (`jamKeep`).
   const keep = w.jamKeep > 0 && jammer(u) ? 1 + w.jamKeep * Math.max(1, view.roundLimit - view.round + 1) : 1;
-  return material * keep + lead + keystoneOf(u, view, w);
+  return material * keep + lead + keystoneOf(u, view, w) + secondaryStake(u, view, w);
+}
+
+// WHAT THE UNIT'S DESTRUCTION MOVES BETWEEN THE SQUADS BY THEIR SECONDARY TASKS (`secondary`), in Victory Points: to
+// whoever destroys it, and so from its own squad. The Mech a Behead or a Bounty Hunt names pays the other squad; each
+// enemy unit pays a squad playing Annihilation (a Mech the card's Victory Points, a Drone 1; a Low Value unit never
+// counts); an Escort's Mech lost costs its own squad the card. A Planned Obsolescence's Mech pays its OWN squad when
+// it falls, and an enemy Mech destroyed costs a squad playing Mercy the card while it can still be had: those count
+// against the unit.
+export function secondaryStake(u: UnitView, view: SeatView, w: Weights): number {
+  if (w.secondary <= 0 || u.lowValue || u.kind === 'projectile') return 0;
+  let vp = 0;
+  for (const side of [view.seat, view.other]) {
+    const card = view.secondary?.[side];
+    if (!card) continue;
+    const foe = u.side !== side;
+    if (card.kind === 'destroy-designated' && card.target === u.uid && card.paid === 0) vp += foe ? card.vp : -card.vp;
+    else if (card.kind === 'survive-designated' && card.target === u.uid && !foe) vp += card.vp;
+    else if (card.kind === 'per-kill' && foe) vp += u.kind === 'mech' ? card.vp : u.kind === 'drone' ? 1 : 0;
+    else if (card.kind === 'no-mech-lost' && foe && u.kind === 'mech' && card.kills.mechs - card.kills.integrity === 0) vp -= card.vp;
+  }
+  return w.secondary * vp;
+}
+
+// WEAPONS TEST (`secondary`): an attack made by the Mech a squad's Weapons Test names pays the card's Victory Points
+// for each Part and each Drone it destroys (a Low Value unit never counts; a Projectile's kill is the Projectile's,
+// FAQ P4). For the attack whose maker is known.
+export function testWorth(by: UnitView | undefined, target: UnitView, f: Forecast, view: SeatView, w: Weights): number {
+  if (w.secondary <= 0 || !by || by.side === target.side || target.lowValue || target.kind === 'projectile') return 0;
+  const card = view.secondary?.[by.side];
+  if (!card || card.kind !== 'per-kill-by-unit' || card.target !== by.uid) return 0;
+  return w.secondary * card.vp * (target.kind === 'mech' ? f.destroy : f.kill);
+}
+
+// WHAT THE SECONDARY TASKS WOULD PAY AS THE GAME ENDS, as the board stands (`secondary`): an Escort's Mech standing,
+// Mercy kept (no enemy Mech destroyed by the holder yet, Integrity Loss aside), an Excavation Site held alone; each
+// counted as an Occupation's zones are, less for each round still to play. The seat's own less the other's.
+function secondaryAhead(view: SeatView, w: Weights): number {
+  if (w.secondary <= 0) return 0;
+  const end = view.round >= view.roundLimit ? 1 : w.missionFuture ** (view.roundLimit - view.round);
+  let lead = 0;
+  for (const side of [view.seat, view.other]) {
+    const card = view.secondary?.[side];
+    if (!card) continue;
+    const pays = card.kind === 'survive-designated' ? card.target !== null && view.units.some((u) => u.uid === card.target && u.alive)
+      : card.kind === 'no-mech-lost' ? card.kills.mechs - card.kills.integrity === 0
+      : card.kind === 'hold-zone' ? card.zone !== null && view.zones.some((z) => z.id === card.zone && z.holder === side)
+      : false;
+    if (pays) lead += (side === view.seat ? 1 : -1) * card.vp;
+  }
+  return w.secondary * lead * end;
 }
 
 // A Drone whose own Action is an Electronic Attack on an enemy (`jamKeep`): a
@@ -889,7 +949,8 @@ export function swingOf(view: SeatView, w: Weights, margin: number, gain: number
 
 // The Main Task's worth in Victory Points alone (`missionOf` before the game's).
 export function marginOf(view: SeatView, w: Weights): number {
-  const banked = view.vp[view.seat] - view.vp[view.other];
+  // The Victory Points banked, and what the Secondary Tasks would still pay as the game ends (`secondary`).
+  const banked = view.vp[view.seat] - view.vp[view.other] + secondaryAhead(view, w);
   const task = view.task;
   if (task?.family === 'terminal') return banked + task.vp * terminalLead(view, w, task.fromRound);
   if (task?.family === 'blackbox') {

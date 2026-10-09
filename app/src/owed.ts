@@ -283,7 +283,13 @@ function tasksOwed(data: GameData, state: GameState, seat: Side): Decision | nul
       : state.tokens.filter((t) => t.kind === 'mech' && t.side === mine.owner).map((t) =>
           sends(data, state, `mech:${t.uid}`, mine.what === 'leader' ? `Commander: ${t.label}` : `${mine.label}: ${t.label}`,
             ['designate', mine.what], [{ kind: 'designateTask', seat, what: mine.what, for: mine.side, uid: t.uid }]));
-    return ask(`setup.designate.${mine.what}`, seat, `${mine.what}:${mine.side}:${owedNames.length}`, kept(options), '', { facts: { what: mine.what, for: mine.side, owner: mine.owner ?? null } });
+    // Where each squad deploys, as `setup.deploy` and `setup.box` say it: the edges are chosen before the Tasks
+    // (3.1.2), and a zone or a Mech is named with the deployments in view, as a player names it.
+    const su = normaliseSetup(state.setup);
+    const ours = su?.edge?.[seat] ? deployGrids(data.zoneData, state, su.edge[seat]) : null;
+    const theirs = su?.edge?.[other(seat)] ? deployGrids(data.zoneData, state, su.edge[other(seat)]) : null;
+    return ask(`setup.designate.${mine.what}`, seat, `${mine.what}:${mine.side}:${owedNames.length}`, kept(options), '',
+      { facts: { what: mine.what, for: mine.side, owner: mine.owner ?? null, zone: ours ? [...ours].sort() : [], foeZone: theirs ? [...theirs].sort() : [] } });
   }
   const boxTurn = state.noBoard ? null : boxPlaceTurn(tasks, fp);
   if (boxTurn) {

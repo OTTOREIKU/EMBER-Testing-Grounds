@@ -34,7 +34,7 @@ import {
   apart, attacking, beside, brawlerPolicy, couldStrike, declare, endOf, facingAt, facingOf, foesOf, hitLocation, lockedAt, percent, reaches, ready, reroll,
   same, standing, strikers, surplus, unitOf, type Grid, type Road, type Worth,
 } from './brawler';
-import { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stride, swingOf, TACTICIAN, unitWorth, zoned, type Weights } from './evaluate';
+import { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stride, swingOf, TACTICIAN, testWorth, unitWorth, zoned, type Weights } from './evaluate';
 
 export interface Skills {
   // The Main Task as a term of every plan (M7.2).
@@ -308,6 +308,14 @@ export interface Skills {
   // chooseDials: each Mech planned on the table its allies, and the enemy's likeliest attacks, will have left it), a
   // Mech's changed from its own only where the round gains by more than `squadMargin`. OFF until measured.
   squadDials: boolean;
+  // WHAT A SECONDARY TASK NAMES (2026-10-09; OTTO: "we need to start getting secondary tasks in there as much as
+  // possible"). Until now the Ace named the first Mech offered (`secondaryName`): the Head the other squad's Behead
+  // will hunt, its own Mech hardest to destroy; a Bounty, the enemy Mech easiest to destroy; an Escort, its own hardest;
+  // a Test Unit, its own with the most Firing and Melee dice; a Planned Obsolescence, its own likeliest to fall; an
+  // Excavation Site, the zone nearest its deployment and farthest from theirs, one the Main Task scores counting two
+  // Grids further off (the other squad is drawn there too). What each card pays is the weight `secondary`. OFF until
+  // measured.
+  secName: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -316,7 +324,7 @@ export const SKILLS: Skills = {
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
-  squadDials: false,
+  squadDials: false, secName: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -560,7 +568,9 @@ function shotValue(o: Option, c: Ctx): { value: number; f: Forecast | null; targ
   // A Hit that jams (`suppress`): the target's Firing, as an Electronic
   // Attack's won roll takes it, for the chance of a Hit.
   const jammed = f && target && c.w.suppress > 0 && target.side !== c.view.seat && jamsOnHit(o, c) ? c.w.suppress * 2 * c.w.jam * f.hit * firepower(target, c) : 0;
-  const value = f && target ? gainOf(f, target, c.view, c.w, threatOf(target, c)) + f.kill * holding(target, c) + loose + denied + backed + jammed : UNKNOWN_SHOT;
+  // An attack by the Mech this squad's Weapons Test names pays for each Part and Drone it destroys (`secondary`).
+  const tested = f && target ? testWorth(unitOf(c.view, o.facts?.uid), target, f, c.view, c.w) : 0;
+  const value = f && target ? gainOf(f, target, c.view, c.w, threatOf(target, c)) + f.kill * holding(target, c) + loose + denied + backed + jammed + tested : UNKNOWN_SHOT;
   return { value: value - spent, f, target };
 }
 
@@ -3170,8 +3180,10 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
   const plans = (yield* plansSteps(c)).sort((a, b) => sumOf(b) - sumOf(a));
   const stay = plans.find((p) => !p.option);
   if (!stay) return null;
-  // The chance the squad wins from the position now, as the learned judge reads it (`learned`; null: not asked).
-  const judgedNow = c.w.learned > 0 ? judge(c.view) : null;
+  // The chance the squad wins from the position now, as the learned judge reads it (`learned`; null: not asked). The
+  // judge reads a table, not a view alone: who could see whom on it is the engine's to say (features.ts Look).
+  const tableNow = c.w.learned > 0 ? c.d.here?.() : undefined;
+  const judgedNow = tableNow ? judge(tableNow) : null;
   // The rounds after this one that camouflage would go on paying for, and whether the unit is hidden now
   // (`hiddenWorth`).
   const hiddenAfter = c.w.hiddenWorth > 0 ? Math.max(0, c.view.roundLimit - c.view.round) : 0;
@@ -3195,11 +3207,11 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
     // read the score most: a walk alone seldom moves it, a unit destroyed does).
     if (judgedNow !== null) {
       const left = p.via ? p.via.after?.() : p.option ? p.option.after?.() : c.d.here?.();
-      let v = left ? judge(left.view()) : null;
+      let v = left ? judge(left) : null;
       const target = p.deed?.option.facts?.targetUid;
       const kill = p.deed && typeof target === 'number' ? p.deed.option.chance?.()?.kill ?? 0 : 0;
       if (v !== null && left && typeof target === 'number' && kill > 0) {
-        const gone = judge(left.without(target).view());
+        const gone = judge(left.without(target));
         if (gone !== null) v = (1 - kill) * v + kill * gone;
       }
       p.judged = v === null ? 0 : c.w.learned * (v - judgedNow);
@@ -3924,6 +3936,56 @@ function leader(d: Decision, view: SeatView, aimed: boolean): Choice | null {
   return best ? { option: best.o.id, reason: 'commander_by_reach', why: `the longest arm (${best.arm}) and the hardest Torso to destroy` } : null;
 }
 
+// How hard a Mech is to destroy: the Armor and Structure of its Parts still standing.
+const toughness = (u: UnitView): number => u.parts.filter((p) => p.state !== 'destroyed').reduce((n, p) => n + p.armor + p.structure, 0);
+// What it strikes with itself: its Firing and Melee dice (a Projectile's kill is the Projectile's, FAQ P4).
+const armDice = (u: UnitView): number => u.weapons.filter((x) => x.usable && (x.type === 'Firing' || x.type === 'Melee')).reduce((n, x) => n + x.yellow + 1.5 * x.red, 0);
+
+// WHAT A SECONDARY TASK NAMES (`secName`): a Mech or a zone, for the card of the squad the question names (`for`).
+function secondaryName(d: Decision, view: SeatView): Choice | null {
+  const holder = d.facts.for as SeatView['seat'] | undefined;
+  const card = holder ? view.secondary?.[holder] ?? null : null;
+  if (!card) return null;
+  if (d.kind === 'setup.designate.zone') {
+    const cell = (ref: string): Grid => { const [col, row] = ref.split(',').map(Number); return { col, row }; };
+    const ours = ((d.facts.zone as string[] | undefined) ?? []).map(cell);
+    const theirs = ((d.facts.foeZone as string[] | undefined) ?? []).map(cell);
+    const gap = (from: Grid[], to: Grid[]): number => (from.length && to.length
+      ? Math.min(...from.flatMap((a) => to.map((b) => Math.abs(a.col - b.col) + Math.abs(a.row - b.row)))) : 0);
+    let best: { o: Option; score: number } | null = null;
+    for (const o of d.options) {
+      const z = view.zones.find((x) => o.id === `zone:${x.id}`);
+      if (!z) continue;
+      const cells = z.cells.map(cell);
+      const score = gap(theirs, cells) - gap(ours, cells) - (z.scoring ? 2 : 0);
+      if (!best || score > best.score) best = { o, score };
+    }
+    return best ? { option: best.o.id, reason: 'secondary_zone', why: `${card.name}: the zone nearest our deployment` } : null;
+  }
+  const mechs = d.options
+    .map((o) => ({ o, u: o.id.startsWith('mech:') ? unitOf(view, Number(o.id.slice(5))) : undefined }))
+    .filter((x): x is { o: Option; u: UnitView } => !!x.u);
+  if (!mechs.length) return null;
+  const most = (score: (u: UnitView) => number, reason: string, why: string): Choice => {
+    const best = mechs.reduce((a, b) => (score(b.u) > score(a.u) ? b : a));
+    return { option: best.o.id, reason, why: `${card.name}: ${why}` };
+  };
+  const ownMechs = mechs[0].u.side === view.seat;
+  switch (card.kind) {
+    case 'destroy-designated':
+      // Behead is the other squad's card, naming a Mech of ours; Bounty Hunt names theirs; Planned Obsolescence ours.
+      if (holder !== view.seat) return most(toughness, 'secondary_head', 'the Mech hardest to destroy');
+      return ownMechs ? most((u) => -toughness(u), 'secondary_obsolete', 'the Mech likeliest to fall')
+        : most((u) => -toughness(u), 'secondary_bounty', 'the enemy Mech easiest to destroy');
+    case 'survive-designated':
+      return most(toughness, 'secondary_escort', 'the Mech hardest to destroy');
+    case 'per-kill-by-unit':
+      return most(armDice, 'secondary_test', 'the Mech with the most Firing and Melee dice');
+    default:
+      return null;
+  }
+}
+
 // DEPLOYMENT, a unit at a time and the one that matters least first, so that
 // the units that matter most are put down with more of the other squad on the
 // board. Each Grid of the Deployment Zone is weighed as a plan is: what the
@@ -4483,6 +4545,9 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
         return yield* activation(d, view, w, s, memo);
       case 'setup.designate.leader':
         return s.setup ? leader(d, view, s.aimed) : null;
+      case 'setup.designate.target':
+      case 'setup.designate.zone':
+        return s.secName ? secondaryName(d, view) : null;
       case 'setup.deploy':
         return s.setup ? yield* deploy(d, view, w, s, memo) : null;
       case 'planning.dial': {
