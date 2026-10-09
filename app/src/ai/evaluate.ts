@@ -311,11 +311,14 @@ export interface Weights {
   // AN ENEMY THAT WALKS UP BESIDE IT (`walkUp`; OTTO, 2026-10-08: "yes go ahead
   // and build and test it"): an enemy whose attack on a unit this round comes by
   // a step that ends beside it (its Maneuver, or its Sprint on a Movement dial)
-  // stands there as the next round begins, and may strike first then: that blow
-  // counts again, at `walkUp` x `exposureLater`. On the Alley the Mire Sprinted
-  // into G6, the Wild Cat Sprinted beside it and shot it, and on a Melee dial
-  // finished it the round after; the read had priced the one activation. At 0
-  // nothing more is counted.
+  // stands there as the next round begins, and may strike first then: its blows
+  // then follow this round's on the same unit, and what they would finish is
+  // priced at what the unit is worth, at `walkUp` x `exposureLater`. On the
+  // Alley the Mire Sprinted into G6, the Wild Cat Sprinted beside it and shot it
+  // (94% to Penetrate, none to destroy), and on a Melee dial finished it the
+  // round after; the read had priced the one activation. (Counting the blow
+  // again at its own value, 2.21, turned not one of 150 games.) At 0 nothing
+  // more is counted.
   walkUp: number;
   // THE LAST MECH OF A SQUAD WITH DRONES is worth `keystone` of the Drones'
   // worth besides its own (`keystoneOf`). At 0 it is worth its own.

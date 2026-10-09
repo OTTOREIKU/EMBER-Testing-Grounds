@@ -1499,6 +1499,8 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
   const by: NonNullable<Harm['by']> = [];
   // The enemies that could attack it there this round.
   const struck = new Set<number>();
+  // Their blows a round on, of those that walk up beside it (`walkUp`).
+  const next: Forecast[] = [];
   // Those whose turn is still to come first, and of them the nearest: the
   // ones most likely to settle it.
   const order = c.hostile.filter((e) => threatens(e, at, c)).sort((a, b) => Number(a.done) - Number(b.done) || apart(a.grid, at) - apart(b.grid, at));
@@ -1574,8 +1576,8 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
     const share = weight * (once ? worst.value - worst.box : worst.value);
     cost += share;
     // AN ENEMY THAT WALKS UP BESIDE IT (`walkUp`): there as the next round
-    // begins, its blow then is the same again, read a round on.
-    if (c.w.walkUp > 0 && beside && !after && !lastRoundOf(c)) cost += p * c.w.walkUp * c.w.exposureLater * (once ? worst.value - worst.box : worst.value);
+    // begins, its blows then are this round's again.
+    if (c.w.walkUp > 0 && beside && !after && !lastRoundOf(c)) next.push(...(p < 1 ? worst.hits.map((f) => atChance(f, p)) : worst.hits));
     if (once) keep *= 1 - Math.min(1, weight) * worst.pen;
     if (!after) {
       survives *= 1 - p * worst.kill;
@@ -1629,6 +1631,13 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
   // What the run of hits destroys between them that no one of them would: the
   // Mech, at what it is worth (`compound`).
   if (!single && c.w.compound > 0) cost += c.w.compound * Math.max(0, torsoLost(c.me, hits) - (1 - survives)) * unitWorth(c.me, c.view, c.w);
+  // AN ENEMY THAT WALKS UP BESIDE IT (`walkUp`): its blows a round on follow
+  // this round's on the same unit, and what they would finish of it is priced at
+  // what it is worth, a round on (`exposureLater`).
+  if (next.length) {
+    const chain = (run: Forecast[]): number => (single ? lostTo(c.me, run) : torsoLost(c.me, run));
+    cost += c.w.walkUp * c.w.exposureLater * Math.max(0, chain([...hits, ...next]) - chain(hits)) * unitWorth(c.me, c.view, c.w);
+  }
   return { cost: cost / shared, risk: lost(), by };
 }
 
