@@ -1,6 +1,7 @@
-// THE TACTICIAN: ours (AI-OPPONENT-PLAN.md, section 6). Where the Brawler is a
-// ladder of rules, this is one question asked of every answer: what is it
-// worth, in Victory Points, to end up there and do that?
+// THE TACTICIAN: ours (AI-OPPONENT-PLAN.md, section 6). One question asked of
+// every answer: what is it worth, in Victory Points, to end up there and do
+// that? Every computer opponent is made of it (the levels, levels.ts; the
+// styles, styles.ts).
 //
 // A unit's activation is planned as WHERE IT ENDS AND WHAT IT DOES THERE. Each
 // plan is the sum of five things, all in one currency (evaluate.ts):
@@ -11,7 +12,7 @@
 //   - which way it is walking, when nothing above tells two Grids apart;
 //   - LESS what the other squad could do to it there before it moves again.
 //
-// The last is the one the Brawler has no word for. Each enemy unit that could
+// The last is the one a fighter without a plan has no word for. Each enemy unit that could
 // bring an attack to bear on a Grid, from where it stands or by stepping out
 // first, is asked what it would do to the unit standing there, and its answer
 // is priced as its own attacks are. So a Drone is not walked into two Mechs'
@@ -24,13 +25,13 @@
 // only to choose which of those questions are worth asking.
 //
 // EACH THING IT THINKS ABOUT CAN BE TURNED OFF (`Skills`), so that what each
-// is worth can be measured by itself (section 8). With all of them off it is
-// the Brawler's fighter with a different price list.
+// is worth can be measured by itself (section 8); a question it has no answer
+// for is given the engine's safe answer.
 import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, WeaponView, ZoneView } from '../seat';
 import type { Choice, Policy } from './policy';
 import { judge } from './learned';
 import { chooseDials, type DialOwn, type Planner, type TurnPlan } from './squad';
-import { secondaryName } from './secondary';
+import { huntersCard, secondaryName } from './secondary';
 import { apart, beside, couldStrike, endOf, facingAt, facingOf, foesOf, lockedAt, percent, reaches, ready, same, strikers, unitOf, type Grid, type Road } from './geometry';
 import { attacking, declare, hitLocation, reroll, surplus, type Worth } from './fight';
 import { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stride, swingOf, TACTICIAN, testWorth, unitWorth, zoned, type Weights } from './evaluate';
@@ -312,9 +313,18 @@ export interface Skills {
   // will hunt, its own Mech hardest to destroy; a Bounty, the enemy Mech easiest to destroy; an Escort, its own hardest;
   // a Test Unit, its own with the most Firing and Melee dice; a Planned Obsolescence, its own likeliest to fall; an
   // Excavation Site, the zone nearest its deployment and farthest from theirs, one the Main Task scores counting two
-  // Grids further off (the other squad is drawn there too). What each card pays is the weight `secondary`. OFF until
-  // measured.
+  // Grids further off (the other squad is drawn there too). What each card pays is the weight `secondary`. MEASURED
+  // with `secondary` 1 (2026-10-09, measure_sq2.sh: random squads at 500 with Secondary Tasks, each seat's card by
+  // lot, paired against the Ace without either): 105 of 183 against 90 (18 turned to a win, 7 from one, p 0.04),
+  // trading 1.11 against 1.08, its own card paying 1.15 a game against 1.04 and the other squad's 1.11 against 1.26.
+  // ADOPTED, both. (Named alone, without the weight, it changed 1 game of 181: what a card names pays only when the
+  // Ace plays for it.)
   secName: boolean;
+  // A HUNTER'S SECONDARY TASK (the Brawler style's, M21; OTTO, 2026-10-09: the Brawler "would probably be more
+  // inclined to take secondary tasks that are related to killing enemy mechs rather than objectives since it's built
+  // to be more aggressive"): a card that pays for the enemy destroyed (secondary.ts huntersCard). Without it the card
+  // is the engine's safe answer: the Ace's own choice is to be read off the data nights' games.
+  hunter: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -323,7 +333,7 @@ export const SKILLS: Skills = {
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
-  squadDials: false, secName: false,
+  squadDials: false, secName: true, hunter: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -3961,7 +3971,7 @@ function strikeClaim(at: Grid, facing: number, c: Ctx): number | null {
 // WHAT A HIT GOES ON TO: a bonus attack, always (another attack); else the effect of the hit that takes most from the
 // unit struck, a Shutdown its next turn, a Disarm a weapon, an Immobilize its walk, a turn of its facing; else a
 // drag, the unit left with its back to the attacker (4.2.6), out of a zone the Main Task scores where that is on
-// offer.
+// offer, and pulled straight in: of the rest, the Grid nearest the one it was in.
 function finishAttack(d: Decision, view: SeatView): Choice | null {
   const bonus = d.options.find((o) => o.id === 'finish.bonus');
   if (bonus) return { option: bonus.id, reason: 'bonus_attack', why: 'another attack' };
@@ -3974,12 +3984,22 @@ function finishAttack(d: Decision, view: SeatView): Choice | null {
   const away = drags.filter((o) => o.tags.includes('away'));
   const pool = away.length ? away : drags;
   const scoring = new Set(view.zones.filter((z) => z.scoring).flatMap((z) => z.cells));
-  const outside = (o: Option): boolean => {
+  const gridOf = (o: Option): Grid | null => {
     const to = o.facts?.to as { col: number; row: number } | undefined;
-    return !!to && !scoring.has(`${Math.floor(to.col / 3)},${Math.floor(to.row / 3)}`);
+    return to ? { col: Math.floor(to.col / 3), row: Math.floor(to.row / 3) } : null;
   };
-  const pick = pool.find(outside) ?? pool[0];
-  return { option: pick.id, reason: 'finish_drag', why: `${pick.label}: its back to us` };
+  const outside = (o: Option): boolean => { const g = gridOf(o); return !!g && !scoring.has(`${g.col},${g.row}`); };
+  const from = unitOf(view, Number(pool[0].facts?.uid))?.grid;
+  // How far a drag carries the unit: Grids, then the straighter of two as far.
+  const pull = (o: Option): number => {
+    const g = gridOf(o);
+    if (!g || !from) return 0;
+    const dc = g.col - from.col;
+    const dr = g.row - from.row;
+    return Math.max(Math.abs(dc), Math.abs(dr)) * 100 + dc * dc + dr * dr;
+  };
+  const pick = pool.reduce((a, b) => (outside(a) !== outside(b) ? (outside(b) ? b : a) : pull(b) < pull(a) ? b : a));
+  return { option: pick.id, reason: 'finish_drag', why: `${pick.label}: pulled straight in, its back to us` };
 }
 
 // THE PART DIE THROWN AGAIN: offered only where the die found a Part already destroyed, and such a die lands on the
@@ -4109,8 +4129,7 @@ function* appear(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
 // A FOCUS, by what the reroll it buys is worth. One somebody else pays for is
 // taken whenever it helps at all. One paid for in Link is taken when the best
 // reroll moves the attack's worth, the owner's way, by more than a Link is
-// worth; and never with the pilot's last Link but one. The Brawler asks for
-// one chance in four of turning the roll, whatever turning it would do.
+// worth; and never with the pilot's last Link but one.
 function focus(d: Decision, view: SeatView, w: Weights, worth: Worth | undefined): Choice | null {
   const pass = d.options.find((o) => o.id === 'focus.pass');
   const base = pass?.chance?.();
@@ -4582,6 +4601,8 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
       case 'setup.designate.target':
       case 'setup.designate.zone':
         return s.secName ? secondaryName(d, view) : null;
+      case 'setup.secondary':
+        return s.hunter ? huntersCard(d, view) : null;
       case 'setup.deploy':
         return s.setup ? yield* deploy(d, view, w, s, memo) : null;
       case 'planning.dial': {

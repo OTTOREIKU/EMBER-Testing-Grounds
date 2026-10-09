@@ -144,8 +144,8 @@ const sprint = (d, c, r) => d.options.find((o) => o.tags[0] === 'move' && o.fact
   const qb = ask(back.s, back.U, [{ c: 4, r: 1 }, { c: 5, r: 1 }, { c: 6, r: 1 }]);
   check('and keeps them where every Grid of the walk is nearer its own squad than the enemy',
     [AI.tacticianPolicy.choose(qb, view(back.s), new AI.Rng('m')).option, AI.tacticianPolicy.choose(qb, view(back.s), new AI.Rng('m')).reason], ['mine:none', 'mine_kept']);
-  check('with its skill off (`mines`) it lays none, nor do the Brawler and the eager policy; the legal policy may, by lot',
-    [AI.makeTactician({ mines: false }).choose(q, view(x.s), new AI.Rng('m')).option, AI.brawlerPolicy.choose(q, view(x.s), new AI.Rng('m')).option, AI.eagerPolicy.choose(q, view(x.s), new AI.Rng('m')).option],
+  check('with its skill off (`mines`) it lays none, nor do the safe answer and the eager policy; the legal policy may, by lot',
+    [AI.makeTactician({ mines: false }).choose(q, view(x.s), new AI.Rng('m')).option, AI.safePolicy.choose(q, view(x.s), new AI.Rng('m')).option, AI.eagerPolicy.choose(q, view(x.s), new AI.Rng('m')).option],
     ['mine:none', 'mine:none', 'mine:none']);
   x.t.close(); back.t.close();
 }

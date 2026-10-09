@@ -108,18 +108,19 @@ check('the to-do list is not empty, and says what an activation leaves out', [of
 // ---------- R4 and R1: the brain ----------
 const imports = (text) => [...text.matchAll(/^import (type )?[^;]*? from '([^']+)';/gm)].map((m) => `${m[1] ? 'type ' : ''}${m[2]}`);
 {
-  const BRAIN = ['policy.ts', 'legal.ts', 'eager.ts', 'brawler.ts', 'evaluate.ts', 'tactician.ts', 'levels.ts', 'squad.ts', 'features.ts', 'learned.ts', 'secondary.ts', 'geometry.ts', 'fight.ts'];
+  const BRAIN = ['policy.ts', 'legal.ts', 'eager.ts', 'evaluate.ts', 'tactician.ts', 'levels.ts', 'styles.ts', 'squad.ts', 'features.ts', 'learned.ts', 'secondary.ts', 'geometry.ts', 'fight.ts'];
   // A policy may build on another policy and on the price list (evaluate.ts):
   // both are of the brain, and held to the same rules here. The levels
-  // (levels.ts, M9.1) are the Brawler and the Tactician made into easier ones.
+  // (levels.ts, M9.1) and the styles (styles.ts, M19 and M21: the Brawler) are
+  // the Tactician with other skills and weights.
   // The squad's round (squad.ts, M18: the round projected through the seam's
   // own Outlook), the position as numbers (features.ts, M17: the SeatView read
   // into a list) and the learned judge (learned.ts, M17: trees walked over that
   // list) are the Tactician's thinking too, and held to the same rules. So is
   // what a Secondary Task names and which card a style takes (secondary.ts, M20).
   // And the board as a view shows it (geometry.ts) and the answers in the middle of an
-  // attack (fight.ts), every policy's (M21: out of the copy's file).
-  const ALLOWED = new Set(['type ../seat', 'type ./policy', 'type ./rng', './legal', './brawler', './evaluate', 'type ./evaluate', './tactician',
+  // attack (fight.ts), every policy's (M21).
+  const ALLOWED = new Set(['type ../seat', 'type ./policy', 'type ./rng', './legal', './styles', './evaluate', 'type ./evaluate', './tactician',
     './squad', './features', './learned', './secondary', './geometry', './fight']);
   check('the brain is the policies, and every one of them is checked here',
     aiDir.filter((f) => !['driver.ts', 'botcombat.ts', 'botcontest.ts', 'odds.ts', 'rng.ts', 'index.ts'].includes(f)).sort(), [...BRAIN].sort());

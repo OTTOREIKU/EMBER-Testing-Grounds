@@ -85,7 +85,7 @@ const units = [hard, soft, theirHard, theirSoft, drone, dragonfly];
 {
   // WHAT A CARD NAMES (`secName`).
   const on = AI.makeTactician({ secName: true });
-  const plain = AI.makeTactician();
+  const plain = AI.makeTactician({ secName: false });
   const ours = [mechOption(soft), mechOption(hard)];
   const theirs = [mechOption(theirHard), mechOption(theirSoft)];
   const name = (policy, holder, cardOf, options) => {
@@ -113,7 +113,8 @@ const units = [hard, soft, theirHard, theirSoft, drone, dragonfly];
   const S = { ...W, secondary: 1 };
   const worth = (u, s1, s2, w = S) => AI.unitWorth(u, viewOf(units, { secondary: { s1, s2 } }), w);
   const base = (u) => AI.unitWorth(u, viewOf(units), W);
-  check('at `secondary` 0 (as it ships) nothing changes', near(worth(theirSoft, card('bounty-hunt', 'destroy-designated', 4, { target: theirSoft.uid }), null, W), base(theirSoft)), true);
+  const Z = { ...W, secondary: 0 };
+  check('it ships at 1 (measured: 105 of 183 against 90); at 0 nothing changes', [W.secondary, near(worth(theirSoft, card('bounty-hunt', 'destroy-designated', 4, { target: theirSoft.uid }), null, Z), base(theirSoft))], [1, true]);
   check('a BOUNTY named on an enemy Mech: worth the card more to whoever destroys it', near(worth(theirSoft, card('bounty-hunt', 'destroy-designated', 4, { target: theirSoft.uid }), null) - base(theirSoft), 4), true);
   check('THE OTHER SQUAD\'S BEHEAD named on our Mech: worth the card more to keep', near(worth(hard, null, card('decapitation', 'destroy-designated', 5, { target: hard.uid })) - base(hard), 5), true);
   check('and once paid, nothing more', near(worth(hard, null, card('decapitation', 'destroy-designated', 5, { target: hard.uid, paid: 5 })) - base(hard), 0), true);
@@ -130,7 +131,7 @@ const units = [hard, soft, theirHard, theirSoft, drone, dragonfly];
   const v = viewOf(units, { secondary: { s1: test, s2: null } });
   const f = { hit: 1, pen: 0.6, damage: 0.2, destroy: 0.5, kill: 0.1, link: 0, parts: [], pick: null };
   check('A WEAPONS TEST: an attack by its Mech is worth the card for each Part it may destroy (a Drone: each it may destroy); by another Mech, nothing',
-    [AI.testWorth(soft, theirHard, f, v, S), AI.testWorth(soft, drone, f, v, S), AI.testWorth(hard, theirHard, f, v, S), AI.testWorth(soft, theirHard, f, v, W)], [0.5, 0.1, 0, 0]);
+    [AI.testWorth(soft, theirHard, f, v, S), AI.testWorth(soft, drone, f, v, S), AI.testWorth(hard, theirHard, f, v, S), AI.testWorth(soft, theirHard, f, v, Z)], [0.5, 0.1, 0, 0]);
   // WHAT THE CARDS WOULD PAY AS THE GAME ENDS, in the margin.
   const margin = (s1, s2, more = {}) => AI.marginOf(viewOf(units, { secondary: { s1, s2 }, ...more }), S) - AI.marginOf(viewOf(units, more), S);
   const end4 = W.missionFuture ** 4;
@@ -171,13 +172,13 @@ const units = [hard, soft, theirHard, theirSoft, drone, dragonfly];
   // are related to killing enemy mechs rather than objectives since it's built to be more aggressive").
   const cards = ['decapitation', 'bounty-hunt', 'annihilation', 'escort', 'weapons-test', 'disposal-procedure', 'mercy', 'potential-excavation-area'];
   const q = { id: 's', kind: 'setup.secondary', seat: 's1', options: cards.map((c) => ({ id: `secondary:${c}`, label: `Secondary Task: ${c}`, tags: ['secondary'], commands: [{}] })), fallback: 'secondary:decapitation', facts: {} };
-  const hunter = AI.makeBrawler({ hunter: true });
+  const hunter = AI.brawlerPolicy;
   const two = viewOf(units);
   const one = viewOf(units.filter((u) => u.uid !== theirHard.uid));
   check('THE BRAWLER takes a card that pays for the enemy destroyed: Annihilation, which pays for every one',
     [hunter.choose(q, two, rng).option, hunter.choose(q, two, rng).reason], ['secondary:annihilation', 'secondary_hunter']);
   check('against a squad of one Mech, Behead: its Head can only be that Mech', hunter.choose(q, one, rng).option, 'secondary:decapitation');
-  check('the copy (his solo mode plays none) takes the first card offered, as before', AI.brawlerPolicy.choose(q, two, rng).option, 'secondary:decapitation');
+  check('the Ace, no hunter, takes the safe answer: its own choice of card is to be read off the games', AI.tacticianPolicy.choose(q, two, rng).option, 'secondary:decapitation');
   const bounty = viewOf(units, { secondary: { s1: card('bounty-hunt', 'destroy-designated', 4), s2: null } });
   const named = hunter.choose(ask('setup.designate.target', [mechOption(theirHard), mechOption(theirSoft)], { what: 'target', for: 's1', owner: 's2' }), bounty, rng);
   check('and names for its card as the Ace does: its Bounty the enemy Mech easiest to destroy', [named.option, named.reason], [`mech:${theirSoft.uid}`, 'secondary_bounty']);

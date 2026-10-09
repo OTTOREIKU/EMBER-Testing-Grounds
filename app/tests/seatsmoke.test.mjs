@@ -398,7 +398,7 @@ const table = async ({ policies, seed = 5, glue }) => {
   const safe = await staged({ arrange: (x) => { x.at(x.U.Reaper, 0, 6, 0); x.at(x.U.Wolf, 11, 0, 0); x.at(x.U.Cat, 11, 11, 0); for (const u of [x.U.Wolf, x.U.Cat]) u.partStates = { ...u.partStates, leftHand: 'destroyed', rightHand: 'destroyed' }; x.turnOf(x.U.Wolf, 'firing'); x.t.state.script.reactions = [debt(x.U, 'smoke')]; } });
   check('and keeps it where nothing could be done to the unit anyway: the use is not spent on a Screen that hides it from nobody',
     [safe.pick().reason, safe.pick().o.id], ['smoke_kept', 'decline']);
-  check('the policies with no rule for it decline, as they did', [shot.pick(AI.brawlerPolicy).o.id, shot.d.fallback], ['decline', 'decline']);
+  check('a policy with no rule for it declines: the safe answer', [shot.pick(AI.safePolicy).o.id, shot.d.fallback], ['decline', 'decline']);
   const unscreened = AI.makeTactician({ focus: false, screen: false });
   const calm = AI.makeTactician({ focus: false, emergency: false });
   check('and so does the Tactician with that skill switched off (`emergency`: how the play is measured, on against off); the switch for the thrown Grenade (`screen`) is another, and leaves this alone',
@@ -412,7 +412,7 @@ const table = async ({ policies, seed = 5, glue }) => {
     [blows.length, blows.every((b) => b.pen > 0), parry.pick().reason, parry.pick().o.tags.includes('attack'), parry.pick().o.id === best.id], [2, true, 'riposte_by_value', true, true]);
   const reach = await staged({ arrange: (x) => { x.at(x.U.Volcano, 5, 5, 2); x.at(x.U.Wolf, 5, 10, 0); x.turnOf(x.U.Wolf, 'firing'); x.t.state.script.reactions = [debt(x.U, 'riposte')]; } });
   check('and with the attacker out of reach it still ends that Opportunity', [reach.pick().o.id, reach.pick().reason], ['riposte:end', 'riposte_ends_turn']);
-  check('the Brawler, with no rule for it, takes the safe answer, which is the Riposte', [parry.pick(AI.brawlerPolicy).o.id, reach.pick(AI.brawlerPolicy).o.id], ['riposte:050_A', 'riposte:end']);
+  check('a policy with no rule for it takes the safe answer, which is the Riposte', [parry.pick(AI.safePolicy).o.id, reach.pick(AI.safePolicy).o.id], ['riposte:050_A', 'riposte:end']);
   parry.t.close(); reach.t.close();
   // The Screen to give up.
   const thin = (smoke, units) => {

@@ -414,8 +414,8 @@ M.L.setLocalSeat(null);
   })();
   check('THE TACTICIAN ATTACKS A CAMOUFLAGED UNIT THROUGH ITS FREE SCAN, weighed at the odds of both: with nothing else in its sights the designation is the deed it would make where it stands, worth something, and less than the same attack on the unit seen',
     [/in Optical Camouflage: one free Scan first/.test(stalk.does), stalk.now > 0, stalk.now < seenWorth], [true, true, true]);
-  check('with its skill off (`stalk`) it has no such deed, as before this was built; nor does the Brawler, which has no rule for it, make one; the eager policy takes whatever attack it is offered, this one too',
-    [deedOf({ ...SK, stalk: false }).does, [AI.brawlerPolicy, AI.eagerPolicy].map((p) => pick(lone, 's1', p).o.tags.includes('hidden'))], ['', [false, true]]);
+  check('with its skill off (`stalk`) it has no such deed, as before this was built; nor does the safe answer; the eager policy takes whatever attack it is offered, this one too',
+    [deedOf({ ...SK, stalk: false }).does, [AI.safePolicy, AI.eagerPolicy].map((p) => pick(lone, 's1', p).o.tags.includes('hidden'))], ['', [false, true]]);
   const chase = [];
   await lone.t.run({ until: (st) => st.script.opp?.uid !== lone.U.Dune.uid && !st.script.counter && !st.script.combatView, maxSteps: lone.t.steps() + 40,
     onStep: (seat, r) => chase.push(`${seat}:${r.option.tags.includes('hidden') ? 'designation' : r.option.id}:${lone.t.drivers[seat].log.at(-1)?.reason ?? ''}`) });

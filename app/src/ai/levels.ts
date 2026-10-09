@@ -1,14 +1,14 @@
 // THE LEVELS A PLAYER MAY PICK (M9.1; OTTO, 2026-10-03: "Yes difficulty
 // levels"). Each is one policy, and each was measured against the others
 // (AI-OPPONENT-PLAN.md section 12, "M9.1"):
-//   RECRUIT: the Brawler (it attacks what it can reach and walks at what it
-//     cannot), and now and then the answer to a turn drawn by lot from the
+//   RECRUIT: the Brawler (our own aggressive style of the Tactician,
+//     styles.ts), and now and then the answer to a turn drawn by lot from the
 //     legal ones (`blundering`): a player learning the game can win.
 //   VETERAN: the Tactician without its look ahead (`VETERAN_SKILLS`,
 //     `VETERAN_WEIGHTS`): it plays for the mission a turn at a time.
 //   ACE: the Tactician whole.
-import { brawlerPolicy } from './brawler';
 import { legalPolicy } from './legal';
+import { brawlerPolicy } from './styles';
 import type { Choice, Policy } from './policy';
 import type { Rng } from './rng';
 import { makeTactician, type Skills } from './tactician';
@@ -39,15 +39,21 @@ export function blundering(policy: Policy, rate: number, name = `${policy.name}:
   };
 }
 
-// How often the Recruit's turn goes wrong. MEASURED (section 12, M9.1): at
-// 0.25 the Brawler beats it 143 games of 200 (the Recruit wins 50).
-export const RECRUIT_RATE = 0.25;
+// How often the Recruit's turn goes wrong. MEASURED (2026-10-09, M21: the
+// Recruit is made of our own Brawler, far stronger than the copy it replaced)
+// by the two yardsticks the copy's Recruit was set by at 0.25: against a player
+// who attacks whatever is in reach (eager, the copied games, 200 a rate) ours
+// won 128 at 0.40, 104 at 0.55, 56 at 0.70 (the copy's 89); against the
+// Veteran (random squads, 200 a rate) ours won 66 at 0.25, 42 at 0.40, 26 at
+// 0.55 (the copy's about 11 in 100). At 0.60, played by both: eager 99 to its
+// 96, the Veteran 180 of 200: where the copy's Recruit stood on both.
+export const RECRUIT_RATE = 0.6;
 export const recruitPolicy: Policy = blundering(brawlerPolicy, RECRUIT_RATE, 'recruit');
 
 // The Veteran: the Tactician that does not look ahead to the other squad's
 // reply (`exposure` off): it plays the best turn it sees and does not ask what
-// standing there will cost it. MEASURED (section 12, M9.1): it beats the
-// Brawler 152 games of 200 and the Ace beats it 179 of 200. Two milder
+// standing there will cost it. MEASURED (section 12, M9.1): the Ace beats it
+// 179 of 200. Two milder
 // handicaps were measured and set aside, too close to the Ace to be a level of
 // their own: no worth on its next turn (the Ace 114 of 200), and the reply
 // weighed at about half with that (the Ace 112 of 200).

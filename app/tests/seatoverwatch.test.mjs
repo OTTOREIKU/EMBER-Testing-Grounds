@@ -189,8 +189,8 @@ M.L.setLocalSeat(null);
   check('the call is worth the shot it buys, as the Mech that makes it weighs that shot, less the KK9 (a Drone with no Point Value, which costs nothing by the price list)',
     [Math.abs(stay.now - bought) < 1e-9, AI.unitWorth(viewOf(y.s, 's1').units.find((u) => u.uid === y.U.KK9.uid), viewOf(y.s, 's1'), AI.TACTICIAN)], [true, 0]);
   const off = AI.weighed(d, viewOf(y.s, 's1'), { ...SK, overwatch: false }).find((p) => p.how === 'stay');
-  check('with its skill off (`overwatch`) it is no deed; and the policies with no rule for it never call one',
-    [/Overwatch Strike/.test(off.does), [AI.brawlerPolicy, AI.eagerPolicy].map((p) => d.options.find((o) => o.id === p.choose(d, viewOf(y.s, 's1'), new AI.Rng('x')).option)?.tags[0] === 'overwatch')], [false, [false, false]]);
+  check('with its skill off (`overwatch`) it is no deed; and neither the safe answer nor the eager policy (no rule for it) calls one',
+    [/Overwatch Strike/.test(off.does), [AI.safePolicy, AI.eagerPolicy].map((p) => d.options.find((o) => o.id === p.choose(d, viewOf(y.s, 's1'), new AI.Rng('x')).option)?.tags[0] === 'overwatch')], [false, [false, false]]);
   // Of the two Mechs, the one whose shot is worth more is the one it calls on.
   const shots = calls(d).map((o) => {
     const q = o.then?.(['reaction']);

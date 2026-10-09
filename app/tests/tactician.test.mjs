@@ -875,8 +875,6 @@ const plain = only({});
   const c = plain.choose(d, v, rng);
   check('where a hit lands is chosen by what the Tactician prices each ending at: a Part of the enemy Commander is a third of the way to the Commander, so a sure Part outweighs three chances in ten of the kill',
     [c.option, c.reason, gainOf(sure, lead, v, W) > gainOf(kill, lead, v, W)], ['part.pick:leftHand', 'hit_location', true]);
-  check('by the Brawler\'s own sum the same choice goes the other way: 150 for the kill and 50 for the Part with it, against 50 for a Part',
-    [brawlerPolicy.choose(d, v, rng).option, 200 * 0.3 > 50 * 0.9], ['part.pick:torso', true]);
 }
 
 {
@@ -1073,30 +1071,6 @@ function seated(s, seat, policy) {
     }
   }
   check('and it is a Grid neither enemy Mech could attack it in, by the engine\'s own word on the table the move leaves: from where each stands, and after its Maneuver', threats, []);
-  seat.close();
-}
-{
-  // The same question put to the Brawler, to say what is different.
-  const table = tableAtRoundOne(M, data, alley);
-  const s = clone(table.state);
-  const U = Object.fromEntries(s.tokens.map((t) => [short(t), t]));
-  const at = (t, c, r, f) => { t.col = c * 3; t.row = r * 3; t.facing = f; };
-  at(U.Mire, 4, 2, 2); at(U.Dune, 4, 1, 2); at(U['Wild Cat'], 8, 9, 0); at(U.Porcupine, 7, 9, 0); at(U.Raven, 7, 10, 0); at(U.Tarantula, 9, 9, 0);
-  const seat = seated(s, 's2', brawlerPolicy);
-  const first = seat.turn();
-  seat.take(first.picked);
-  const move = seat.turn();
-  const mover = s.tokens.find((t) => t.uid === move.d.unit);
-  const landed = M.G.tableAfter(data, s, move.picked.commands);
-  const threats = [];
-  for (const mech of [U.Mire, U.Dune]) {
-    for (const timing of ['firing', 'melee', 'projectile']) {
-      const turn = M.SEAT.owedIfActivated(data, landed, mech.uid, timing, { only: [`strike:${mover.uid}`, `reach:${mover.uid}`] });
-      if (turn?.decision?.options.length) threats.push(mech.label);
-    }
-  }
-  check('  (the Brawler, asked the same, walks its Drone to where an enemy Mech can attack it: "contact before occupation")',
-    [move.c.reason, [...new Set(threats)].length > 0], ['contact_before_occupation', true]);
   seat.close();
 }
 {

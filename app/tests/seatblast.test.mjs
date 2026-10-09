@@ -903,8 +903,8 @@ const table = async ({ policies, dice, seed = 5 }) => {
   check('A BLAST THAT TAKES ONE UNIT, with its own Mech and an enemy Drone to choose between: the Tactician takes the enemy',
     [choice.d.kind, choice.d.options.map((o) => o.facts.targetUid), choice.pick(tact).o.facts.targetUid, choice.pick(tact).reason],
     ['blast.resolve', [choice.U.Cat.uid, choice.made.foe.uid], choice.made.foe.uid, 'blast_by_value']);
-  check('a policy with no rule for it takes the safe answer, which is the first on offer: here its own Mech (the Brawler\'s to get wrong, and written down as such)',
-    [choice.pick(AI.brawlerPolicy).o.facts.targetUid, choice.d.fallback], [choice.U.Cat.uid, `blast:${choice.made.p.uid}:${choice.U.Cat.uid}`]);
+  check('a policy with no rule for it takes the safe answer, which is the first on offer: here its own Mech',
+    [choice.pick(AI.safePolicy).o.facts.targetUid, choice.d.fallback], [choice.U.Cat.uid, `blast:${choice.made.p.uid}:${choice.U.Cat.uid}`]);
   choice.t.close();
 
   // A Shrapnel Shell: made when it is worth making.

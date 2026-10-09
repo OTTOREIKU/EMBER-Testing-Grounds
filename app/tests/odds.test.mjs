@@ -648,8 +648,8 @@ const reading = (over) => ({
   const anyLater = new InHand({ ...mech, surplus: ['Scatter-shot'], hand: { ...HAND, step: 'part', round: 1, carried: { heavy: 1, light: 0 }, original: 'torso', die: 'any' } });
   check('an ANY on the Part Die, kept, is the attacker\'s to place: on the Part worth most, in the first round and in a Surplus round',
     [anyKept.dieKept()?.pick, near(anyKept.dieKept()?.destroy, 0.5), anyLater.dieKept()?.pick, near(anyLater.dieKept()?.destroy, 1)], ['chasis', true, 'chasis', true]);
-  check('what a forecast is worth is the Brawler\'s sum: 150 a kill, 50 a Part destroyed, 25 one Damaged',
-    [WORTH, worthOfForecast({ kill: 0.5, destroy: 0.5, damage: 0.2 })], [{ kill: 150, destroy: 50, damage: 25 }, 75 + 25 + 5]);
+  check('what a forecast is worth, counted in Damaged Parts: 6 a kill, 2 a Part destroyed, 1 one Damaged',
+    [WORTH, worthOfForecast({ kill: 0.5, destroy: 0.5, damage: 0.2 })], [{ kill: 6, destroy: 2, damage: 1 }, 3 + 1 + 0.2]);
 }
 
 // ---------- 3. played ----------

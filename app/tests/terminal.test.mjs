@@ -270,7 +270,7 @@ M.L.setLocalSeat(null);
   for (const seat of ['s1', 's2']) {
     for (const seed of [1, 2, 3]) {
       const other = seat === 's1' ? 's2' : 's1';
-      const t = botTable(M, data, scenario, { seed, policies: { [seat]: AI.makeTactician({ focus: false }), [other]: AI.brawlerPolicy } });
+      const t = botTable(M, data, scenario, { seed, policies: { [seat]: AI.makeTactician({ focus: false }), [other]: AI.eagerPolicy } });
       let end;
       try { end = await t.run({ maxSteps: 9000 }); } catch (err) { end = { kind: 'threw', why: err.message }; } finally { t.close(); }
       tally.games += 1;
@@ -281,9 +281,9 @@ M.L.setLocalSeat(null);
       tally.access += t.sent.filter((x) => x.seat === seat && x.kind === 'accessTerminal').length;
     }
   }
-  check('six games of the copied squads on a Terminals mission, the Tactician in each seat against the Brawler: every one ends as a game should, nothing refused',
+  check('six games of the copied squads on a Terminals mission, the Tactician in each seat against the eager policy (which fights and plays no Task): every one ends as a game should, nothing refused',
     [tally.over, tally.games, tally.refused, tally.broken], [6, 6, 0, []]);
-  check('and the Tactician plays the Task: it outscores the Brawler over them', tally.mine > tally.theirs, true);
+  check('and the Tactician plays the Task: it outscores the eager policy over them', tally.mine > tally.theirs, true);
   console.log(`       Victory Points ${tally.mine} to ${tally.theirs}; ${tally.access} Terminals accessed from afar by the Tactician`);
 }
 

@@ -177,9 +177,9 @@ M.L.setLocalSeat(null);
     [steps.some((y) => y === `s1:grant:009_A:${x.U.Wall.uid}:grant_by_value`), steps.some((y) => /^s1:attack:/.test(y)), x.U.Wall.link <= 3, x.t.refused], [true, true, true, []]);
   x.t.close();
   const off = await table(({ U, at, turnOf }) => { at(U.Echo, 0, 0, 2); at(U.Wall, 2, 2, 2); at(U.Dune, 0, 1, 2); at(U.Wolf, 2, 7, 0); turnOf(U.Echo, 'tactical'); });
-  check('with its skill off (`grant`) it is no deed; and the policies with no rule for it never take it',
+  check('with its skill off (`grant`) it is no deed; and neither the safe answer nor the eager policy (no rule for it) takes it',
     [/Extra Action Opportunity/.test(AI.weighed(off.d, viewOf(off.s, 's1'), { ...SK, grant: false }).find((p) => p.how === 'stay').does),
-      [AI.brawlerPolicy, AI.eagerPolicy].map((p) => off.d.options.find((o) => o.id === p.choose(off.d, viewOf(off.s, 's1'), new AI.Rng('x')).option)?.tags[0] === 'grant')], [false, [false, false]]);
+      [AI.safePolicy, AI.eagerPolicy].map((p) => off.d.options.find((o) => o.id === p.choose(off.d, viewOf(off.s, 's1'), new AI.Rng('x')).option)?.tags[0] === 'grant')], [false, [false, false]]);
   off.t.close();
 }
 

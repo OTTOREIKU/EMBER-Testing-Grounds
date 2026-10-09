@@ -132,8 +132,8 @@ const closeAll = (...xs) => { for (const x of xs) x.t.close(); };
     [mode.option, mode.reason, Math.abs(mode.score - (opened.worth - plain.worth)) < 1e-6], ['tick:attack-mode', 'tick_by_value', true]);
   crisis.t.close();
   const off = AI.makeTactician({ ticks: false });
-  check('with its skill off (`ticks`) it buys none, nor do the Brawler and the eager policy, which know nothing of it',
-    [off.choose(w.d, view, new AI.Rng('t')).option, AI.brawlerPolicy.choose(w.d, view, new AI.Rng('t')).option, AI.eagerPolicy.choose(w.d, view, new AI.Rng('t')).option].map((x) => x.startsWith('tick')),
+  check('with its skill off (`ticks`) it buys none, nor do the safe answer and the eager policy, which know nothing of it',
+    [off.choose(w.d, view, new AI.Rng('t')).option, AI.safePolicy.choose(w.d, view, new AI.Rng('t')).option, AI.eagerPolicy.choose(w.d, view, new AI.Rng('t')).option].map((x) => x.startsWith('tick')),
     [false, false, false]);
   closeAll(w, far);
 }

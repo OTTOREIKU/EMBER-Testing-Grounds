@@ -1,10 +1,9 @@
 // WHAT THINGS ARE WORTH to the Tactician (AI-OPPONENT-PLAN.md, section 6).
 //
-// One currency: Victory Points. The Brawler weighs an attack by what it
-// destroys and nothing else, in numbers of its own (150, 50, 25), so it can
-// win every fight on a board and lose the game on it. Here a zone held, a
-// Part destroyed and a Commander lost are the same kind of number, and an
-// answer is chosen by adding them up.
+// One currency: Victory Points. A fighter that weighs an attack by what it
+// destroys and nothing else can win every fight on a board and lose the game
+// on it. Here a zone held, a Part destroyed and a Commander lost are the same
+// kind of number, and an answer is chosen by adding them up.
 //
 //   - A Victory Point is 1.
 //   - A unit is worth what its cards cost, at a rate (`material`): the points
@@ -620,7 +619,9 @@ export interface Weights {
   // Planned Obsolescence's own Mech (its loss pays its own squad) and for an enemy Mech to a squad playing Mercy while
   // the card can still be had. An attack by a Weapons Test's Mech is worth the Parts and Drones it may destroy
   // (`gainOf`). What a card would pay as the game ends (an Escort's Mech standing, Mercy kept, an Excavation Site held
-  // alone) is counted in the margin, as the Main Task's zones are (`marginOf`). At 0 nothing.
+  // alone) is counted in the margin, as the Main Task's zones are (`marginOf`). At 0 nothing. MEASURED at 1 with
+  // `secName` (tactician.ts): 105 of 183 against 90 (p 0.04). ADOPTED at 1. A game without Secondary Tasks reads
+  // nothing of it.
   secondary: number;
 }
 
@@ -728,7 +729,7 @@ export const TACTICIAN: Weights = {
   squadMargin: 0.5,
   learned: 0,
   hiddenWorth: 0,
-  secondary: 0,
+  secondary: 1,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way

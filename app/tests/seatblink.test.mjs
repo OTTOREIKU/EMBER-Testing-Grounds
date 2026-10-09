@@ -126,9 +126,9 @@ const run = (s, commands) => commands.map((cmd) => { const v = M.C.check(data, s
   near.t.close();
   const off = AI.makeTactician({ blink: false });
   const rowsOff = AI.weighed(x.d, view, { blink: false });
-  check('with its skill off (`blink`) no plan is a Blink, and the Brawler and the eager policy never take one; the legal policy may, by lot',
+  check('with its skill off (`blink`) no plan is a Blink, and the safe answer and the eager policy never take one; the legal policy may, by lot',
     [off.choose(x.d, view, new AI.Rng('t')).option.startsWith('blink'), rowsOff.some((r) => /places exchanged/.test(r.label)),
-      AI.brawlerPolicy.choose(x.d, view, new AI.Rng('t')).option.startsWith('blink'), AI.eagerPolicy.choose(x.d, view, new AI.Rng('t')).option.startsWith('blink')],
+      AI.safePolicy.choose(x.d, view, new AI.Rng('t')).option.startsWith('blink'), AI.eagerPolicy.choose(x.d, view, new AI.Rng('t')).option.startsWith('blink')],
     [false, false, false, false]);
   x.t.close();
 }

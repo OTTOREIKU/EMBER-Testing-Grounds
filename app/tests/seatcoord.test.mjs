@@ -445,9 +445,9 @@ M.L.setLocalSeat(null);
   const off = await staged('g', fire, { s1: AI.makeTactician({ ...SK, coordinate: false }, PIN), s2: AI.eagerPolicy });
   const plainSteps = [];
   await off.t.run({ until: over(off.U.Tracer), maxSteps: off.t.steps() + 60, onStep: told(off, plainSteps) });
-  check('with its skill off (`coordinate`) the same Opportunity hands out nothing: the Tokens stay on the Mech and no Drone acts; and the policies with no rule for it never take one',
+  check('with its skill off (`coordinate`) the same Opportunity hands out nothing: the Tokens stay on the Mech and no Drone acts; and neither the safe answer nor the eager policy (no rule for it) takes one',
     [plainSteps.some((y) => /^s1:coordinate:/.test(y)), plainSteps.some((y) => y.startsWith('s1:attack:')), held(off.U.Tracer), [off.U.Eagle, off.U.Ram, off.U.Zealot].map(borne), off.t.refused,
-      [AI.brawlerPolicy, AI.eagerPolicy].map((p) => d.options.find((o) => o.id === p.choose(d, view, new AI.Rng('x')).option).tags[0] === 'coordinate')],
+      [AI.safePolicy, AI.eagerPolicy].map((p) => d.options.find((o) => o.id === p.choose(d, view, new AI.Rng('x')).option).tags[0] === 'coordinate')],
     [false, true, 4, [0, 0, 0], [], [false, false]]);
   off.t.close();
 

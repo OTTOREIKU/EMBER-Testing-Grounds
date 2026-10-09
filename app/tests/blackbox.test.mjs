@@ -731,7 +731,7 @@ M.L.setLocalSeat(null);
     for (const seat of ['s1', 's2']) {
       for (const seed of [1, 2]) {
         const other = seat === 's1' ? 's2' : 's1';
-        const t = botTable(M, data, scenario, { seed, policies: { [seat]: AI.makeTactician({ focus: false }), [other]: AI.brawlerPolicy } });
+        const t = botTable(M, data, scenario, { seed, policies: { [seat]: AI.makeTactician({ focus: false }), [other]: AI.eagerPolicy } });
         let end;
         try { end = await t.run({ maxSteps: 9000 }); } catch (err) { end = { kind: 'threw', why: err.message }; } finally { t.close(); }
         tally.games += 1;
@@ -748,9 +748,9 @@ M.L.setLocalSeat(null);
       }
     }
   }
-  check('eight games of the copied squads on two Black Box missions, the Tactician in each seat against the Brawler: every one ends as a game should, nothing refused, every Box in one place',
+  check('eight games of the copied squads on two Black Box missions, the Tactician in each seat against the eager policy (which fights and plays no Task): every one ends as a game should, nothing refused, every Box in one place',
     [tally.over, tally.games, tally.refused, tally.broken], [8, 8, 0, []]);
-  check('and the Tactician plays the Task: it picks Boxes up and is paid for them on BOTH missions (on Asset Preservation only for one carried into Echo), where the Brawler is paid nothing',
+  check('and the Tactician plays the Task: it picks Boxes up and is paid for them on BOTH missions (on Asset Preservation only for one carried into Echo), where the eager policy is paid nothing',
     [tally.taken > 0, tally.paid[keyGame.id] > 0, tally.paid[assetGame.id] > 0, tally.theirs], [true, true, true, 0]);
   console.log(`       Victory Points ${tally.mine} to ${tally.theirs} (Key Facility ${tally.paid[keyGame.id]}, Asset Preservation ${tally.paid[assetGame.id]}); ${tally.taken} Boxes picked up by the Tactician, ${tally.dropped} knocked loose and put down`);
 }

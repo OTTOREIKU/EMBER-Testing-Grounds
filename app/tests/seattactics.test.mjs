@@ -154,8 +154,9 @@ const FAR = { Dune: [5, 14, 0], Sand: [9, 14, 0], Porcupine: [0, 0, 2] };
   x.t.close();
 }
 {
-  // Let go by: asked once.
-  const x = await table({ Wolf: [5, 4, 2], Cat: [8, 4, 2], ...FAR }, { policies: AI.brawlerPolicy });
+  // Let go by: asked once. (The safe answer: since 2026-10-09, M21, the Brawler is a style of the Tactician, with
+  // its rules for the cards.)
+  const x = await table({ Wolf: [5, 4, 2], Cat: [8, 4, 2], ...FAR }, { policies: AI.safePolicy });
   const d = x.action('Wolf', { acted: ['Cat'] });
   x.send(d.options.find((o) => o.id === 'end').commands);
   const run = x.t.drivers.s1.pending();
@@ -207,7 +208,7 @@ const FAR = { Dune: [5, 14, 0], Sand: [9, 14, 0], Porcupine: [0, 0, 2] };
 }
 {
   // Let go by in the End Phase: asked once, and the steps go on.
-  const x = await table({ Wolf: [5, 4, 2], Cat: [8, 4, 2], ...FAR }, { policies: AI.brawlerPolicy });
+  const x = await table({ Wolf: [5, 4, 2], Cat: [8, 4, 2], ...FAR }, { policies: AI.safePolicy });
   x.U.Wolf.link = M.U.maxLink(data, x.U.Wolf) - 1;
   x.end();
   const step = await x.t.drivers.s1.step();
@@ -454,8 +455,22 @@ M.L.setLocalSeat(null);
       const t = botTable(M, data, games, { seed, policies: { s1: p, s2: policy === 'player' ? eager : AI.tacticianPolicy }, glue: M.HUD.glueAfter });
       t.state.tactics = { s1: [...ALL], s2: [...ALL] };
       t.watch((cmd) => { if (cmd.kind === 'playTactic') tally.played[cmd.cardId] = (tally.played[cmd.cardId] ?? 0) + 1; });
+      // Remote Restart is played only for a Mech in Shutdown as an End Phase begins, in a round its squad has played
+      // no other card (one a round, 5.4.2), and the Tactician keeps its last Link (2026-10-09: none of sixteen such
+      // games had one): in the player's second game the Cat goes into Shutdown, as a Mech that spent its last Link
+      // would, in the first round whose Automatic Phase comes with no card of the player's played, and the game goes
+      // on to its end.
+      const shut = policy === 'player' && seed === 2;
+      const quiet = (st) => !ALL.some((id) => M.TAC.tacticUsedRound(st, 's1', id) === st.round.n);
+      const cat = (st) => st.tokens.find((x) => x.side === 's1' && x.label === 'Cat' && M.L.alive(x));
       let end;
-      try { end = await t.run({ maxSteps: 16000 }); } catch (err) { end = { kind: 'threw', why: `${err?.message ?? err}`.split('\n')[0] }; } finally { t.close(); }
+      try {
+        if (shut) {
+          end = await t.run({ maxSteps: 16000, until: (st) => st.round.phase >= M.TY.PHASES.indexOf('Automatic') && st.round.phase < M.TY.PHASES.indexOf('End') && quiet(st) && !!cat(st) });
+          if (end.kind === 'paused') Object.assign(cat(t.state), { stance: 'shutdown', link: 0 });
+        }
+        if (!shut || end.kind === 'paused') end = await t.run({ maxSteps: 16000 });
+      } catch (err) { end = { kind: 'threw', why: `${err?.message ?? err}`.split('\n')[0] }; } finally { t.close(); }
       tally.games += 1;
       if (end.kind === 'over') tally.over += 1; else tally.broken.push(`${policy} ${seed}: ${end.kind} ${end.why ?? ''} ${end.decision ?? ''}`);
       tally.refused += t.refused.length;

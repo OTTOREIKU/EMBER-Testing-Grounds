@@ -390,9 +390,9 @@ M.L.setLocalSeat(null);
   check('Link restored is worth the weight `link` for each Link: Strengthen Link on two Mechs that are short is worth twice what it is on one',
     [/Strengthen Link/.test(linked(one).does), Math.abs(linked(one).now - AI.TACTICIAN.link) < 1e-9, Math.abs(linked(two).now - 2 * AI.TACTICIAN.link) < 1e-9], [true, true, true]);
   one.t.close(); two.t.close();
-  check('with the skill off (`support`) it does none of it; and the policies with no rule for these Actions never take one',
+  check('with the skill off (`support`) it does none of it; and neither the safe answer nor the eager policy (no rule for these Actions) takes one',
     [AI.makeTactician({ focus: false, support: false }).choose(idle.d, viewOf(idle.s, 's1'), new AI.Rng('x')).option.startsWith('repair') || false,
-      [AI.brawlerPolicy, AI.eagerPolicy].map((p) => SETTLED.includes(idle.d.options.find((o) => o.id === p.choose(idle.d, viewOf(idle.s, 's1'), new AI.Rng('x')).option).tags[0]))],
+      [AI.safePolicy, AI.eagerPolicy].map((p) => SETTLED.includes(idle.d.options.find((o) => o.id === p.choose(idle.d, viewOf(idle.s, 's1'), new AI.Rng('x')).option).tags[0]))],
     [false, [false, false]]);
   idle.t.close();
 

@@ -48,7 +48,7 @@ const AI = M.AI;
     [AI.recruitPolicy.name, AI.RECRUIT_RATE > 0 && AI.RECRUIT_RATE < 1, AI.veteranPolicy.name, typeof AI.veteranPolicy.ponder, Object.keys(AI.VETERAN_WEIGHTS).length + Object.keys(AI.VETERAN_SKILLS).length > 0],
     ['recruit', true, 'veteran', 'function', true]);
   check('the Veteran\'s handicap is the one measured: no look ahead to the other squad\'s reply, and nothing else changed',
-    [AI.VETERAN_SKILLS, AI.VETERAN_WEIGHTS, AI.RECRUIT_RATE], [{ exposure: false }, {}, 0.25]);
+    [AI.VETERAN_SKILLS, AI.VETERAN_WEIGHTS, AI.RECRUIT_RATE], [{ exposure: false }, {}, 0.6]);
 }
 
 // ---------- played ----------

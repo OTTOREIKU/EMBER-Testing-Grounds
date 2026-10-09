@@ -10,7 +10,9 @@
 // as the Brawler does, and the Drag (a Grid, then a facing) was not offered to
 // a seat at all. Staged here on the real engine, in the real combat window,
 // with the dice fixed: a hit on a Part with a Discard Card is a Disarm, a hit
-// on the Torso a Drag, pulled straight in with its back to the attacker; the
+// on the Torso a Drag, its back to the attacker, out of the zone the Main Task
+// scores where one is on offer (since 2026-10-09, the Tactician's own answer;
+// the Rifleman stands in Echo, F7), else pulled straight in; the
 // window is not closed while what a hit CAUSES is still to be taken; and the
 // effects a hit MAY have (the Lash's Immobilized Token) are taken too.
 import { botTable, loadEngine } from './_engine.mjs';
@@ -130,14 +132,14 @@ const ace = AI.tacticianPolicy;
 // ---------- a hit on the Torso: no Discard Card, so the Drag ----------
 {
   const r = await hook('Grappler', '050_A', brawler, hitOn(0));
-  check('the Brawler\'s Grappling Hook on the Torso pulls the Rifleman straight in: to the Grid beside the Grappler on its side, its back turned to it, and nothing is refused',
-    [r.end, r.refused, r.moved, r.grid, r.disarmed], ['paused', [], [[5, 5, 2]], [5, 5, 2], []]);
+  check('the Brawler\'s Grappling Hook on the Torso drags the Rifleman out of Echo: to E6 beside the Grappler, its back turned to it, and nothing is refused',
+    [r.end, r.refused, r.moved, r.grid, r.disarmed], ['paused', [], [[4, 5, 3]], [4, 5, 3], []]);
   check('and its last screen did not offer Done while the Drag was still to be made',
     [r.asked.length >= 1, r.asked[0]?.ids.includes('finish.done'), r.asked[0]?.ids.some((id) => id.startsWith('finish.drag:')), r.asked.at(-1)?.ids], [true, false, true, ['finish.done']]);
 }
 {
   const r = await hook('Grappler', '050_A', ace, hitOn(0));
-  check('so does the Ace\'s (it answers that question as the Brawler does)', [r.end, r.refused, r.moved, r.grid], ['paused', [], [[5, 5, 2]], [5, 5, 2]]);
+  check('so does the Ace\'s (the Brawler is a style of it: one answer)', [r.end, r.refused, r.moved, r.grid], ['paused', [], [[4, 5, 3]], [4, 5, 3]]);
 }
 
 // ---------- a hit on the Rifle: it has a Discard Card, so the Disarm ----------
@@ -152,7 +154,7 @@ const ace = AI.tacticianPolicy;
   // refused it), and the Drag is what the hit causes.
   const r = await hook('Grappler', '050_A', brawler, hitOn(3));
   check('a hit that destroys the Rifle offers no Disarm: the Rifleman is Dragged instead, and nothing is refused',
-    [r.end, r.refused, r.asked[0]?.ids.includes('finish.disarm'), r.disarmed, r.moved], ['paused', [], false, [], [[5, 5, 2]]]);
+    [r.end, r.refused, r.asked[0]?.ids.includes('finish.disarm'), r.disarmed, r.moved], ['paused', [], false, [], [[4, 5, 3]]]);
 }
 
 // ---------- what a hit MAY do is taken too ----------

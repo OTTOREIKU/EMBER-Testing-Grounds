@@ -157,10 +157,14 @@ const steers = (d) => (d?.options ?? []).filter((o) => o.tags.includes('control'
 // ---------- whole games ----------
 // The Dancer in whole games, five policies; and a seat that makes The Red
 // Shoes whenever it is offered and steers by lot (the Tactician otherwise), so
-// that the steering runs through the engine to the game's end.
+// that the steering runs through the engine to the game's end. The Red Shoes
+// is a Tactic, made on the Tactical Timing, so that seat dials the Dancer
+// Tactical (the Tactician dials it for what it does, 2026-10-09).
 const shoes = {
   name: 'shoes',
   choose(d, view, rng) {
+    const dancer = d.kind === 'planning.dial' && view.units.find((u) => u.uid === d.unit)?.label === 'Dancer';
+    if (dancer && d.options.some((o) => o.id === 'dial:tactical')) return { option: 'dial:tactical', why: 'The Red Shoes is made on the Tactical dial' };
     const ea = d.options.filter((o) => o.facts?.actionId === 'TM35NA_B' && o.tags[0] === 'electronic');
     if (ea.length) return { option: ea[Math.floor(rng.next() * ea.length)].id, why: 'The Red Shoes whenever it may' };
     const steer = d.options.filter((o) => o.tags.includes('control'));

@@ -167,9 +167,12 @@ interface Case {
 }
 
 export interface Weights { kill: number; destroy: number; damage: number }
-// The worth of an ending to the attacker when no one says otherwise: the
-// Brawler's (plan section 5).
-export const WORTH: Weights = { kill: 150, destroy: 50, damage: 25 };
+// The worth of an ending to the attacker when no one says otherwise, counted in
+// Damaged Parts: a Part destroyed is two (a Damaged Part is half way to
+// destroyed, as evaluate.ts `damaged` has it), and a unit destroyed is three
+// Parts' worth (a Mech of five Parts leaves the board once it is down to two,
+// Integrity Loss). Only ever compared, one ending against another.
+export const WORTH: Weights = { kill: 6, destroy: 2, damage: 1 };
 
 const changesOf = (end: string): [string, string][] =>
   (end === 'none' || end === 'hit' ? [] : end.split('|').map((x) => x.split('>') as [string, string]));

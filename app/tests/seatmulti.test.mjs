@@ -199,8 +199,8 @@ const watcher = {
   check('THE TACTICIAN TAKES THE ANSWER WORTH MOST: each share weighed as the window\'s other questions weigh a shot, Begin among them; here a split',
     [c.option, c.reason, Math.abs(c.score - worth(best)) < 1e-9, best.tags.includes('split')], [best.id, 'split_by_value', true, true]);
   const pick = (p) => p.choose(d, view, new AI.Rng('p')).option;
-  check('with its skill off (`spread`) it begins with the whole pool, and so do the Brawler and the eager policy; the legal policy draws among them',
-    [pick(AI.makeTactician({ focus: false, spread: false })), pick(AI.brawlerPolicy), pick(AI.eagerPolicy), d.options.some((o) => o.id === pick(AI.legalPolicy))], ['split.begin', 'split.begin', 'split.begin', true]);
+  check('with its skill off (`spread`) it begins with the whole pool, and so do the safe answer and the eager policy; the legal policy draws among them',
+    [pick(AI.makeTactician({ focus: false, spread: false })), pick(AI.safePolicy), pick(AI.eagerPolicy), d.options.some((o) => o.id === pick(AI.legalPolicy))], ['split.begin', 'split.begin', 'split.begin', true]);
   live = null;
   t.close();
 }
