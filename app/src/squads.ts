@@ -1,5 +1,5 @@
 import type { GameData } from './data';
-import { actionIconUrl, cardName, FACTION_LABEL, mechArtLayers, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName } from './data';
+import { actionIconUrl, cardName, FACTION_LABEL, mechArtLayers, missionImageUrl, secondaryImageUrl, setSquadNames, SQUAD_ORDER, squadLabel, squadName, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName } from './data';
 import { canSpendCommand, squadPoints } from './units';
 import { inspectOnHover as inspectBase, linkMechanics as linkBase, type InspectInfo } from './inspector';
 
@@ -93,6 +93,11 @@ export class SquadTracker {
   private root: HTMLElement;
   private state: GameState | null = null;
   private selectedUid: number | null = null;
+  // Which squad the tab shows (OTTO, 2026-10-10: the second squad was a long scroll
+  // down): the switch's, or the squad of a unit just selected on the board. A seat's
+  // own squad first in a room, squad 1 at a table.
+  private shown: Side | null = null;
+  private followed: number | null = null;
   private lastNameClick: { uid: number; at: number } | null = null;
   private renaming = false;
 
@@ -126,7 +131,32 @@ export class SquadTracker {
   update(state: GameState, selectedUid: number | null): void {
     this.state = state;
     this.selectedUid = selectedUid;
+    // A unit newly selected shows its squad, so its card is never on the hidden side.
+    if (selectedUid !== null && selectedUid !== this.followed) {
+      const t = state.tokens.find((x) => x.uid === selectedUid);
+      if (t) this.shown = t.side;
+    }
+    this.followed = selectedUid;
     this.render();
+  }
+
+  // Two buttons side by side at the top of the tab, the one shown tinted in its
+  // side's colour (styles.css .squad-switch).
+  private squadSwitch(shown: Side): HTMLElement {
+    const sw = document.createElement('div');
+    sw.className = 'squad-switch';
+    for (const side of SQUAD_ORDER) {
+      const b = document.createElement('button');
+      b.className = `squad-switch-btn side-${side}${side === shown ? ' on' : ''}`;
+      b.textContent = squadLabel(side);
+      b.setAttribute('aria-pressed', String(side === shown));
+      b.addEventListener('click', () => {
+        this.shown = side;
+        this.render();
+      });
+      sw.appendChild(b);
+    }
+    return sw;
   }
 
   private orderPanel(): HTMLElement | null {
@@ -190,11 +220,14 @@ export class SquadTracker {
     if (!this.state) return;
     closeDialPopout();
     this.root.replaceChildren();
+    const shown: Side = this.shown ?? getLocalSeat() ?? 's1';
+    this.root.appendChild(this.squadSwitch(shown));
     const taskBar = this.taskBar();
     if (taskBar) this.root.appendChild(taskBar);
     const order = this.orderPanel();
     if (order) this.root.appendChild(order);
     for (const side of ['s1', 's2'] as const) {
+      if (side !== shown) continue;
       const tokens = this.state.tokens.filter((t) => t.side === side);
       const sec = document.createElement('div');
       sec.className = `squad squad-${side}`;

@@ -47,13 +47,8 @@
 
   --sq-s1: var(--accent);
   --sq-s2: var(--accent);
-  /* A SIDE'S colour in every match, whatever its faction: squad 1 orange, squad 2
-     teal (OTTO, 2026-10-09: two RDL squads both outlined red could not be told
-     apart). Clear of every faction hue, of the gold accent and of the board's
-     green containers, and apart for colour-blind eyes. The faction stays as the
-     faint tint above: a token's fill, its squad badge, the squad cards. */
-  --side-s1: #f47a2a;
-  --side-s2: #1cb5b0;
+  /* A side's colour (ui.css --side-s1/--side-s2, set there once for every page),
+     by the short names the combat window reads. */
   --s1: var(--side-s1);
   --s2: var(--side-s2);
   --blue: #65a2d8;
@@ -1410,16 +1405,9 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 .token.pending { opacity: 0.6; }
 .token.pending .token-base { stroke-dasharray: 5 3; }
 .token-facing { stroke: #fff; stroke-width: 1.5; stroke-linejoin: round; paint-order: stroke; }
-.token-squad-dot { fill: #11151a; stroke: #fff; stroke-width: 1.2; opacity: 0.92; }
-.side-s1 .token-squad-dot { stroke: var(--sq-s1); }
-.side-s2 .token-squad-dot { stroke: var(--sq-s2); }
-.token-squad-n {
-  font-family: var(--mono); font-size: 9px; font-weight: 700; fill: #fff;
-  pointer-events: none; user-select: none;
-}
 /* Units sharing one spot (types.ts stacksOf): how many stand there, on the
    top-left corner of each; a press on it brings the next one up. Light on
-   dark, unlike the squad number, so it reads as "there is more here". */
+   dark, so it reads as "there is more here". */
 .token-stack { cursor: pointer; }
 .token-stack-dot { fill: var(--text); stroke: var(--bg); stroke-width: 1.2; }
 .token-stack-n {
@@ -1610,10 +1598,28 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 
 /* ---------- squads tab ---------- */
 #squad-body { padding: 10px 12px; }
+/* WHICH SQUAD THE TAB SHOWS (OTTO, 2026-10-10: "it's a little long to have to
+   scroll down to see the second squad"): two buttons side by side at the top,
+   the one shown tinted in its side's colour (ui.css rule 2: selected is colour). */
+.squad-switch { display: flex; gap: 6px; margin: 0 0 10px; }
+.squad-switch-btn {
+  flex: 1; min-width: 0; padding: 6px 10px; border: none; border-radius: var(--radius-sm);
+  cursor: pointer; font: 600 12px var(--font); color: var(--text2); background: var(--surface2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background 0.12s, color 0.12s;
+}
+.squad-switch-btn:hover { background: var(--surface3); color: var(--text); }
+.squad-switch-btn.side-s1.on { background: var(--side-s1-lt); color: var(--side-s1); }
+.squad-switch-btn.side-s2.on { background: var(--side-s2-lt); color: var(--side-s2); }
 .squad h3 { font-size: 11px; margin: 10px 0 6px; letter-spacing: 0.7px; text-transform: uppercase; font-weight: 700; }
-/* A squad takes its colour from the faction of the units in it, set inline as
-   --squad-tint, and falls back to the accent while it is still generic. */
-.squad h3 { color: var(--squad-tint, var(--accent)); }
+/* The squad's name in white: which side it is says the Squads tab's switch above
+   it (OTTO, 2026-10-10). Its faction, set inline as --squad-tint, colours the
+   faction chip beside the name. */
+.squad h3 { color: var(--text); }
+.squad h3 .fac-chip:not(.bad):not(.generic) {
+  background: color-mix(in srgb, var(--squad-tint, var(--neutral)) 18%, transparent);
+  color: var(--squad-tint, var(--text2));
+}
 .squad h3 .sq-name {
   background: none; border: 0; padding: 0; font: inherit; color: inherit;
   letter-spacing: inherit; text-transform: inherit; cursor: pointer;
@@ -1953,18 +1959,16 @@ button.add {
   border: none; border-radius: var(--radius-sm); color: #fff; font-size: 11.5px;
   padding: 3px 10px; cursor: pointer; transition: filter 0.12s;
 }
-/* The number says which squad, the colour says its faction. Grey until the
-   squad has one, so a generic squad does not borrow an allegiance it lacks. */
+/* The number says which squad, and so does the colour: its side's (ui.css
+   --side-s1/--side-s2), as on the board's outlines, whatever its faction. */
 button.add.sq-add {
-  background: var(--surface3); color: var(--text2); font-weight: 700;
+  background: color-mix(in srgb, var(--sq-tint, var(--text3)) 26%, var(--surface3));
+  color: var(--sq-tint, var(--text2)); font-weight: 700;
   min-width: 26px; text-align: center;
 }
-button.add.sq-add:hover { background: var(--border); color: var(--text); }
-button.add.sq-add.has-faction {
-  background: color-mix(in srgb, var(--sq-tint) 26%, var(--surface3));
-  color: var(--sq-tint);
-}
-button.add.sq-add.has-faction:hover { background: color-mix(in srgb, var(--sq-tint) 40%, var(--surface3)); }
+button.add.sq-add.side-s1 { --sq-tint: var(--side-s1); }
+button.add.sq-add.side-s2 { --sq-tint: var(--side-s2); }
+button.add.sq-add:hover { background: color-mix(in srgb, var(--sq-tint, var(--text3)) 40%, var(--surface3)); }
 /* A Tactics Card the squad holds: the squad's own colour, solid (ui.css rule 2,
    the pad's solid toggle), so the box says it without a mark beside the number
    (OTTO, 2026-10-05: "keep the box colored so that way it doesnt bump the text

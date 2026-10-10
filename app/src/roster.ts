@@ -101,11 +101,8 @@ export class Roster {
     const b = document.createElement('button');
     b.className = 'add sq-add';
     b.textContent = `${squadNumber(side)}`;
-    const faction = this.cb.squadAllegiance(side).faction;
-    if (faction) {
-      b.classList.add('has-faction');
-      b.style.setProperty('--sq-tint', squadColour(faction));
-    }
+    // The side's colour (ui.css --side-s1/--side-s2), as on the board's outlines.
+    b.classList.add(`side-${side}`);
     const fits = card ? this.squadTakes(side, card) : { ok: true, why: '' };
     if (!fits.ok) {
       b.classList.add('off-faction');
@@ -439,7 +436,7 @@ export class Roster {
       badge: (c) => this.cb.cardBadge?.(c) ?? '',
       actions: SQUAD_ORDER.map((side) => ({
         label: `Add to ${squadLabel(side)}`,
-        tint: squadColour(this.cb.squadAllegiance(side).faction),
+        tint: `var(--side-${side})`,
         check: (card: Card) => this.squadTakes(side, card),
         run: (card: Card) => {
           this.cb.onAddUnit(card, side, this.droneLoads[card.id]);
@@ -537,12 +534,7 @@ export class Roster {
       // as blank. It takes the squad tint the same way the Add buttons do -
       // without squadButton's off-faction check, which would compare the mech
       // against the very squad it is already in.
-      save.className = 'add sq-add sq-wide';
-      const saveFaction = this.cb.squadAllegiance(ed.side).faction;
-      if (saveFaction) {
-        save.classList.add('has-faction');
-        save.style.setProperty('--sq-tint', squadColour(saveFaction));
-      }
+      save.className = `add sq-add sq-wide side-${ed.side}`;
       save.textContent = 'Save changes';
       save.addEventListener('click', () => {
         void (async () => {

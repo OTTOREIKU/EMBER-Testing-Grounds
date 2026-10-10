@@ -64,10 +64,8 @@
      phone, so nothing may be positioned from these numbers; the panel and the
      toasts live inside .pad-mid, the box between the two. */
   --bar-h: 48px;
-  /* A side's colour, as on the board and in the Match Centre (styles.css): squad 1
-     orange, squad 2 teal, whatever their factions. */
-  --side-s1: #f47a2a;
-  --side-s2: #1cb5b0;
+  /* A side's colour (ui.css --side-s1/--side-s2, set there once for every page),
+     by the short names the combat window reads. */
   --s1: var(--side-s1);
   --s2: var(--side-s2);
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);

@@ -46,11 +46,28 @@
  *
  * 5. COLOUR IS A TOKEN. No hex literal outside :root in styles.css. Faction
  *    tints are --rdl/--un/--gof/--pd and their -lt pairs; state colours are
- *    --accent, --green, --red and their -lt pairs.
+ *    --accent, --green, --red and their -lt pairs. WHICH SIDE a thing is on
+ *    is --side-s1 / --side-s2 (and their -lt pairs), set once, below, for
+ *    every page.
  *
  * Everything here is used by real markup. If a rule stops being used, delete
  * it rather than leaving a catalogue entry nothing renders.
  */
+
+/* THE SIDES (OTTO, 2026-10-09 and 10): which squad a thing belongs to, in every
+ * match and on every page, whatever its faction: squad 1 orange, squad 2 teal.
+ * Set HERE and nowhere else: the board's outlines, the Match Centre, the Thinking
+ * tab, the Squads tab's switch, the Add tab's squad buttons and the pad all read
+ * these, so changing the two colours here changes every one of them. The faction
+ * stays where it is a fact about the units: a token's faint fill and the
+ * squad's faction chip. Clear of every faction hue, of the gold accent and of the
+ * board's green Containers, and apart for colour-blind eyes. */
+:root {
+  --side-s1: #f47a2a;
+  --side-s2: #1cb5b0;
+  --side-s1-lt: color-mix(in srgb, var(--side-s1) 18%, transparent);
+  --side-s2-lt: color-mix(in srgb, var(--side-s2) 18%, transparent);
+}
 
 /* The way INTO something: a round chevron at the end of a row that opens a
  * saved game, a table or a saved build. The landing page's .land-go, brought

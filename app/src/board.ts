@@ -1,7 +1,7 @@
 import type { TaskItem } from './tasks';
 import type { BoardGrids, Facing, GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
 import { baseBox, baseCells, DEFAULT_GRIDS, INTERCEPT_DEF, isLineUnit, SHAPE_NOTE, stacksOf, statusCount, statusStacks, tokenFaces } from './types';
-import { mechArtLayers, squadLabel, squadNumber, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
+import { mechArtLayers, squadLabel, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import {
   type BoardTheme, BOARD_FADE_BASE, boardArtUrl, boardTheme, clampBoardArt,
   clampGridColour, DEFAULT_BOARD, DEFAULT_GRID_COLOUR, gridPalette,
@@ -830,10 +830,10 @@ export class Board {
   }
 
   // The number on every unit of a stack, at the top-left corner of its base,
-  // where nothing else sits: the squad number is bottom-left, a carried Black
-  // Box bottom-right, and the facing arrow rides the middle of an edge (a line
-  // unit, whose squad number is top-left, wears it top-right). A press brings
-  // the next unit of the stack to the top, and selects it where a press may.
+  // where nothing else sits: a carried Black Box is bottom-right, and the facing
+  // arrow rides the middle of an edge (a line unit wears it top-right). A press
+  // brings the next unit of the stack to the top, and selects it where a press
+  // may.
   private stackBadge(t: Token, uids: number[], key: string): SVGGElement {
     const r = 7;
     let x: number;
@@ -899,11 +899,6 @@ export class Board {
       class: 'token-facing',
       transform: `rotate(${t.facing * 90} ${cx} ${cy})`,
     }));
-    const badgeR = 6;
-    g.appendChild(el('circle', { cx: badgeR + 3, cy: badgeR + 3, r: badgeR, class: 'token-squad-dot' }));
-    const num = el('text', { x: badgeR + 3, y: badgeR + 6, 'text-anchor': 'middle', class: 'token-squad-n' });
-    num.textContent = String(squadNumber(t.side));
-    g.appendChild(num);
     return g as SVGGElement;
   }
 
@@ -982,21 +977,15 @@ export class Board {
     });
     g.appendChild(arrow);
 
-    // Colour alone cannot separate two squads that picked the same faction, and
-    // a mirror match is the ordinary case rather than a corner one, so the
-    // number is always on the token. It sits bottom-left, away from the facing
-    // arrow, which rotates through the other three corners.
+    // Which side a token is on its outline says, in the side's colour (ui.css
+    // --side-s1/--side-s2): the squad number that sat bottom-left went with it
+    // (OTTO, 2026-10-10).
     const badgeR = 7;
-    const badgeX = cx - half + badgeR + 2.5;
     const badgeY = cy + half - badgeR - 2.5;
-    g.appendChild(el('circle', { cx: badgeX, cy: badgeY, r: badgeR, class: 'token-squad-dot' }));
-    const num = el('text', { x: badgeX, y: badgeY + 3.2, 'text-anchor': 'middle', class: 'token-squad-n' });
-    num.textContent = String(squadNumber(t.side));
-    g.appendChild(num);
 
-    // A carried Black Box, on its bearer: bottom-right, opposite the squad
-    // number. It was drawn faded in the zone it started in, and nothing said
-    // who bore it (audit Phase 6, F12).
+    // A carried Black Box, on its bearer: bottom-right. It was drawn faded in
+    // the zone it started in, and nothing said who bore it (audit Phase 6,
+    // F12).
     const boxes = this.carried.get(t.uid) ?? 0;
     if (boxes) {
       const bx = cx + half - badgeR - 2.5;
