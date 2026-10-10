@@ -226,11 +226,13 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
   const rows = [...html.matchAll(/<button type="button" class="dlg-pick" data-(game|side|rival|speed)="([^"]+)" aria-pressed="(true|false)">/g)].map((m) => `${m[1]}:${m[2]}${m[3] === 'true' ? '*' : ''}`);
   check('the dialog asks four things, each a pick-one list, with the pick marked: the game, the squad, the opponent, the speed',
     rows, [`game:${alley.id}`, `game:${vip.id}*`, 'side:s1', 'side:s2*', 'rival:recruit', 'rival:veteran', 'rival:brawler*', 'rival:tactician', 'speed:relaxed*', 'speed:normal', 'speed:brisk']);
-  check('each opponent is named with how hard it is beside the name and a line saying how it plays, in the same row a game or a speed has',
-    [/<p class="dlg-eyebrow">The computer is<\/p>/.test(html), /data-rival="recruit" aria-pressed="false"><span>Recruit<small class="dlg-level">Easy<\/small><\/span><em>makes mistakes<\/em>/.test(html),
-      /data-rival="veteran" aria-pressed="false"><span>Veteran<small class="dlg-level">Medium<\/small><\/span><em>ignores return fire<\/em>/.test(html),
-      /data-rival="brawler" aria-pressed="true"><span>Brawler<small class="dlg-level">Hard<\/small><\/span><em>fights for the zones<\/em>/.test(html),
-      /data-rival="tactician" aria-pressed="false"><span>Ace<small class="dlg-level">Hardest<\/small><\/span><em>plays for the mission<\/em>/.test(html)], [true, true, true, true, true]);
+  // OTTO, 2026-10-10: "the buttons would just have the name and then difficulty, ie. [Recruit -------------- EASY]".
+  check('each opponent is named with how hard it is at the row\'s end, and nothing more, in the same row a game or a speed has',
+    [/<p class="dlg-eyebrow">The computer is<\/p>/.test(html), /data-rival="recruit" aria-pressed="false"><span>Recruit<\/span><em>EASY<\/em>/.test(html),
+      /data-rival="veteran" aria-pressed="false"><span>Veteran<\/span><em>MEDIUM<\/em>/.test(html),
+      /data-rival="brawler" aria-pressed="true"><span>Brawler<\/span><em>HARD<\/em>/.test(html),
+      /data-rival="tactician" aria-pressed="false"><span>Ace<\/span><em>HARDEST<\/em>/.test(html),
+      /makes mistakes|ignores return fire|fights for the zones|plays for the mission/.test(html)], [true, true, true, true, true, false]);
   check('and has one way on and one way out', [(html.match(/data-ok/g) ?? []).length, (html.match(/data-cancel/g) ?? []).length, /Start the game/.test(html)], [1, 1, true]);
   check('Start goes to the Match Centre\'s page, asked for that game and that opponent',
     [soloAddress({ scenario: vip.id, side: 's2', speed: 'relaxed', opponent: 'tactician' }), soloAddress({ scenario: alley.id, side: 's1', speed: 'normal', opponent: 'tactician' }),

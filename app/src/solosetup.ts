@@ -154,10 +154,9 @@ export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadR
   const games = data.solo.scenarios;
   const own = pick.scenario === SOLO_OWN && squads.length > 0;
   const game = games.find((g) => g.id === pick.scenario) ?? games[0];
-  // `long`: a note that is a line of its own (what a Season changes), set under the name and wrapping. `level`: how
-  // hard a computer is, beside its name.
-  const row = (group: string, id: string, label: { name: string; note: string; level?: string }, on: boolean, long = false): string =>
-    `<button type="button" class="dlg-pick${long ? ' dlg-pick-long' : ''}" data-${group}="${esc(id)}" aria-pressed="${on}"><span>${esc(label.name)}${label.level ? `<small class="dlg-level">${esc(label.level)}</small>` : ''}</span><em>${esc(label.note)}</em></button>`;
+  // `long`: a note that is a line of its own (what a Season changes), set under the name and wrapping.
+  const row = (group: string, id: string, label: { name: string; note: string }, on: boolean, long = false): string =>
+    `<button type="button" class="dlg-pick${long ? ' dlg-pick-long' : ''}" data-${group}="${esc(id)}" aria-pressed="${on}"><span>${esc(label.name)}</span><em>${esc(label.note)}</em></button>`;
   // A row that shows what is chosen and opens the list it was chosen from.
   const opens = (what: string, label: string, value: string): string =>
     `<button type="button" class="dlg-pick dlg-open" data-open="${esc(what)}"><span>${esc(label)}</span><span class="dlg-pick-end"><em>${esc(value)}</em><span class="ui-go" aria-hidden="true">›</span></span></button>`;
@@ -183,7 +182,9 @@ export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadR
     : `<p class="dlg-eyebrow">${yours}</p>
     <div class="dlg-picks">${(['s1', 's2'] as Side[]).map((seat) => row('side', seat, soloSquadLabel(data, game, seat), seat === pick.side)).join('')}</div>`;
   const levels = (group: string, chosen: string): string =>
-    `<div class="dlg-picks">${RIVALS.map((r) => row(group, r.id, { name: r.name, level: r.level, note: r.note }, r.id === chosen)).join('')}</div>`;
+    // Each computer by its name and how hard it is, at the row's end where a note goes (OTTO, 2026-10-10: "the
+    // buttons would just have the name and then difficulty, ie. [Recruit -------------- EASY]").
+    `<div class="dlg-picks">${RIVALS.map((r) => row(group, r.id, { name: r.name, note: r.level.toUpperCase() }, r.id === chosen)).join('')}</div>`;
   const nameOf = (seat: Side): string => (own ? named(seat === 's1' ? 'mine' : 'theirs', seat === 's1' ? pick.mine : pick.theirs).name : soloSquadLabel(data, game, seat).name);
   const near: Side = own ? 's1' : pick.side;
   const far: Side = near === 's1' ? 's2' : 's1';

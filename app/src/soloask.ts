@@ -25,7 +25,10 @@ export const WATCH_SCALE: Record<Speed, number> = { brisk: 1.6, normal: 2.5, rel
 // The opponents a player may pick, easiest first, each with how hard it is and
 // how it plays in a few words (OTTO, 2026-10-10: "list them in order of
 // difficulty ... Ace is the best it would be at the bottom and marked as the
-// highest difficulty"). The order is the measured one (AI-OPPONENT-PLAN.md
+// highest difficulty"). The dialog shows the name and the level alone; the
+// notes are not shown for now (OTTO, the same day: "I might add it back
+// eventually when we add in the custom tuning for the bot but right now the
+// playtesters dont need to see that"). The order is the measured one (AI-OPPONENT-PLAN.md
 // section 12): the Veteran beats the Recruit, our Brawler beats the Veteran
 // (117 of 200), the Ace beats the Brawler. The policies themselves are
 // solo.ts's (OPPONENTS, which also has two more that only an address asks
