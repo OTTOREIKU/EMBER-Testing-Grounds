@@ -63,6 +63,7 @@ const [r1, r2] = onMire.tokens.filter((t) => t.kind === 'projectile');
 const [heap] = M.TY.stacksOf(onMire.tokens);
 check('two Razors launched onto the Mire are one stack of three with it', heap?.map((t) => t.label), ['Mire', r1.label, r2.label]);
 const view = (group, front) => { const v = M.TY.stackView(group, front); return { order: v.order.map((t) => t.label), bearer: v.bearer.label, named: v.named.label }; };
+const nameUnder = (group, front) => { const v = M.TY.stackView(group, front); return { bearer: v.bearer.label, host: v.host?.label ?? null, named: v.named?.label ?? null }; };
 check('nothing in front: the Mire at the bottom wears the one count, and its name is the one shown',
   view(heap, null), { order: ['Mire', r1.label, r2.label], bearer: 'Mire', named: 'Mire' });
 check("Razor 2 selected (OTTO's case): still one count, on the Mire, and the name shown is the Razor's",
@@ -71,6 +72,15 @@ check('Razor 1 in front: drawn over Razor 2, the Mire still at the bottom', view
 const pair = M.TY.stacksOf(state.tokens)[0];
 check('two Razors alone: the one on top wears the count and its name', view(pair, null), { order: [pair[0].label, pair[1].label], bearer: pair[1].label, named: pair[1].label });
 check('the other one in front comes up, with its name', view(pair, pair[0].uid), { order: [pair[1].label, pair[0].label], bearer: pair[0].label, named: pair[0].label });
+// A line unit (an AS3 wall, the Turtle Shell) draws no name of its own: over one, the name sits under the top-most
+// unit that draws one. The count stays on the wall.
+const wall = { uid: 90, label: 'AS3 Wall', cardId: 'PDAM-003', kind: 'deployable', col: 4, row: 6, size: 1, facing: 0, deployed: true };
+const onWall = [wall, { uid: 91, label: 'Razor A', kind: 'projectile', col: 5, row: 6, size: 1, deployed: true }, { uid: 92, label: 'Razor B', kind: 'projectile', col: 5, row: 6, size: 1, deployed: true }];
+check('(the wall and two Razors in its middle cell are one stack)', M.TY.stacksOf(onWall).map((g) => g.map((t) => t.uid)), [[90, 91, 92]]);
+check('over a wall, nothing in front: the count on the wall, the top Razor shows its own name', nameUnder(onWall, null), { bearer: 'AS3 Wall', host: 'Razor B', named: 'Razor B' });
+check('Razor A selected: its name, under the top-most Razor', nameUnder(onWall, 91), { bearer: 'AS3 Wall', host: 'Razor A', named: 'Razor A' });
+check('the wall selected: its name, so the one looked at is named', nameUnder(onWall, 90), { bearer: 'AS3 Wall', host: 'Razor B', named: 'AS3 Wall' });
+check('two walls alone: no name to show', nameUnder([wall, { ...wall, uid: 93 }], null), { bearer: 'AS3 Wall', host: null, named: null });
 
 // The drawing: every board draws tokens through Board.renderTokens, and a stack is arranged by arrangeStacks after
 // every drawing and every change of selection.
@@ -82,8 +92,8 @@ const badge = body('  private stackBadge(');
 const select = body('  setSelected(uid: number | null)');
 check('the tokens are drawn, then each stack is arranged', render.includes('this.arrangeStacks();'), true);
 check('as stackView says: the order drawn, one count on the largest, one name under it',
-  [arrange.includes('stackView(group, front)'), arrange.includes('this.tokenNode(bearer.uid)?.appendChild(this.stackBadge(bearer, uids, key, named.uid));'),
-    arrange.includes('label.textContent = t.uid === bearer.uid ? named.label : t.label;'), arrange.includes("label.classList.toggle('stack-quiet', t.uid !== bearer.uid);")],
+  [arrange.includes('stackView(group, front)'), arrange.includes('this.tokenNode(bearer.uid)?.appendChild(this.stackBadge(bearer, uids, key, named?.uid ?? bearer.uid));'),
+    arrange.includes('label.textContent = t.uid === host?.uid && named ? named.label : t.label;'), arrange.includes("label.classList.toggle('stack-quiet', t.uid !== host?.uid);")],
   [true, true, true, true]);
 check('the front is the unit the count brought up, else the one selected',
   /const front = brought !== undefined && uids\.includes\(brought\) \? brought\s*: this\.selectedUid !== null && uids\.includes\(this\.selectedUid\) \? this\.selectedUid : null;/.test(arrange), true);

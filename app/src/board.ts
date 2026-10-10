@@ -818,10 +818,11 @@ export class Board {
 
   // UNITS SHARING ONE SPOT, SHOWN AS ONE (types.ts stackView; OTTO, 2026-10-10,
   // "smart stacking"): the largest base at the bottom and the front unit over the
-  // others of its size, ONE count, on the largest, and ONE name under it, the
-  // front unit's. The front is the unit brought up by the count, else the one
-  // selected, else the largest. Run after every drawing of the tokens and every
-  // change of selection: it only reorders, renames and badges what is drawn.
+  // others of its size, ONE count, on the largest, and ONE name under it (under
+  // the top-most that draws one when the largest is a wall), the front unit's.
+  // The front is the unit brought up by the count, else the one selected, else
+  // the largest. Run after every drawing of the tokens and every change of
+  // selection: it only reorders, renames and badges what is drawn.
   private arrangeStacks(): void {
     for (const b of this.gTokens.querySelectorAll('.token-stack')) b.remove();
     for (const group of stacksOf(this.onBoard)) {
@@ -830,17 +831,17 @@ export class Board {
       const brought = this.stackFront.get(key);
       const front = brought !== undefined && uids.includes(brought) ? brought
         : this.selectedUid !== null && uids.includes(this.selectedUid) ? this.selectedUid : null;
-      const { order, bearer, named } = stackView(group, front);
+      const { order, bearer, host, named } = stackView(group, front);
       for (const t of order) {
         const node = this.tokenNode(t.uid);
         if (!node) continue;
         this.gTokens.appendChild(node);
         const label = node.querySelector<SVGTextElement>('.token-label');
         if (!label) continue;
-        label.textContent = t.uid === bearer.uid ? named.label : t.label;
-        label.classList.toggle('stack-quiet', t.uid !== bearer.uid);
+        label.textContent = t.uid === host?.uid && named ? named.label : t.label;
+        label.classList.toggle('stack-quiet', t.uid !== host?.uid);
       }
-      this.tokenNode(bearer.uid)?.appendChild(this.stackBadge(bearer, uids, key, named.uid));
+      this.tokenNode(bearer.uid)?.appendChild(this.stackBadge(bearer, uids, key, named?.uid ?? bearer.uid));
     }
   }
 
