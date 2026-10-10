@@ -28,10 +28,11 @@ const AI = M.AI;
 data.solo.squads['nextafter-s1'] = { name: 'COLLABORATION 500', faction: 'COLLABORATION', points: 500, mechs: [{ name: '(Cruise Mode)', loadout: { torso: '288', chasis: '289', leftHand: '291', rightHand: '290', backpack: '292', pilot: 'ACE-01' } }], drones: [{ cardId: 'PRDR-203' }, { cardId: 'PRDR-201' }, { cardId: 'PRDR-105' }] };
 data.solo.squads['nextafter-s2'] = { name: 'RDL 500', faction: 'RDL', points: 500, mechs: [{ name: 'Tactical Core', loadout: { torso: '559', chasis: '534', leftHand: '252', backpack: '002', pilot: 'FPA-63' } }, { name: 'Artillery Core', loadout: { torso: '015', chasis: '249', leftHand: '041', rightHand: '025', backpack: '501', pilot: 'FPA-11' } }], drones: [{ cardId: '079' }, { cardId: '080' }, { cardId: '079' }] };
 const scenario = { id: 'probe-48056', map: 'steelworks', mission: 'blackbox-asset-preservation', rounds: 5, secondaries: false, tactics: false, seats: { s1: 'nextafter-s1', s2: 'nextafter-s2' } };
-// (The game as it was dealt and played, `press` 0 and `nextAfter` 0: both adopted since, at 10 and 1; the first
-// changes how the squad behind deploys, the second is the thing held here.)
-const ace = AI.makeTactician({}, { press: 0, nextAfter: 0 });
-const after = AI.makeTactician({}, { nextAfter: 1, press: 0 });
+// (The game as it was dealt and played, `press` 0, `nextAfter` 0 and no learned judge (`learned` 0): all three
+// adopted since, at 10, 1 and 10; the first changes how the squad behind deploys, the third which shot is taken, and
+// the second is the thing held here.)
+const ace = AI.makeTactician({}, { press: 0, nextAfter: 0, learned: 0 });
+const after = AI.makeTactician({}, { nextAfter: 1, press: 0, learned: 0 });
 
 let seen = null;
 let t = null;

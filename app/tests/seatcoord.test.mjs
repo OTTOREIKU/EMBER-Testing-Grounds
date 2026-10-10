@@ -378,9 +378,10 @@ M.L.setLocalSeat(null);
 {
   const viewOf = (state, seat) => M.SEAT.viewOf(data, state, seat);
   const SK = { focus: false };
-  // (Played and weighed as these moments were staged, `nextAfter` 0 and `press` 0: both adopted since, at 1 and
-  // 10, they change what a plan that acts counts a turn on and how a squad behind walks.)
-  const PIN = { nextAfter: 0, press: 0 };
+  // (Played and weighed as these moments were staged, `nextAfter` 0, `press` 0 and no learned judge (`learned` 0):
+  // all adopted since, at 1, 10 and 10, they change what a plan that acts counts a turn on, how a squad behind walks,
+  // and where a walk is worth ending.)
+  const PIN = { nextAfter: 0, press: 0, learned: 0 };
   const tact = AI.makeTactician(SK, PIN);
   // Two drivers at a table that has been set up, the units then stood where
   // the check wants them: the first squad along the north edge, the second in
@@ -407,7 +408,7 @@ M.L.setLocalSeat(null);
   // What each Drone would gain by a Command, as the price list has it: its
   // best plan with one, over its standing where it is and doing nothing.
   const gains = (d, view, skills = SK) => co(d).map((o) => {
-    const rows = AI.weighed(o.then(), view, skills);
+    const rows = AI.weighed(o.then(), view, skills, PIN);
     const stay = rows.find((p) => p.how === 'stay');
     return { id: o.id, gain: rows[0].worth - (stay.worth - stay.now), best: rows[0].how, does: rows[0].does };
   });

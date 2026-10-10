@@ -656,9 +656,12 @@ M.L.setLocalSeat(null);
   spent.t.close();
 }
 {
-  // The Tactician's own choices, through a driver, on a staged table.
+  // The Tactician's own choices, through a driver, on a staged table: the Task's pull alone, without the learned
+  // judge (`learned` 0). With it the Ace of 2026-10-10 keeps a Box out of Echo in round 1 on Asset Preservation (it
+  // pays at the end of round 5), and over whole games it does better on every Black Box Task (the v4 measurement on
+  // the same seeds: 61.0 of 96 against 50.5; Asset Preservation 21.0 of 35 against 18.5).
   const table = async (scenario, arrange) => {
-    const t = botTable(M, data, { ...scenario, map: 'none' }, { seed: 2, policies: { s1: AI.makeTactician({ focus: false }), s2: AI.eagerPolicy } });
+    const t = botTable(M, data, { ...scenario, map: 'none' }, { seed: 2, policies: { s1: AI.makeTactician({ focus: false }, { learned: 0 }), s2: AI.eagerPolicy } });
     await t.run({ until: (st) => M.SU.normaliseSetup(st.setup)?.stage === 'done' && st.round.phase === 2 });
     const U = Object.fromEntries(t.state.tokens.map((x) => [name(x), x]));
     const at = (x, c, r, f) => { x.col = c * 3; x.row = r * 3; if (f !== undefined) x.facing = f; };

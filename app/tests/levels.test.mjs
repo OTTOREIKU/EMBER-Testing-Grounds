@@ -47,8 +47,8 @@ const AI = M.AI;
   check('the Recruit is the Brawler making mistakes at the rate measured; the Veteran the Tactician with its handicap; both named',
     [AI.recruitPolicy.name, AI.RECRUIT_RATE > 0 && AI.RECRUIT_RATE < 1, AI.veteranPolicy.name, typeof AI.veteranPolicy.ponder, Object.keys(AI.VETERAN_WEIGHTS).length + Object.keys(AI.VETERAN_SKILLS).length > 0],
     ['recruit', true, 'veteran', 'function', true]);
-  check('the Veteran\'s handicap is the one measured: no look ahead to the other squad\'s reply, and nothing else changed',
-    [AI.VETERAN_SKILLS, AI.VETERAN_WEIGHTS, AI.RECRUIT_RATE], [{ exposure: false }, {}, 0.6]);
+  check('the Veteran\'s handicap is the one measured: no look ahead to the other squad\'s reply, and nothing else changed but the learned judge, the Ace\'s alone',
+    [AI.VETERAN_SKILLS, AI.VETERAN_WEIGHTS, AI.RECRUIT_RATE], [{ exposure: false }, { learned: 0 }, 0.6]);
 }
 
 // ---------- played ----------
