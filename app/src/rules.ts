@@ -197,8 +197,10 @@ export function standingSpot(
   // does; a base off them takes no cell a spot asks about.
   const ground = groundCells(terrain);
   const bases: { col: number; row: number; w: number; h: number }[] = [];
+  // A unit not yet deployed stands nowhere, wherever its token waits (3.1.4): counted, it hid the Grids its squad
+  // was parked in from the deployment question. fitsAt and lineSpot pass over it too, as spotsInGrid always did.
   for (const t of tokens) {
-    if (t.uid === ignoreUid || t.aerial) continue;
+    if (t.uid === ignoreUid || t.aerial || t.deployed === false) continue;
     const b = baseBox(t);
     if (Number.isInteger(b.col) && Number.isInteger(b.row)) bases.push(b);
   }
@@ -233,7 +235,7 @@ export function fitsAt(
   const ground = groundCells(terrain);
   const bases: { col: number; row: number; w: number; h: number }[] = [];
   for (const t of tokens) {
-    if (t.uid === ignoreUid || t.aerial) continue;
+    if (t.uid === ignoreUid || t.aerial || t.deployed === false) continue;
     const b = baseBox(t);
     if (Number.isInteger(b.col) && Number.isInteger(b.row)) bases.push(b);
   }
@@ -339,7 +341,7 @@ export function lineSpot(
   const blocked = new Set<string>();
   for (const p of terrain) for (const cell of p.subCells) blocked.add(`${cell.col},${cell.row}`);
   for (const t of tokens) {
-    if (t.uid === ignoreUid || t.aerial) continue;
+    if (t.uid === ignoreUid || t.aerial || t.deployed === false) continue;
     for (const cell of baseCells(t)) blocked.add(`${cell.col},${cell.row}`);
   }
   const across = facing === 1 || facing === 3;
