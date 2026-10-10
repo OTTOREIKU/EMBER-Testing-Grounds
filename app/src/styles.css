@@ -1417,6 +1417,15 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
   font-family: var(--mono); font-size: 9px; font-weight: 700; fill: #fff;
   pointer-events: none; user-select: none;
 }
+/* Units sharing one spot (types.ts stacksOf): how many stand there, on the
+   top-left corner of each; a press on it brings the next one up. Light on
+   dark, unlike the squad number, so it reads as "there is more here". */
+.token-stack { cursor: pointer; }
+.token-stack-dot { fill: var(--text); stroke: var(--bg); stroke-width: 1.2; }
+.token-stack-n {
+  font-family: var(--mono); font-size: 9px; font-weight: 700; fill: var(--bg);
+  pointer-events: none; user-select: none;
+}
 /* A carried Black Box, on its bearer (5.3.1). */
 .token-box-dot { fill: #11151a; stroke: var(--text2); stroke-width: 1.2; opacity: 0.92; }
 .token-box-n {

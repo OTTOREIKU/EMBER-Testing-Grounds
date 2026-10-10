@@ -1,6 +1,6 @@
 import type { TaskItem } from './tasks';
 import type { BoardGrids, Facing, GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
-import { baseBox, baseCells, DEFAULT_GRIDS, INTERCEPT_DEF, isLineUnit, SHAPE_NOTE, statusCount, statusStacks, tokenFaces } from './types';
+import { baseBox, baseCells, DEFAULT_GRIDS, INTERCEPT_DEF, isLineUnit, SHAPE_NOTE, stacksOf, statusCount, statusStacks, tokenFaces } from './types';
 import { mechArtLayers, squadLabel, squadNumber, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import {
   type BoardTheme, BOARD_FADE_BASE, boardArtUrl, boardTheme, clampBoardArt,
@@ -198,6 +198,9 @@ export class Board {
   // How many Black Boxes each unit carries, staged by renderTokens so the
   // token shows them (audit Phase 6, F12).
   private carried = new Map<number, number>();
+  // Which unit of each stack (types.ts stacksOf) was last brought to the top by
+  // its number, keyed by the stack's units: a redraw keeps it there.
+  private stackFront = new Map<string, number>();
   // The walks under way, by unit (animateMove), for a token built mid-walk.
   private walks = new Map<number, { frames: Keyframe[]; total: number; begun: number; landed: string }>();
   private gSight!: SVGGElement;
@@ -808,7 +811,66 @@ export class Board {
         this.gTokens.appendChild(g);
       }
     }
+    // Units sharing one spot: the one drawn last hides the rest. Each wears how
+    // many stand there, and the number brings the next to the top. The unit
+    // selected, else the one last brought up, is drawn on top.
+    for (const group of stacksOf(this.onBoard)) {
+      const uids = group.map((t) => t.uid);
+      const key = uids.join(',');
+      for (const t of group) this.tokenNode(t.uid)?.appendChild(this.stackBadge(t, uids, key));
+      const front = this.selectedUid !== null && uids.includes(this.selectedUid) ? this.selectedUid : this.stackFront.get(key);
+      const top = front !== undefined ? this.tokenNode(front) : null;
+      if (top) this.gTokens.appendChild(top);
+    }
     this.applySelection();
+  }
+
+  private tokenNode(uid: number): SVGGElement | null {
+    return this.gTokens.querySelector<SVGGElement>(`.token[data-uid="${uid}"]`);
+  }
+
+  // The number on every unit of a stack, at the top-left corner of its base,
+  // where nothing else sits: the squad number is bottom-left, a carried Black
+  // Box bottom-right, and the facing arrow rides the middle of an edge (a line
+  // unit, whose squad number is top-left, wears it top-right). A press brings
+  // the next unit of the stack to the top, and selects it where a press may.
+  private stackBadge(t: Token, uids: number[], key: string): SVGGElement {
+    const r = 7;
+    let x: number;
+    let y: number;
+    if (isLineUnit(t)) {
+      x = baseBox(t).w * CELL - r - 3;
+      y = r + 3;
+    } else {
+      // The drawn base, as buildToken sizes it.
+      const foot = t.size * CELL;
+      const half = Math.max(foot, 54) / 2;
+      x = foot / 2 - half + r + 2.5;
+      y = foot / 2 - half + r + 2.5;
+    }
+    const mark = el('g', { class: 'token-stack' }) as SVGGElement;
+    mark.appendChild(el('circle', { cx: x, cy: y, r, class: 'token-stack-dot' }));
+    const n = el('text', { x, y: y + 3.2, 'text-anchor': 'middle', class: 'token-stack-n' });
+    n.textContent = String(uids.length);
+    mark.appendChild(n);
+    this.attachInspect(mark, {
+      title: `${uids.length} in this spot`,
+      sub: 'stacked',
+      lines: ['The one on top hides the others. Press this number to bring the next one up.'],
+    });
+    mark.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== 0) return;
+      ev.stopPropagation();
+      const next = uids[(uids.indexOf(t.uid) + 1) % uids.length];
+      this.stackFront.set(key, next);
+      const node = this.tokenNode(next);
+      if (node) this.gTokens.appendChild(node);
+      // While the board is in a modal interaction a press selects nothing
+      // (the token's own press waits for panEnabled too); the order still changes.
+      if (this.panEnabled) this.callbacks.onSelect(next);
+      else this.applySelection();
+    });
+    return mark;
   }
 
   // An AS3 wall or the Turtle Shell: a 1x3 bar across its facing, the card art

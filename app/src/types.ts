@@ -1736,6 +1736,21 @@ export function baseCells(t: { col: number; row: number; size: number; cardId?: 
   return out;
 }
 
+// UNITS SHARING ONE SPOT (OTTO, 2026-10-09: "if I fire two missiles into the same grid I only see the one missile and
+// there is no indicator there is a second"). Units on the board whose bases are centred on the same point, so the one
+// drawn on top hides the rest: two Projectiles launched into one Grid land on the same spot, and an Aerial unit may
+// hang over a smaller one. Each group in the order the units are listed; a unit not deployed stands on no spot.
+export function stacksOf<T extends { uid: number; col: number; row: number; size: number; cardId?: string; facing?: number; deployed?: boolean }>(tokens: T[]): T[][] {
+  const at = new Map<string, T[]>();
+  for (const t of tokens) {
+    if (t.deployed === false) continue;
+    const b = baseBox(t);
+    const k = `${2 * b.col + b.w},${2 * b.row + b.h}`;
+    at.set(k, [...(at.get(k) ?? []), t]);
+  }
+  return [...at.values()].filter((g) => g.length > 1);
+}
+
 export function cellsOf(s: { grids?: number } | null | undefined): number {
   return gridsOf(s) * 3;
 }
