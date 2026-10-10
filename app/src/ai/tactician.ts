@@ -329,12 +329,20 @@ export interface Skills {
   // Porcupine before it fired). Only a Large unit gives Unit Protection, and it gives it to the target whichever squad
   // it belongs to: two White Dice more on the Defense Roll (4.5.3). A plan that leaves a Mech of ours between a
   // squadmate still to act and the enemy it would shoot is charged what that shot loses (`linesCost`, the weight
-  // `clearLines`). OFF until measured.
+  // `clearLines`). MEASURED LEVEL (2026-10-09, measure_ln.sh: random squads 101 of 200 against 102, 199 games the same;
+  // community squads 42 of 80 against 44): what two White Dice cost one squadmate's shot is little beside what a step
+  // is worth otherwise (21 of 92 Opportunities charged, about 0.15 a time; 1 changed). OFF: a style's lever.
   clearLines: boolean;
   // THE CARRIER KEPT BY ITS MECH (2026-10-09; OTTO, the same game: "we need to build a leash system for the drone
   // where if it can move it should stay nearby or get out of the way"; "The leash system makes more sense for the
   // drones with load"): a Drone carrying a Load stands in Contact with an Ally Mech, behind it where it can, or walks
-  // back to one, though no enemy is yet in reach to say what the Load adds (`leashOf`). OFF until measured.
+  // back to one, though no enemy is yet in reach to say what the Load adds (`leashOf`). MEASURED (2026-10-09,
+  // measure_ls.sh and measure_ls2.sh, against the Ace without it): the copied games 108 and 113 of 200 against the
+  // mirror's 100 (11 up and 3 down, then 14 up and 1 down, p 0.001), all of it UN's, most on the VIP game (as UN 11
+  // and 13 of 50 against 2 and 1); random squads with a loaded Carrier in both 90 against 86 and 100 against 105 (23
+  // up, 23 down: level). ADOPTED: the starter games' Carrier is kept by its Wild Cat. (As first built it took the
+  // larger of `lend` and the leash; added, as now, it played 799 of those 800 games the same, measure_lsv2.sh, and
+  // walks the Carrier behind its Mech where the Load is worth most: seatlend.)
   leash: boolean;
   // THE LONE WOLF (2026-10-09; a community player: "if you are able to contest 2 lanes you tend to win most of the
   // time"; OTTO: "try the strategy of hold 1 and push off enemy with solo unit"): on a Main Task that scores zones, the
@@ -349,7 +357,7 @@ export const SKILLS: Skills = {
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
-  squadDials: false, secName: true, hunter: false, clearLines: false, leash: false, lanes: false,
+  squadDials: false, secName: true, hunter: false, clearLines: false, leash: true, lanes: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -2670,8 +2678,11 @@ const LEND_TIE = 0.25;
 // the Mech does (behind its Large base, which Obstructs the lines to it,
 // 4.5.3); a Grid from which a Mech is touched only after more Commands, that at
 // `future` for each Command it takes (the engine's walk to the Grids beside the
-// Mech, at least one). What `lend` reads where an enemy is in reach is taken
-// where it is more.
+// Mech, at least one). It is ADDED to what `lend` reads (what the Load gives the
+// Mech's next deed: the Contact kept is worth the rounds after it too). Taking
+// the larger of the two (as first built) credited a Grid one Command away its
+// pull while the Grid in Contact gained nothing, and a Carrier the Load was
+// worth most to stayed back.
 const LEASH_BEHIND = 0.25;
 function leashOf(c: Ctx): ((at: Grid, touching: boolean) => number) | null {
   const mechs = c.view.units.filter((u) => u.side === c.view.seat && u.kind === 'mech' && u.alive && u.deployed);
@@ -2921,7 +2932,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
   const plans: Plan[] = [{
     option: null, how: 'stay', at: me.grid, deed: here,
     now: here?.value ?? 0,
-    next: (here ? after(end, me.grid) : !end ? 0 : nextTurn(end, me.grid, c)) + Math.max(loan ? loan(d.here?.(), me.grid) : 0, tether ? tether(me.grid, !!me.touches?.length) : 0),
+    next: (here ? after(end, me.grid) : !end ? 0 : nextTurn(end, me.grid, c)) + (loan ? loan(d.here?.(), me.grid) : 0) + (tether ? tether(me.grid, !!me.touches?.length) : 0),
     mission: pickup ? missionOf(pickup.after?.()?.view() ?? view, w) - c.mission + stealOf(pickup, c) : 0,
     shape: shapeAt(me.grid, c, led, undefined, tookBy(pickup)) + w.better,
     cost: 0, risk: 0,
@@ -3038,7 +3049,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     plans.push({
       option: l.o, how: 'move', at: l.at, deed,
       now: (deed?.value ?? 0) - mineCost(l.o, c) + (drag?.value ?? 0) + shield,
-      next: (deed ? afters.get(l.o) ?? 0 : nexts.get(l.o) ?? 0) + Math.max(loan ? loan(l.o.after?.(), l.at) : 0, tether ? tether(l.at, l.o.facts?.lendsTo !== undefined) : 0),
+      next: (deed ? afters.get(l.o) ?? 0 : nexts.get(l.o) ?? 0) + (loan ? loan(l.o.after?.(), l.at) : 0) + (tether ? tether(l.at, l.o.facts?.lendsTo !== undefined) : 0),
       mission: (scores ? missionOf(l.o.after?.()?.view() ?? view, w) - c.mission : 0) + (l.take ? stealOf(l.o, c) : 0),
       // With nothing to do there, what is left of the activation goes on the
       // walk: a Movement still unspent is counted before the walk is.

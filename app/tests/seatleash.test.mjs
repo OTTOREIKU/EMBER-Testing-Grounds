@@ -8,7 +8,7 @@
 // skill, a Grid where it touches an Ally Mech is worth the deployment's tie-break (a quarter of `lend`), a share more
 // behind the Mech (further from the nearest enemy than the Mech stands: its Large base Obstructs the lines to the
 // Carrier, 4.5.3), and a Grid from which it touches one only after more Commands that much less for each Command
-// (`future`); where `lend` reads more, it is what `lend` reads.
+// (`future`); what `lend` reads besides (the Load's use at the Mech's next deed) is added to it.
 //
 // Staged on the copied VIP game (the Intersection: its Main Task scores no zones, so no zone draws the Carrier) at round
 // 1's Command Phase: the Wild Cat (its R7K Tactical Rifle a Laser) and the Carrier (its Load a CSC60 Cooler, +1 Yellow
@@ -75,10 +75,10 @@ const lent = (d, p, cat) => d.options.find((o) => o.label === p.label)?.facts?.l
   // FAR: no enemy within the Wild Cat's reach next turn.
   const { t, U, d, view } = await staged(FAR);
   const cat = U['Wild Cat'];
-  const off = rows(d, view);
+  const off = rows(d, view, { leash: false });
   check('THE STAGE, FAR: the Carrier is asked its activation, may walk into Contact with the Wild Cat, and what its Load adds reads nothing anywhere',
     [d?.kind, off.some((p) => p.how === 'move' && lent(d, p, cat)), off.every((p) => p.next === 0)], ['activation.act', true, true]);
-  check('as it ships there is no `leash`, and the Contact is worth nothing to the Carrier', [AI.SKILLS.leash, off.filter((p) => lent(d, p, cat)).every((p) => p.next === 0)], [false, true]);
+  check('without the skill the Contact is worth nothing to the Carrier; as it ships the skill is on (measured)', [off.filter((p) => lent(d, p, cat)).every((p) => p.next === 0), AI.SKILLS.leash], [true, true]);
   const on = rows(d, view, { leash: true });
   const stay = on.find((p) => p.how === 'stay');
   check('WITH THE SKILL: staying where the Wild Cat is touched only after more Commands is worth the tie-break at `future` for each',
@@ -101,11 +101,11 @@ const lent = (d, p, cat) => d.options.find((o) => o.label === p.label)?.facts?.l
   // NEAR: the RDL Mechs within the Wild Cat's reach, and what the Load adds to its next shot read.
   const { t, U, d, view } = await staged(NEAR);
   const cat = U['Wild Cat'];
-  const off = rows(d, view);
+  const off = rows(d, view, { leash: false });
   const on = rows(d, view, { leash: true });
   const pair = off.filter((p) => p.how === 'move' && lent(d, p, cat)).map((p) => [p, on.find((q) => q.label === p.label)]);
-  check('NEAR: the skill never reads a Grid in Contact as worth less than `lend` does, and where `lend` reads more than the tie-break (beside or in front of the Wild Cat) it is what `lend` reads',
-    [pair.length > 0, pair.every(([p, q]) => (q?.next ?? -1) >= p.next - 1e-9), pair.some(([p, q]) => p.next > tie && near(p.next, q?.next ?? NaN))], [true, true, true]);
+  check('NEAR: a Grid in Contact is worth what `lend` reads there and the tie-break besides (a quarter more behind the Wild Cat), and `lend` reads something',
+    [pair.length > 0, pair.some(([p]) => p.next > 0), pair.every(([p, q]) => near((q?.next ?? NaN) - p.next, tie) || near((q?.next ?? NaN) - p.next, tie * 1.25))], [true, true, true]);
   t.close();
 }
 {
@@ -124,7 +124,7 @@ const lent = (d, p, cat) => d.options.find((o) => o.label === p.label)?.facts?.l
   const d = t.drivers.s2.pending();
   const view = M.SEAT.viewOf(data, s, 's2');
   const same = (a, b) => JSON.stringify(a.map((p) => [p.label, p.next])) === JSON.stringify(b.map((p) => [p.label, p.next]));
-  check('the Raven, which carries no Load, weighs every Grid as it did', [d?.unit === U[RAVEN].uid, same(rows(d, view), rows(d, view, { leash: true }))], [true, true]);
+  check('the Raven, which carries no Load, weighs every Grid as it did', [d?.unit === U[RAVEN].uid, same(rows(d, view, { leash: false }), rows(d, view, { leash: true }))], [true, true]);
   t.close();
 }
 

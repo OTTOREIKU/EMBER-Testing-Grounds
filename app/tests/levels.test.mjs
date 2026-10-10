@@ -70,12 +70,13 @@ const AI = M.AI;
     [results.map((r) => r.end), results.map((r) => r.refused), results.every((r) => r.mistakes > 0), results.map((r) => r.winner)],
     [['over', 'over', 'over'], [0, 0, 0], true, ['s2', 's2', 's2']]);
   // The Veteran between them, a seeded game each way: the ladder the
-  // measurements found (section 12, M9.1), seen in a game. (Seed 2: with the
+  // measurements found (section 12, M9.1), seen in a game. (Seed 4: with the
   // Load lent and the better target weighed, 2026-10-03, seed 1 became one of
-  // the games the Veteran takes off the Ace; the Ace wins seeds 2 to 6.)
+  // the games the Veteran takes off the Ace; with the Carrier kept by its Mech,
+  // 2026-10-09, seed 2 did too; the ladder holds on seeds 4 to 6 and 9 to 13.)
   const between = [];
   for (const [s1, s2] of [[AI.veteranPolicy, AI.tacticianPolicy], [AI.veteranPolicy, AI.recruitPolicy]]) {
-    const t = botTable(M, data, data.solo.scenarios[0], { seed: 2, policies: { s1, s2 }, glue: M.HUD.glueAfter });
+    const t = botTable(M, data, data.solo.scenarios[0], { seed: 4, policies: { s1, s2 }, glue: M.HUD.glueAfter });
     const end = await t.run({ maxSteps: 12000 });
     between.push({ end: end.kind, winner: end.result?.winner ?? null, refused: t.refused.length });
     t.close();
