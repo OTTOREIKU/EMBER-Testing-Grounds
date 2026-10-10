@@ -14,5 +14,7 @@ import type { Policy } from './policy';
 import { makeTactician, type Skills } from './tactician';
 
 export const BRAWLER_SKILLS: Partial<Skills> = { hunter: true };
-export const BRAWLER_WEIGHTS: Partial<Weights> = { exposure: 0.4, exposureLater: 0.2, hunt: 1, closeIn: 1 };
+// Not the learned judge (`learned`): it was measured on the Ace alone, and the Brawler (and the Recruit made of it)
+// was measured without it.
+export const BRAWLER_WEIGHTS: Partial<Weights> = { exposure: 0.4, exposureLater: 0.2, hunt: 1, closeIn: 1, learned: 0 };
 export const brawlerPolicy: Policy = { ...makeTactician(BRAWLER_SKILLS, BRAWLER_WEIGHTS), name: 'brawler' };

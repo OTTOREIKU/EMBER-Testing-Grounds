@@ -738,7 +738,11 @@ export const TACTICIAN: Weights = {
   bladeIn: 0,
   volleyLaunch: 0.05,
   squadMargin: 0.5,
-  learned: 0,
+  // ADOPTED 2026-10-10 (OTTO: "if it holds up then we should add it"): the third data night's judge (v4, 144 numbers,
+  // data/ai/judge-v4.json) at 10 won 161 of 308 against the Ace's 138 on the same seeds, random squads with Secondary
+  // Tasks (51 turned to a win, 29 from one, p 0.02), and held on the community squads (measure_l4c.sh). The Ace's
+  // alone: the Veteran and the Brawler set it to 0.
+  learned: 10,
   hiddenWorth: 0,
   secondary: 1,
   clearLines: 1,

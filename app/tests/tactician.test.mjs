@@ -185,8 +185,9 @@ const outlook = (v, turns = {}, seen = (uid, grids) => grids.map(() => []), more
 });
 const ask = (v, options, more = {}) => ({ id: 'q', kind: 'opp.act', seat: 's1', unit: 1, options, fallback: 'end', facts: {}, here: () => outlook(v), ...more });
 // A policy with only some skills, and nothing pulling it anywhere unless a
-// check says so: no walk toward a zone or an enemy.
-const still = { zoneStep: 0, zonePull: 0, contactStep: 0, approach: 0 };
+// check says so: no walk toward a zone or an enemy, and no learned judge (it
+// reads every table a plan leaves, and these checks count what is asked).
+const still = { zoneStep: 0, zonePull: 0, contactStep: 0, approach: 0, learned: 0 };
 // A policy remembers what the table in front of it has been asked. Here one
 // table is asked different things from one check to the next, so every check
 // is put to a policy that has been asked nothing.

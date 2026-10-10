@@ -65,6 +65,13 @@ export const OPPONENTS: Record<string, { name: string; policy: Policy }> = {
   legal: { name: 'Computer (random)', policy: legalPolicy },
 };
 
+// Whether a computer in the game reads the learned judge (policy.ts `judge`; the Ace does): the page loads the model
+// before such a game begins. The computers are the one in the other seat and, in a game that is watched, the second.
+export function soloJudged(spec: Pick<SoloSpec, 'opponent' | 'opponent2' | 'watch'>): boolean {
+  const reads = (id: string): boolean => !!(OPPONENTS[id]?.policy ?? OPPONENTS[OPPONENT].policy).judge;
+  return reads(spec.opponent) || (spec.watch && reads(spec.opponent2));
+}
+
 export interface SoloSpec {
   scenario: SoloScenario;
   // The squad in each seat: a shipped game's by name, or the player's own.

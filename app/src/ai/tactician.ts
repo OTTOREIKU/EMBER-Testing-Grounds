@@ -4846,6 +4846,8 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
     name: 'tactician',
     // Its driver reads this as each game begins (driver.ts, seat.ts TRUE_RANGE): a wrapper passes it on.
     trueRange: s.trueRange,
+    // The page reads this before a game begins, to load the judge (policy.ts): a wrapper passes it on.
+    judge: w.learned > 0,
     choose(d, view, rng) {
       // What it has no judgement of its own about is given the safe answer,
       // the one the engine names for the question.

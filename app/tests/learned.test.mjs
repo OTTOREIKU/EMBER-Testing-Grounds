@@ -5,6 +5,7 @@
 // `learned.fixture.json` is a small model (12 trees of 7 leaves, trained on the M17 pilot's 340 games by
 // scratchpad train_v.py and made compact by compact_v.py) with rows of numbers and LightGBM's own chance for each:
 // the walk here must read the trees exactly as LightGBM does. Staged on the real engine, the board of squaddials.test.
+// The judge the site ships (data/ai/judge-v4.json, learned.ts SHIPPED_JUDGE) is checked at the end.
 import { readFileSync } from 'node:fs';
 import { botTable, loadEngine } from './_engine.mjs';
 
@@ -22,6 +23,8 @@ const AI = M.AI;
 const fixture = JSON.parse(readFileSync(new URL('./learned.fixture.json', import.meta.url), 'utf8'));
 
 {
+  // loadEngine sets the judge the site ships, as the page does for a game with the Ace; these start from none.
+  AI.useModel(null);
   const shuffled = { ...fixture, names: [...fixture.names].reverse() };
   const short = { ...fixture, names: fixture.names.slice(1) };
   check('A MODEL OF OTHER NUMBERS IS REFUSED: its names in another order, or one short, and nothing is set',
@@ -85,7 +88,19 @@ const view = M.SEAT.viewOf(data, t.state, 's1');
   AI.useModel(null);
   const none = rows(40);
   check('and with no model set, `learned` changes nothing', JSON.stringify(none) === JSON.stringify(off), true);
-  check('the weight ships at 0', AI.TACTICIAN.learned, 0);
+  check('the weight ships at 10 (ADOPTED 2026-10-10: the third data night\'s judge, v4)', AI.TACTICIAN.learned, 10);
+}
+{
+  // THE JUDGE THE SITE SHIPS (data/ai/judge-v4.json): taken, every one of its numbers features.ts's, in order; a change
+  // to features.ts that moves one of them would leave the Ace on the page without it, and is stopped here.
+  const shipped = JSON.parse(readFileSync(new URL(`../../data/${AI.SHIPPED_JUDGE}`, import.meta.url), 'utf8'));
+  check('THE SHIPPED JUDGE is taken: v4, all 144 numbers of the third reading, in features.ts\'s order',
+    [AI.useModel(shipped), shipped.names.length, AI.hasModel()], [true, 144, true]);
+  check('it reads a chance on the staged board', (() => { const v = AI.judge(M.SEAT.lookOf(data, t.state, 's1')); return typeof v === 'number' && v > 0 && v < 1; })(), true);
+  check('the Ace reads it; the Veteran, the Brawler and the Recruit do not (each was measured without it)',
+    [AI.tacticianPolicy, AI.veteranPolicy, AI.brawlerPolicy, AI.recruitPolicy].map((p) => !!p.judge), [true, false, false, false]);
+  check('it lies in a folder of its own, out of the data files the service worker fetches for every visitor (sw.js reads the folder\'s top)',
+    AI.SHIPPED_JUDGE.startsWith('ai/'), true);
 }
 t.close();
 

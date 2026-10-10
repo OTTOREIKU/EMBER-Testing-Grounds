@@ -7,7 +7,8 @@ import { Relay, type NetHooks, type RolledDie, type RollKind, type TableRelay } 
 import { LoopbackRelay } from './loopback';
 import { Rng } from './ai/rng';
 import { forecastOf } from './ai/odds';
-import { OPPONENTS, ownGame, publicDecisions, RIVALS, SOLO_OWN, SOLO_OWN_KEY, SOLO_ROOM, SoloTable, soloAsk, soloHands, soloQuery, soloSetup, soloSpec, SPEEDS, type SoloOwn, type SoloSpec, type Speed } from './solo';
+import { hasModel, SHIPPED_JUDGE, useModel, type Model } from './ai/learned';
+import { OPPONENTS, ownGame, publicDecisions, RIVALS, SOLO_OWN, SOLO_OWN_KEY, SOLO_ROOM, SoloTable, soloAsk, soloHands, soloJudged, soloQuery, soloSetup, soloSpec, SPEEDS, type SoloOwn, type SoloSpec, type Speed } from './solo';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { diagErrors, diagRefusals, installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
 import { openBoardReport } from './reportui';
@@ -2953,6 +2954,21 @@ function loadPictures(urls: string[], progress: (done: number) => void): Promise
   ]);
 }
 
+// THE LEARNED JUDGE the Ace reads (ai/learned.ts SHIPPED_JUDGE; about 230 KB as the site sends it), fetched beside the
+// pictures for a game with a computer that reads it. A game has it from its first command or not at all: one not in
+// by JUDGE_MS is played without it, as the Ace played before the judge, and is not set when it comes in after. A model
+// whose numbers are not features.ts's is refused (useModel) and the game is played without it too.
+const JUDGE_MS = 15000;
+
+function loadJudge(): Promise<void> {
+  let late = false;
+  const load = fetch(dataUrl(SHIPPED_JUDGE))
+    .then((r) => (r.ok ? r.json() : null))
+    .then((m: Model | null) => { if (m && !late) useModel(m); })
+    .catch(() => undefined);
+  return Promise.race([load, new Promise<void>((resolve) => { setTimeout(() => { late = true; resolve(); }, JUDGE_MS); })]);
+}
+
 async function startSolo(): Promise<void> {
   if (!data || !loopback || !soloWanted) return;
   // A game the player put together on the tabletop is kept in this device's
@@ -2995,12 +3011,14 @@ async function startSolo(): Promise<void> {
   const pictures = tablePictures(state);
   soloLoading = { done: 0, total: pictures.length };
   render();
+  const judged = soloJudged(spec) && !hasModel() ? loadJudge() : Promise.resolve();
   await loadPictures(pictures, (done) => {
     if (!soloLoading) return;
     soloLoading.done = done;
     const line = document.getElementById('mc-soloload');
     if (line) line.textContent = loadingText();
   });
+  await judged;
   soloLoading = null;
   loopback.tap = (cmd, seat) => botlog?.landed(cmd, seat);
   loopback.open({

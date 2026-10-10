@@ -23,6 +23,9 @@ export interface Policy {
   // Plays with each Range as it would be made (seat.ts TRUE_RANGE; the Tactician's
   // skill `trueRange`).
   trueRange?: boolean;
+  // Reads the learned judge (learned.ts; the Tactician's weight `learned`): the page loads the shipped model before
+  // a game with such a policy in it (match.ts startSolo). Without the model it plays as it did before the judge.
+  judge?: boolean;
   choose(decision: Decision, view: SeatView, rng: Rng): Choice;
   // The same choice, worked out in steps with a pause between them. For a
   // policy whose thinking is long enough to hold up a page it shares a thread

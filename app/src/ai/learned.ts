@@ -4,9 +4,15 @@
 // FEATURES, in order, is refused, since a model fed numbers in another order answers nonsense and looks sound doing it.
 // A model trained on the first reading (its 81 numbers) is still taken, and is given those numbers alone.
 //
-// One model for the whole page, set by whoever has one (`useModel`): a probe from a file, the page, in time, from
-// data shipped with it. With none set, `judge` answers null and the Ace prices nothing by it.
+// One model for the whole page, set by whoever has one (`useModel`): the page from the model shipped with it
+// (`SHIPPED_JUDGE`), a suite or a probe from the same file (tests/_engine.mjs) or another. With none set, `judge`
+// answers null and the Ace prices nothing by it.
 import { FEATURES, featuresOf, type Look } from './features';
+
+// THE MODEL THE SITE SHIPS, under the data folder: v4, trained on the third data night's 10,329 games (all 144
+// numbers). In a folder of its own because the service worker fetches every file at the data folder's top for every
+// visitor (sw.js precacheShell): this one is asked for only by a page about to play a computer that reads it.
+export const SHIPPED_JUDGE = 'ai/judge-v4.json';
 
 // One tree, flat: node i splits on number f[i] (going left when the number is at most t[i], to node l[i], else to
 // r[i]), or is a leaf (f[i] < 0) worth v[i].

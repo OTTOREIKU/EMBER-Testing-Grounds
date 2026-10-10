@@ -250,6 +250,11 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
   const opening = (h) => (h.match(/<p class="dlg-body">([^<]*)<\/p>/) ?? [])[1] ?? '';
   check('the dialog opens on both ways in, played or watched: a game against a computer, or two computers against each other',
     [html, watching].map((h) => opening(h).startsWith('Play a full game against a computer opponent, or watch two computers play each other.')), [true, true]);
+  // THE LEARNED JUDGE (M17, adopted 2026-10-10): the page fetches the model before a game only where an Ace plays.
+  const judged = (opponent, watch = false, opponent2 = 'recruit') => M.SOLO.soloJudged({ opponent, watch, opponent2 });
+  check('THE JUDGE is loaded for a game with the Ace in it, the second computer of a watched game counted; not for the other levels alone',
+    [judged('tactician'), judged('veteran'), judged('recruit'), judged('brawler'), judged('veteran', true, 'tactician'), judged('veteran', false, 'tactician'), judged('brawler', true, 'veteran')],
+    [true, false, false, false, true, false, false]);
   check('Start asks for a watched game with both computers, and a played one with the one',
     [soloAddress({ scenario: vip.id, side: 's2', speed: 'normal', opponent: 'brawler', watch: true, opponent2: 'recruit' }), soloAddress({ scenario: vip.id, side: 's2', speed: 'normal', opponent: 'tactician', watch: false, opponent2: 'recruit' })],
     [`match/?solo=${vip.id}&side=s2&ai=brawler&watch=1&ai2=recruit`, `match/?solo=${vip.id}&side=s2`]);

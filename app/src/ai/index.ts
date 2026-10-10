@@ -4,7 +4,7 @@ export { Driver, type DriverOptions, type Host, type LogEntry, type Step } from 
 export { eagerPolicy } from './eager';
 export { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, secondaryStake, stakesOf, standingFor, swingOf, TACTICIAN, testWorth, tieWorth, unitWorth, zoned, type Weights } from './evaluate';
 export { FEATURES, FIRST_READING, featureMap, featuresOf, type Look } from './features';
-export { hasModel, judge, judgeFeatures, useModel, type Model, type Tree } from './learned';
+export { hasModel, judge, judgeFeatures, SHIPPED_JUDGE, useModel, type Model, type Tree } from './learned';
 export { legalPolicy } from './legal';
 export { blundering, RECRUIT_RATE, recruitPolicy, VETERAN_SKILLS, VETERAN_WEIGHTS, veteranPolicy } from './levels';
 export { BRAWLER_SKILLS, BRAWLER_WEIGHTS, brawlerPolicy } from './styles';

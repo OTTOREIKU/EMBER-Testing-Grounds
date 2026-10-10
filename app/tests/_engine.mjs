@@ -8,7 +8,7 @@
 // computer seat is tested on the code a player's page runs. Measured
 // 2026-10-01: the bundle takes about 190 ms, a copy of a mid-game state about
 // 60 microseconds and a check() about 2.5.
-import { writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { installDom } from './_combatdrive.mjs';
@@ -53,6 +53,13 @@ export async function loadEngine(name, extra = []) {
   });
   const M = await import(`${out.href}?t=${Date.now()}`);
   rmSync(entry); rmSync(out);
+  // THE JUDGE THE ACE READS (M17; learned.ts SHIPPED_JUDGE under the data folder), set as the page sets it for a game
+  // with the Ace, so a suite or a probe plays the Ace that ships; LEARNED_MODEL=none plays without it. A shipped model
+  // whose numbers are no longer features.ts's stops the run: on the page it would be refused without a word.
+  if (M.AI?.SHIPPED_JUDGE && process.env.LEARNED_MODEL !== 'none'
+    && !M.AI.useModel(JSON.parse(readFileSync(new URL(`../../data/${M.AI.SHIPPED_JUDGE}`, import.meta.url), 'utf8')))) {
+    throw new Error(`the shipped judge (data/${M.AI.SHIPPED_JUDGE}) reads other numbers than features.ts`);
+  }
   const data = await M.loadData();
   return { M, data };
 }

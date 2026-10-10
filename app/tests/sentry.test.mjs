@@ -92,9 +92,12 @@ const unpriced = AI.makeTactician({}, { sentry: 0 });
     [!!dep, dep?.label.startsWith('Deploy "Delphinium"'), String(dep?.why).startsWith('a Drone to jam Rifle every round'), on.drones.length, on.drones[0]?.startsWith('159@'), on.refused],
     [true, true, true, 1, true, []]);
 }
+// Beyond its Range the weight alone is asked, on the Ace without the learned judge (`learned` 0 on both sides): the
+// judge moves the Carrier's walk (to D3 at G9, from where a Delphinium landing at D4 reaches the Rifle at 8), and with
+// it whether there is a jam to price at all.
 for (const rifle of [[6, 8], [8, 9]]) {
-  const off = await carrierTurn(unpriced, rifle);
-  const on = await carrierTurn(priced, rifle);
+  const off = await carrierTurn(AI.makeTactician({}, { sentry: 0, learned: 0 }), rifle);
+  const on = await carrierTurn(AI.makeTactician({}, { learned: 0 }), rifle);
   check(`with the Rifle beyond its Range (at ${String.fromCharCode(65 + rifle[0])}${rifle[1] + 1}) it is worth nothing, and the turn is the same with the weight as without`,
     [on.drones, on.answers.map((a) => a.label)], [[], off.answers.map((a) => a.label)]);
 }
