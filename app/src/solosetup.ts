@@ -199,10 +199,12 @@ export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadR
     <div class="dlg-picks">${row('season', '', { name: 'Main rules', note: 'the rulebook and its updates' }, !pick.season, true)}${
       seasons.map((s) => row('season', s.id, { name: s.label, note: s.rules.map((r) => r.basic.replace(/:.*$/, '').replace(/\.$/, '')).join('; ') }, pick.season === s.id, true)).join('')}</div>`
     : '';
+  // The opening names both ways in, whichever is picked (OTTO, 2026-10-10: the watched game's line alone read as if
+  // a game could only be watched).
   return `<h3 class="dlg-title">Play the computer</h3>
-    <p class="dlg-body">${watch
-    ? 'Two computers play a full game on the Match Centre\'s table while you watch. The Thinking tab shows what each one chose and why.'
-    : `A full game against a computer opponent, on the Match Centre's table. It needs no account and no connection.${own ? ' The computer plays any squad you give it; it does not yet use every special Action a card prints.' : ''}`}</p>
+    <p class="dlg-body">Play a full game against a computer opponent, or watch two computers play each other. The game opens on the Match Centre's table and needs no account and no connection.${watch
+    ? ' The Thinking tab shows what each one chose and why.'
+    : own ? ' The computer plays any squad you give it; it does not yet use every special Action a card prints.' : ''}</p>
     <p class="dlg-eyebrow">The game</p>
     <div class="dlg-picks">${offered.join('')}</div>
     <p class="dlg-eyebrow">Who plays</p>

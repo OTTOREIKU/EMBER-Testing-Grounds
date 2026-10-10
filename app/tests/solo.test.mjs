@@ -246,6 +246,10 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
       [soloSquadLabel(data, vip, 's2').name, soloSquadLabel(data, vip, 's1').name], true, true, false]);
   check('played, the same dialog asks who plays with You picked, and asks for one computer',
     [[...html.matchAll(/data-who="([^"]+)" aria-pressed="(true|false)"/g)].map((m) => `${m[1]}${m[2] === 'true' ? '*' : ''}`), /data-rival2=/.test(html)], [['you*', 'watch'], false]);
+  // OTTO, 2026-10-10: the watched game's opening alone read as if a game could only be watched.
+  const opening = (h) => (h.match(/<p class="dlg-body">([^<]*)<\/p>/) ?? [])[1] ?? '';
+  check('the dialog opens on both ways in, played or watched: a game against a computer, or two computers against each other',
+    [html, watching].map((h) => opening(h).startsWith('Play a full game against a computer opponent, or watch two computers play each other.')), [true, true]);
   check('Start asks for a watched game with both computers, and a played one with the one',
     [soloAddress({ scenario: vip.id, side: 's2', speed: 'normal', opponent: 'brawler', watch: true, opponent2: 'recruit' }), soloAddress({ scenario: vip.id, side: 's2', speed: 'normal', opponent: 'tactician', watch: false, opponent2: 'recruit' })],
     [`match/?solo=${vip.id}&side=s2&ai=brawler&watch=1&ai2=recruit`, `match/?solo=${vip.id}&side=s2`]);
