@@ -32,6 +32,9 @@
  *    the Timing Dial (each in its own timing colour) and the Find filters.
  *    The Reference's filter buttons are the next candidate, on OTTO's say;
  *    every other selected control keeps the tint.
+ *    ONE CALL TO ACTION is solid too (OTTO, 2026-10-10): the tabletop's "Play
+ *    the computer" row (`.setup-row.setup-cta`, styles.css), so a player landing
+ *    on the board sees it first. Not a pattern for other buttons.
  *
  * 3. ONE CLOSE CONTROL. Anything that closes a dialog, popover or sheet is
  *    `.dlg-close` - a 34px circle, no border. Anything that removes ONE ROW

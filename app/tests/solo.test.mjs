@@ -264,8 +264,11 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
   // The tabletop offers the game and carries none of what plays it.
   const imports = (f) => [...src(f).matchAll(/^import (?:type )?[^;]*? from '([^']+)';/gm)].map((m) => m[1]).sort();
   check('the tabletop\'s row opens it, on the Setup tab\'s own row pattern',
-    [/<button class="setup-row" id="btn-solo"[^>]*>Play the computer<span class="ct">solo game<\/span><\/button>/.test(readFileSync(new URL('../table/index.html', import.meta.url), 'utf8')),
+    [/<button class="setup-row setup-cta" id="btn-solo"[^>]*>Play the computer<span class="ct">solo game<\/span><\/button>/.test(readFileSync(new URL('../table/index.html', import.meta.url), 'utf8')),
       /document\.getElementById\('btn-solo'\)!\.addEventListener\('click', \(\) => \{\n\s*openSoloSetup\(data, \(address\) => \{ location\.href = address; \}\);/.test(src('main.ts'))], [true, true]);
+  // OTTO (2026-10-10): "make it so the 'Play the computer' button is our yellow color", the board's one call to action.
+  check('and it wears the accent, solid, with the dark text that goes on it',
+    readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8').includes('.setup-row.setup-cta { background: var(--accent); color: var(--on-accent);'), true);
   check('and the tabletop carries none of what plays the game: the setup imports the address, the speeds and the squads this device keeps, and no more',
     [imports('solosetup.ts'), imports('soloask.ts'), /from '\.\/solo'|from '\.\/ai\//.test(src('main.ts'))], [['./data', './dialog', './soloask', './squadstore', './types'], ['./data', './types'], false]);
 }

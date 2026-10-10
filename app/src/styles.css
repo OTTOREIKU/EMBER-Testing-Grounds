@@ -1530,6 +1530,12 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 }
 .setup-row:disabled { color: var(--text3); cursor: not-allowed; box-shadow: none; }
 .setup-row:disabled .ct { opacity: 0.6; }
+/* THE ONE CALL TO ACTION (OTTO, 2026-10-10: "make it so the 'Play the computer'
+   button is our yellow color ... when players land on the board they see it
+   right away"): a solid accent fill, ui.css rule 2's exception. */
+.setup-row.setup-cta { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.setup-row.setup-cta:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, #fff); }
+.setup-row.setup-cta .ct { color: var(--on-accent); opacity: 0.7; }
 /* Short verbs on one thing, sharing a row as equals rather than each claiming a
    line — the same split the Match Centre makes with .btnrow. Stacked rows close
    up to their own gap so Clear and the Save/Load pair read as one group rather
