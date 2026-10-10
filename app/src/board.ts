@@ -1,6 +1,6 @@
 import type { TaskItem } from './tasks';
 import type { BoardGrids, Facing, GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
-import { baseBox, baseCells, DEFAULT_GRIDS, INTERCEPT_DEF, isLineUnit, SHAPE_NOTE, stacksOf, statusCount, statusStacks, tokenFaces } from './types';
+import { baseBox, baseCells, DEFAULT_GRIDS, INTERCEPT_DEF, isLineUnit, SHAPE_NOTE, stacksOf, stackView, statusCount, statusStacks, tokenFaces } from './types';
 import { mechArtLayers, squadLabel, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import {
   type BoardTheme, BOARD_FADE_BASE, boardArtUrl, boardTheme, clampBoardArt,
@@ -198,8 +198,9 @@ export class Board {
   // How many Black Boxes each unit carries, staged by renderTokens so the
   // token shows them (audit Phase 6, F12).
   private carried = new Map<number, number>();
-  // Which unit of each stack (types.ts stacksOf) was last brought to the top by
-  // its number, keyed by the stack's units: a redraw keeps it there.
+  // Which unit of each stack (types.ts stacksOf) its count last brought up, keyed
+  // by the stack's units: a redraw keeps it in front until a unit of the stack is
+  // selected.
   private stackFront = new Map<string, number>();
   // The walks under way, by unit (animateMove), for a token built mid-walk.
   private walks = new Map<number, { frames: Keyframe[]; total: number; begun: number; landed: string }>();
@@ -811,30 +812,47 @@ export class Board {
         this.gTokens.appendChild(g);
       }
     }
-    // Units sharing one spot: the one drawn last hides the rest. Each wears how
-    // many stand there, and the number brings the next to the top. The unit
-    // selected, else the one last brought up, is drawn on top.
+    this.arrangeStacks();
+    this.applySelection();
+  }
+
+  // UNITS SHARING ONE SPOT, SHOWN AS ONE (types.ts stackView; OTTO, 2026-10-10,
+  // "smart stacking"): the largest base at the bottom and the front unit over the
+  // others of its size, ONE count, on the largest, and ONE name under it, the
+  // front unit's. The front is the unit brought up by the count, else the one
+  // selected, else the largest. Run after every drawing of the tokens and every
+  // change of selection: it only reorders, renames and badges what is drawn.
+  private arrangeStacks(): void {
+    for (const b of this.gTokens.querySelectorAll('.token-stack')) b.remove();
     for (const group of stacksOf(this.onBoard)) {
       const uids = group.map((t) => t.uid);
       const key = uids.join(',');
-      for (const t of group) this.tokenNode(t.uid)?.appendChild(this.stackBadge(t, uids, key));
-      const front = this.selectedUid !== null && uids.includes(this.selectedUid) ? this.selectedUid : this.stackFront.get(key);
-      const top = front !== undefined ? this.tokenNode(front) : null;
-      if (top) this.gTokens.appendChild(top);
+      const brought = this.stackFront.get(key);
+      const front = brought !== undefined && uids.includes(brought) ? brought
+        : this.selectedUid !== null && uids.includes(this.selectedUid) ? this.selectedUid : null;
+      const { order, bearer, named } = stackView(group, front);
+      for (const t of order) {
+        const node = this.tokenNode(t.uid);
+        if (!node) continue;
+        this.gTokens.appendChild(node);
+        const label = node.querySelector<SVGTextElement>('.token-label');
+        if (!label) continue;
+        label.textContent = t.uid === bearer.uid ? named.label : t.label;
+        label.classList.toggle('stack-quiet', t.uid !== bearer.uid);
+      }
+      this.tokenNode(bearer.uid)?.appendChild(this.stackBadge(bearer, uids, key, named.uid));
     }
-    this.applySelection();
   }
 
   private tokenNode(uid: number): SVGGElement | null {
     return this.gTokens.querySelector<SVGGElement>(`.token[data-uid="${uid}"]`);
   }
 
-  // The number on every unit of a stack, at the top-left corner of its base,
-  // where nothing else sits: a carried Black Box is bottom-right, and the facing
-  // arrow rides the middle of an edge (a line unit wears it top-right). A press
-  // brings the next unit of the stack to the top, and selects it where a press
-  // may.
-  private stackBadge(t: Token, uids: number[], key: string): SVGGElement {
+  // The count a stack wears, at the top-left corner of its largest base, where
+  // nothing else sits: a carried Black Box is bottom-right, and the facing arrow
+  // rides the middle of an edge (a line unit wears it top-right). A press brings
+  // the next unit of the stack to the front, and selects it where a press may.
+  private stackBadge(t: Token, uids: number[], key: string, front: number): SVGGElement {
     const r = 7;
     let x: number;
     let y: number;
@@ -856,17 +874,16 @@ export class Board {
     this.attachInspect(mark, {
       title: `${uids.length} in this spot`,
       sub: 'stacked',
-      lines: ['The one on top hides the others. Press this number to bring the next one up.'],
+      lines: ['The name shown is the one in front. Press this number to bring the next one up.'],
     });
     mark.addEventListener('pointerdown', (ev) => {
       if (ev.button !== 0) return;
       ev.stopPropagation();
-      const next = uids[(uids.indexOf(t.uid) + 1) % uids.length];
+      const next = uids[(uids.indexOf(front) + 1) % uids.length];
       this.stackFront.set(key, next);
-      const node = this.tokenNode(next);
-      if (node) this.gTokens.appendChild(node);
+      this.arrangeStacks();
       // While the board is in a modal interaction a press selects nothing
-      // (the token's own press waits for panEnabled too); the order still changes.
+      // (the token's own press waits for panEnabled too); the front still changes.
       if (this.panEnabled) this.callbacks.onSelect(next);
       else this.applySelection();
     });
@@ -874,8 +891,7 @@ export class Board {
   }
 
   // An AS3 wall or the Turtle Shell: a 1x3 bar across its facing, the card art
-  // in the middle, the facing arrow on its front edge and the squad number at
-  // its start (OTTO, 2026-09-28).
+  // in the middle and the facing arrow on its front edge (OTTO, 2026-09-28).
   private buildLineToken(t: Token): SVGGElement {
     const b = baseBox(t);
     const w = b.w * CELL;
@@ -904,6 +920,14 @@ export class Board {
 
   setSelected(uid: number | null): void {
     this.selectedUid = uid;
+    // A unit selected in a stack is its front: what a count brought up before
+    // gives way to it, and the name shown is its own.
+    if (uid !== null) {
+      for (const group of stacksOf(this.onBoard)) {
+        if (group.some((t) => t.uid === uid)) this.stackFront.delete(group.map((t) => t.uid).join(','));
+      }
+    }
+    this.arrangeStacks();
     this.applySelection();
   }
 

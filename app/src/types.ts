@@ -1751,6 +1751,25 @@ export function stacksOf<T extends { uid: number; col: number; row: number; size
   return [...at.values()].filter((g) => g.length > 1);
 }
 
+// HOW A STACK IS SHOWN (OTTO, 2026-10-10, "smart stacking": two Razors launched onto a Mire wore three counts and
+// three names over each other). The largest base at the bottom, so whatever stands over it stays in sight, and among
+// bases of one size the one in front on top. The count is worn by the largest (the top-most of them), and the one name
+// shown, under it, is the front unit's; with no front, the largest's. `front` is a unit of the group, or null.
+export function stackView<T extends { uid: number; col: number; row: number; size: number; cardId?: string; facing?: number }>(
+  group: T[],
+  front: number | null,
+): { order: T[]; bearer: T; named: T } {
+  const area = (t: T): number => {
+    const b = baseBox(t);
+    return b.w * b.h;
+  };
+  const order = [...group].sort((a, b) => area(b) - area(a) || Number(a.uid === front) - Number(b.uid === front));
+  const largest = order.filter((t) => area(t) === area(order[0]));
+  const bearer = largest[largest.length - 1];
+  const named = group.find((t) => t.uid === front) ?? bearer;
+  return { order, bearer, named };
+}
+
 export function cellsOf(s: { grids?: number } | null | undefined): number {
   return gridsOf(s) * 3;
 }

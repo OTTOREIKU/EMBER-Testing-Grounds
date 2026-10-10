@@ -51,21 +51,54 @@ const small = { uid: 2, col: 10, row: 10, size: 1 };
 const off = { uid: 3, col: 9, row: 9, size: 1 };
 check('a Small base centred on a Large one is stacked with it', M.TY.stacksOf([big, small, off]).map((g) => g.map((t) => t.uid)), [[1, 2]]);
 
-// The drawing: every board draws tokens through Board.renderTokens, which marks each stack.
+// SMART STACKING (OTTO, 2026-10-10: two Razors launched onto a Mire wore three counts, and their names lay over
+// each other): types.ts stackView says how a stack is shown. The largest base at the bottom, the front unit over the
+// others of its size; ONE count, worn by the largest; ONE name under it, the front unit's, else the largest's.
+const onMire = JSON.parse(JSON.stringify(tableAtRoundOne(M, data, vip).state));
+const mire2 = onMire.tokens.find((t) => t.label === 'Mire');
+const over = { kind: 'launch', seat: mire2.side, uid: mire2.uid, actionId: '004_A', cardId: '071', to: { col: mire2.col + 1, row: mire2.row + 1 }, facing: mire2.facing };
+M.C.apply(data, onMire, over);
+M.C.apply(data, onMire, over);
+const [r1, r2] = onMire.tokens.filter((t) => t.kind === 'projectile');
+const [heap] = M.TY.stacksOf(onMire.tokens);
+check('two Razors launched onto the Mire are one stack of three with it', heap?.map((t) => t.label), ['Mire', r1.label, r2.label]);
+const view = (group, front) => { const v = M.TY.stackView(group, front); return { order: v.order.map((t) => t.label), bearer: v.bearer.label, named: v.named.label }; };
+check('nothing in front: the Mire at the bottom wears the one count, and its name is the one shown',
+  view(heap, null), { order: ['Mire', r1.label, r2.label], bearer: 'Mire', named: 'Mire' });
+check("Razor 2 selected (OTTO's case): still one count, on the Mire, and the name shown is the Razor's",
+  view(heap, r2.uid), { order: ['Mire', r1.label, r2.label], bearer: 'Mire', named: r2.label });
+check('Razor 1 in front: drawn over Razor 2, the Mire still at the bottom', view(heap, r1.uid), { order: ['Mire', r2.label, r1.label], bearer: 'Mire', named: r1.label });
+const pair = M.TY.stacksOf(state.tokens)[0];
+check('two Razors alone: the one on top wears the count and its name', view(pair, null), { order: [pair[0].label, pair[1].label], bearer: pair[1].label, named: pair[1].label });
+check('the other one in front comes up, with its name', view(pair, pair[0].uid), { order: [pair[1].label, pair[0].label], bearer: pair[0].label, named: pair[0].label });
+
+// The drawing: every board draws tokens through Board.renderTokens, and a stack is arranged by arrangeStacks after
+// every drawing and every change of selection.
 const board = readFileSync(new URL('../src/board.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const render = board.slice(board.indexOf('  renderTokens(state: GameState'), board.indexOf('\n  }\n', board.indexOf('  renderTokens(state: GameState')));
-check('renderTokens marks every unit of every stack with the count', [render.includes('stacksOf(this.onBoard)'), render.includes('this.stackBadge(t, uids, key)')], [true, true]);
-const badge = board.slice(board.indexOf('  private stackBadge('), board.indexOf('\n  }\n', board.indexOf('  private stackBadge(')));
+const body = (head) => board.slice(board.indexOf(head), board.indexOf('\n  }\n', board.indexOf(head)));
+const render = body('  renderTokens(state: GameState');
+const arrange = body('  private arrangeStacks(');
+const badge = body('  private stackBadge(');
+const select = body('  setSelected(uid: number | null)');
+check('the tokens are drawn, then each stack is arranged', render.includes('this.arrangeStacks();'), true);
+check('as stackView says: the order drawn, one count on the largest, one name under it',
+  [arrange.includes('stackView(group, front)'), arrange.includes('this.tokenNode(bearer.uid)?.appendChild(this.stackBadge(bearer, uids, key, named.uid));'),
+    arrange.includes('label.textContent = t.uid === bearer.uid ? named.label : t.label;'), arrange.includes("label.classList.toggle('stack-quiet', t.uid !== bearer.uid);")],
+  [true, true, true, true]);
+check('the front is the unit the count brought up, else the one selected',
+  /const front = brought !== undefined && uids\.includes\(brought\) \? brought\s*: this\.selectedUid !== null && uids\.includes\(this\.selectedUid\) \? this\.selectedUid : null;/.test(arrange), true);
 check('the count is the number of units in the stack', badge.includes('n.textContent = String(uids.length);'), true);
-check('a press on it brings the next unit up, round and round', badge.includes('uids[(uids.indexOf(t.uid) + 1) % uids.length]'), true);
-check('and the one brought up, or the one selected, stays on top through a redraw',
-  [render.includes('this.stackFront.get(key)'), render.includes('uids.includes(this.selectedUid)'), badge.includes('this.stackFront.set(key, next)')], [true, true, true]);
+check('a press on it brings the next unit to the front, round and round',
+  [badge.includes('uids[(uids.indexOf(front) + 1) % uids.length]'), badge.includes('this.stackFront.set(key, next)')], [true, true]);
+check('a selection arranges the stacks again, and a unit selected in a stack is its front',
+  [select.includes('this.arrangeStacks();'), select.includes('this.stackFront.delete(')], [true, true]);
 for (const page of ['main.ts', 'matchhud.ts']) {
   const src = readFileSync(new URL(`../src/${page}`, import.meta.url), 'utf8');
   check(`${page} draws its board with that Board`, /new Board\(/.test(src) && /from '\.\/board'/.test(src), true);
 }
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
-check('the count has its own look', ['.token-stack-dot', '.token-stack-n'].every((c) => css.includes(c)), true);
+check('the count has its own look, and a quiet name is hidden',
+  ['.token-stack-dot', '.token-stack-n', '.token-label.stack-quiet { display: none; }'].every((c) => css.includes(c)), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

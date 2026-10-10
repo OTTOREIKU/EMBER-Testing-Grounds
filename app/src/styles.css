@@ -1409,6 +1409,9 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
    top-left corner of each; a press on it brings the next one up. Light on
    dark, so it reads as "there is more here". */
 .token-stack { cursor: pointer; }
+/* A stack shows ONE name, the front unit's, under its largest base (board.ts
+   arrangeStacks): the others are quiet. */
+.token-label.stack-quiet { display: none; }
 .token-stack-dot { fill: var(--text); stroke: var(--bg); stroke-width: 1.2; }
 .token-stack-n {
   font-family: var(--mono); font-size: 9px; font-weight: 700; fill: var(--bg);
