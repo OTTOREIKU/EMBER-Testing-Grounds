@@ -347,7 +347,10 @@ export interface Skills {
   // THE LONE WOLF (2026-10-09; a community player: "if you are able to contest 2 lanes you tend to win most of the
   // time"; OTTO: "try the strategy of hold 1 and push off enemy with solo unit"): on a Main Task that scores zones, the
   // squad's fastest unit that holds zones leaves the zone the rest of the squad is around to them, and walks for another
-  // (`wolfAvoids`). OFF until measured.
+  // (`wolfAvoids`). MEASURED LEVEL (2026-10-09, measure_lz.sh, zone missions only: random squads 101 of 200 against
+  // 104, 193 games the same; community squads 39 of 80 against 38): the walk's pull is one term of the wolf's plan, and
+  // the squad stood in two zones or more as often (27% of rounds against 28%). OFF: a style's lever; a squad's lanes
+  // want its round planned together (M18).
   lanes: boolean;
 }
 
