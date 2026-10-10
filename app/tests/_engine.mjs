@@ -183,6 +183,32 @@ export function botTable(M, data, scenario, { seed = 1, policies, host = {}, dic
   return { ...table, drivers, step, run, steps: () => steps };
 }
 
+// THE DEPLOYMENT A SEEDED GAME WAS DEALT, pinned (2026-10-10). A test staged
+// from a seeded game is that game only while every answer before its moment is
+// the same, and letting a squad deploy where its own units waited (rules.ts
+// standingSpot) offered the Ace Grids it had never been offered. Each entry
+// [seat, uid, col, row, stance, lend] is the option a seat's k-th deployment
+// answer took; every other answer is the policy's own. The policy is still
+// asked first, so a test watching a deployment question sees it. The Tactician
+// draws no lots, so the game after it is the one the test was written from.
+export function dealt(policy, seat, entries) {
+  const mine = entries.filter((e) => e[0] === seat);
+  let k = 0;
+  return {
+    name: policy.name,
+    choose(d, view, rng) {
+      const own = policy.choose(d, view, rng);
+      if (d.kind === 'setup.deploy' && k < mine.length) {
+        const [, uid, c, r, stance, lend] = mine[k++];
+        const o = d.options.find((x) => x.facts?.uid === uid && x.facts.to?.c === c && x.facts.to?.r === r
+          && (x.facts.stance ?? null) === stance && x.tags.includes('lend') === !!lend);
+        if (o) return { option: o.id, why: 'as dealt' };
+      }
+      return own;
+    },
+  };
+}
+
 // Two drivers play the scenario out. Stops at the end of the game, at a
 // refusal, at a seat that is stuck, or when neither seat has anything to do
 // and the game is not over.

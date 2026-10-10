@@ -6,7 +6,7 @@
 // holding back: each of its units with nothing to walk to for the Main Task
 // counts its step toward contact `press` times over besides (at `pressLate` 1
 // the more so the later the round). The squad ahead plays as it did.
-import { botTable, loadEngine } from './_engine.mjs';
+import { botTable, dealt, loadEngine } from './_engine.mjs';
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -68,7 +68,9 @@ const watch = (seat) => ({
     return pick;
   },
 });
-const t = botTable(M, data, vip, { seed: 5, policies: { s1: watch('s1'), s2: watch('s2') }, glue: M.HUD.glueAfter });
+// Deployed as this game was dealt before a squad could deploy where its own units waited (_engine.mjs dealt).
+const DEALT = [['s2', 5, 0, 10, null, 0], ['s1', 1, 0, 1, 'offensive', 0], ['s2', 4, 1, 10, null, 0], ['s1', 2, 2, 1, 'offensive', 0], ['s2', 3, 9, 10, 'offensive', 0], ['s2', 6, 8, 10, null, 1]];
+const t = botTable(M, data, vip, { seed: 5, policies: { s1: dealt(watch('s1'), 's1', DEALT), s2: dealt(watch('s2'), 's2', DEALT) }, glue: M.HUD.glueAfter });
 await t.run({ maxSteps: 12000, until: () => seen.s1 && seen.s2 && seen.views });
 t.close();
 

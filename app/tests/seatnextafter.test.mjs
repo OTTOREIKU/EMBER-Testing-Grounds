@@ -11,7 +11,7 @@
 // later went through a corner at the Tactical Core where it stands, in C1, so
 // the Tactical Core is put in C4 for the question, where the lines from C11
 // reach it, and the numbers are the game's again.
-import { botTable, loadEngine } from './_engine.mjs';
+import { botTable, dealt, loadEngine } from './_engine.mjs';
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -62,7 +62,9 @@ const watch = {
     return pick;
   },
 };
-t = botTable(M, data, scenario, { seed: 48056, policies: { s1: watch, s2: ace }, glue: M.HUD.glueAfter });
+// Deployed as this game was dealt before a squad could deploy where its own units waited (_engine.mjs dealt).
+const DEALT = [['s2', 8, 3, 0, null, 0], ['s1', 2, 3, 10, null, 0], ['s2', 7, 3, 1, null, 0], ['s1', 3, 2, 10, null, 0], ['s2', 9, 2, 1, null, 0], ['s1', 4, 4, 10, null, 0], ['s2', 5, 1, 0, 'offensive', 0], ['s1', 1, 1, 10, 'offensive', 0], ['s2', 6, 4, 1, 'offensive', 0]];
+t = botTable(M, data, scenario, { seed: 48056, policies: { s1: dealt(watch, 's1', DEALT), s2: dealt(ace, 's2', DEALT) }, glue: M.HUD.glueAfter });
 await t.run({ maxSteps: 12000, until: () => !!seen });
 t.close();
 

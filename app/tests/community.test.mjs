@@ -7,7 +7,7 @@
 // Ace on both seats, each pairing on a different battlefield and Main Task:
 // each game played to its end, nothing the computer sent refused, and each
 // squad attacking. A change that leaves a real squad stuck fails here.
-import { botTable, loadEngine } from './_engine.mjs';
+import { botTable, dealt, loadEngine } from './_engine.mjs';
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -36,12 +36,17 @@ check('EVERY CARD OF THE SIX IS ONE THE DATA KNOWS',
 
 const GAMES = [
   { s1: 'UN-2', s2: 'Top_Core_RDL', map: 'crossroads', mission: 'vip-commander-assassination', seed: 1 },
-  { s1: 'HeavyDisruption', s2: 'RDL_Melee1', map: 'alley', mission: 'blackbox-key-facilities', seed: 2 },
+  // Deployed as dealt before a squad could deploy where its own units waited (_engine.mjs dealt): dealt anew, RDL_Melee1
+  // starts in the corner and wins 8 to 4 on the Boxes without one attack, a game that says nothing about being stuck.
+  { s1: 'HeavyDisruption', s2: 'RDL_Melee1', map: 'alley', mission: 'blackbox-key-facilities', seed: 2,
+    dealt: [['s1', 4, 3, 0, null, 0], ['s1', 7, 3, 1, null, 0], ['s1', 5, 2, 1, null, 0], ['s1', 6, 1, 1, null, 0], ['s1', 3, 2, 0, 'offensive', 0], ['s1', 1, 0, 1, 'offensive', 0], ['s1', 2, 4, 1, 'offensive', 0],
+      ['s2', 11, 3, 10, 'offensive', 0], ['s2', 8, 4, 10, 'offensive', 0], ['s2', 10, 2, 10, 'offensive', 0], ['s2', 9, 5, 10, 'offensive', 0]] },
   { s1: 'New_Squad_2', s2: 'silent_nonsense', map: 'steelworks', mission: 'terminal-signal-reception', seed: 3 },
 ];
 for (const g of GAMES) {
   const scenario = { id: `community-${g.seed}`, map: g.map, mission: g.mission, rounds: 5, secondaries: false, tactics: false, seats: { s1: `community:${g.s1}`, s2: `community:${g.s2}` } };
-  const t = botTable(M, data, scenario, { seed: g.seed, policies: AI.tacticianPolicy, glue: M.HUD.glueAfter });
+  const policies = g.dealt ? { s1: dealt(AI.tacticianPolicy, 's1', g.dealt), s2: dealt(AI.tacticianPolicy, 's2', g.dealt) } : AI.tacticianPolicy;
+  const t = botTable(M, data, scenario, { seed: g.seed, policies, glue: M.HUD.glueAfter });
   const end = await t.run({ maxSteps: 12000 });
   const attacked = ['s1', 's2'].map((s) => t.drivers[s].log.some((e) => String(e.option).startsWith('attack:')));
   check(`${g.s1} AGAINST ${g.s2} (${g.mission}, ${g.map}): played to its end, nothing refused, both squads attacking`,

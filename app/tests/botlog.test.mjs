@@ -74,7 +74,10 @@ const { M, data } = await loadEngine('botlog', [
   check('AND PLAYED BACK FROM ITS LOG the game is the same game: every command taken, the same board at the end',
     [back.refused.slice(0, 3), M.SEC.boardFingerprint(back.s) === body.fp, back.s.round.n, JSON.stringify(back.s.tasks?.vp)],
     [[], true, t.state.round.n, JSON.stringify(t.state.tasks?.vp)]);
-  const walk = body.commands.findIndex((x) => x.c.kind === 'maneuver');
+  // The last walk of a unit still on the board at the end, so leaving it out shows in the board the game ends on (the
+  // first walk of a game can be undone by all that comes after it: the deal of 2026-10-10 did just that).
+  const standing = new Set(t.state.tokens.filter((x) => x.deployed !== false).map((x) => x.uid));
+  const walk = body.commands.findLastIndex((x) => x.c.kind === 'maneuver' && standing.has(x.c.uid));
   const short = replay(body.commands.filter((_, i) => i !== walk));
   check('(one walk left out of it, and the game played back is another: the comparison sees a single command)',
     M.SEC.boardFingerprint(short.s) === M.SEC.boardFingerprint(t.state), false);
