@@ -577,6 +577,15 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
     [seen.length > 10, seen.every((t) => t.seat === p.spec.bot && t.given === 'done'), seen.every((t, i) => i === 0 || t.n > seen[i - 1].n),
       seen.some((t) => /^(attack|defence|contest)\./.test(t.kind)), seen.some((t) => t.result?.some((r) => r.said.some((s) => /damaged|destroyed/.test(s))))],
     [true, true, true, false, true]);
+  // A DRONE'S AUTOMATIC ACTION (OTTO, 2026-10-10: a Raven's Fire Control Interference put its Token on his Mech and
+  // the Thinking tab said nothing): the one answer its rule leaves it is a line all the same.
+  const AUTO = M.TY.PHASES.indexOf('Automatic');
+  const autos = p.table.log.filter((e) => e.phase === AUTO && e.kind === 'activation.act' && e.options === 1 && !/^End /.test(e.label));
+  const toldAutos = seen.filter((t) => t.phase === AUTO && t.kind === 'activation.act');
+  const toldLeft = toldAutos.map((t) => t.label);
+  const missed = autos.filter((e) => { const i = toldLeft.indexOf(e.label); if (i < 0) return true; toldLeft.splice(i, 1); return false; }).map((e) => e.label);
+  check('every Automatic Action the computer\'s Drones made, the only answer their rule left them, is a line of the Thinking tab (a Raven\'s Fire Control Interference among them)',
+    [autos.length > 0, missed, autos.some((e) => /Fire Control Interference/.test(e.label))], [true, [], true]);
   p.close();
 }
 // ---------- what a report may carry of the computer's decisions (M15) ----------
