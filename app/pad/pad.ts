@@ -959,8 +959,10 @@ function sideFaction(s: Side): string | null {
   return core ? data.factionOf(core) : null;
 }
 
+// A side's own colour, not its faction's: two squads of one faction must still
+// read as two sides (OTTO, 2026-10-09).
 function sideColour(s: Side): string {
-  return squadColour(sideFaction(s));
+  return `var(--side-${s})`;
 }
 
 // ---------- folding the strip (OTTO, 2026-09-29) ----------

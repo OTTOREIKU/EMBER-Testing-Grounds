@@ -47,6 +47,15 @@
 
   --sq-s1: var(--accent);
   --sq-s2: var(--accent);
+  /* A SIDE'S colour in every match, whatever its faction: squad 1 orange, squad 2
+     teal (OTTO, 2026-10-09: two RDL squads both outlined red could not be told
+     apart). Clear of every faction hue, of the gold accent and of the board's
+     green containers, and apart for colour-blind eyes. The faction stays as the
+     faint tint above: a token's fill, its squad badge, the squad cards. */
+  --side-s1: #f47a2a;
+  --side-s2: #1cb5b0;
+  --s1: var(--side-s1);
+  --s2: var(--side-s2);
   --blue: #65a2d8;
   --red: #ea6d76;
 
@@ -525,8 +534,8 @@ main { display: flex; flex: 1; min-height: 0; }
 }
 .move-path-dot { fill: var(--accent); opacity: 0.85; }
 .move-path-end { fill: none; stroke: var(--accent); stroke-width: 2.5; }
-.move-path.side-s1 { color: var(--sq-s1); }
-.move-path.side-s2 { color: var(--sq-s2); }
+.move-path.side-s1 { color: var(--side-s1); }
+.move-path.side-s2 { color: var(--side-s2); }
 .move-path.side-s1 .move-path-line,
 .move-path.side-s2 .move-path-line { stroke: currentColor; }
 .move-path.side-s1 .move-path-end,
@@ -594,14 +603,14 @@ main { display: flex; flex: 1; min-height: 0; }
 .pg-body { padding: 9px 10px 4px; }
 .pg-sub { margin: 0 0 6px; color: var(--text3); font-size: 11px; }
 .pg-turn { margin: 0 0 8px; color: var(--text2); font-size: 11.5px; }
-.pg-turn .side-s1 { color: var(--sq-s1); }
-.pg-turn .side-s2 { color: var(--sq-s2); }
+.pg-turn .side-s1 { color: var(--side-s1); }
+.pg-turn .side-s2 { color: var(--side-s2); }
 .pg-tokens { margin: 0 0 6px; color: var(--text2); font-size: 11.5px; }
-.pg-tokens .side-s1 { color: var(--sq-s1); }
-.pg-tokens .side-s2 { color: var(--sq-s2); }
+.pg-tokens .side-s1 { color: var(--side-s1); }
+.pg-tokens .side-s2 { color: var(--side-s2); }
 .pg-active { margin: 0 0 6px; font-size: 12px; color: var(--text); }
-.pg-active .side-s1 { color: var(--sq-s1); }
-.pg-active .side-s2 { color: var(--sq-s2); }
+.pg-active .side-s1 { color: var(--side-s1); }
+.pg-active .side-s2 { color: var(--side-s2); }
 .pg-active small { display: block; color: var(--text3); font-size: 11px; }
 .pg-done-note { margin: 0 0 8px; color: var(--green, #3ddc84); font-size: 11.5px; }
 .pg-units { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 9px; }
@@ -639,13 +648,13 @@ main { display: flex; flex: 1; min-height: 0; }
 .pg-move-no:hover { background: var(--border); color: var(--text); }
 
 .tz-claim { fill: none; stroke-width: 4; stroke-linejoin: round; }
-.tz-claim-s1 { stroke: var(--sq-s1); }
-.tz-claim-s2 { stroke: var(--sq-s2); }
+.tz-claim-s1 { stroke: var(--side-s1); }
+.tz-claim-s2 { stroke: var(--side-s2); }
 /* The squad number on a claimed zone: the ring says someone claimed it, this
    says which squad, which colour alone cannot when both share a faction. */
 .tz-claimtag circle { fill: #0d1116cc; stroke: currentColor; stroke-width: 2.5; }
-.tz-claimtag.tz-claim-s1 { color: var(--sq-s1); }
-.tz-claimtag.tz-claim-s2 { color: var(--sq-s2); }
+.tz-claimtag.tz-claim-s1 { color: var(--side-s1); }
+.tz-claimtag.tz-claim-s2 { color: var(--side-s2); }
 .tz-claimnum { fill: currentColor; font-size: 11px; font-weight: 800; }
 
 .dlg-art {
@@ -874,8 +883,8 @@ main { display: flex; flex: 1; min-height: 0; }
   border: none; background: none; padding: 0; text-align: left; cursor: pointer;
   font-family: var(--font); font-size: 11px; font-weight: 600;
 }
-.pg-dial-unit.side-s1 { color: var(--sq-s1); }
-.pg-dial-unit.side-s2 { color: var(--sq-s2); }
+.pg-dial-unit.side-s1 { color: var(--side-s1); }
+.pg-dial-unit.side-s2 { color: var(--side-s2); }
 .pg-dial-set { flex: 0 0 auto; font-family: var(--mono); font-size: 10px; color: var(--text2); }
 .pg-dial-row.unset .pg-dial-set { color: #f0b429; }
 .pg-next:disabled { background: var(--surface2); color: var(--text3); cursor: default; }
@@ -1372,8 +1381,8 @@ body.replaying #board .token { cursor: default; }
 }
 #rt-next:disabled { background: var(--surface2); color: var(--text3); }
 .rt-first { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
-.rt-first.side-s1 { color: var(--sq-s1); }
-.rt-first.side-s2 { color: var(--sq-s2); }
+.rt-first.side-s1 { color: var(--side-s1); }
+.rt-first.side-s2 { color: var(--side-s2); }
 
 /* ---------- board overlays ---------- */
 .reach-cell { fill: #4ade80; stroke: #22c55e; stroke-width: 1; }
@@ -1391,8 +1400,8 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 /* ---------- tokens ---------- */
 .token { cursor: grab; }
 .token-base { fill: #fff; stroke-width: 2; }
-.side-s1 .token-base { stroke: var(--sq-s1); fill: color-mix(in srgb, var(--sq-s1) 13%, #fff); }
-.side-s2 .token-base { stroke: var(--sq-s2); fill: color-mix(in srgb, var(--sq-s2) 13%, #fff); }
+.side-s1 .token-base { stroke: var(--side-s1); fill: color-mix(in srgb, var(--sq-s1) 13%, #fff); }
+.side-s2 .token-base { stroke: var(--side-s2); fill: color-mix(in srgb, var(--sq-s2) 13%, #fff); }
 .token.aerial .token-base { fill-opacity: 0.65; stroke-dasharray: 4 3; }
 .token.selected .token-base { stroke-width: 3.5; filter: drop-shadow(0 0 5px #f0b42999); }
 /* A placement made but not confirmed: the real unit, drawn as not-quite-there
@@ -1414,8 +1423,8 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
   font-family: var(--mono); font-size: 9px; font-weight: 700; fill: #fff;
   pointer-events: none; user-select: none;
 }
-.side-s1 .token-facing { fill: var(--sq-s1); }
-.side-s2 .token-facing { fill: var(--sq-s2); }
+.side-s1 .token-facing { fill: var(--side-s1); }
+.side-s2 .token-facing { fill: var(--side-s2); }
 .token.selected .token-facing { fill: var(--accent); }
 .token-label {
   font-size: 9px; fill: #f5f5f4; paint-order: stroke; stroke: #0f1216; stroke-width: 2.4px;
@@ -1780,8 +1789,8 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 .ao-row:hover { background: var(--surface3); }
 .ao-n { font-family: var(--mono); font-size: 10.5px; color: var(--text3); min-width: 14px; }
 .ao-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ao-row.side-s1 .ao-name { color: var(--sq-s1); }
-.ao-row.side-s2 .ao-name { color: var(--sq-s2); }
+.ao-row.side-s1 .ao-name { color: var(--side-s1); }
+.ao-row.side-s2 .ao-name { color: var(--side-s2); }
 .ao-init { font-family: var(--mono); font-size: 11px; color: var(--text2); }
 .ao-tie {
   font-size: 9.5px; font-weight: 700; letter-spacing: 0.4px; padding: 1px 5px;
@@ -2088,8 +2097,8 @@ p.points { white-space: pre-line; }
   display: block; font-weight: 600; font-size: 11px; letter-spacing: 0.3px;
   color: var(--text2); text-transform: none;
 }
-.token-head.side-s1 { color: var(--sq-s1); }
-.token-head.side-s2 { color: var(--sq-s2); }
+.token-head.side-s1 { color: var(--side-s1); }
+.token-head.side-s2 { color: var(--side-s2); }
 
 .action {
   position: relative; overflow: hidden;
@@ -2195,14 +2204,14 @@ p.points { white-space: pre-line; }
 /* ---------- smoke screens ---------- */
 .smoke { cursor: help; }
 .smoke-hatch { stroke-width: 2.4; stroke-dasharray: 6 5; }
-.smoke-hatch-s1 { stroke: color-mix(in srgb, var(--sq-s1) 72%, transparent); }
-.smoke-hatch-s2 { stroke: color-mix(in srgb, var(--sq-s2) 72%, transparent); }
+.smoke-hatch-s1 { stroke: color-mix(in srgb, var(--side-s1) 72%, transparent); }
+.smoke-hatch-s2 { stroke: color-mix(in srgb, var(--side-s2) 72%, transparent); }
 .smoke-frame {
   fill: none; stroke: rgba(214, 222, 232, 0.8);
   stroke-width: 2; stroke-dasharray: 7 4;
 }
-.smoke-s1 .smoke-frame { stroke: color-mix(in srgb, var(--sq-s1) 90%, transparent); }
-.smoke-s2 .smoke-frame { stroke: color-mix(in srgb, var(--sq-s2) 90%, transparent); }
+.smoke-s1 .smoke-frame { stroke: color-mix(in srgb, var(--side-s1) 90%, transparent); }
+.smoke-s2 .smoke-frame { stroke: color-mix(in srgb, var(--side-s2) 90%, transparent); }
 .smoke:hover .smoke-frame { stroke-dasharray: none; }
 .smoke-target {
   fill: rgba(101, 162, 216, 0.2); stroke: #65a2d8; stroke-width: 2;
@@ -2536,10 +2545,10 @@ p.points { white-space: pre-line; }
   font-size: 11px; font-weight: 700; fill: var(--text2);
   font-family: var(--font); pointer-events: none;
 }
-.task-item.side-s1 circle { fill: color-mix(in srgb, var(--sq-s1) 30%, var(--surface2)); stroke: var(--sq-s1); }
-.task-item.side-s1 .task-icon { fill: var(--sq-s1); }
-.task-item.side-s2 circle { fill: color-mix(in srgb, var(--sq-s2) 30%, var(--surface2)); stroke: var(--sq-s2); }
-.task-item.side-s2 .task-icon { fill: var(--sq-s2); }
+.task-item.side-s1 circle { fill: color-mix(in srgb, var(--side-s1) 30%, var(--surface2)); stroke: var(--side-s1); }
+.task-item.side-s1 .task-icon { fill: var(--side-s1); }
+.task-item.side-s2 circle { fill: color-mix(in srgb, var(--side-s2) 30%, var(--surface2)); stroke: var(--side-s2); }
+.task-item.side-s2 .task-icon { fill: var(--side-s2); }
 .task-item.task-control circle { stroke-dasharray: 3 2; }
 
 /* ---------- THE ACTION LENGTH CAPSULE (printed iconography) ----------

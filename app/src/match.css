@@ -18,8 +18,10 @@
   --green-lt: rgba(61, 220, 132, 0.13);
   --red: #ea6d76;
   --red-lt: rgba(234, 109, 118, 0.14);
-  --s1: #65a2d8;
-  --s2: #ea6d76;
+  /* The sides' colours come from styles.css (--side-s1 orange, --side-s2 teal);
+     the blue and red here were UN's and RDL's, and read as factions. */
+  --s1: var(--side-s1);
+  --s2: var(--side-s2);
   --radius: 6px;
   --radius-sm: 4px;
   --radius-lg: 12px;
