@@ -132,7 +132,7 @@ check('a unit lists the Actions a player performs, never a Passive, and a Carrie
 const weapon = (unit, id) => { const w = { ...unit.weapons.find((x) => x.actionId === id) }; delete w.name; return w; };
 // (It prints Melee Firing, so a Melee Lock does not bar it: 4.3.5, the seat's `meleeFiring`.)
 check('a Mech\'s Action has a Timing and a length: the Shotgun\'s Single Shot is a Medium Firing Action, Range 6, four Yellow and a Red',
-  weapon(U.Mire, '536_A'), { slot: 'rightHand', actionId: '536_A', type: 'Firing', timing: 'firing', length: 'medium', range: 6, yellow: 4, red: 1, meleeFiring: true, usable: true });
+  weapon(U.Mire, '536_A'), { slot: 'rightHand', actionId: '536_A', type: 'Firing', timing: 'firing', length: 'medium', range: 6, printed: 6, reach: 6, yellow: 4, red: 1, meleeFiring: true, usable: true });
 check('an Action that carries Ammo shows what is left: the Missile Rack\'s four',
   [weapon(U.Mire, '004_A').ammo, weapon(U.Mire, '536_A').ammo ?? null], [4, null]);
 check('a Projectile Action says how far what it launches strikes from where it lands (the Razor Missile\'s Range 3), and no other Action says anything of it',

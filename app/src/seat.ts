@@ -31,7 +31,7 @@ import { actionRoute, shockWalk, type ActionRoute } from './turn';
 import { inContact } from './rules';
 import { PHASES, statusCount, TIMINGS, zonesOf } from './types';
 import type { CardAction, Facing, GameState, PartState, Side, Stance, Timing, Token } from './types';
-import { extraActivationOf, freehandSlots, isGroundUnit, maneuverRange, maxLink, onHitRiders, structureOf, tokenCards } from './units';
+import { actionRange, extraActivationOf, freehandSlots, isGroundUnit, maneuverRange, maxLink, onHitRiders, stationaryBonus, structureOf, tokenCards, twoHandedRider, twoHandedUse } from './units';
 import { sightedIn, walkIn, type WalkMemo } from './owed';
 
 // ---------- the view ----------
@@ -65,7 +65,18 @@ export interface WeaponView {
   timing?: Timing;
   length?: ActionLength;
   mode?: string;
+  // The Range a seat reads: `reach` for a seat in TRUE_RANGE, else `printed`.
   range: number;
+  // The card's Range as printed.
+  printed: number;
+  // Its Range as the unit would make it now: the printed Range, with a [Two-Handed]
+  // rider while a Freehand is free to support it, and a Firing aura or Amplify
+  // (units.ts actionRange). Not a [Stationary] bonus, which holds only for a unit
+  // that does not move: see `still`.
+  reach: number;
+  // A [Stationary] Range bonus (the R-20 railguns print +2): `reach` for a unit that
+  // stays where it is this Opportunity. Absent where there is none.
+  still?: number;
   yellow: number;
   red: number;
   // Ammo Tokens still face up, for an Action that carries them.
@@ -351,6 +362,21 @@ function ridersOf(a: CardAction): string[] {
   return out;
 }
 
+// What a [Two-Handed] rider and a [Stationary] bonus add to an Action's Range,
+// read once a card Action, as RIDERS.
+const REACH = new WeakMap<CardAction, { two: number; still: number }>();
+function reachOf(a: CardAction): { two: number; still: number } {
+  let out = REACH.get(a);
+  if (!out) REACH.set(a, out = { two: twoHandedRider(a)?.range ?? 0, still: stationaryBonus(a)?.range ?? 0 });
+  return out;
+}
+
+// THE SEATS THAT READ EACH RANGE AS IT WOULD BE MADE (the challenger games, 2026-10-10: reading the printed 8, the
+// Ace parked its Commander 10 Grids from a [Two-Handed] rifle). A seat is put here by its policy (the Tactician's
+// `trueRange`) and cleared by its driver as each game begins; every view that seat is shown, of the table and of
+// each table it imagines (lookOf), then carries `reach` in `range`. Empty, every view reads the printed Range.
+export const TRUE_RANGE = new Set<Side>();
+
 function unitView(data: GameData, state: GameState, t: Token, seat: Side, commander: boolean, lowValue: boolean, hands: number): UnitView {
   const cards = tokenCards(data, t);
   const repaired = new Set(t.repairedSlots ?? []);
@@ -367,6 +393,16 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
     repaired: repaired.has(slot),
   }));
   const stateOf = new Map(parts.map((p) => [p.slot, p]));
+  // A Firing aura is asked of the table once a unit, not once an Action: it is the
+  // same for every Firing Action of one unit.
+  let fire: number | null = null;
+  const reachNow = (a: CardAction): number => {
+    const made = reachOf(a).two ? twoHandedUse(data, t, a)?.action ?? a : a;
+    if (made.type !== 'Firing') return actionRange(data, state.tokens, t, made);
+    if (fire === null) fire = actionRange(data, state.tokens, t, { ...made, range: 0 });
+    return (made.range ?? 0) + fire;
+  };
+  const truly = TRUE_RANGE.has(seat);
   const weapons: WeaponView[] = [];
   for (const { slot, card } of cards) {
     // A Load's Actions are the Mech's it is lent to, never the Carrier's own
@@ -376,6 +412,9 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
       if (a.type === 'Passive' || a.speed === 'passive') continue;
       const part = stateOf.get(slot);
       const riders = ridersOf(a);
+      const printed = a.range ?? 0;
+      const reach = reachNow(a);
+      const still = reachOf(a).still;
       weapons.push({
         slot,
         actionId: a.id,
@@ -384,7 +423,10 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
         timing: t.kind === 'mech' ? timingOf(a) : undefined,
         length: t.kind === 'mech' ? lengthOf(a) : undefined,
         mode: t.kind === 'mech' ? undefined : a.speed,
-        range: a.range ?? 0,
+        range: truly ? reach : printed,
+        printed,
+        reach,
+        ...(still ? { still: reach + still } : {}),
         yellow: a.yellowDice ?? 0,
         red: a.redDice ?? 0,
         ammo: a.id in t.ammo ? t.ammo[a.id] : undefined,

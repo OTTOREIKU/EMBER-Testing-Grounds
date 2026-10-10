@@ -13,7 +13,7 @@ import type { CheckResult, Command } from '../commands';
 import type { GameData } from '../data';
 import { hashDials, type DialEntry } from '../secrecy';
 import {
-  gameOver, lookOf, musing, newMind, owed, owedAfter, owedIfActivated, pondering, tableWithout, viewOf, walkedKey,
+  gameOver, lookOf, musing, newMind, owed, owedAfter, owedIfActivated, pondering, tableWithout, TRUE_RANGE, viewOf, walkedKey,
   type Decision, type GameOver, type MineOffer, type Option, type Outlook, type SeatMind, type WalkMemo,
 } from '../seat';
 import { countHits } from '../setup';
@@ -148,6 +148,9 @@ export class Driver {
   ) {
     this.combat = new BotCombat(seat, host, () => this.odds);
     this.contest = new BotContest(seat, host);
+    // The views this seat is shown read each Range as printed until its policy says otherwise (`trueRange`).
+    TRUE_RANGE.delete(seat);
+    if (policy.trueRange) TRUE_RANGE.add(seat);
     this.routines = {
       dial: (args) => this.dial(args),
       commitDials: () => this.commitDials(),

@@ -20,6 +20,9 @@ export interface Choice {
 
 export interface Policy {
   name: string;
+  // Plays with each Range as it would be made (seat.ts TRUE_RANGE; the Tactician's
+  // skill `trueRange`).
+  trueRange?: boolean;
   choose(decision: Decision, view: SeatView, rng: Rng): Choice;
   // The same choice, worked out in steps with a pause between them. For a
   // policy whose thinking is long enough to hold up a page it shares a thread

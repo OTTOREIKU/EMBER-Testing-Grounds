@@ -27,7 +27,7 @@
 // EACH THING IT THINKS ABOUT CAN BE TURNED OFF (`Skills`), so that what each
 // is worth can be measured by itself (section 8); a question it has no answer
 // for is given the engine's safe answer.
-import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, WeaponView, ZoneView } from '../seat';
+import { TRUE_RANGE, type Decision, type Forecast, type Option, type Outlook, type SeatView, type UnitView, type WeaponView, type ZoneView } from '../seat';
 import type { Choice, Policy } from './policy';
 import { judge } from './learned';
 import { chooseDials, type DialOwn, type Planner, type TurnPlan } from './squad';
@@ -352,6 +352,12 @@ export interface Skills {
   // the squad stood in two zones or more as often (27% of rounds against 28%). OFF: a style's lever; a squad's lanes
   // want its round planned together (M18).
   lanes: boolean;
+  // THE TRUE RANGE (2026-10-10; the challenger games, AI finding 1: reading the printed 8, the Ace walked its
+  // Commander to 10 Grids from a Wild Cat whose rifle reaches 10 with its [Two-Handed] rider, and lost it). Every view
+  // the seat is shown reads each weapon's Range as the unit would make it now, the [Two-Handed] rider while a Freehand
+  // is free, a Firing aura, Amplify (seat.ts TRUE_RANGE), its own squad's and the enemy's. A [Stationary] bonus is
+  // carried apart (`still`) and read by nothing yet. OFF until measured.
+  trueRange: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -360,7 +366,7 @@ export const SKILLS: Skills = {
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
-  squadDials: false, secName: true, hunter: false, clearLines: false, leash: true, lanes: false,
+  squadDials: false, secName: true, hunter: false, clearLines: false, leash: true, lanes: false, trueRange: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -4836,15 +4842,21 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
         return null;
     }
   }
+  // A wrapper round a policy may not carry `trueRange` to its driver: the seat is put in TRUE_RANGE here as well,
+  // from its first question on.
+  const seeTrue = (view: SeatView): void => { if (s.trueRange) TRUE_RANGE.add(view.seat); };
   return {
     name: 'tactician',
+    trueRange: s.trueRange,
     choose(d, view, rng) {
+      seeTrue(view);
       // What it has no judgement of its own about is given the safe answer,
       // the one the engine names for the question.
       return finish(decide(d, view)) ?? safeAnswer(d);
     },
     // The same, with a pause wherever the work may be put down.
     async ponder(d, view, rng, breathe) {
+      seeTrue(view);
       const steps = decide(d, view);
       let step = steps.next();
       while (!step.done) {
