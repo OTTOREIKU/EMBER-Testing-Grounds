@@ -328,7 +328,9 @@ export interface Skills {
   // THE ACE'S OWN CARD (2026-10-10, read off the third data night, where every seat was dealt its card by lot): the
   // card whose holder won most, Escort, then down the order (secondary.ts CARD_ORDER, bestCard). Without it the Ace
   // takes the safe answer, the first card offered: Behead, whose holder won 44.7% against Escort's 59.5%. The
-  // hunter's choice comes first where a style has both. OFF until measured.
+  // hunter's choice comes first where a style has both. ADOPTED 2026-10-10 (OTTO: "yes"): measured 252 of 424
+  // against the Ace's 189 on the same seeds, random squads with Secondary Tasks (100 turned to a win, 43 from one,
+  // p < 0.001; measure_card.sh). The Ace's: the Veteran keeps the safe answer, as the ladder was measured.
   cardPick: boolean;
   // A SQUADMATE'S LINE (2026-10-09; OTTO, watching the Ace play itself: a UN Mech stepped in front of its own
   // Porcupine before it fired). Only a Large unit gives Unit Protection, and it gives it to the target whichever squad
@@ -371,7 +373,7 @@ export const SKILLS: Skills = {
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
-  squadDials: false, secName: true, hunter: false, cardPick: false, clearLines: false, leash: true, lanes: false, trueRange: false,
+  squadDials: false, secName: true, hunter: false, cardPick: true, clearLines: false, leash: true, lanes: false, trueRange: false,
 };
 
 // How much of the board is put to the engine in one decision.

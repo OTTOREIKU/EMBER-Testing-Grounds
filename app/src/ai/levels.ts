@@ -60,8 +60,8 @@ export const recruitPolicy: Policy = blundering(brawlerPolicy, RECRUIT_RATE, 're
 // handicaps were measured and set aside, too close to the Ace to be a level of
 // their own: no worth on its next turn (the Ace 114 of 200), and the reply
 // weighed at about half with that (the Ace 112 of 200).
-// The learned judge is the Ace's alone (`learned`, M17): it was measured on the Ace, and the ladder was measured
-// without it.
-export const VETERAN_SKILLS: Partial<Skills> = { exposure: false };
+// The learned judge is the Ace's alone (`learned`, M17), and so is its own choice of Secondary Task (`cardPick`): each
+// was measured on the Ace, and the ladder was measured without them.
+export const VETERAN_SKILLS: Partial<Skills> = { exposure: false, cardPick: false };
 export const VETERAN_WEIGHTS: Partial<Weights> = { learned: 0 };
 export const veteranPolicy: Policy = { ...makeTactician(VETERAN_SKILLS, VETERAN_WEIGHTS), name: 'veteran' };

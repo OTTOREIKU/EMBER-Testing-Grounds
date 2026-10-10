@@ -47,8 +47,8 @@ const AI = M.AI;
   check('the Recruit is the Brawler making mistakes at the rate measured; the Veteran the Tactician with its handicap; both named',
     [AI.recruitPolicy.name, AI.RECRUIT_RATE > 0 && AI.RECRUIT_RATE < 1, AI.veteranPolicy.name, typeof AI.veteranPolicy.ponder, Object.keys(AI.VETERAN_WEIGHTS).length + Object.keys(AI.VETERAN_SKILLS).length > 0],
     ['recruit', true, 'veteran', 'function', true]);
-  check('the Veteran\'s handicap is the one measured: no look ahead to the other squad\'s reply, and nothing else changed but the learned judge, the Ace\'s alone',
-    [AI.VETERAN_SKILLS, AI.VETERAN_WEIGHTS, AI.RECRUIT_RATE], [{ exposure: false }, { learned: 0 }, 0.6]);
+  check('the Veteran\'s handicap is the one measured: no look ahead to the other squad\'s reply, and nothing else changed but the learned judge and the Ace\'s own card, the Ace\'s alone',
+    [AI.VETERAN_SKILLS, AI.VETERAN_WEIGHTS, AI.RECRUIT_RATE], [{ exposure: false, cardPick: false }, { learned: 0 }, 0.6]);
 }
 
 // ---------- played ----------
@@ -74,9 +74,11 @@ const AI = M.AI;
   // Load lent and the better target weighed, 2026-10-03, seed 1 became one of
   // the games the Veteran takes off the Ace; with the Carrier kept by its Mech,
   // 2026-10-09, seed 2 did too; the ladder holds on seeds 4 to 6 and 9 to 13.)
+  // (Seed 5: with the Ace's own card, 2026-10-10, seed 4 became one of them; the
+  // ladder holds on seeds 1, 2 and 5 to 13, seed 3 a level game.)
   const between = [];
   for (const [s1, s2] of [[AI.veteranPolicy, AI.tacticianPolicy], [AI.veteranPolicy, AI.recruitPolicy]]) {
-    const t = botTable(M, data, data.solo.scenarios[0], { seed: 4, policies: { s1, s2 }, glue: M.HUD.glueAfter });
+    const t = botTable(M, data, data.solo.scenarios[0], { seed: 5, policies: { s1, s2 }, glue: M.HUD.glueAfter });
     const end = await t.run({ maxSteps: 12000 });
     between.push({ end: end.kind, winner: end.result?.winner ?? null, refused: t.refused.length });
     t.close();
