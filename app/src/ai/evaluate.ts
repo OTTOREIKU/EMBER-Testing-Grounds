@@ -627,6 +627,12 @@ export interface Weights {
   // Unit Protection a Mech of ours standing in its line gives the target, that a plan leaving the Mech there is
   // charged. Read only with the skill.
   clearLines: number;
+  // VIP, AS IT WILL BE PAID (2026-10-10; the challenger's game 3: 3 and then 6 Victory Points behind on the Commander's
+  // Parts the round limit pays, the Ace read the game as level, 0 to 0 on the board, and both its Mechs ended their
+  // turns idle for two rounds). The margin (`marginOf`: who is ahead, for `press` and `stakes`) counts each
+  // Commander's Parts already destroyed at the Task's Victory Points a Part, this much of them. 0: the banked Victory
+  // Points alone, as before.
+  vipPending: number;
 }
 
 export const TACTICIAN: Weights = {
@@ -698,6 +704,7 @@ export const TACTICIAN: Weights = {
   tieCount: 3,
   horizon: 0,
   ewOdds: 1,
+  vipPending: 0,
   escort: 0,
   taunt: 0,
   suppress: 0,
@@ -958,6 +965,7 @@ export function marginOf(view: SeatView, w: Weights): number {
   // The Victory Points banked, and what the Secondary Tasks would still pay as the game ends (`secondary`).
   const banked = view.vp[view.seat] - view.vp[view.other] + secondaryAhead(view, w);
   const task = view.task;
+  if (task?.family === 'vip') return banked + w.vipPending * vipPartsLead(view, task.perPart);
   if (task?.family === 'terminal') return banked + task.vp * terminalLead(view, w, task.fromRound);
   if (task?.family === 'blackbox') {
     let lead = 0;
@@ -971,6 +979,18 @@ export function marginOf(view: SeatView, w: Weights): number {
   let rounds = 0;
   for (let r = Math.max(view.round, task.fromRound); r <= view.roundLimit; r++) rounds += w.missionFuture ** (r - view.round);
   return banked + task.vp * zoneLead(view, w) * rounds;
+}
+
+// VIP: the Victory Points the round limit will pay for the Parts of each Commander already destroyed, to the seat
+// whose view it is, while both Commanders stand (one destroyed has paid its Task and ended the game). A Repaired
+// Part works again and is not counted.
+function vipPartsLead(view: SeatView, perPart: number): number {
+  const lead = (side: string) => view.units.find((u) => u.side === side && u.commander && u.alive && u.deployed);
+  const mine = lead(view.seat);
+  const theirs = lead(view.other);
+  if (!mine || !theirs) return 0;
+  const down = (u: UnitView) => u.parts.filter((p) => p.state === 'destroyed' && !p.repaired).length;
+  return perPart * (down(theirs) - down(mine));
 }
 
 // A Main Task that is scored by standing in the zones it names: an Occupation,
