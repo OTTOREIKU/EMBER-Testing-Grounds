@@ -424,8 +424,13 @@ const TOLD_IN_THINKING = new Set([
 // An answer worth a line: to such a question, with more than one answer, and
 // not one let go by, nor the end of a turn that picks nothing up. A Ready, or a
 // moment for a Tactics Card, is a line only where a card is played.
+// The one answer to a question is a line where it is a deed, an attack or an
+// Electronic Action (OTTO, 2026-10-10: a Raven's Fire Control Interference put
+// its Token on his Mech and the Thinking tab said nothing): a Drone's Automatic
+// Action is the one its rule leaves it, as a Mine's blast is, and still done.
 export function worthAThought(d: Decision, o: Option): boolean {
-  if (!TOLD_IN_THINKING.has(d.kind) || d.options.length < 2 || o.tags.includes('pass')) return false;
+  if (!TOLD_IN_THINKING.has(d.kind) || o.tags.includes('pass')) return false;
+  if (d.options.length < 2 && !o.tags.includes('attack') && !o.tags.includes('electronic')) return false;
   if (o.tags.includes('end') && !o.tags.includes('take')) return false;
   if (d.kind === 'phase.ready' || d.kind === 'tactic.after' || d.kind === 'tactic.end') return o.tags.includes('tactic');
   return true;

@@ -618,6 +618,11 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
       W(d('phase.ready'), { id: 'a', tags: [] }), W(d('phase.ready'), { id: 'a', tags: ['tactic'] }), W(d('opp.act'), { id: 'a', tags: ['end'] }), W(d('opp.act'), { id: 'a', tags: ['end', 'take'] }),
       W(d('loop.designate.command'), { id: 'a', tags: ['designate'] }), W(d('setup.deploy'), { id: 'a', tags: ['deploy'] })],
     [true, false, false, false, true, false, true, true, true]);
+  // OTTO, 2026-10-10: a Raven's Fire Control Interference put its Token on his Mech, and the Thinking tab said nothing.
+  check('THE ONE ANSWER A RULE LEAVES is a line where it is a deed: a Drone\'s Automatic attack or Electronic Action, a Mine\'s blast; never a lone move or a lone end',
+    [W(d('activation.act', 1), { id: 'a', tags: ['electronic', 'automatic'] }), W(d('activation.act', 1), { id: 'a', tags: ['attack', 'firing', 'automatic'] }),
+      W(d('blast.resolve', 1), { id: 'a', tags: ['attack'] }), W(d('activation.act', 1), { id: 'a', tags: ['end'] }), W(d('activation.act', 1), { id: 'a', tags: ['move'] })],
+    [true, true, true, false, false]);
   check('never a step inside an attack (its line tells what the attack did), nor the bookkeeping of setting up',
     ['attack.focus', 'attack.part', 'defence.declare', 'defence.reroll', 'contest.focus', 'setup.roll', 'setup.edge', 'setup.box', 'loop.designate.unit'].map((k) => W(d(k), { id: 'a', tags: [] })),
     [false, false, false, false, false, false, false, false, false]);
