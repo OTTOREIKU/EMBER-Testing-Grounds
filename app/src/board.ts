@@ -1501,12 +1501,13 @@ export class Board {
     this.gGhost.replaceChildren();
   }
 
-  showRange(a: { col: number; row: number; size: number }, b: { col: number; row: number; size: number }, text: string): void {
+  // `line`: the line the sight was read on (rules.ts firingSightLine), in cells; without it, centre to centre.
+  showRange(a: { col: number; row: number; size: number }, b: { col: number; row: number; size: number }, text: string, line?: { x0: number; y0: number; x1: number; y1: number }): void {
     this.gOverlay.replaceChildren();
-    const ax = (a.col + a.size / 2) * CELL;
-    const ay = (a.row + a.size / 2) * CELL;
-    const bx = (b.col + b.size / 2) * CELL;
-    const by = (b.row + b.size / 2) * CELL;
+    const ax = (line ? line.x0 : a.col + a.size / 2) * CELL;
+    const ay = (line ? line.y0 : a.row + a.size / 2) * CELL;
+    const bx = (line ? line.x1 : b.col + b.size / 2) * CELL;
+    const by = (line ? line.y1 : b.row + b.size / 2) * CELL;
     this.gOverlay.appendChild(el('line', { x1: ax, y1: ay, x2: bx, y2: by, class: 'range-line' }));
     const mx = (ax + bx) / 2;
     const my = (ay + by) / 2;

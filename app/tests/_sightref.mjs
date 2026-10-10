@@ -70,7 +70,7 @@ export function reckonLines(M, a, b, terrain, tokens, smokeGrids) {
 }
 
 // Does the segment p->q meet the closed square [x0,x1]x[y0,y1] at all?
-function meets(p, q, x0, y0, x1, y1) {
+export function meets(p, q, x0, y0, x1, y1) {
   let t0 = 0, t1 = 1;
   const dx = q.x - p.x, dy = q.y - p.y;
   const P = [-dx, dx, -dy, dy], Q = [p.x - x0, x1 - p.x, p.y - y0, y1 - p.y];

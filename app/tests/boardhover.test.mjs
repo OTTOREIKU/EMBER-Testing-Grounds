@@ -347,7 +347,10 @@ const TOKEN_B = { title: 'D7 Tarantula', sub: 'UN · Carrier Drone', lines: ['Ca
   // 'smoked' off the centre line alone and 'clear' through mixed cover.
   for (const [name, src] of [['freeplay', app], ['the Match Centre', hud]]) {
     check(`${name} reads smoke and line of sight together`,
-      /const los = firingSight\(sel, hov, /.test(src), true);
+      /const \{ sight: los, \.\.\.line \} = firingSightLine\(sel, hov, /.test(src), true);
+    // OTTO, 2026-10-10: "lets have the engine draw the line in the way thats it's using to calculate obstructed vs
+    // blocked": the line handed to the board is the one the reading was taken on (losexact.test holds which).
+    check(`${name} draws the line the reading was taken on`, /board\.showRange\(sel, hov, .*, line\);$/m.test(src), true);
   }
   // The reading itself is written once per board but must AGREE, so the same
   // three cases are spelled the same way in both.

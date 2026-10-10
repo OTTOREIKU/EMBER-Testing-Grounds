@@ -10,7 +10,7 @@
 // Cat's own table, against the rule's two cases built by hand, and against a
 // second reckoning of every line on boards drawn at random.
 import { loadEngine, freshState } from './_engine.mjs';
-import { reckonLines } from './_sightref.mjs';
+import { meets, reckonLines } from './_sightref.mjs';
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -48,6 +48,25 @@ const wall = (id, cells, height = 3) => ({
   const porcupine = unit(4, 12, 16, 2);
   check('the Porcupine below the building was in sight of the Dune, past the building\'s corner',
     M.R.losBetweenNow(dune, porcupine, terrain, [...tokens, porcupine]), 'obstructed');
+  // THE LINE THE BOARD DRAWS (OTTO, 2026-10-10: "lets have the engine draw the line in the way thats it's using to
+  // calculate obstructed vs blocked"): the one the reading was taken on, judged here by the second reckoning's own
+  // clipping: it meets no 3-inch cell, where the line between the centres would.
+  const seen = [...tokens, porcupine];
+  const drawn = M.R.firingSightLine(dune, porcupine, terrain, seen, []);
+  const walls = terrain.filter((p) => p.blocksLos).flatMap((p) => p.subCells);
+  const crosses = (x0, y0, x1, y1) => walls.some((c) => meets({ x: x0, y: y0 }, { x: x1, y: y1 }, c.col, c.row, c.col + 1, c.row + 1));
+  const centres = [dune.col + dune.size / 2, dune.row + dune.size / 2, porcupine.col + porcupine.size / 2, porcupine.row + porcupine.size / 2];
+  check('the board draws the line the sight was read on: past the corner, where the line between the centres meets the building',
+    [drawn.sight, crosses(drawn.x0, drawn.y0, drawn.x1, drawn.y1), crosses(...centres)], ['obstructed', false, true]);
+  const none = M.R.firingSightLine(cat, dune, terrain, tokens, []);
+  check('with no line of sight at all it draws the line between the centres',
+    [none.sight, [none.x0, none.y0, none.x1, none.y1]], ['blocked', [cat.col + 1.5, cat.row + 1.5, dune.col + 1.5, dune.row + 1.5]]);
+  check('and its reading is firingSight\'s own', drawn.sight === M.R.firingSightNow(dune, porcupine, terrain, seen, []), true);
+}
+{
+  // On open ground every line is clear, and the one drawn is the line between the centres.
+  const open = M.R.firingSightLine(unit(1, 0, 0, 3), unit(2, 9, 6, 2), [], [], []);
+  check('on open ground the line drawn is clear and runs between the centres', [open.sight, open.x0, open.y0, open.x1, open.y1], ['clear', 1.5, 1.5, 10, 7]);
 }
 
 // A corner touched is passed through. Two Small units a Grid apart corner to

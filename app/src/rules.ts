@@ -1204,6 +1204,28 @@ export const walked = (): number => walks;
 export function losBetweenNow(a: Token, b: Token, terrain: TerrainPiece[], tokens: Token[]): 'clear' | 'obstructed' | 'blocked' {
   return walkLinesNow(a, b, terrain, tokens, null) as 'clear' | 'obstructed' | 'blocked';
 }
+// THE LINE A FIRING ACTION'S SIGHT IS TAKEN ON, for the board to draw (OTTO, 2026-10-10: "lets have the engine draw
+// the line in the way thats it's using to calculate obstructed vs blocked"): firingSight's reading, and of the 81
+// lines it read, the most central one that gives it: a clear line where one is clear, else one that is obstructed but
+// sees past what blocks the others. Where none sees, the line between the two centres. In cells, as the Bases are.
+export function firingSightLine(
+  a: Token,
+  b: Token,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  smoke: SmokeScreen[],
+): { sight: Sight; x0: number; y0: number; x1: number; y1: number } {
+  const boxA = baseBox(a);
+  const boxB = baseBox(b);
+  const pick: SightPick = { x0: boxA.col + boxA.w / 2, y0: boxA.row + boxA.h / 2, x1: boxB.col + boxB.w / 2, y1: boxB.row + boxB.h / 2, rank: 3, off: Infinity };
+  const grids = smoke.length ? new Set(smoke.map(smokeKey)) : null;
+  const sight: Sight = grids && (standsInSmoke(a, grids) || standsInSmoke(b, grids))
+    ? 'smoked'
+    : walkLinesNow(a, b, terrain, tokens, grids, false, pick);
+  if (pick.rank === 2) Object.assign(pick, { x0: boxA.col + boxA.w / 2, y0: boxA.row + boxA.h / 2, x1: boxB.col + boxB.w / 2, y1: boxB.row + boxB.h / 2 });
+  return { sight, x0: pick.x0, y0: pick.y0, x1: pick.x1, y1: pick.y1 };
+}
+
 export function firingSightNow(a: Token, b: Token, terrain: TerrainPiece[], tokens: Token[], smoke: SmokeScreen[]): Sight {
   if (!smoke.length) return walkLinesNow(a, b, terrain, tokens, null);
   const grids = new Set(smoke.map(smokeKey));
@@ -1310,6 +1332,11 @@ function lineCells(
 // `first` stops the walk at the first line that is sight, for a reader that
 // asks only whether there is one (sightBetween): the answer is then 'clear'
 // for "some line is", and says nothing of what obstructs the others.
+// The line a reading was taken on, for a page that draws it (firingSightLine): of the lines walked, the most central
+// of the best kind, a clear line before one that is obstructed but sees, and one that sees before one that does not.
+// In cells, as the Bases are.
+interface SightPick { x0: number; y0: number; x1: number; y1: number; rank: number; off: number }
+
 function walkLinesNow(
   a: Token,
   b: Token,
@@ -1317,6 +1344,7 @@ function walkLinesNow(
   tokens: Token[],
   smokeGrids: Set<string> | null,
   first = false,
+  pick: SightPick | null = null,
 ): 'clear' | 'obstructed' | 'blocked' | 'smoked' {
   walks += 1;
   // 4.2.4: line of sight to or from an Aerial Unit is never Obstructed, and
@@ -1376,6 +1404,8 @@ function walkLinesNow(
   let anySight = false;
   let smokeTook = false;
   let anyObstruct = false;
+  const centreA = { x: boxA.col + boxA.w / 2, y: boxA.row + boxA.h / 2 };
+  const centreB = { x: boxB.col + boxB.w / 2, y: boxB.row + boxB.h / 2 };
   const pointsB = basePoints(boxB);
   for (const pa of basePoints(boxA)) {
     for (const pb of pointsB) {
@@ -1397,6 +1427,11 @@ function walkLinesNow(
         if (smoky(c, r) && smoky(c2, r2)) lineSmoked = true;
         return false;
       });
+      if (pick) {
+        const rank = lineBlocked || lineSmoked ? 2 : lineObstruct ? 1 : 0;
+        const off = (pa.x - centreA.x) ** 2 + (pa.y - centreA.y) ** 2 + (pb.x - centreB.x) ** 2 + (pb.y - centreB.y) ** 2;
+        if (rank < pick.rank || (rank === pick.rank && off < pick.off)) Object.assign(pick, { x0: pa.x, y0: pa.y, x1: pb.x, y1: pb.y, rank, off });
+      }
       if (first && !lineBlocked && !lineSmoked) return 'clear';
       if (!lineBlocked && !lineSmoked) anySight = true;
       if (!lineBlocked && lineSmoked) smokeTook = true;

@@ -50,7 +50,7 @@ import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
 import { smokePerGroup, syncSeason } from './season';
 import { handCommand, handCount, handIds, saltFor, setHandRoom } from './tactichand';
-import { arcGrids, boxDropCellIn, boxDropCells, fitsAt, routeStops, spotInGrid, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot, mineSpot } from './rules';
+import { arcGrids, boxDropCellIn, boxDropCells, fitsAt, routeStops, spotInGrid, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSightLine, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot, mineSpot } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, crawlHolders, lockersOf, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -1164,7 +1164,8 @@ async function init() {
       }
       // Terrain and smoke on the same lines, as a Firing Action is judged (audit
       // Phase 4, G1/G3).
-      const los = firingSight(sel, hov, currentTerrain(), state.tokens, state.smoke ?? []);
+      // The line drawn is the one the reading was taken on (OTTO, 2026-10-10): past the corner that only obstructs.
+      const { sight: los, ...line } = firingSightLine(sel, hov, currentTerrain(), state.tokens, state.smoke ?? []);
       // 自动盾牌 Automatic Shield: said while the player is still choosing, before
       // the click and before the Tick is spent, which is exactly what a confirm
       // dialog would have bought. Read-only — the redirect is mandatory (FAQ
@@ -1174,7 +1175,7 @@ async function init() {
         ? (pendingAttack.action ?? findAction(sel, pendingAttack.actionId))
         : undefined;
       const shield = aimed ? automaticShieldFor(data, state.tokens, sel, hov, aimed) : null;
-      board.showRange(sel, hov, `${rangeText(sel, hov)} · ${los}${shield ? ` · ⤳ ${shield.shield.label} shields it` : ''}`);
+      board.showRange(sel, hov, `${rangeText(sel, hov)} · ${los}${shield ? ` · ⤳ ${shield.shield.label} shields it` : ''}`, line);
     },
     onCellClick(col, row, erase) {
       if (movePlan) {

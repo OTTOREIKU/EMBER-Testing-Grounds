@@ -12,7 +12,7 @@ import { contestAct as sendContestAct, counterResponder as contestResponder } fr
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
 import { smokePerGroup, syncSeason } from './season';
 import { handIds, saltFor } from './tactichand';
-import { boxDropCellIn, boxDropCells, fitsAt, spotInGrid,  inContact, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSight, losNote, smokeBlocks, pathCost, rangeBetween, reachableGrids, standingSpot, mineSpot, type LargeGrid } from './rules';
+import { boxDropCellIn, boxDropCells, fitsAt, spotInGrid,  inContact, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSightLine, losNote, smokeBlocks, pathCost, rangeBetween, reachableGrids, standingSpot, mineSpot, type LargeGrid } from './rules';
 import { breakAwayNote, canBeForceMoved, crawlHolders, tetherNote } from './melee';
 import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
@@ -847,14 +847,15 @@ function boardCallbacks(): BoardCallbacks {
       // line whatever the terrain says (4.6).
       // Terrain and smoke on the same lines, as a Firing Action is judged (audit
       // Phase 4, G1/G3).
-      const los = firingSight(sel, hov, terrainNow(ctx), s.tokens, s.smoke ?? []);
+      // The line drawn is the one the reading was taken on (OTTO, 2026-10-10): past the corner that only obstructs.
+      const { sight: los, ...line } = firingSightLine(sel, hov, terrainNow(ctx), s.tokens, s.smoke ?? []);
       // Automatic Shield, said while the player is still choosing rather than
       // after the click: the redirect is mandatory (FAQ A12), so there is
       // nothing to veto and the only out is a different target. Read only for a
       // real attack targeting, since that is the only time a shield can move.
       const aimed = attackPick ? actionOn(ctx, sel, attackPick.actionId) : undefined;
       const shield = aimed ? automaticShieldFor(ctx.data, s.tokens, sel, hov, aimed) : null;
-      board.showRange(sel, hov, `${rangeText(sel, hov)} · ${los}${shield ? ` · ⤳ ${shield.shield.label} shields it` : ''}`);
+      board.showRange(sel, hov, `${rangeText(sel, hov)} · ${los}${shield ? ` · ⤳ ${shield.shield.label} shields it` : ''}`, line);
     },
     onSelect(uid) {
       const ctx = hudRef;
