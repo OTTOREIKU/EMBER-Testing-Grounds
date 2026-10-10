@@ -31,7 +31,7 @@ import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, WeaponVie
 import type { Choice, Policy } from './policy';
 import { judge } from './learned';
 import { chooseDials, type DialOwn, type Planner, type TurnPlan } from './squad';
-import { huntersCard, secondaryName } from './secondary';
+import { bestCard, huntersCard, secondaryName } from './secondary';
 import { apart, beside, couldStrike, endOf, facingAt, facingOf, foesOf, lockedAt, percent, reaches, ready, same, strikers, unitOf, type Grid, type Road } from './geometry';
 import { attacking, declare, hitLocation, reroll, surplus, type Worth } from './fight';
 import { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, stride, swingOf, TACTICIAN, testWorth, unitWorth, zoned, type Weights } from './evaluate';
@@ -325,6 +325,11 @@ export interface Skills {
   // to be more aggressive"): a card that pays for the enemy destroyed (secondary.ts huntersCard). Without it the card
   // is the engine's safe answer: the Ace's own choice is to be read off the data nights' games.
   hunter: boolean;
+  // THE ACE'S OWN CARD (2026-10-10, read off the third data night, where every seat was dealt its card by lot): the
+  // card whose holder won most, Escort, then down the order (secondary.ts CARD_ORDER, bestCard). Without it the Ace
+  // takes the safe answer, the first card offered: Behead, whose holder won 44.7% against Escort's 59.5%. The
+  // hunter's choice comes first where a style has both. OFF until measured.
+  cardPick: boolean;
   // A SQUADMATE'S LINE (2026-10-09; OTTO, watching the Ace play itself: a UN Mech stepped in front of its own
   // Porcupine before it fired). Only a Large unit gives Unit Protection, and it gives it to the target whichever squad
   // it belongs to: two White Dice more on the Defense Roll (4.5.3). A plan that leaves a Mech of ours between a
@@ -366,7 +371,7 @@ export const SKILLS: Skills = {
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
-  squadDials: false, secName: true, hunter: false, clearLines: false, leash: true, lanes: false, trueRange: false,
+  squadDials: false, secName: true, hunter: false, cardPick: false, clearLines: false, leash: true, lanes: false, trueRange: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -4763,7 +4768,7 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
       case 'setup.designate.zone':
         return s.secName ? secondaryName(d, view) : null;
       case 'setup.secondary':
-        return s.hunter ? huntersCard(d, view) : null;
+        return s.hunter ? huntersCard(d, view) : s.cardPick ? bestCard(d) : null;
       case 'setup.deploy':
         return s.setup ? yield* deploy(d, view, w, s, memo) : null;
       case 'planning.dial': {

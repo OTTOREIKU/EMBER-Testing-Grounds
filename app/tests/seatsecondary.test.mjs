@@ -179,6 +179,15 @@ const units = [hard, soft, theirHard, theirSoft, drone, dragonfly];
     [hunter.choose(q, two, rng).option, hunter.choose(q, two, rng).reason], ['secondary:annihilation', 'secondary_hunter']);
   check('against a squad of one Mech, Behead: its Head can only be that Mech', hunter.choose(q, one, rng).option, 'secondary:decapitation');
   check('the Ace, no hunter, takes the safe answer: its own choice of card is to be read off the games', AI.tacticianPolicy.choose(q, two, rng).option, 'secondary:decapitation');
+  // THE ACE'S OWN CARD (`cardPick`, OFF until measured): read off the third data night, where every card was dealt by
+  // lot: Escort's holder won most.
+  const picker = AI.makeTactician({ cardPick: true });
+  check('the skill is OFF unless named', [AI.SKILLS.cardPick, AI.tacticianPolicy.choose(q, two, rng).option], [false, 'secondary:decapitation']);
+  check('with it the Ace takes Escort', [picker.choose(q, two, rng).option, picker.choose(q, two, rng).reason], ['secondary:escort', 'secondary_best']);
+  const noEscort = { ...q, options: q.options.filter((o) => o.id !== 'secondary:escort') };
+  check('and without Escort on offer, the next in the order: Annihilation', picker.choose(noEscort, two, rng).option, 'secondary:annihilation');
+  check('the order is every card, each once', [...AI.CARD_ORDER].sort(), [...cards].sort());
+  check('a hunter with the skill too keeps the hunter\'s card', AI.makeTactician({ hunter: true, cardPick: true }).choose(q, two, rng).option, 'secondary:annihilation');
   const bounty = viewOf(units, { secondary: { s1: card('bounty-hunt', 'destroy-designated', 4), s2: null } });
   const named = hunter.choose(ask('setup.designate.target', [mechOption(theirHard), mechOption(theirSoft)], { what: 'target', for: 's1', owner: 's2' }), bounty, rng);
   check('and names for its card as the Ace does: its Bounty the enemy Mech easiest to destroy', [named.option, named.reason], [`mech:${theirSoft.uid}`, 'secondary_bounty']);

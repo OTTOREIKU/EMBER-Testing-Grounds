@@ -67,6 +67,21 @@ export function secondaryName(d: Decision, view: SeatView): Choice | null {
 // A HUNTER'S CARD (the Brawler's `hunter`): one that pays for destroying the enemy, not for holding ground. Against a
 // squad of one Mech, Behead: its Head can only be that Mech, the kill a fighter is after anyway, at 5. Otherwise
 // Annihilation, which pays for every enemy Mech and Drone destroyed; then Bounty Hunt, Behead, Weapons Test.
+// THE CARD THAT WINS MOST (the Ace's `cardPick`, 2026-10-10). The third data night dealt each seat its card by lot
+// (8,725 games of the Ace against itself, random squads, every card held about 2,200 times), so how often a card's
+// holder won is what holding it does: Escort 59.5%, Annihilation 55.1%, Mercy 52.7%, Weapons Test 49.4%, Bounty Hunt
+// 49.2%, Planned Obsolescence 46.6%, Behead 44.7%, Excavation Claim 42.9% (ai-plan sec_cells.py). Escort leads with
+// one Mech or two, against one or two, on every Main Task but Control and Terminal, where Annihilation is level with
+// it; no cell is a clear win for another card. The first of these offered.
+export const CARD_ORDER = ['escort', 'annihilation', 'mercy', 'weapons-test', 'bounty-hunt', 'disposal-procedure', 'decapitation', 'potential-excavation-area'];
+export function bestCard(d: Decision): Choice | null {
+  for (const id of CARD_ORDER) {
+    const o = d.options.find((x) => x.id === `secondary:${id}`);
+    if (o) return { option: o.id, reason: 'secondary_best', why: o.label };
+  }
+  return null;
+}
+
 export function huntersCard(d: Decision, view: SeatView): Choice | null {
   const offered = (id: string): Option | undefined => d.options.find((o) => o.id === `secondary:${id}`);
   const enemyMechs = view.units.filter((u) => u.side === view.other && u.kind === 'mech').length;

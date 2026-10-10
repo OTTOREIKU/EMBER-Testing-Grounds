@@ -10,5 +10,6 @@ export { blundering, RECRUIT_RATE, recruitPolicy, VETERAN_SKILLS, VETERAN_WEIGHT
 export { BRAWLER_SKILLS, BRAWLER_WEIGHTS, brawlerPolicy } from './styles';
 export { exposureAt, firstAnswers, makeTactician, races, SKILLS, TACTICIAN_LIMITS, tacticianPolicy, DIALS, TIES, turnPlanner, weighed, type DialInfo, type Skills, type TieInfo, type Weighed } from './tactician';
 export { chooseDials, likelyTiming, projectRound, ROUND_KILL, roundOrder, type DialOwn, type Planner, type ProjectedRound, type RoundCut, type RoundStep, type SquadChoice, type TurnPlan } from './squad';
+export { bestCard, CARD_ORDER } from './secondary';
 export { safePolicy, type Choice, type Policy } from './policy';
 export { Rng, seedOf } from './rng';
