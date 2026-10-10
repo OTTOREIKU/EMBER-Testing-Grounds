@@ -365,6 +365,11 @@ export interface Skills {
   // is free, a Firing aura, Amplify (seat.ts TRUE_RANGE), its own squad's and the enemy's. A [Stationary] bonus is
   // carried apart (`still`) and read by nothing yet. OFF until measured.
   trueRange: boolean;
+  // A TERMINAL ITS SQUAD HOLDS, SECURED (2026-10-10; the challenger's game 7, AI finding 17: my Remote Accesses spent
+  // Bravo and Echo under the Ace's lone Mechs before its End-Phase Direct Access). A held zone's Terminal pays only at
+  // the End Phase, and a Terminal is accessed once a round: where an enemy Mech can still Remote Access it first
+  // (`terminalAtRisk`), it is worth a Remote Access as one nobody holds. OFF until measured.
+  accessFirst: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -374,6 +379,7 @@ export const SKILLS: Skills = {
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
   squadDials: false, secName: true, hunter: false, cardPick: true, clearLines: false, leash: true, lanes: false, trueRange: false,
+  accessFirst: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -1257,10 +1263,20 @@ function jam(options: Option[], c: Ctx): Deed | null {
   return best;
 }
 
+// A TERMINAL ITS SQUAD HOLDS, AT RISK (`accessFirst`): an enemy Mech whose turn is still to come, within the Task's
+// reach of the zone, with a dial that can make the Remote Access (Tactical, its neighbour Movement under Flexible
+// Timing, or one not yet shown), can spend the Terminal before the End Phase pays the holder.
+export function terminalAtRisk(zone: ZoneView, view: SeatView, reach: number): boolean {
+  return reach > 0 && view.units.some((u) => u.side === view.other && u.kind === 'mech' && u.alive && u.deployed && !u.done
+    && (u.dialHidden || !u.timing || u.timing === 'tactical' || u.timing === 'movement')
+    && zone.cells.some((ref) => apart(u.grid, cellOf(ref)) <= reach));
+}
+
 // A REMOTE ACCESS: a Terminal accessed pays whoever accessed it as the round
 // ends. Worth the chance of its Counter-roll (`access`) times what the Main
 // Task gains by it, on the table the answer is offered at: nothing where this
-// squad would hold the Terminal's zone as the round ends anyway, once where
+// squad would hold the Terminal's zone as the round ends anyway (once, with
+// `accessFirst`, where an enemy Mech could spend it first), once where
 // nobody would, twice where the other squad would (it pays this squad and not
 // them).
 function access(options: Option[], c: Ctx): Deed | null {
@@ -1273,13 +1289,15 @@ function access(options: Option[], c: Ctx): Deed | null {
     const zone = table.zones.find((z) => z.id === o.facts?.zone);
     // (The seam offers the access only at a Terminal still open this round.)
     if (!zone) continue;
-    const gain = zone.holder === c.view.seat ? 0 : zone.holder ? 2 : 1;
+    const now = c.view.zones.find((z) => z.id === zone.id) ?? zone;
+    const atRisk = zone.holder === c.view.seat && c.skills.accessFirst && terminalAtRisk(now, c.view, task.reach);
+    const gain = zone.holder === c.view.seat ? (atRisk ? 1 : 0) : zone.holder ? 2 : 1;
     // The Counter-roll's own odds, where they are read (`ewOdds`): `access` is
     // then a share of what a won roll is worth, and no longer the chance.
     const odds = c.w.ewOdds > 0 ? o.win?.() ?? null : null;
     const value = c.w.access * (odds === null ? 1 : odds) * task.vp * gain;
     if (value > EXACT && (!best || value > best.value + EXACT)) {
-      best = { option: o, value, why: `${o.label}, which ${gain === 2 ? 'the other squad would have as the round ends' : 'nobody holds'}`, reason: 'access_terminal' };
+      best = { option: o, value, why: `${o.label}, which ${gain === 2 ? 'the other squad would have as the round ends' : atRisk ? 'the other squad could take first' : 'nobody holds'}`, reason: 'access_terminal' };
     }
   }
   return best;
