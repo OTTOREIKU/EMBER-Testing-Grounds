@@ -164,9 +164,9 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
       spec('?solo=alley-forward-advance&ai=veteran').opponent, spec('?solo=alley-forward-advance&ai=recruit').opponent],
     ['tactician', ['tactician', 'veteran', 'recruit', 'brawler', 'eager', 'legal'], 'tactician', 'Computer (Ace)', 'veteran', 'Computer (Veteran)', 'recruit', 'Computer (Recruit)',
       'brawler', 'Computer (Brawler)', 'eager', 'brawler', 'veteran', 'recruit']);
-  check('the opponents a player is offered are the three levels, easiest first, then the Brawler, the Ace the usual one, each with a line saying what it does',
-    [M.SOLO.RIVALS.map((r) => r.id), M.SOLO.RIVALS.map((r) => r.name), M.SOLO.RIVAL, M.SOLO.RIVALS.every((r) => r.name && r.note && OPPONENTS[r.id])],
-    [['recruit', 'veteran', 'tactician', 'brawler'], ['Recruit', 'Veteran', 'Ace', 'Brawler'], 'tactician', true]);
+  check('the opponents a player is offered are listed easiest first, the Ace last and hardest and the usual one, each with how hard it is and a line saying how it plays (OTTO, 2026-10-10)',
+    [M.SOLO.RIVALS.map((r) => r.id), M.SOLO.RIVALS.map((r) => r.name), M.SOLO.RIVALS.map((r) => r.level), M.SOLO.RIVAL, M.SOLO.RIVALS.every((r) => r.name && r.note && OPPONENTS[r.id])],
+    [['recruit', 'veteran', 'brawler', 'tactician'], ['Recruit', 'Veteran', 'Brawler', 'Ace'], ['Easy', 'Medium', 'Hard', 'Hardest'], 'tactician', true]);
   check('a game nobody has is refused in plain words', typeof spec('?solo=nope') === 'string' && /no game against the computer/.test(spec('?solo=nope')), true);
   check('the address of a game says only what is not the default',
     [soloQuery({ scenario: 'alley-forward-advance', side: 's2', seed: 5, speed: 'normal', opponent: 'tactician' }), soloQuery({ scenario: 'x', side: 's1', speed: 'relaxed', opponent: 'legal' }),
@@ -225,12 +225,12 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
   const html = soloSetupHtml(data, { ...M.SETUP.soloPick(data, null), scenario: vip.id, side: 's2', speed: 'relaxed', opponent: 'brawler' });
   const rows = [...html.matchAll(/<button type="button" class="dlg-pick" data-(game|side|rival|speed)="([^"]+)" aria-pressed="(true|false)">/g)].map((m) => `${m[1]}:${m[2]}${m[3] === 'true' ? '*' : ''}`);
   check('the dialog asks four things, each a pick-one list, with the pick marked: the game, the squad, the opponent, the speed',
-    rows, [`game:${alley.id}`, `game:${vip.id}*`, 'side:s1', 'side:s2*', 'rival:recruit', 'rival:veteran', 'rival:tactician', 'rival:brawler*', 'speed:relaxed*', 'speed:normal', 'speed:brisk']);
-  check('each opponent is named with a line saying what it does, in the same row a game or a speed has',
-    [/<p class="dlg-eyebrow">The computer is<\/p>/.test(html), /data-rival="recruit" aria-pressed="false"><span>Recruit<\/span><em>makes mistakes<\/em>/.test(html),
-      /data-rival="veteran" aria-pressed="false"><span>Veteran<\/span><em>plays a turn at a time<\/em>/.test(html),
-      /data-rival="tactician" aria-pressed="false"><span>Ace<\/span><em>plays for the mission<\/em>/.test(html),
-      /data-rival="brawler" aria-pressed="true"><span>Brawler<\/span><em>fights for the zones<\/em>/.test(html)], [true, true, true, true, true]);
+    rows, [`game:${alley.id}`, `game:${vip.id}*`, 'side:s1', 'side:s2*', 'rival:recruit', 'rival:veteran', 'rival:brawler*', 'rival:tactician', 'speed:relaxed*', 'speed:normal', 'speed:brisk']);
+  check('each opponent is named with how hard it is beside the name and a line saying how it plays, in the same row a game or a speed has',
+    [/<p class="dlg-eyebrow">The computer is<\/p>/.test(html), /data-rival="recruit" aria-pressed="false"><span>Recruit<small class="dlg-level">Easy<\/small><\/span><em>makes mistakes<\/em>/.test(html),
+      /data-rival="veteran" aria-pressed="false"><span>Veteran<small class="dlg-level">Medium<\/small><\/span><em>ignores return fire<\/em>/.test(html),
+      /data-rival="brawler" aria-pressed="true"><span>Brawler<small class="dlg-level">Hard<\/small><\/span><em>fights for the zones<\/em>/.test(html),
+      /data-rival="tactician" aria-pressed="false"><span>Ace<small class="dlg-level">Hardest<\/small><\/span><em>plays for the mission<\/em>/.test(html)], [true, true, true, true, true]);
   check('and has one way on and one way out', [(html.match(/data-ok/g) ?? []).length, (html.match(/data-cancel/g) ?? []).length, /Start the game/.test(html)], [1, 1, true]);
   check('Start goes to the Match Centre\'s page, asked for that game and that opponent',
     [soloAddress({ scenario: vip.id, side: 's2', speed: 'relaxed', opponent: 'tactician' }), soloAddress({ scenario: alley.id, side: 's1', speed: 'normal', opponent: 'tactician' }),
@@ -242,7 +242,7 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
   const picks = [...watching.matchAll(/data-(who|rival|rival2)="([^"]+)" aria-pressed="(true|false)"/g)].map((m) => `${m[1]}:${m[2]}${m[3] === 'true' ? '*' : ''}`);
   check('WHO PLAYS: you, or two computers while you watch; watched, a computer is picked for each squad, named by it, and Start says what it starts',
     [picks, [...watching.matchAll(/<p class="dlg-eyebrow">([^<]*) is played by<\/p>/g)].map((m) => m[1]), /The squad you watch from/.test(watching), /Start watching/.test(watching), /The computer is</.test(watching)],
-    [['who:you', 'who:watch*', 'rival2:recruit*', 'rival2:veteran', 'rival2:tactician', 'rival2:brawler', 'rival:recruit', 'rival:veteran', 'rival:tactician', 'rival:brawler*'],
+    [['who:you', 'who:watch*', 'rival2:recruit*', 'rival2:veteran', 'rival2:brawler', 'rival2:tactician', 'rival:recruit', 'rival:veteran', 'rival:brawler*', 'rival:tactician'],
       [soloSquadLabel(data, vip, 's2').name, soloSquadLabel(data, vip, 's1').name], true, true, false]);
   check('played, the same dialog asks who plays with You picked, and asks for one computer',
     [[...html.matchAll(/data-who="([^"]+)" aria-pressed="(true|false)"/g)].map((m) => `${m[1]}${m[2] === 'true' ? '*' : ''}`), /data-rival2=/.test(html)], [['you*', 'watch'], false]);

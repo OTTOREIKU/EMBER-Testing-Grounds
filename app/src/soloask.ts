@@ -22,17 +22,21 @@ export const SPEEDS: { id: Speed; name: string; note: string; scale: number }[] 
 // every step follows the last at once unless the pace leaves room to watch it.
 export const WATCH_SCALE: Record<Speed, number> = { brisk: 1.6, normal: 2.5, relaxed: 3.6 };
 
-// The opponents a player may pick: what each is called and what it does, in a
-// line. The three levels first, easiest first (M9.1, OTTO 2026-10-03), then the
-// Brawler. The policies themselves are solo.ts's (OPPONENTS, which also has two
-// more that only an address asks for), so a page that offers a game carries
-// none of them. The Ace keeps the Tactician's name in an address and in what a
-// device remembers, so a game set up before the levels came is the same game.
-export const RIVALS: { id: string; name: string; note: string }[] = [
-  { id: 'recruit', name: 'Recruit', note: 'makes mistakes' },
-  { id: 'veteran', name: 'Veteran', note: 'plays a turn at a time' },
-  { id: 'tactician', name: 'Ace', note: 'plays for the mission' },
-  { id: 'brawler', name: 'Brawler', note: 'fights for the zones' },
+// The opponents a player may pick, easiest first, each with how hard it is and
+// how it plays in a few words (OTTO, 2026-10-10: "list them in order of
+// difficulty ... Ace is the best it would be at the bottom and marked as the
+// highest difficulty"). The order is the measured one (AI-OPPONENT-PLAN.md
+// section 12): the Veteran beats the Recruit, our Brawler beats the Veteran
+// (117 of 200), the Ace beats the Brawler. The policies themselves are
+// solo.ts's (OPPONENTS, which also has two more that only an address asks
+// for), so a page that offers a game carries none of them. The Ace keeps the
+// Tactician's name in an address and in what a device remembers, so a game set
+// up before the levels came is the same game.
+export const RIVALS: { id: string; name: string; level: string; note: string }[] = [
+  { id: 'recruit', name: 'Recruit', level: 'Easy', note: 'makes mistakes' },
+  { id: 'veteran', name: 'Veteran', level: 'Medium', note: 'ignores return fire' },
+  { id: 'brawler', name: 'Brawler', level: 'Hard', note: 'fights for the zones' },
+  { id: 'tactician', name: 'Ace', level: 'Hardest', note: 'plays for the mission' },
 ];
 // The one a game is played against unless another is picked: the Ace.
 export const RIVAL = 'tactician';
