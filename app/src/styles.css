@@ -567,6 +567,11 @@ main { display: flex; flex: 1; min-height: 0; }
   font-size: 12px; overflow: hidden;
 }
 #play-guide.closed { width: auto; background: none; border: 0; box-shadow: none; }
+/* HIDDEN FOR NOW (OTTO, 2026-10-10: "hide the Guide button for the moment. I want to rework the tutorial/guide
+   function and using the computer/match centre interface to play is much easier than running everything through the
+   popup so I think it would just confuse new players"). The play guide's panel and its Guide button are still built
+   (playguide.ts, main.ts) but never shown; delete this rule to bring them back. */
+#play-guide, #play-guide.closed { display: none !important; }
 .pg-reopen {
   border: none; background: var(--surface2); color: var(--accent); font-weight: 700;
   border-radius: var(--radius); padding: 6px 12px; font-size: 12px; cursor: pointer;
