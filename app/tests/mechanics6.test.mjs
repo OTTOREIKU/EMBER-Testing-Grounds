@@ -1100,8 +1100,11 @@ console.log('Phase 6: the round, missions and squads\n');
   plain.script.counter = { initiatorUid: pa.uid, responderUid: pb.uid, actionId: 'X', initRoll: null, respRoll: null, initFocused: false, respFocused: false, initDeclare: null, respDeclare: null, provoke: null, thenAttack: null };
   check('E5 an Electronic Attack\'s Responder is not rolled as a Terminal', ok(plain, { kind: 'rollTerminal', seat: 's2', faces: [4, 4, 7] }), false);
 
-  // The Terminal's roll: 3 dice, once, by the table command.
+  // The Terminal's roll: 3 dice, once, by the table command, after the Initiator's (FAQ G4: "the same as a normal
+  // dice roll"; OTTO, 2026-10-10).
   check('E5 the Mech rolls as any Initiator', ok(s, { kind: 'rollCounter', seat: 's1', uid: me.uid, faces: [7, 7] }), true);
+  check('E5 and the Terminal waits for it: the Initiator rolls first', ok(s, { kind: 'rollTerminal', seat: 's2', faces: [4, 4, 7] }), false);
+  send(s, { kind: 'rollCounter', seat: 's1', uid: me.uid, faces: [7, 7] });
   check('E5 the Terminal rolls exactly 3 dice', [ok(s, { kind: 'rollTerminal', seat: 's2', faces: [7, 7] }), ok(s, { kind: 'rollTerminal', seat: 's2', faces: [4, 4, 7] })], [false, true]);
   M.Lp.setLocalSeat('s1');
   try {
@@ -1110,7 +1113,6 @@ console.log('Phase 6: the round, missions and squads\n');
   } finally {
     M.Lp.setLocalSeat(null);
   }
-  send(s, { kind: 'rollCounter', seat: 's1', uid: me.uid, faces: [7, 7] });
   send(s, { kind: 'rollTerminal', seat: 's2', faces: [4, 4, 7] });
   check('E5 the Terminal rolls once', ok(s, { kind: 'rollTerminal', seat: 's2', faces: [4, 4, 7] }), false);
   check('E5 and the record holds its hand', s.script.counter.respRoll, [4, 4, 7]);

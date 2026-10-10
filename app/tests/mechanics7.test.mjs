@@ -1798,14 +1798,16 @@ for (const whose of ['s1', 's2']) {
   };
   const resp = windowOf(shown.B);
   const up = resp.draw();
-  check('the Match Centre draws the Counter-roll on the element it keeps: the Responder finds its roll',
-    [up, resp.body.children.length, resp.acts().includes('ew.roll')], [true, 1, true]);
+  // The Initiator rolls first (FAQ G4: "the same as a normal dice roll"; OTTO, 2026-10-10): the Responder's window
+  // is drawn and waits, its roll offered once the Initiator's dice are in (below).
+  check('the Match Centre draws the Counter-roll on the element it keeps: the Responder waits for the Initiator to roll first',
+    [up, resp.body.children.length, resp.acts().includes('ew.roll')], [true, 1, false]);
   // The record moves on (the Initiator rolls), and the same element is drawn again.
   const c0 = shown.A.state.script.counter;
   shown.A.rolls.push([5]); shown.A.use(); shown.A.X.contestAct(shown.A.ctx, 'roll', { uid: c0.initiatorUid }); await pause();
   const was = resp.body.children[0];
   resp.draw();
-  check('and draws it again there as the record changes', [resp.body.children.length, resp.body.children[0] !== was, !!shown.B.state.script.counter.initRoll], [1, true, true]);
+  check('and draws it again there as the record changes, the Responder finding its roll', [resp.body.children.length, resp.body.children[0] !== was, !!shown.B.state.script.counter.initRoll, resp.acts().includes('ew.roll')], [1, true, true, true]);
   // The exchange over: the window is emptied.
   shown.A.use(); shown.A.X.contestAct(shown.A.ctx, 'close'); await pause();
   check('and empties it when the exchange is over', [resp.draw(), resp.body.children.length, shown.B.state.script.counter ?? null], [false, 0, null]);

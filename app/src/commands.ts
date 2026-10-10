@@ -1757,6 +1757,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       const c = state.script?.counter;
       if (!c || c.terminal === undefined) return no('No Remote Access is rolling against a Terminal.');
       if (c.respRoll) return no('The Terminal has already rolled: it never Focuses, so it rolls once (ruling I25).');
+      if (!c.initRoll) return no('The Initiator rolls first, then the Terminal (FAQ G4).');
       if (!Array.isArray(cmd.faces) || cmd.faces.length !== TERMINAL_EV || cmd.faces.some((f) => !Number.isInteger(f) || f < 0)) {
         return no(`A Terminal rolls its Electronic Value of ${TERMINAL_EV} in Yellow dice (p.87).`);
       }
@@ -3484,6 +3485,9 @@ function checkActed(
       // A first roll, or one Focus reroll: Focus costs Link and the Link spend
       // is its own command, so this only guards against a free second roll.
       if (mine && !cmd.focused) return no('That unit has already rolled.');
+      // The Initiator rolls first (FAQ G4: "the resolution order is the same as a normal dice roll", the attacker's
+      // first; OTTO, 2026-10-10): the Responder's first roll waits for the Initiator's.
+      if (!cmd.focused && cmd.uid === c.responderUid && !c.initRoll) return no('The Initiator rolls first, then the Responder (FAQ G4).');
       if (cmd.focused && (!mine || focused)) return no('Focus rerolls a roll that has been made, and only once here.');
       // In its turn (FAQ G4): both sides declare first, then the Initiator
       // rerolls, then the Responder. A reroll out of turn is refused rather

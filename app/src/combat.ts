@@ -7395,12 +7395,15 @@ export class ElectronicHelper {
       if (this.shared) {
         const owed = ([['init', c.initiator, c.initEv, c.initRoll], ['resp', c.responder, c.respEv, c.respRoll]] as const)
           .filter(([, , , r]) => !r);
-        const mineNow = owed.find(([who]) => this.mayPress(who));
+        // In order (FAQ G4: "the resolution order is the same as a normal dice roll"; OTTO, 2026-10-10): the
+        // Initiator rolls first, and the Responder's dice wait for it.
+        const next = owed[0];
+        const mineNow = next && this.mayPress(next[0]) ? next : undefined;
         const note = document.createElement('p');
         note.className = mineNow ? 'ah-note' : 'ah-sum';
         note.textContent = mineNow
           ? `${mineNow[1].label} rolls ${mineNow[2]} Yellow ${mineNow[2] === 1 ? 'die' : 'dice'}${mineNow[1].stance === 'offensive' ? ', and Offensive Stance makes hollow faces count' : ''}.`
-          : `Waiting for ${owed.map(([, u]) => u.label).join(' and ')} to roll.`;
+          : `Waiting for ${next[1].label} to roll${owed.length > 1 ? ' first' : ''}.`;
         wrap.appendChild(note);
         if (mineNow) {
           const roll = document.createElement('button');
