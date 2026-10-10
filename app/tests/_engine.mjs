@@ -196,6 +196,7 @@ export function dealt(policy, seat, entries) {
   let k = 0;
   return {
     name: policy.name,
+    ...(policy.trueRange ? { trueRange: true } : {}),
     choose(d, view, rng) {
       const own = policy.choose(d, view, rng);
       if (d.kind === 'setup.deploy' && k < mine.length) {

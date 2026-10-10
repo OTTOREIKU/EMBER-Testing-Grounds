@@ -27,7 +27,7 @@
 // EACH THING IT THINKS ABOUT CAN BE TURNED OFF (`Skills`), so that what each
 // is worth can be measured by itself (section 8); a question it has no answer
 // for is given the engine's safe answer.
-import { TRUE_RANGE, type Decision, type Forecast, type Option, type Outlook, type SeatView, type UnitView, type WeaponView, type ZoneView } from '../seat';
+import type { Decision, Forecast, Option, Outlook, SeatView, UnitView, WeaponView, ZoneView } from '../seat';
 import type { Choice, Policy } from './policy';
 import { judge } from './learned';
 import { chooseDials, type DialOwn, type Planner, type TurnPlan } from './squad';
@@ -4842,21 +4842,17 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
         return null;
     }
   }
-  // A wrapper round a policy may not carry `trueRange` to its driver: the seat is put in TRUE_RANGE here as well,
-  // from its first question on.
-  const seeTrue = (view: SeatView): void => { if (s.trueRange) TRUE_RANGE.add(view.seat); };
   return {
     name: 'tactician',
+    // Its driver reads this as each game begins (driver.ts, seat.ts TRUE_RANGE): a wrapper passes it on.
     trueRange: s.trueRange,
     choose(d, view, rng) {
-      seeTrue(view);
       // What it has no judgement of its own about is given the safe answer,
       // the one the engine names for the question.
       return finish(decide(d, view)) ?? safeAnswer(d);
     },
     // The same, with a pause wherever the work may be put down.
     async ponder(d, view, rng, breathe) {
-      seeTrue(view);
       const steps = decide(d, view);
       let step = steps.next();
       while (!step.done) {

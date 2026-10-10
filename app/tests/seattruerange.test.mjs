@@ -49,13 +49,16 @@ check('the skill is OFF unless named', [M.AI.SKILLS.trueRange, M.AI.tacticianPol
 TRUE_RANGE.add('s2');
 const t = botTable(M, data, vip, { seed: 3, policies: { s1: truly, s2: M.AI.tacticianPolicy }, glue: M.HUD.glueAfter });
 check('as a game begins, each driver sets its seat by its policy', [TRUE_RANGE.has('s1'), TRUE_RANGE.has('s2')], [true, false]);
-// A wrapper that hides the skill from the driver: the Tactician puts its seat in at its first question.
-const wrapped = { name: 'wrapped', choose: (d, v, r) => truly.choose(d, v, r) };
+// The brain may not reach the seam's registry itself (aiseam.test.mjs R4): a wrapper round a policy passes the
+// skill on to the driver. The Recruit's kind (levels.ts blundering) does.
+const slipping = M.AI.blundering(truly, 0.5, 'slips');
+check('a policy that makes mistakes keeps the skill, and only where it was named',
+  [slipping.trueRange, M.AI.blundering(M.AI.tacticianPolicy, 0.5).trueRange ?? false], [true, false]);
 t.close();
-const u = botTable(M, data, vip, { seed: 3, policies: { s1: M.AI.tacticianPolicy, s2: wrapped }, glue: M.HUD.glueAfter });
-check('a wrapper round it: the driver clears the seat', TRUE_RANGE.has('s2'), false);
+const u = botTable(M, data, vip, { seed: 3, policies: { s1: M.AI.tacticianPolicy, s2: slipping }, glue: M.HUD.glueAfter });
+check('and its driver puts its seat in as the game begins', [TRUE_RANGE.has('s1'), TRUE_RANGE.has('s2')], [false, true]);
 await u.run({ maxSteps: 40 });
-check('and the Tactician puts it in at its first question', [TRUE_RANGE.has('s1'), TRUE_RANGE.has('s2')], [false, true]);
+check('where it stays while the game is played', [TRUE_RANGE.has('s1'), TRUE_RANGE.has('s2')], [false, true]);
 u.close();
 TRUE_RANGE.clear();
 

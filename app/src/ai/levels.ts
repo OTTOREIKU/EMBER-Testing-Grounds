@@ -32,6 +32,8 @@ export function blundering(policy: Policy, rate: number, name = `${policy.name}:
   };
   return {
     name,
+    // What the driver reads of the policy as a game begins (policy.ts) goes with it.
+    ...(policy.trueRange ? { trueRange: true } : {}),
     choose: (d, view, rng) => (slips(d, rng) ? slip(d, view, rng) : policy.choose(d, view, rng)),
     ...(policy.ponder
       ? { ponder: (d: Decision, view: Parameters<Policy['choose']>[1], rng: Rng, breathe: () => Promise<void>) => (slips(d, rng) ? Promise.resolve(slip(d, view, rng)) : policy.ponder!(d, view, rng, breathe)) }
