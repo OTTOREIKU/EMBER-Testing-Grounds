@@ -338,7 +338,14 @@ export interface Skills {
   // squadmate still to act and the enemy it would shoot is charged what that shot loses (`linesCost`, the weight
   // `clearLines`). MEASURED LEVEL (2026-10-09, measure_ln.sh: random squads 101 of 200 against 102, 199 games the same;
   // community squads 42 of 80 against 44): what two White Dice cost one squadmate's shot is little beside what a step
-  // is worth otherwise (21 of 92 Opportunities charged, about 0.15 a time; 1 changed). OFF: a style's lever.
+  // is worth otherwise (21 of 92 Opportunities charged, about 0.15 a time; 1 changed). ON AT 4 FOR EVERY LEVEL
+  // (2026-10-11; OTTO, watching the Veteran: "The AI in this game is firing through it's own unit almost every time",
+  // and his yes to a stronger line lever for every level): at 4, each level against itself paired, level in wins on
+  // random squads (Ace 576 v 578 of 1137, Veteran 389 v 392, Brawler 434 v 434) and community squads (98 v 101,
+  // 73 v 69, 100 v 103), no thinking lost, and every level shoots through its own Mechs less (random 9.4% to 8.1%,
+  // community 17.6% to 15.0% for the Ace; its Drones' on community squads 16.3% to 10.2%); at 12 the Ace and the
+  // Brawler began to lose games on community squads and the shots barely moved again (AI-OPPONENT-PLAN.md, "THE SHOTS
+  // THROUGH ONE'S OWN MECHS").
   clearLines: boolean;
   // THE CARRIER KEPT BY ITS MECH (2026-10-09; OTTO, the same game: "we need to build a leash system for the drone
   // where if it can move it should stay nearby or get out of the way"; "The leash system makes more sense for the
@@ -378,7 +385,7 @@ export const SKILLS: Skills = {
   spread: true, blink: true, ticks: true, scan: true, mines: true, bit: true, crush: true, tactics: true, restance: true, firewatch: true, aster: true, steer: true,
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false, tickReach: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
-  squadDials: false, secName: true, hunter: false, cardPick: true, clearLines: false, leash: true, lanes: false, trueRange: false,
+  squadDials: false, secName: true, hunter: false, cardPick: true, clearLines: true, leash: true, lanes: false, trueRange: false,
   accessFirst: false,
 };
 

@@ -625,7 +625,7 @@ export interface Weights {
   secondary: number;
   // A SQUADMATE'S LINE (the skill `clearLines`, tactician.ts): the share of what a squadmate's shot loses, to the
   // Unit Protection a Mech of ours standing in its line gives the target, that a plan leaving the Mech there is
-  // charged. Read only with the skill.
+  // charged. Read only with the skill. 4 (2026-10-11): 1 changed almost nothing, 12 lost games on community squads.
   clearLines: number;
   // VIP, AS IT WILL BE PAID (2026-10-10; the challenger's game 3: 3 and then 6 Victory Points behind on the Commander's
   // Parts the round limit pays, the Ace read the game as level, 0 to 0 on the board, and both its Mechs ended their
@@ -746,7 +746,7 @@ export const TACTICIAN: Weights = {
   learned: 10,
   hiddenWorth: 0,
   secondary: 1,
-  clearLines: 1,
+  clearLines: 4,
 };
 
 // The share of a Part still standing: a Damaged Part works, and is half way

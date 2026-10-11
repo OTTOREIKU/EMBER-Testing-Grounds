@@ -54,8 +54,11 @@ const rowAt = (rows, col, row) => rows.filter((r) => r.priced && r.at.col === co
   check('and the charge is taken off what the plan is worth', inLine.every((r) => Math.abs(r.worth + r.lines - AI.weighed(turn, view, { clearLines: false }).find((x) => x.label === r.label)?.worth) < 1e-6), true);
 }
 {
-  const off = AI.weighed(turn, view);
-  check('without it (as it ships) nothing is charged', [off.every((r) => r.lines === 0), AI.SKILLS.clearLines], [true, false]);
+  const off = AI.weighed(turn, view, { clearLines: false });
+  check('without it nothing is charged', off.every((r) => r.lines === 0), true);
+  check('as it ships (2026-10-11): on for every level, at 4', [AI.SKILLS.clearLines, AI.TACTICIAN.clearLines,
+    AI.VETERAN_SKILLS.clearLines ?? AI.SKILLS.clearLines, AI.BRAWLER_SKILLS.clearLines ?? AI.SKILLS.clearLines,
+    AI.VETERAN_WEIGHTS.clearLines ?? AI.TACTICIAN.clearLines, AI.BRAWLER_WEIGHTS.clearLines ?? AI.TACTICIAN.clearLines], [true, 4, true, true, 4, 4]);
 }
 {
   // An Aerial target is never Obstructed (4.2.4): with the Gun flying, no line costs anything.
