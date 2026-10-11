@@ -75,6 +75,7 @@ import { gameEndsThisRound, lowValueOf, previewScore, vipFallen } from '../src/s
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from '../src/tactics';
 import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, jumpsToTarget,explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop, volleyFor } from '../src/units';
 import { gameResult } from '../src/tasks';
+import { GameTrack, gameReport, matchKey, squadWiped } from '../src/gamelog';
 import { isSilentAction, actionSilenceDenier, auraReach, auraEffectsOf, auraActionOf, auraCanReach, auraReachable, inAuraReach, aurasAtRoll, type AuraAtRoll, actionRange, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf, discardSlots, commonActionStop, commonPartKey } from '../src/units';
 import { canManeuver, canPerform, costOf, lengthOf, LENGTH_NAME, markAction, markExtra, markManeuver, spendAction, spendManeuver, tickBarState, timingOf } from '../src/ticks';
 import { actionIdleWhy, cardFitsSquad, extrasFor, factionProblems, squadPoints, startOpts } from '../src/units';
@@ -178,6 +179,7 @@ const relay = new Relay(api.base, {
     const landed = applyRemote(data, table, cmd as Command).ok;
     glueAfter(data, table, cmd as Command);
     attackOnCommand(cmd as Command);
+    if (landed) trackAfter();
     if (!catchingUp) {
       if (landed) toastRemote(cmd as Command);
       guideOnRemote(guide, cmd as Command);
@@ -1170,6 +1172,7 @@ function send(cmd: Command): boolean {
   glueAfter(data, table, cmd);
   seedTaskItems();
   saveSolo();
+  trackAfter();
   render();
   queueMartyrs();
   return true;
@@ -3625,14 +3628,12 @@ function tasksPanel(): string {
       <span class="pad-label">${esc(label)}</span>
     </div>`;
 
-  const result = finished() ? gameResult(tasks, table.tokens, data ? lowValueOf(data) : undefined) : null;
+  const result = complete() ? gameResult(tasks, table.tokens, data ? lowValueOf(data) : undefined) : null;
+  const st = logged?.game === gameId() ? logged : null;
   const recordHtml = !result ? '' : `<p class="pad-label pad-sec">Game over</p>
     <p class="pad-lead">${result.winner ? `${esc(sideName(result.winner))} wins: ${esc(result.why)}.` : `A draw: ${esc(result.why)}.`}</p>
-    ${recordedFor === recordKey()
-      ? '<p class="pad-note">Recorded to Stats.</p>'
-      : account
-        ? '<button class="pad-btn primary" data-act="record">Record this match</button>'
-        : '<p class="pad-note">Sign in to record it to Stats.</p>'}`;
+    <p class="pad-note">${esc(logNote(st))}</p>
+    ${st?.state === 'failed' ? '<button class="pad-btn primary" data-act="relog">Try again</button>' : ''}`;
   return `<div class="pad-panel-in">${panelHead('Tasks')}
     ${errHtml()}
     ${recordHtml}
@@ -3699,6 +3700,7 @@ function morePanel(): string {
         ${gameOver() ? '' : `<button class="pad-chip on" data-act="phase">${room ? (readiness().me ? 'Waiting…' : 'Continue') : 'Next phase'}</button>`}
       </div>
     </div>
+    ${normaliseSetup(table.setup)?.stage === 'done' && !complete() ? '<button class="pad-btn primary" data-act="game-over" style="margin-top:8px">Game over</button>' : ''}
     <button class="pad-btn" data-act="rounds-reset" style="margin-top:8px"${greyWhy(!!strictLock(), strictLock() ?? '')}>Start the rounds over</button>
     ${normaliseSetup(table.setup)?.stage === 'done' && !gameOver() ? '<button class="pad-btn" data-act="concede" style="margin-top:8px">Concede the game</button>' : ''}
 
@@ -3965,16 +3967,91 @@ async function continueDetonation(): Promise<void> {
   void continueDetonation();
 }
 
-// ---------- the record (Stats) ----------
+// ---------- the game's log ----------
 //
-// The finished game, kept under the account the way the Match Centre keeps
-// one: the squads as BROUGHT (the fielded roster, or the table when nothing
-// was recorded), the hand, the mission, the rounds and the result. Once per
-// table on this phone.
-let recordedFor: string | null = null;
+// OTTO, 2026-10-10: for a player who switched game logging on (the account
+// screen), a finished Pad game is logged by itself, nothing asked. A Pad game
+// is finished at the final round's End Phase, when a squad has no Mech left,
+// or when the table says so with Game over; a game stopped before any of those
+// is not logged. gamelog.ts builds it; both phones of a room log one game.
+let track: GameTrack | null = null;
+let trackFor: string | null = null;
+// Game over pressed for this game (gameId).
+let calledFor: string | null = null;
+let logged: { game: string; state: 'off' | 'signedout' | 'sending' | 'done' | 'failed'; why?: string } | null = null;
+let logging: Promise<void> | null = null;
 
 function recordKey(): string {
   return view.room?.id ?? soloId ?? 'table';
+}
+
+// This game: the table, and how its battle began.
+function gameId(): string {
+  return `${recordKey()}|${track?.openingBasis ?? ''}`;
+}
+
+function trackAfter(): void {
+  if (!data || catchingUp) return;
+  const key = recordKey();
+  if (!track || trackFor !== key) {
+    track = GameTrack.resume(key);
+    trackFor = key;
+  }
+  track.observe(table);
+  track.keep(key);
+  logIfComplete();
+}
+
+function complete(): 'rounds' | 'wiped' | 'conceded' | 'called' | null {
+  if (normaliseTasks(table.tasks).conceded) return 'conceded';
+  if (finished()) return 'rounds';
+  if (squadWiped(table)) return 'wiped';
+  return calledFor !== null && calledFor === gameId() ? 'called' : null;
+}
+
+function logIfComplete(retry = false): void {
+  const ended = complete();
+  if (!ended || !data) return;
+  const game = gameId();
+  if (logged?.game === game && !(retry && logged.state === 'failed')) return;
+  if (!account) { logged = { game, state: 'signedout' }; return; }
+  if (!api.logs('games')) { logged = { game, state: 'off' }; return; }
+  logged = { game, state: 'sending' };
+  logging = recordMatch(ended).then((why) => {
+    logged = why ? { game, state: 'failed', why } : { game, state: 'done' };
+    logging = null;
+    render();
+  });
+}
+
+function logNote(st: typeof logged): string {
+  switch (st?.state) {
+    case 'done': return 'Logged to your account.';
+    case 'sending': return 'Logging the game…';
+    case 'failed': return `Not logged: ${st.why ?? 'the server did not answer.'}`;
+    case 'signedout': return 'Sign in to log your games.';
+    case 'off': return 'Game logging is off. It can be switched on from your account.';
+    default: return '';
+  }
+}
+
+// GAME OVER (OTTO, 2026-10-10: "probably at the top of the group of buttons it
+// will sit near"): a table that stops before the rules' end says the game is
+// over, on the score the Pad has.
+async function callGameOver(): Promise<void> {
+  if (!data) return;
+  const tasks = normaliseTasks(table.tasks);
+  const res = gameResult(tasks, table.tokens, lowValueOf(data));
+  const sure = await confirmDialog({
+    title: 'Game over?',
+    body: `${sideName('s1')} ${tasks.vp.s1} VP, ${sideName('s2')} ${tasks.vp.s2} VP: ${res.winner ? `${sideName(res.winner)} wins` : 'a draw'}. Correct the score on the Tasks sheet first if it is not right.`,
+    confirmLabel: 'Game over',
+  });
+  if (!sure) return;
+  trackAfter();
+  calledFor = gameId();
+  logIfComplete();
+  render();
 }
 
 // A game is finished when the rounds have run out (Freeform turns the round
@@ -3993,66 +4070,28 @@ function finished(): boolean {
 // it has not been kept yet, then the engine's endMatch.
 async function endGame(): Promise<void> {
   const me = mySeat();
-  if (account && recordedFor !== recordKey()) {
-    const pick = await choiceDialog({
-      title: 'End the game',
-      body: 'Ending it clears the score. Record it to Stats first?',
-      choices: [
-        { id: 'record', label: 'Record and end', primary: true },
-        { id: 'end', label: 'End without recording' },
-        { id: 'cancel', label: 'Cancel', cancel: true },
-      ],
-      stacked: true,
-    });
-    if (pick === null || pick === 'cancel') return;
-    if (pick === 'record') {
-      const why = await recordMatch();
-      if (why) { toast(why, 'system'); return; }
-      toast('Recorded to Stats.');
-    }
-  }
+  // Ending clears the score, so a finished game's log goes first (it went by
+  // itself as the game finished, unless it is still on its way).
+  logIfComplete();
+  if (logging) await logging;
+  calledFor = null;
   send({ kind: 'endMatch', seat: me });
 }
 
-async function recordMatch(): Promise<string | null> {
+async function recordMatch(ended: 'rounds' | 'wiped' | 'conceded' | 'called'): Promise<string | null> {
   if (!data) return 'Still loading.';
-  if (!account) return 'Sign in to keep a record.';
-  const tasks = normaliseTasks(table.tasks);
-  const winner = gameResult(tasks, table.tokens, lowValueOf(data)).winner;
-  const entries = (side: Side): SquadEntry[] => {
-    const out: SquadEntry[] = [];
-    const push = (id: string): void => {
-      const card = data!.byId.get(id);
-      if (card) out.push({ id, cat: (card.category ?? 'mech_part') as SquadEntry['cat'] });
-    };
-    const roster = table.fielded?.[side];
-    if (roster && Object.keys(roster).length) {
-      for (const ids of Object.values(roster)) for (const id of ids) push(id);
-    } else {
-      for (const t of table.tokens) {
-        if (t.side !== side || t.kind === 'projectile') continue;
-        for (const { card } of tokenCards(data!, t)) push(card.id);
-      }
-    }
-    for (const id of handOf(side)) if (data!.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
-    return out.slice(0, 80);
-  };
+  if (!account) return 'Sign in to log your games.';
+  const room = view.room?.id ?? null;
   try {
-    await api.recordGame({
-      mode: view.room ? 'online' : 'hotseat',
-      mission: table.mission ?? null,
-      scale: table.scale ?? null,
-      rounds: Math.max(1, Math.min(20, Math.min(table.round.n, roundLimit()))),
-      winnerSeat: winner,
-      mySeat: view.room ? mySeat() : null,
-      players: (['s1', 's2'] as Side[]).map((side) => ({
-        seat: side,
-        faction: squadAllegiance(data!, table.tokens.filter((t) => t.side === side)).faction,
-        vp: Math.max(0, tasks.vp[side]),
-        squad: entries(side),
-      })),
-    });
-    recordedFor = recordKey();
+    await api.recordGame(gameReport(data, table, track, {
+      source: 'pad',
+      mode: room ? 'online' : 'hotseat',
+      mySeat: room ? mySeat() : null,
+      gameKey: room && track ? await matchKey(room, track, table) : null,
+      ended,
+      hands: { s1: handOf('s1'), s2: handOf('s2') },
+      rounds: Math.min(table.round.n, roundLimit()),
+    }));
     return null;
   } catch (err) {
     return `${(err as ApiError).message} The game itself is unaffected.`;
@@ -5440,7 +5479,11 @@ function act(el: HTMLElement, ev: Event): void {
     case 'rounds-reset':
       void (async () => {
         const sure = await confirmDialog({ title: 'Start the rounds over?', body: 'Round 1, Command Phase.', confirmLabel: 'Start over' });
-        if (sure) send({ kind: 'resetRounds', seat: mySeat() });
+        if (!sure) return;
+        // The same game played on (the score stands): a Game over said before
+        // is taken back.
+        calledFor = null;
+        send({ kind: 'resetRounds', seat: mySeat() });
       })();
       return;
 
@@ -6085,8 +6128,12 @@ function act(el: HTMLElement, ev: Event): void {
     case 'drone': error = null; openDronePicker('drone'); return;
     case 'projectile': error = null; openDronePicker('projectile'); return;
     case 'tactic-add': error = null; openTacticPicker(el.dataset.side as Side); return;
-    case 'record':
-      void recordMatch().then((why) => { toast(why ?? 'Recorded to Stats.', why ? 'system' : 'done'); render(); });
+    case 'relog':
+      logIfComplete(true);
+      render();
+      return;
+    case 'game-over':
+      void callGameOver();
       return;
     case 'tactic-drop': {
       const side = el.dataset.side as Side;

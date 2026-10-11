@@ -1,9 +1,11 @@
 // THE COMPUTER'S GAMES, KEPT FOR ITS TUNING (botlog.ts, botsend.ts): a game
 // against the computer, logged as the page logs it, plays back from its log to
 // the very board it ended on; the log says how the game ended and what the
-// computer answered and how long it thought; a log too large for the server
-// sheds its commands first; and a log is kept and sent only for a signed-in
-// player, sent once, kept when it cannot be sent, and gone after a sign-out.
+// computer answered, and nothing else: no times, no labels, no names a player
+// typed, nothing about the device (OTTO, 2026-10-10); a log too large for the
+// server sheds its commands first; and a log is kept and sent only for a
+// signed-in player who switched it on, sent once, kept when it cannot be sent,
+// and gone after a sign-out or once the switch is off.
 import { botTable, freshState, loadEngine, tableCommands } from './_engine.mjs';
 
 let pass = 0, fail = 0;
@@ -49,9 +51,16 @@ const { M, data } = await loadEngine('botlog', [
   check('A GAME PLAYED OUT is logged as over, with the table\'s own result and the board\'s fingerprint',
     [end.kind, body.ended, body.winner, body.vp, body.round, body.fp], ['over', 'over', over.winner, over.vp, t.state.round.n, M.SEC.boardFingerprint(t.state)]);
   const answers = t.drivers.s2.log;
-  check('every answer of the computer\'s seat is in it, and only that seat\'s, each with how long it thought',
-    [body.decisions.length, body.decisions.every((d) => Number.isInteger(d.t) && d.t >= 0 && d.t <= d.ms), body.decisions.at(-1).o],
+  check('every answer of the computer\'s seat is in it, and only that seat\'s: what it chose and by which rule, no times, no words',
+    [body.decisions.length, body.decisions.every((d) => Object.keys(d).sort().join() === 'c,k,n,o,p,r,y'), body.decisions.at(-1).o],
     [answers.length, true, answers.at(-1).option]);
+  check('no name a player typed travels in it (the squads were brought by name), and nothing about the device',
+    [body.commands.filter((x) => x.c.kind === 'importSquad').length > 0,
+      body.commands.filter((x) => x.c.kind === 'importSquad').every((x) => !('name' in x.c) && (x.c.mechs ?? []).every((m) => !('name' in m))),
+      'cores' in body, body.stops.every((x) => !('why' in x)), body.errors.every((e) => Object.keys(e).join() === 'during')],
+    [true, true, false, true, true]);
+  check('a unit renamed at the table is logged without its new name',
+    M.BL.loggedCommand({ kind: 'renameUnit', seat: 's1', uid: 3, label: 'Bob' }), { kind: 'renameUnit', seat: 's1', uid: 3 });
   check('the window drawn on the other screen is left out, and nothing else is', [body.commands.some((x) => x.c.kind === 'setCombatView'), body.dropped], [false, 0]);
 
   // Played back on a fresh table: the setup with no seat held, then each
@@ -116,26 +125,32 @@ const { M, data } = await loadEngine('botlog', [
     };
   };
   const failing = (status) => () => Object.assign(new Error('no'), { status });
+  // A player who switched logging on (the account screen), as api.ts holds it.
+  const on = (id) => ({ id, logging: { computer: '2026-10-11T00:00:00.000Z' } });
 
   const out = fake(null);
   await M.BS.fileLog(out, body(1));
   check('SIGNED OUT, a finished game is neither kept on the device nor sent', [store.size, out.posted], [0, []]);
 
-  const me = fake({ id: 7 });
+  const off = fake({ id: 7, logging: { computer: null } });
+  await M.BS.fileLog(off, body(1));
+  check('SIGNED IN WITH THE SWITCH OFF, nothing is kept or sent either', [store.size, off.posted], [0, []]);
+
+  const me = fake(on(7));
   await M.BS.fileLog(me, body(2));
   check('SIGNED IN, it is sent, and the device keeps nothing once the server has it', [me.posted, M.BS.keptFor(7)], [[2], 0]);
 
-  const offline = fake({ id: 7 }, failing(0));
+  const offline = fake(on(7), failing(0));
   await M.BS.fileLog(offline, body(3));
   check('a send that fails (no connection) keeps it on the device', [offline.posted, M.BS.keptFor(7)], [[], 1]);
-  const limited = fake({ id: 7 }, failing(429));
+  const limited = fake(on(7), failing(429));
   await M.BS.sendKept(limited);
   check('as does a server that says not today', M.BS.keptFor(7), 1);
   M.BS.keepLog(8, body(4));
   await M.BS.sendKept(me);
   check('the next page signed in to that account sends it; another account\'s waits for that account', [me.posted, M.BS.keptFor(7), M.BS.keptFor(8)], [[2, 3], 0, 1]);
 
-  const strict = fake({ id: 8 }, failing(400));
+  const strict = fake(on(8), failing(400));
   await M.BS.sendKept(strict);
   check('a log the server refuses as malformed is dropped, not sent again and again', M.BS.keptFor(8), 0);
 
@@ -145,13 +160,20 @@ const { M, data } = await loadEngine('botlog', [
   for (let i = 10; i < 16; i++) M.BS.keepLog(7, body(i));
   check('and a device keeps a few at most, the newest', M.BS.keptFor(7), 4);
 
-  const bound = fake({ id: 9 });
+  M.BS.keepLog(7, body(30));
+  await M.BS.sendKept(fake(on(7), failing(403)));
+  check('a server that says the switch is off (another device turned it off) has the device drop what it kept', M.BS.keptFor(7), 0);
+  for (let i = 10; i < 16; i++) M.BS.keepLog(7, body(i));
+  await M.BS.sendKept(fake({ id: 7, logging: { computer: null } }));
+  check('as does this device once the switch is off here', M.BS.keptFor(7), 0);
+
+  const bound = fake(on(9));
   M.BS.bindBotLogs(bound);
   M.BS.keepLog(9, body(20));
   bound.hooks.after.forEach((fn) => fn());
   check('A SIGN-OUT leaves no log on the device, whoever\'s it was', store.size, 0);
   M.BS.keepLog(9, body(21));
-  bound.hooks.change.forEach((fn) => fn({ id: 9 }));
+  bound.hooks.change.forEach((fn) => fn(on(9)));
   await new Promise((r) => setTimeout(r, 0));
   await M.BS.sendKept(bound);
   check('and an account signing in sends what waits for it', [bound.posted.includes(21), M.BS.keptFor(9)], [true, 0]);

@@ -159,7 +159,9 @@ for (const f of files) {
 }
 // 13 since 2026-09-24: the tabletop's Mech builder lost its six dropdowns and
 // their "—" empty option to the shared builder, whose empty rows say "empty".
-check('and the table placeholders are still exactly the known set', placeholders, 13);
+// 16 since 2026-10-11: the Match Centre's Stats tables (logged games) mark a
+// win rate with too few games behind it, in three columns.
+check('and the table placeholders are still exactly the known set', placeholders, 16);
 
 // The pages themselves. Every dash in the markup is on screen.
 console.log('\nand none in the markup');

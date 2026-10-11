@@ -1,5 +1,5 @@
 import { openAccount } from './account';
-import { ApiError, EmberApi, type Account, type AdminInvite, type RegistrationInfo, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type SquadEntry, type StatsSummary } from './api';
+import { ApiError, EmberApi, type Account, type AdminInvite, type RegistrationInfo, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type PublicStats, type SquadEntry, type StatsSummary } from './api';
 import { bindBotLogs, BotLog, fileLog, keepLog, type BotGameEnd } from './botlog';
 import { bindCollection } from './collection';
 import { bindLibrary, onLibrary } from './library';
@@ -21,7 +21,7 @@ import { tableDeployFor } from './mapeditor';
 import { mapConfig, missionConfig } from './tableconfig';
 import { cardName, FACTION_LABEL, dataUrl, loadData, mechArtLayers, missionImageUrl, parseGridRef, setSquadNames, squadLabel, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl, type GameData } from './data';
 import { tacticSpec } from './tactics';
-import { flushBoxDrops, queueBoxDrop, objectiveCells, resetHudTools, startActionFromCard, startSupportPick } from './matchhud';
+import { flushBoxDrops, queueBoxDrop, objectiveCells, resetHudTools, startActionFromCard, startSupportPick, type LogStatus } from './matchhud';
 import { printedDeployment } from './overlays';
 import { actionIdleWhy, kcArmorReady, knockbackOf, migrateState, squadAllegiance, squadPoints, tokenCards, unfoldsOwed, type AttackReaction } from './units';
 import { idleWorldFor } from './glue';
@@ -49,6 +49,8 @@ import { boxNoteText, dodgeEnhanceOf, SLOT_LABEL, loanedParts, explosionScope } 
 import { gridsOf, PHASES, SCALES, STATUSES, statusCount } from './types';
 import { smokePerGroup, syncSeason } from './season';
 import { handCommand, handCount, handIds, setHandRoom } from './tactichand';
+import { GameTrack, gameReport, matchKey } from './gamelog';
+import { gameOver } from './owed';
 // FIRST, before anything else in this module runs. A net that is installed
 // after the thing it is meant to catch is not a net.
 installDiagnostics(window);
@@ -457,6 +459,7 @@ const hooks: NetHooks = {
     rewindIfAgreed(cmd);
     settleDefense(cmd);
     publishCatalog();
+    trackAfter();
     // Nothing below this line belongs in a replay: the commitments and reveals
     // are being re-read from history, and answering them again would send this
     // client's reveal a second time.
@@ -716,6 +719,7 @@ function send(cmd: Command): CheckResult {
     publishCatalog();
     offerCoordinationAfterManeuver(cmd);
     flyMove(fly);
+    trackAfter();
   }
   return v;
 }
@@ -1962,6 +1966,124 @@ function soonHtml(): string {
   return '<div class="mc-col mc-soon"><p>Coming Soon</p></div>';
 }
 
+// ---------- the stats anyone may read (OTTO, 2026-10-10) ----------
+//
+// From the games players chose to log (gamelog.ts): which factions win, how
+// each does against each, what each faction brings, the squads played most.
+// No name anywhere, and a figure only with `min` (20) games behind it: the
+// server holds that line, this page only says so.
+let pubStats: PublicStats | null = null;
+let pubAt = 0;
+let pubErr: string | null = null;
+let pubLoading = false;
+let pubFaction: string | null = null;
+type PubCat = 'mech_part' | 'pilot' | 'drone' | 'tactics_or_upgrade';
+let pubCat: PubCat = 'mech_part';
+const PUB_CATS: [PubCat, string][] = [['mech_part', 'Parts'], ['pilot', 'Pilots'], ['drone', 'Drones'], ['tactics_or_upgrade', 'Tactics']];
+
+function loadPublicStats(): void {
+  if (pubLoading || (pubStats && Date.now() - pubAt < 60_000)) return;
+  pubLoading = true;
+  pubErr = null;
+  void api.publicStats().then((s) => {
+    pubStats = s;
+    pubAt = Date.now();
+    if (!pubFaction || !s.cards[pubFaction]) pubFaction = Object.keys(s.cards)[0] ?? null;
+  }).catch((err: Partial<ApiError>) => {
+    pubErr = err.message || 'Could not load the stats.';
+  }).finally(() => {
+    pubLoading = false;
+    render();
+  });
+}
+
+const pct = (n: number, of: number): string => (of ? `${Math.round((n / of) * 100)}%` : '—');
+const factionText = (f: string | null): string => (f ? FACTION_LABEL[f] ?? f : 'Mixed');
+
+// A squad has no name, so it is called by its pilots, or by its first cards
+// where it has none.
+function pubSquadName(squad: SquadEntry[]): string {
+  const pilots = squad.filter((e) => e.cat === 'pilot' && known(e.id)).map((e) => cardLabel(e.id));
+  const named = pilots.length ? pilots : squad.filter((e) => known(e.id)).slice(0, 3).map((e) => cardLabel(e.id));
+  return named.length ? named.join(', ') : 'A squad';
+}
+
+function publicStatsHtml(): string {
+  const s = pubStats;
+  const min = s?.min ?? 20;
+  const none = (what: string): string => `<p class="hint">No ${what} has ${min} logged games behind it yet.</p>`;
+  const factions = s?.factions ?? [];
+  const most = Math.max(1, ...factions.map((f) => f.games));
+  const factionRows = factions.length
+    ? `<div class="statlist">${factions.map((f) => `<div class="statrow">
+        <span class="sl-name">${esc(factionText(f.faction))}</span>
+        <span class="sl-bar"><i style="width:${Math.max(4, Math.round((f.games / most) * 100))}%"></i></span>
+        <span class="sl-n">${f.games}</span>
+        <span class="sl-w" title="Won against the other factions">${f.againstOthers >= min ? pct(f.winsAgainstOthers, f.againstOthers) : '—'}</span>
+      </div>`).join('')}</div>`
+    : none('faction');
+  const matchupRows = s?.matchups.length
+    ? `<div class="statlist">${s.matchups.map((m) => `<div class="statrow">
+        <span class="sl-name">${esc(factionText(m.a))} v ${esc(factionText(m.b))}</span>
+        <span class="sl-n">${m.games}</span>
+        <span class="sl-w">${m.aWins}–${m.bWins}</span>
+      </div>`).join('')}</div>`
+    : none('pairing');
+  const factionsWithCards = Object.keys(s?.cards ?? {});
+  const cardLists = factionsWithCards.flatMap((f) => PUB_CATS.map(([cat]) => {
+    const rows = (s?.cards[f]?.[cat] ?? []).filter((r) => known(r.card));
+    const top = Math.max(1, ...rows.map((r) => r.games));
+    const shown = pubFaction === f && pubCat === cat;
+    return `<div data-publist="${esc(f)}|${cat}"${shown ? '' : ' hidden'}>${rows.length
+      ? `<div class="statlist">${rows.map((r, i) => `<div class="statrow" data-tip-card="${esc(r.card)}">
+          <span class="sl-rank">${i + 1}</span>
+          <span class="sl-name">${esc(cardLabel(r.card))}</span>
+          <span class="sl-bar"><i style="width:${Math.max(4, Math.round((r.games / top) * 100))}%"></i></span>
+          <span class="sl-n">${r.games}</span>
+          <span class="sl-w">${r.wins === null ? '—' : pct(r.wins, r.games)}</span>
+        </div>`).join('')}</div>`
+      : '<p class="hint">None logged yet.</p>'}</div>`;
+  })).join('');
+  const squadRows = s?.squads.length
+    ? `<div class="statlist">${s.squads.map((q, i) => `<div class="statrow">
+        <span class="sl-rank">${i + 1}</span>
+        <span class="sl-name">${esc(pubSquadName(q.squad))} <span class="quiet">${esc(factionText(q.faction))}</span></span>
+        <span class="sl-n">${q.games}</span>
+        <span class="sl-w">${pct(q.wins, q.games)}</span>
+      </div>`).join('')}</div>`
+    : none('squad');
+  const body = s
+    ? `<div class="mc-row fill">
+        <div class="panel pane">
+          <h3>Factions</h3>
+          <p class="hint">Games logged, and the share won against the other factions.</p>
+          <div class="scrollbox">${factionRows}</div>
+        </div>
+        <div class="panel pane">
+          <h3>Faction against faction</h3>
+          <div class="scrollbox">${matchupRows}</div>
+        </div>
+        <div class="panel pane">
+          <h3>Most used</h3>
+          ${factionsWithCards.length
+            ? `<div class="chiprow">${factionsWithCards.map((f) => `<button class="chipf${pubFaction === f ? ' on' : ''}" data-pubfaction="${esc(f)}">${esc(factionText(f))}</button>`).join('')}</div>
+               <div class="chiprow">${PUB_CATS.map(([cat, label]) => `<button class="chipf${pubCat === cat ? ' on' : ''}" data-pubcat="${cat}">${esc(label)}</button>`).join('')}</div>
+               <div class="scrollbox">${cardLists}</div>`
+            : none('faction')}
+        </div>
+        <div class="panel pane">
+          <h3>Squads played most</h3>
+          <div class="scrollbox">${squadRows}</div>
+        </div>
+      </div>`
+    : `<p class="hint">${pubErr ? esc(pubErr) : 'Reading the logged games…'}</p>`;
+  return `<div class="mc-col wide" data-tip-side="right">
+    <h1 class="mc-h">Stats</h1>
+    <p class="quiet">${s ? `From ${s.games} logged game${s.games === 1 ? '' : 's'}. ` : ''}A figure shows once ${min} games or more stand behind it. Games are logged only by players who switch it on from their account.</p>
+    ${body}
+  </div>`;
+}
+
 function statsHtml(): string {
   const r = record?.record;
   const recent = record?.recent ?? [];
@@ -2223,7 +2345,7 @@ function adminHtml(): string {
 }
 
 function doorHtml(): string {
-  if (door === 'stats') return soonHtml();
+  if (door === 'stats') return publicStatsHtml();
   if (door === 'admin') return account?.role === 'admin' ? adminHtml() : soonHtml();
   return `<div class="mc-col">
     <h1 class="mc-h">Start a match</h1>
@@ -2569,56 +2691,55 @@ function rulesStep(): string {
   </div>`;
 }
 
-// The finished game, kept on the account that reports it. Both players may
-// record the same match; the server files each report against its reporter,
-// which is why the seat travels with it.
+// THE MATCH'S LOG (OTTO, 2026-10-10): for a player who switched game logging
+// on (the account screen), the finished match is logged by itself as it ends,
+// with nothing asked. Both players may log it; the key their copies share
+// (gamelog.ts matchKey) makes it one game on the server, each on their own
+// seat. A game against the computer goes its own way (botlog.ts).
+let track: GameTrack | null = null;
+let trackRoom: string | null = null;
+let logged: (LogStatus & { match: string }) | null = null;
+
+// After every command that lands: the game as it goes, and its log once over.
+function trackAfter(): void {
+  const room = relay.state.room?.id;
+  if (!data || loopback || !room) return;
+  if (!track || trackRoom !== room) {
+    track = GameTrack.resume(room);
+    trackRoom = room;
+  }
+  track.observe(state);
+  track.keep(room);
+  logIfOver();
+}
+
+function logIfOver(retry = false): void {
+  if (!data || loopback || !relay.state.room || !relay.state.seat || !gameOver(data, state).over) return;
+  const match = `${relay.state.room.id}|${track?.openingBasis ?? ''}`;
+  if (logged?.match === match && !(retry && logged.state === 'failed')) return;
+  if (!account) { logged = { match, state: 'signedout' }; return; }
+  if (!api.logs('games')) { logged = { match, state: 'off' }; return; }
+  logged = { match, state: 'sending' };
+  void recordMatch().then((why) => {
+    logged = why ? { match, state: 'failed', why } : { match, state: 'done' };
+    render();
+  });
+}
+
+// The finished game, logged on the account that sends it.
 async function recordMatch(): Promise<string | null> {
   if (!data) return 'Still loading.';
-  // A game against the computer is nobody's record.
-  if (loopback) return 'A game against the computer is not kept on a record.';
-  if (!account) return 'Sign in to keep a record.';
-  const tasks = normaliseTasks(state.tasks);
-  const vp = tasks.vp;
-  // The same verdict the panel shows, tiebreak and all (5.2.4). Recording a
-  // draw where the board settled it would put the wrong result on both accounts.
-  const winner = gameResult(tasks, state.tokens, lowValueOf(data)).winner;
-  const entries = (side: Side) => {
-    const out: SquadEntry[] = [];
-    const push = (id: string): void => {
-      const card = data!.byId.get(id);
-      if (card) out.push({ id, cat: (card.category ?? 'mech_part') as SquadEntry['cat'] });
-    };
-    // Everything the side FIELDED, so a Mech that died still counts as brought
-    // — see rememberFielded. A board from before the roster existed has none,
-    // and falls back to whatever is still standing.
-    const roster = state.fielded?.[side];
-    if (roster && Object.keys(roster).length) {
-      for (const ids of Object.values(roster)) for (const id of ids) push(id);
-    } else {
-      for (const t of state.tokens) {
-        if (t.side !== side || t.kind === 'projectile') continue;
-        for (const { card } of tokenCards(data!, t)) push(card.id);
-      }
-    }
-    for (const id of handIds(state, side, roomKey())) if (data!.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
-    // The server caps a squad at 80 entries; no real list comes close.
-    return out.slice(0, 80);
-  };
+  const room = relay.state.room?.id ?? null;
+  const t = track ?? new GameTrack();
   try {
-    await api.recordGame({
+    await api.recordGame(gameReport(data, state, track, {
+      source: 'match',
       mode: 'online',
-      mission: state.mission ?? null,
-      scale: state.scale ?? null,
-      rounds: Math.max(1, Math.min(20, state.round.n)),
-      winnerSeat: winner,
       mySeat: mySeat(),
-      players: (['s1', 's2'] as Side[]).map((side) => ({
-        seat: side,
-        faction: squadAllegiance(data!, state.tokens.filter((t) => t.side === side)).faction,
-        vp: Math.max(0, vp[side]),
-        squad: entries(side),
-      })),
-    });
+      gameKey: room ? await matchKey(room, t, state) : null,
+      ended: normaliseTasks(state.tasks).conceded ? 'conceded' : 'rounds',
+      hands: { s1: handIds(state, 's1', roomKey()), s2: handIds(state, 's2', roomKey()) },
+    }));
     record = await api.myRecord().catch(() => record);
     return null;
   } catch (err) {
@@ -2660,7 +2781,8 @@ function hudCtx(): HudCtx {
     startAttack,
     showTab: (name) => showSideTab(null, name),
     diceData,
-    recordMatch,
+    logStatus: () => logged,
+    relog: () => logIfOver(true),
     refresh: () => render(),
     // A game against the computer: nothing to record, no second player to
     // agree an Undo with, and the table is this page's own to start again.
@@ -3104,10 +3226,10 @@ function loadingText(): string {
 
 // The game's log, filed once (botlog.ts): sent as the game ends, or kept on
 // this device for the next page when this one is left before the end. Only
-// for a signed-in player.
+// for a signed-in player who switched it on (the account screen).
 function fileBotLog(ended: BotGameEnd): void {
   const me = api.user;
-  if (!botlog || botlog.filed || !me) return;
+  if (!botlog || botlog.filed || !me || !api.logs('computer')) return;
   if (ended !== 'over' && !botlog.begun) return;
   botlog.filed = true;
   const body = botlog.body(ended);
@@ -3293,8 +3415,8 @@ function render(): void {
   // inside their panels instead.
   // In a room too: the lobby rail pins Launch to its own bottom, so the lobby
   // must never be taller than the window either.
-  // Stats is parked as "Coming Soon", so only Admin is a reading view today.
-  const capped = !hud && !!data && !!account && (relay.state.room ? true : door === 'admin' && account.role === 'admin');
+  // Stats (the logged games anyone may read) and Admin are the reading views.
+  const capped = !hud && !!data && !!account && (relay.state.room ? true : door === 'stats' || (door === 'admin' && account.role === 'admin'));
   // Three fixed hosts, so the stateful board survives every re-render: the
   // bar and veils redraw freely, the body only redraws outside HUD mode.
   if (!document.getElementById('mc-barhost')) {
@@ -3484,9 +3606,22 @@ function wire(): void {
     b.addEventListener('click', () => {
       door = b.dataset.door as Door;
       if (door === 'admin') loadAdmin();
+      if (door === 'stats') loadPublicStats();
       render();
     }),
   );
+
+  // The Stats tab's picks show and hide lists already drawn: a re-render would
+  // take the page's scroll with it.
+  const pubShow = (): void => {
+    root.querySelectorAll<HTMLElement>('[data-publist]').forEach((el) => { el.hidden = el.dataset.publist !== `${pubFaction}|${pubCat}`; });
+    root.querySelectorAll<HTMLElement>('[data-pubfaction]').forEach((el) => el.classList.toggle('on', el.dataset.pubfaction === pubFaction));
+    root.querySelectorAll<HTMLElement>('[data-pubcat]').forEach((el) => el.classList.toggle('on', el.dataset.pubcat === pubCat));
+  };
+  root.querySelectorAll<HTMLButtonElement>('[data-pubfaction]').forEach((b) =>
+    b.addEventListener('click', () => { pubFaction = b.dataset.pubfaction ?? null; pubShow(); }));
+  root.querySelectorAll<HTMLButtonElement>('[data-pubcat]').forEach((b) =>
+    b.addEventListener('click', () => { pubCat = (b.dataset.pubcat as PubCat) ?? 'mech_part'; pubShow(); }));
 
   $('mc-mint')?.addEventListener('click', () => {
     const label = ($('mc-mint-label') as HTMLInputElement | null)?.value.trim() || undefined;

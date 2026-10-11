@@ -14,6 +14,7 @@ import { openBoardReport } from './reportui';
 import { Relay } from './net';
 import { alive, getLocalSeat, setLocalSeat } from './loop';
 import { ApiError, EmberApi, type SquadEntry } from './api';
+import { gameReport } from './gamelog';
 import { MultiplayerDialog } from './multiplayer';
 import { Inventory } from './inventory';
 import { bindCollection, collectionOn, hasAny, inUse, loadCollection, shortfalls } from './collection';
@@ -1923,45 +1924,38 @@ async function init() {
     return out.slice(0, 80);
   }
 
-  // Recording is opt-in and never blocks ending a game. A failure here is
-  // reported and then dropped: the match happened whether or not the server
-  // heard about it.
-  async function offerToRecord(res: GameResult, tasks: TaskState): Promise<void> {
-    if (!emberApi.user) return;
+  // Logging is the player's choice (the account screen: OTTO, 2026-10-10) and
+  // never blocks ending a game. The board asks only which squad was yours, for
+  // a player who switched it on. A failure here is reported and then dropped:
+  // the match happened whether or not the server heard about it.
+  async function offerToRecord(_res: GameResult, tasks: TaskState): Promise<void> {
+    if (!emberApi.user || !emberApi.logs('games')) return;
     const s1 = squadLabel('s1');
     const s2 = squadLabel('s2');
     const pick = await choiceDialog({
-      title: 'Record this game?',
-      body: `Saved to your account on embertg.online, where it counts towards squad and card statistics. Pick the squad you played, or record it without claiming a side.`,
+      title: 'Log this game?',
+      body: 'It goes to your game log, where it counts towards the faction, squad and card stats. Pick the squad you played, or log it without claiming a side.',
       stacked: true,
       choices: [
         { id: 's1', label: `I played ${s1}` },
         { id: 's2', label: `I played ${s2}` },
         { id: 'neither', label: 'I played both sides' },
-        { id: 'cancel', label: 'Do not record it', cancel: true },
+        { id: 'cancel', label: 'Do not log it', cancel: true },
       ],
     });
     if (!pick || pick === 'cancel') return;
-
-    const alg = (side: Side) => squadAllegiance(data, state.tokens.filter((t) => t.side === side)).faction;
     try {
-      await emberApi.recordGame({
+      await emberApi.recordGame(gameReport(data, state, null, {
+        source: 'table',
         mode: 'hotseat',
-        mission: state.mission ?? null,
-        scale: state.scale ?? null,
-        rounds: Math.max(1, Math.min(20, state.round.n)),
-        winnerSeat: res.winner,
         mySeat: pick === 'neither' ? null : (pick as Side),
-        players: (['s1', 's2'] as Side[]).map((side) => ({
-          seat: side,
-          faction: alg(side),
-          vp: Math.max(0, tasks.vp[side]),
-          squad: squadEntriesFor(side),
-        })),
-      });
-      say('done', 'Game recorded to your account.');
+        gameKey: null,
+        ended: tasks.conceded ? 'conceded' : 'called',
+        hands: { s1: handIds(state, 's1', handRoom), s2: handIds(state, 's2', handRoom) },
+      }));
+      say('done', 'Game logged to your account.');
     } catch (err) {
-      say('system', `Could not record the game: ${(err as ApiError).message} The game itself is unaffected.`);
+      say('system', `Could not log the game: ${(err as ApiError).message} The game itself is unaffected.`);
     }
   }
 

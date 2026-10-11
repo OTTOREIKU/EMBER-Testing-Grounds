@@ -64,6 +64,30 @@ export function openAccount(host: AccountHost): void {
       </div>
     </section>
 
+    <section class="acc-sect" data-acc-logging>
+      <h4>Game logging</h4>
+      <p class="acc-note">Off unless you switch it on. A logged game helps balance the factions and tune the computer.</p>
+      <label class="acc-switch">
+        <input type="checkbox" data-acc-log-computer>
+        <span>Games against the computer</span>
+        <em data-acc-log-computer-since></em>
+      </label>
+      <label class="acc-switch">
+        <input type="checkbox" data-acc-log-games>
+        <span>Multiplayer and Pad games</span>
+        <em data-acc-log-games-since></em>
+      </label>
+      <details class="acc-kept">
+        <summary>What is kept</summary>
+        <p>The cards each side brought, by card number, with factions and points. The battlefield, the Main Task and the Secondary Tasks. Who went first, the score by round and what scored it, the units destroyed and when, the Tactics Cards played, the winner and how the game ended. Season rules on or off, the computer's level, the app's version, and how long the game took.</p>
+        <p>Never kept: your name or any name you typed (squads, Mechs, units), your device, your browser, or where you connect from.</p>
+        <p>In a game against another player only your own side is linked to your account. The other side stays anonymous unless that player logs the game too.</p>
+      </details>
+      <div class="acc-actions">
+        <button class="acc-btn ghost" data-acc-log-delete>Delete my logged games</button>
+      </div>
+    </section>
+
     <section class="acc-sect">
       <h4>Sign out</h4>
       <p class="acc-note">Your saved units, squads and collection leave this device and stay on your account. Everywhere also ends your session on every other device.</p>
@@ -77,7 +101,7 @@ export function openAccount(host: AccountHost): void {
       <h4>Delete account</h4>
       ${admin
         ? '<p class="acc-note">An admin account cannot be deleted from here.</p>'
-        : `<p class="acc-note">Removes your account, your saved units and squads, and your collection. Games you recorded stay in the stats with no name on them. This cannot be undone.</p>
+        : `<p class="acc-note">Removes your account, your saved units and squads, and your collection. Games you logged stay in the stats with no name on them. This cannot be undone.</p>
       ${field('data-acc-del-pass', 'Password', 'current-password')}
       <div class="acc-actions">
         <button class="acc-btn danger" data-acc-delete>Delete my account</button>
@@ -171,6 +195,53 @@ export function openAccount(host: AccountHost): void {
         next.value = '';
         if (meter) meter.hidden = true;
         say('ok', 'Password changed. Every other device has been signed out.');
+      });
+    });
+
+    // GAME LOGGING (OTTO, 2026-10-10): each switch says when it was turned on;
+    // a change the server refuses puts the box back as it was.
+    const since = (iso: string | null | undefined): string => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? 'On' : `On since ${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    };
+    const showLogging = (logging: { computer: string | null; games: string | null } | undefined): void => {
+      for (const kind of ['computer', 'games'] as const) {
+        const box = find<HTMLInputElement>(`data-acc-log-${kind}`);
+        const when = find<HTMLElement>(`data-acc-log-${kind}-since`);
+        if (box) box.checked = !!logging?.[kind];
+        if (when) when.textContent = since(logging?.[kind]);
+      }
+    };
+    showLogging(api.user?.logging);
+    for (const kind of ['computer', 'games'] as const) {
+      const box = find<HTMLInputElement>(`data-acc-log-${kind}`);
+      box?.addEventListener('change', () => {
+        const want = box.checked;
+        void attempt(async () => { showLogging(await api.setLogging({ [kind]: want })); }).then((ok) => {
+          if (!ok) box.checked = !want;
+        });
+      });
+    }
+
+    find('data-acc-log-delete')?.addEventListener('click', () => {
+      if (busy) return;
+      void confirmDialog({
+        title: 'Delete your logged games?',
+        body: 'Every game logged for this account is removed. A game the other player logged too stays for them, without your name. This cannot be undone.',
+        confirmLabel: 'Delete my logged games',
+        cancelLabel: 'Keep them',
+        danger: true,
+      }).then(async (yes) => {
+        if (!yes) return;
+        let left = { deleted: 0, kept: 0, computer: 0 };
+        if (!(await attempt(async () => { left = await api.deleteMyGames(); }))) return;
+        const n = left.deleted + left.kept + left.computer;
+        say('ok', n ? `Deleted ${n} logged game${n === 1 ? '' : 's'}.` : 'There were no logged games to delete.');
+        void api.myRecord().then((r) => {
+          const line = find<HTMLElement>('data-acc-record');
+          if (line) line.textContent = r.record.played ? `${r.record.played} played · ${r.record.won} won · ${r.record.drawn} drawn · ${r.record.lost} lost` : 'No games recorded yet.';
+        }).catch(() => { /* the line keeps what it said */ });
       });
     });
 

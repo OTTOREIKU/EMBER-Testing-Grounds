@@ -1,8 +1,10 @@
-// THE COMPUTER'S GAMES ON THEIR WAY TO THE ACCOUNT (botlog.ts makes them).
-// Every log is written to this device first and taken off once the server has
-// it, so a game whose page closed, or whose send failed, goes the next time a
-// page opens with the same account signed in. Nothing is written for a player
-// who is signed out, and a sign-out leaves none on the device.
+// THE COMPUTER'S GAMES ON THEIR WAY TO THE ACCOUNT (botlog.ts makes them), for
+// a player who switched that on (the account screen; OTTO, 2026-10-10: off
+// until the player chooses). Every log is written to this device first and
+// taken off once the server has it, so a game whose page closed, or whose send
+// failed, goes the next time a page opens with the same account signed in.
+// Nothing is written for a player who is signed out or has the switch off, a
+// sign-out leaves none on the device, and switching it off clears them.
 //
 // Kept apart from botlog.ts so the board, which only sends, does not load the
 // game's rules to do it.
@@ -12,23 +14,17 @@ import type { Side } from './types';
 export type BotGameEnd = 'over' | 'left' | 'restarted';
 
 // One answer the computer gave: n, round, phase, the question's kind, the
-// option's id and label, the policy's rule and reason, how many options there
-// were, how long it thought and how long the whole answer took (ms), and
-// whether the page was out of sight meanwhile (its times are then the
-// browser's: botlog.ts).
+// option's id, the policy's rule, and how many options there were. GAME FACTS
+// ONLY (OTTO, 2026-10-10): no times (they are the device's), no labels or
+// reasons (they can carry a name a player typed).
 export interface BotDecision {
   n: number;
   r: number;
   p: number;
   k: string;
   o: string;
-  l: string;
   y: string;
-  w: string;
   c: number;
-  t: number;
-  ms: number;
-  h?: 1;
 }
 
 export interface BotStop {
@@ -36,7 +32,6 @@ export interface BotStop {
   p: number;
   s: Side;
   k: 'refused' | 'stuck' | 'taken' | 'given';
-  why: string;
 }
 
 // What the server takes (ember-api, POST /botgames). Every field is held to a
@@ -62,9 +57,10 @@ export interface BotGameBody {
   // The board as the game stood when the log was made (secrecy.ts
   // boardFingerprint): a game played back from the log must come to the same.
   fp: string;
-  cores: number | null;
   stops: BotStop[];
-  errors: { what: string; during: string | null; stack: string | null }[];
+  // Where the page met an error, by the step it was taking: never its words or
+  // its stack, which are the browser's.
+  errors: { during: string | null }[];
   decisions: BotDecision[];
   commands: { s: Side | 'host'; c: Command }[];
   // Commands left out to keep the log under the server's limit.
@@ -123,7 +119,7 @@ export function keptFor(owner: number): number {
 
 // The account side of api.ts this needs.
 export interface BotLogApi {
-  readonly user: { id: number } | null;
+  readonly user: { id: number; logging?: { computer: string | null } } | null;
   postBotGame(body: BotGameBody): Promise<unknown>;
   onChange(fn: (a: { id: number } | null) => void): void;
   beforeSignOut(fn: () => Promise<void>): void;
@@ -131,6 +127,16 @@ export interface BotLogApi {
 }
 
 let sending: Promise<void> | null = null;
+
+// Whether the signed-in player keeps their games against the computer.
+export function logsComputer(api: Pick<BotLogApi, 'user'>): boolean {
+  return !!api.user?.logging?.computer;
+}
+
+// Forgets what this device holds for `owner`: the switch is off.
+function dropFor(owner: number): void {
+  writeUnsent(readUnsent().filter((u) => u.owner !== owner));
+}
 
 // Sends the signed-in account's unsent logs, oldest first, and takes each off
 // once the server has it. Another account's stay for that account. One the
@@ -141,11 +147,14 @@ export function sendKept(api: BotLogApi): Promise<void> {
   sending = (async () => {
     const me = api.user;
     if (!me) return;
+    if (!logsComputer(api)) { dropFor(me.id); return; }
     for (const u of readUnsent().filter((x) => x.owner === me.id)) {
       try {
         await api.postBotGame(u.body);
       } catch (err) {
         const status = (err as { status?: number }).status ?? 0;
+        // Switched off on another device: nothing kept here goes either.
+        if (status === 403) { dropFor(me.id); return; }
         if (status !== 400 && status !== 413) return;
       }
       writeUnsent(readUnsent().filter((x) => !(x.owner === u.owner && same(x.body, u.body))));
@@ -155,10 +164,10 @@ export function sendKept(api: BotLogApi): Promise<void> {
 }
 
 // Files a finished game: kept on this device for the signed-in account, then
-// sent. Signed out, nothing is kept.
+// sent. Signed out, or with the switch off, nothing is kept.
 export function fileLog(api: BotLogApi, body: BotGameBody): Promise<void> {
   const me = api.user;
-  if (!me) return Promise.resolve();
+  if (!me || !logsComputer(api)) return Promise.resolve();
   keepLog(me.id, body);
   // A send already under way read the list before this one was on it.
   return (sending ?? Promise.resolve()).then(() => sendKept(api));
@@ -168,6 +177,7 @@ export function fileLog(api: BotLogApi, body: BotGameBody): Promise<void> {
 // a sign-out; after one, this device keeps none.
 export function bindBotLogs(api: BotLogApi): void {
   api.onChange((who) => { if (who) void sendKept(api); });
+  // (sendKept also forgets this device's logs for an account that switched off.)
   if (api.user) void sendKept(api);
   // A sign-out never waits long on these, and never fails for them.
   api.beforeSignOut(() => sendKept(api).catch(() => undefined));

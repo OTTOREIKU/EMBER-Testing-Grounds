@@ -1,16 +1,19 @@
 // THE COMPUTER'S GAMES, KEPT FOR ITS TUNING (OTTO, 2026-10-05: "it will help
 // tune the bots and check how they are doing against real opponents ... But
-// only if they are signed in"). A game a signed-in player plays against the
-// computer goes to the account's server when it ends: how it ended, each answer
-// the computer gave with how long it thought, the stops and errors on the way,
-// and every command in the order it landed, so the game can be played back to
-// the moment something went wrong. A game left before its end goes the next
-// time a page opens with the same account signed in (botsend.ts).
+// only if they are signed in"; 2026-10-10: and only if they switch it on, on
+// the account screen, with nothing but game facts kept). A game such a player
+// plays against the computer goes to the account's server when it ends: how it
+// ended, each answer the computer gave, where it stopped, and every command in
+// the order it landed, so the game can be played back to the moment something
+// went wrong. A game left before its end goes the next time a page opens with
+// the same account signed in (botsend.ts).
 //
-// Nothing is kept or sent for a player who is signed out, nor for a game the
-// player only watched, and none of it is shown on the page. The server keeps
-// it with the account and deletes it with the account (ember-api,
-// routes/botgames.ts).
+// Nothing is kept or sent for a player who is signed out or has the switch off,
+// nor for a game the player only watched, and none of it is shown on the page.
+// No name a player typed travels in it (a squad's, a Mech's, a unit renamed),
+// nor anything about the device: no times, no error texts. An account deleted
+// leaves its games behind without its name; "delete my logged games" deletes
+// them (ember-api, routes/botgames.ts and routes/games.ts).
 import type { LogEntry } from './ai/driver';
 import type { BotDecision, BotGameBody, BotGameEnd, BotStop } from './botsend';
 import type { Command } from './commands';
@@ -52,18 +55,25 @@ const cut = (s: unknown, n: number): string => {
   return t.length > n ? t.slice(0, n) : t;
 };
 
+// A command as it is logged: a copy, with the words a player typed taken out
+// (a squad's name and its Mechs' names, a unit renamed).
+export function loggedCommand(cmd: Command): Command {
+  const c = JSON.parse(JSON.stringify(cmd)) as Command & Record<string, unknown>;
+  if (c.kind === 'importSquad') {
+    delete (c as { name?: string }).name;
+    for (const m of c.mechs ?? []) delete (m as { name?: string }).name;
+  } else if (c.kind === 'renameUnit') {
+    delete (c as { label?: string }).label;
+  }
+  return c;
+}
+
 export class BotLog {
   private readonly commands: { s: Side | 'host'; c: Command }[] = [];
   private readonly decisions: BotDecision[] = [];
   private readonly stops: BotStop[] = [];
   private readonly startedAt = Date.now();
   private overflow = 0;
-  // When the page was last put out of sight. A browser runs a hidden tab's
-  // timers about once a second, and the computer hands the page its thread
-  // back by a timer between the steps of a long thought: an answer thought out
-  // while the page was hidden took the browser's time, not the computer's,
-  // and is marked so.
-  private hiddenAt = 0;
   // Filed already (kept or sent): a game is filed once.
   filed = false;
 
@@ -71,13 +81,10 @@ export class BotLog {
     data: GameData;
     state: () => GameState;
     spec: BotGameSpec;
-    // The page's error ring (diagnostics.ts), read when the log is filed.
-    errors?: () => { what: string; during?: string; stack?: string }[];
-  }) {
-    if (typeof document !== 'undefined') {
-      document.addEventListener?.('visibilitychange', () => { if (document.hidden) this.hiddenAt = Date.now(); });
-    }
-  }
+    // The page's error ring (diagnostics.ts), read when the log is filed: only
+    // the step each error came in is kept.
+    errors?: () => { during?: string }[];
+  }) {}
 
   private at(): { r: number; p: number } {
     const s = this.o.state();
@@ -98,26 +105,23 @@ export class BotLog {
     if (UNLOGGED.has(cmd.kind)) return;
     if (this.commands.length >= MAX_COMMANDS) { this.overflow += 1; return; }
     // A copy as it was sent: nothing that holds the command later changes it here.
-    this.commands.push({ s, c: JSON.parse(JSON.stringify(cmd)) as Command });
+    this.commands.push({ s, c: loggedCommand(cmd) });
   }
 
   // The computer's answer to a question, as its driver logged it.
   decided(seat: Side, e: LogEntry): void {
     if (seat !== this.o.spec.bot || this.decisions.length >= MAX_DECISIONS) return;
-    const hidden = (typeof document !== 'undefined' && document.hidden === true) || this.hiddenAt > Date.now() - e.ms;
     this.decisions.push({
-      n: e.n, r: e.round, p: e.phase, k: cut(e.kind, 48), o: cut(e.option, 160), l: cut(e.label, 160),
-      y: cut(e.reason, 48), w: cut(e.why, 200), c: e.options, t: e.think ?? 0, ms: e.ms,
-      ...(hidden ? { h: 1 as const } : {}),
+      n: e.n, r: e.round, p: e.phase, k: cut(e.kind, 48), o: cut(e.option, 160), y: cut(e.reason, 48), c: e.options,
     });
   }
 
   // The computer stopped and waited for the player, or the player took its
   // seat for a while, or handed it back.
-  stopped(seat: Side, k: BotStop['k'], why = ''): void {
+  stopped(seat: Side, k: BotStop['k'], _why = ''): void {
     if (this.stops.length >= MAX_STOPS) return;
     const { r, p } = this.at();
-    this.stops.push({ r, p, s: seat, k, why: cut(why, 300) });
+    this.stops.push({ r, p, s: seat, k });
   }
 
   // Worth filing when the player leaves: the battle had begun, or the computer
@@ -133,10 +137,7 @@ export class BotLog {
     const over = gameOver(data, state);
     const { r, p } = this.at();
     const conceded = normaliseTasks(state.tasks).conceded ?? null;
-    const errors = (this.o.errors?.() ?? []).slice(-12).map((e) => ({
-      what: cut(e.what, 300), during: e.during ? cut(e.during, 48) : null, stack: e.stack ? cut(e.stack, 600) : null,
-    }));
-    const cores = typeof navigator !== 'undefined' && Number.isSafeInteger(navigator.hardwareConcurrency) ? navigator.hardwareConcurrency : null;
+    const errors = (this.o.errors?.() ?? []).slice(-12).map((e) => ({ during: e.during ? cut(e.during, 48) : null }));
     return fitted({
       v: 1,
       build: typeof __BUILD_ID__ === 'string' ? cut(__BUILD_ID__, 20) : null,
@@ -156,7 +157,6 @@ export class BotLog {
       round: r,
       phase: p,
       fp: boardFingerprint(state),
-      cores,
       stops: this.stops.slice(),
       errors,
       decisions: this.decisions.slice(),

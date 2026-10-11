@@ -15,6 +15,17 @@ export interface Account {
   username: string;
   displayName: string | null;
   role: AccountRole;
+  // Game logging, the player's choice (the account screen): when each switch
+  // was turned on, or null while it is off. Off is the start.
+  logging?: GameLogging;
+}
+
+// OTTO, 2026-10-10: nothing is kept for an account until its player switches
+// it on, one switch for games against the computer and one for multiplayer and
+// Pad games.
+export interface GameLogging {
+  computer: string | null;
+  games: string | null;
 }
 
 export interface RegistrationInfo {
@@ -37,14 +48,46 @@ export interface SquadEntry {
   cat: 'mech_part' | 'pilot' | 'drone' | 'projectile' | 'tactics_or_upgrade';
 }
 
+// A finished game as the server keeps it (ember-api src/lib/gamerecord.ts): game
+// facts only, card ids and no name a player typed (gamelog.ts builds it).
 export interface GameReport {
   mode: 'hotseat' | 'online';
+  source?: 'match' | 'pad' | 'table' | null;
+  // Shared by both players' copies of one match, so the server keeps one game.
+  gameKey?: string | null;
   mission?: string | null;
   scale?: string | null;
+  map?: string | null;
+  season?: boolean | null;
+  build?: string | null;
   rounds: number;
+  minutes?: number | null;
+  ended?: 'rounds' | 'wiped' | 'conceded' | 'called' | null;
+  firstSeat?: 's1' | 's2' | null;
   winnerSeat: 's1' | 's2' | null;
   mySeat: 's1' | 's2' | null;
-  players: { seat: 's1' | 's2'; faction?: string | null; vp: number; squad: SquadEntry[] }[];
+  players: { seat: 's1' | 's2'; faction?: string | null; vp: number; points?: number | null; squad: SquadEntry[] }[];
+  detail?: GameDetail | null;
+}
+
+export interface GameDetail {
+  vpByRound?: { s1: number[]; s2: number[] };
+  scored?: string[];
+  secondary?: { s1: { id: string | null; paid: boolean }; s2: { id: string | null; paid: boolean } };
+  destroyed?: { seat: 's1' | 's2'; card: string; round: number }[];
+  tactics?: { seat: 's1' | 's2'; card: string; round: number }[];
+  conceded?: 's1' | 's2' | null;
+}
+
+// The stats anyone may read (GET /stats/public): a figure only with `min`
+// games or more behind it, and no name anywhere.
+export interface PublicStats {
+  min: number;
+  games: number;
+  factions: { faction: string; games: number; wins: number; draws: number; againstOthers: number; winsAgainstOthers: number }[];
+  matchups: { a: string; b: string; games: number; aWins: number; bWins: number }[];
+  cards: Record<string, Record<string, { card: string; games: number; wins: number | null }[]>>;
+  squads: { faction: string | null; games: number; wins: number; squad: SquadEntry[] }[];
 }
 
 export interface MyRecord {
@@ -293,6 +336,31 @@ export class EmberApi {
 
   async recordGame(report: GameReport): Promise<{ id: number }> {
     return this.call<{ id: number }>('/games', { method: 'POST', body: report });
+  }
+
+  // Whether the signed-in player keeps this kind of game (the account screen's
+  // switches). Signed out, nothing is kept.
+  logs(kind: keyof GameLogging): boolean {
+    return !!this.account?.logging?.[kind];
+  }
+
+  async setLogging(want: Partial<Record<keyof GameLogging, boolean>>): Promise<GameLogging> {
+    const logging = await this.call<GameLogging>('/auth/logging', { method: 'PUT', body: want });
+    if (this.account) {
+      this.account = { ...this.account, logging };
+      this.announce();
+    }
+    return logging;
+  }
+
+  // "Delete my logged games": every game this account logged, and its games
+  // against the computer. A game the other player logged too stays for them.
+  async deleteMyGames(): Promise<{ deleted: number; kept: number; computer: number }> {
+    return this.call<{ deleted: number; kept: number; computer: number }>('/games/mine', { method: 'DELETE' });
+  }
+
+  async publicStats(): Promise<PublicStats> {
+    return this.call<PublicStats>('/stats/public');
   }
 
   // A game against the computer, kept for its tuning (botlog.ts); never shown.

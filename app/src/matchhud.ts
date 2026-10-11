@@ -102,9 +102,11 @@ export interface HudCtx {
   showTab(name: SideTab): void;
   // The printed faces, for drawing the dice a roll landed on.
   diceData: DiceData | null;
-  // Keeps the finished game on both accounts. Resolves to null when it landed,
-  // or to why it did not — a failure here never stops the table closing.
-  recordMatch(): Promise<string | null>;
+  // The finished match's log (match.ts): sent by itself as the game ends, for
+  // a player who switched game logging on, nothing asked. Null until then.
+  logStatus(): LogStatus | null;
+  // Sends a log that failed once more.
+  relog(): void;
   refresh(): void;
   // A game against the computer (match.ts startSolo): there is nothing to
   // record and nobody to agree an Undo with, and the game is this page's own
@@ -302,9 +304,6 @@ export function showRangeOverlay(uid: number, kind: 'move' | 'range', n: number)
   hudRef?.refresh();
 }
 let keysWired = false;             // the document key handler is installed once
-let recording = false;             // a record is being sent
-let recorded = false;              // and the server took it
-let recordNote: string | null = null;
 let secOpen = false;               // the Secondary Task picker overlay
 let secFor: Side | null = null;    // whose pick the overlay is making
 let secPick: string | null = null; // highlighted card, not yet confirmed
@@ -1863,9 +1862,23 @@ function endPanel(ctx: HudCtx): string {
       <div class="tp-foot">${advanceBtn(ctx, last ? 'Finish the game' : `Start Round ${s.round.n + 1}`, !all)}</div>`;
 }
 
-// What the game came to, and the offer to keep it. Recording is opt-in and
-// never blocks ending: the match happened whether or not the server hears
-// about it.
+// Where a finished match's log stands (match.ts logIfOver).
+export type LogStatus = { state: 'off' | 'signedout' | 'sending' | 'done' | 'failed'; why?: string };
+
+function logNote(st: LogStatus | null): string {
+  switch (st?.state) {
+    case 'done': return 'Logged to your account.';
+    case 'sending': return 'Logging the game…';
+    case 'failed': return `Not logged: ${st.why ?? 'the server did not answer.'}`;
+    case 'signedout': return 'Sign in to log your games.';
+    case 'off': return 'Game logging is off. It can be switched on from your account.';
+    default: return 'Close the table when you are done.';
+  }
+}
+
+// What the game came to, and whether it was logged. Logging is the player's
+// choice (the account screen) and never blocks ending: the match happened
+// whether or not the server hears about it.
 function resultPanel(ctx: HudCtx, vp: { s1: number; s2: number }): string {
   // Most Victory Points wins, but a tie goes to Mech Parts and Drones left on
   // the board and only a tie in both is a real draw (5.2.4). Deciding on VP
@@ -1885,10 +1898,8 @@ function resultPanel(ctx: HudCtx, vp: { s1: number; s2: number }): string {
   const foot = ctx.solo
     ? `<button class="bigbtn" data-act="soloagain">Play again</button>
        <button class="bigbtn ghost2" data-act="sololeave" style="margin-top:6px">Back to the board</button>`
-    : recorded
-    ? '<p class="tp-note">Saved to both accounts.</p><button class="bigbtn ghost2" data-act="endmatch">Close the table</button>'
-    : `<p class="tp-note">${esc(recordNote ?? 'Keep it on your record, or just close the table.')}</p>
-       <button class="bigbtn" data-act="record"${recording ? ' disabled' : ''}>${recording ? 'Recording…' : 'Record this match'}</button>
+    : `<p class="tp-note">${esc(logNote(ctx.logStatus()))}</p>
+       ${ctx.logStatus()?.state === 'failed' ? '<button class="bigbtn" data-act="relog">Try again</button>' : ''}
        <button class="bigbtn ghost2" data-act="endmatch" style="margin-top:6px">Close the table</button>`;
   return head('Game over', verdict, `${ctx.state.round.n} rounds played.`, true)
     + `<div class="tp-body">${rows}<p class="tp-dim">${esc(res.why)}.</p></div><div class="tp-foot">${foot}</div>`;
@@ -7462,22 +7473,13 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     }
     ctx.refresh();
   });
-  on('[data-act="record"]', () => {
-    recording = true;
-    recordNote = null;
+  on('[data-act="relog"]', () => {
+    ctx.relog();
     ctx.refresh();
-    void ctx.recordMatch().then((why) => {
-      recording = false;
-      recorded = !why;
-      recordNote = why;
-      ctx.refresh();
-    });
   });
   on('[data-act="soloagain"]', () => ctx.solo?.again());
   on('[data-act="sololeave"]', () => ctx.solo?.leave());
   on('[data-act="endmatch"]', () => {
-    recorded = false;
-    recordNote = null;
     ctx.send({ kind: 'endMatch', seat: me() });
     ctx.refresh();
   });
