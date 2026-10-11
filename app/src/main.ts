@@ -4925,8 +4925,10 @@ async function init() {
   function unitsWithin(from: Token, range: number): { t: Token; dist: number }[] {
     const gc = Math.floor(from.col / 3);
     const gr = Math.floor(from.row / 3);
+    // A unit still waiting to deploy stands nowhere, as turn.ts unitsWithin
+    // reads it (the code audit, 2026-10-11).
     return state.tokens
-      .filter((x) => x.uid !== from.uid)
+      .filter((x) => x.uid !== from.uid && x.deployed !== false)
       .map((t) => ({ t, dist: Math.abs(Math.floor(t.col / 3) - gc) + Math.abs(Math.floor(t.row / 3) - gr) }))
       .filter((x) => x.dist <= range)
       .sort((a, b) => a.dist - b.dist);

@@ -2740,7 +2740,6 @@ async function recordMatch(): Promise<string | null> {
       ended: normaliseTasks(state.tasks).conceded ? 'conceded' : 'rounds',
       hands: { s1: handIds(state, 's1', roomKey()), s2: handIds(state, 's2', roomKey()) },
     }));
-    record = await api.myRecord().catch(() => record);
     return null;
   } catch (err) {
     return `${(err as ApiError).message} The game itself is unaffected.`;
@@ -3538,7 +3537,9 @@ function wire(): void {
       },
     });
   });
-  root.querySelectorAll<HTMLElement>('[data-squad]').forEach((r) =>
+  // The parked Stats view's squad rows only: the Bring picker's rows carry
+  // data-squad too, and answered this as well (the code audit, 2026-10-11).
+  root.querySelectorAll<HTMLElement>('.statrow[data-squad]').forEach((r) =>
     r.addEventListener('click', () => { squadOpen = r.dataset.squad!; render(); }),
   );
   // The preview has to go with the panel it was hovered inside, or it hangs

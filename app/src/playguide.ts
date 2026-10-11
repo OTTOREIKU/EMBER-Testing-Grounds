@@ -8,7 +8,7 @@ import { PHASES, PHASE_INFO } from './tracker';
 import { actionPartWhy, chassisGone, commonActionStop, commonPartKey, immobilizedStop, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, firewatchOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, actionIdleWhy, type IdleWorld } from './units';
 import { actionPipCount, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens, strictNow, taskDesignations, swarmFor } from './commands';
-import { idleWorldFor, openActivation, popDeadExtras } from './glue';
+import { closeDeadOpportunity, idleWorldFor, openActivation, popDeadExtras } from './glue';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
 import { tacticFitsPhase, tacticSpec, tacticUsedRound, tacticWindowWhy } from './tactics';
 import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, tiedChoices, type InitLookup, type Activation } from './loop';
@@ -1362,8 +1362,11 @@ export class PlayGuide {
   private opportunity(s: GameState): Opportunity | null {
     const sc = this.script(s);
     // An echoed Mech killed inside its Extra Opportunity hands it back to the
-    // granter (FAQ K21), the same glue the other pages run.
+    // granter (FAQ K21), and a Mech killed inside its own closes it (or the
+    // Action Phase waits on a unit that is gone): the same glue the other
+    // pages run (the code audit, 2026-10-11, found this copy without the second).
     popDeadExtras(s);
+    closeDeadOpportunity(s);
     // A nested Extra Action Opportunity (FAQ K21) belongs to whoever was just
     // granted it, NOT to whoever the activation order says is next - the
     // re-derivation below would clobber it on the very next render.

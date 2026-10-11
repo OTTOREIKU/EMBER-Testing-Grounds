@@ -272,9 +272,12 @@ function attackActionOf(t: Token, actionId: string, verdict?: TableVerdict): Car
   const opp = oppNow?.uid === t.uid ? oppNow
     : !a.state().script && verdict?.stationary !== undefined ? { moved: !verdict.stationary } : null;
   const granted = grantAdjusted(stationaryAdjusted(printed, opp), t, opp);
+  // A Load lent by a Carrier in Contact can be the Freehand (FAQ O16), as
+  // turn.ts attackActionBuilt reads it (the code audit, 2026-10-11).
+  const loans = loanedParts(a.data, a.state().tokens, t);
   // FAQ A16: the designation may be declined, and the declined copy says so.
-  if (verdict?.twoHanded === 'declined') return twoHandedUse(a.data, t, granted, boxHands(a.state().tasks, t.uid)) ? { ...granted, twoHandedDeclined: true } : granted;
-  return twoHandedUse(a.data, t, granted, boxHands(a.state().tasks, t.uid))?.action ?? granted;
+  if (verdict?.twoHanded === 'declined') return twoHandedUse(a.data, t, granted, boxHands(a.state().tasks, t.uid), loans) ? { ...granted, twoHandedDeclined: true } : granted;
+  return twoHandedUse(a.data, t, granted, boxHands(a.state().tasks, t.uid), loans)?.action ?? granted;
 }
 
 // In a FREEFORM room this phone runs both halves of the attack, so the
