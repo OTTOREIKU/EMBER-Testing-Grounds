@@ -536,6 +536,32 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
   check('  and the page is told once that anything changed: when the game ended', p.changes(), 1);
   p.close();
 }
+// OTTO, 2026-10-12, watching two computers: "When the drone blew up a missile it
+// didn't show the missile destruction inside of the thinking tab." The lines as
+// the page's computer table keeps them: a Drone's Automatic attack takes a
+// missile off the board, and a missile goes off in its own line.
+{
+  const p = page(alley, 's1', { watch: true, opponent: 'brawler', opponent2: 'brawler' });
+  const T = p.table;
+  const shooter = p.state.tokens.find((t) => t.side === 's2');
+  const missile = (uid) => ({ uid, side: 's1', kind: 'projectile', cardId: '071', label: 'Razor', col: 1, row: 1, size: 1, facing: 0, aerial: true,
+    stance: 'mobility', partStates: { main: 'intact' }, statuses: [], ammo: {}, log: [] });
+  const opt = (id, label, tags) => ({ id, label, tags, run: { routine: 'x', args: {} } });
+  const line = (seat, kind, unit, o, gone) => {
+    T.chose(seat, { kind, seat, unit, options: [o], fallback: o.id, facts: {} }, o);
+    p.state.tokens = p.state.tokens.filter((t) => t.uid !== gone);
+    T.gave(seat, 'done', o.id);
+    return T.thoughts.at(-1);
+  };
+  p.state.tokens.push(missile(9001));
+  const shot = line('s2', 'activation.act', shooter.uid, opt('a', `${shooter.label}: Burst Fire at Razor`, ['attack', 'automatic']), 9001);
+  p.state.tokens.push(missile(9002));
+  const boom = line('s1', 'blast.resolve', 9002, opt('b', 'Razor detonates', ['detonate', 'attack']), 9002);
+  check('the Thinking tab tells a missile another unit\'s attack took off the board as destroyed, and says nothing of one that went off in its own line',
+    [shot?.label, shot?.result, boom?.label, boom?.result ?? null],
+    [`${shooter.label}: Burst Fire at Razor`, [{ unit: 'Razor', side: 's1', said: ['destroyed'] }], 'Razor detonates', null]);
+  p.close();
+}
 // ---------- the computer says why (M9.2) ----------
 {
   const W = M.SOLO.whyLine;
@@ -652,6 +678,15 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
   check('WHAT A LINE DID, in a player\'s words: a Part damaged or destroyed, a unit destroyed (and nothing more said of it), a Token gained but never a Command Token, a Drone\'s Hull; a Projectile that went off is not destroyed, and a unit nothing happened to is not named',
     M.SOLO.resultOf(before, after),
     [{ unit: 'Mire', side: 's1', said: ['Torso damaged', 'L.Arm destroyed', 'gains Highlight'] }, { unit: 'Dune', side: 's1', said: ['destroyed'] }, { unit: 'Raven', side: 's2', said: ['Hull damaged'] }]);
+  // OTTO, 2026-10-12: "When the drone blew up a missile it didn't show the missile destruction inside of the thinking tab."
+  check('A PROJECTILE that left the board in ANOTHER unit\'s line was destroyed (here the Raven\'s line shot it down); one that left in its own line went off',
+    [M.SOLO.resultOf(before, after, { self: 3 }).find((r) => r.unit === 'Missile'), M.SOLO.resultOf(before, after, { self: 4 }).some((r) => r.unit === 'Missile')],
+    [{ unit: 'Missile', side: 's2', said: ['destroyed'] }, false]);
+  const bitBefore = M.SOLO.marksOf({ tokens: [mark(1, 'Mire', 's1', 'mech', { torso: 'intact' }), mark(6, 'Bit', 's1', 'drone', { main: 'intact' })] });
+  const bitAfter = M.SOLO.marksOf({ tokens: [mark(1, 'Mire', 's1', 'mech', { torso: 'intact' })] });
+  check('a Bit its Port takes back aboard is not called destroyed (its line says it was recovered); a Bit simply gone was destroyed',
+    [M.SOLO.resultOf(bitBefore, bitAfter, { self: 1, recovered: 6 }), M.SOLO.resultOf(bitBefore, bitAfter, { self: 1 })],
+    [[], [{ unit: 'Bit', side: 's1', said: ['destroyed'] }]]);
   const H = M.HUD.thinkingHtml;
   const list = [
     { n: 1, seat: 's2', round: 1, phase: 2, kind: 'opp.act', option: 'a', unit: 'Mire', label: 'Mire: Single Shot at Raven', given: 'done',

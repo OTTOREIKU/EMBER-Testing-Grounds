@@ -454,13 +454,22 @@ export function marksOf(state: GameState): Marks {
 }
 
 // What changed for each unit between two tables, in a player's words: "Torso
-// damaged", "L.Arm destroyed", "destroyed", "gains Highlight". A Projectile
-// that left the board went off; it was not destroyed.
-export function resultOf(before: Marks, after: Marks): ThoughtResult[] {
+// damaged", "L.Arm destroyed", "destroyed", "gains Highlight".
+//
+// `line` is whose line it is: the unit it is about (`self`), and a Bit it took
+// back aboard (`recovered`). A Projectile that left the board in a line of its
+// own went off (its Explosion, its flight, a target it did not find); in another
+// unit's line it was DESTROYED: shot down by an Interception, hit by an attack,
+// or put out by a Fire Control Interference Token (OTTO, 2026-10-12: "When the
+// drone blew up a missile it didn't show the missile destruction inside of the
+// thinking tab"). A line with no unit of its own says nothing of one. A Bit
+// recovered left the board too, and was not destroyed: its line says so itself.
+export function resultOf(before: Marks, after: Marks, line: { self?: number; recovered?: number } = {}): ThoughtResult[] {
   const out: ThoughtResult[] = [];
   for (const [uid, was] of before) {
     const now = after.get(uid);
-    if (!now && was.kind === 'projectile') continue;
+    if (!now && uid === line.recovered) continue;
+    if (!now && was.kind === 'projectile' && (line.self === undefined || uid === line.self)) continue;
     const said: string[] = [];
     if (was.alive && (!now || !now.alive)) said.push('destroyed');
     else if (now) {
@@ -534,10 +543,11 @@ export class SoloTable {
   // the computer, which forgets what it remembered of the old one (M9.4).
   private rollbacks = 0;
   // What each computer did, newest last (`Thought`), and the table as each
-  // line began, kept until what it did is over (`settle`).
+  // line began, with whose line it is (resultOf), kept until what it did is
+  // over (`settle`).
   private readonly thoughts: Thought[] = [];
   private thoughtN = 0;
-  private readonly before = new Map<number, Marks>();
+  private readonly before = new Map<number, { marks: Marks; line: { self?: number; recovered?: number } }>();
 
   // THE PAGE'S THREAD, handed back to it in the middle of a decision: at once
   // while the computer has held it for less than a frame, and by a timer's
@@ -692,7 +702,12 @@ export class SoloTable {
       n, seat, round: setup ? 0 : state.round?.n ?? 0, phase: setup ? 0 : state.round?.phase ?? 0, kind: d.kind, option: o.id,
       ...(unit ? { unit } : {}), label: o.label, given: null,
     });
-    this.before.set(n, marksOf(state));
+    // A Bit Port's recovery takes its Bit back off the board (owed.ts).
+    const recovered = o.tags.includes('recover') && typeof o.facts?.targetUid === 'number' ? o.facts.targetUid : undefined;
+    this.before.set(n, {
+      marks: marksOf(state),
+      line: { ...(uid !== undefined ? { self: uid } : {}), ...(recovered !== undefined ? { recovered } : {}) },
+    });
     if (this.thoughts.length > THOUGHTS) this.before.delete(this.thoughts.shift()!.n);
     this.h.thought?.();
   }
@@ -713,7 +728,7 @@ export class SoloTable {
       this.before.delete(n);
       if (t?.given !== 'done') continue;
       now ??= marksOf(this.h.state());
-      const result = resultOf(was, now);
+      const result = resultOf(was.marks, now, was.line);
       if (result.length) { t.result = result; told = true; }
     }
     if (told) this.h.thought?.();
