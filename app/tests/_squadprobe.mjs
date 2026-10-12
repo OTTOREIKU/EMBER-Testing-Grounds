@@ -89,6 +89,42 @@ const linesWatch = (p) => ({
     return c;
   },
 });
+// DRONESHOTS=1 (2026-10-12; OTTO, watching the Veteran: its Porcupine stood where it had no shooting angle): each
+// Drone's activations in the Automatic Phase, and those it attacked in. Printed under the game's line,
+// `  droneshots s1 <attacked>/<activations> s2 <attacked>/<activations>`; the choices are untouched.
+let dshotGame = null;
+const dshotWatch = (p) => ({
+  ...p,
+  ponder: undefined,
+  choose(d, view, rng) {
+    const c = p.choose(d, view, rng);
+    const me = view.units.find((u) => u.uid === d.unit);
+    if (dshotGame && d.kind === 'activation.act' && view.phaseName === 'Automatic' && me && me.kind !== 'mech' && me.kind !== 'projectile') {
+      const turn = `${view.round}:${d.unit}`;
+      const tally = dshotGame[view.seat];
+      tally.acts.add(turn);
+      if (d.options.find((x) => x.id === c.option)?.tags.includes('attack')) tally.shots.add(turn);
+    }
+    return c;
+  },
+});
+// DODGES=1 (2026-10-12; the defender places its own Dodges against a [Lightning] attack, LIVE that day): each time a
+// seat is asked where its Dodges go, and the answer it gave. Printed under the game's line, `  dodges s1 <n> s2 <n>`;
+// the answers' labels (numbers as N) tallied in the run's JSON line (`dodgeAnswers`).
+let dodgeGame = null;
+const dodgeWatch = (p) => ({
+  ...p,
+  ponder: undefined,
+  choose(d, view, rng) {
+    const c = p.choose(d, view, rng);
+    if (dodgeGame && d.kind === 'defence.dodges') {
+      dodgeGame[view.seat] += 1;
+      const label = d.options.find((x) => x.id === c.option)?.label ?? c.option;
+      bump((tally.dodgeAnswers ??= {}), `${String(label).replace(/\d+/g, 'N')} (of ${d.options.length})`);
+    }
+    return c;
+  },
+});
 // FOE=<policy>: a match, the policy named in the arguments (the subject) against this one, the seats
 // swapped from one seed to the next; the tally counts the subject's wins and Victory Points.
 const foe = process.env.FOE ? policyOf(M.AI, process.env.FOE) : null;
@@ -700,6 +736,16 @@ for (let seed = from; seed <= to; seed++) {
     policyNow = linesWatch(policyNow);
     if (foeNow) foeNow = linesWatch(foeNow);
   }
+  if (process.env.DODGES) {
+    dodgeGame = { s1: 0, s2: 0 };
+    policyNow = dodgeWatch(policyNow);
+    if (foeNow) foeNow = dodgeWatch(foeNow);
+  }
+  if (process.env.DRONESHOTS) {
+    dshotGame = { s1: { acts: new Set(), shots: new Set() }, s2: { acts: new Set(), shots: new Set() } };
+    policyNow = dshotWatch(policyNow);
+    if (foeNow) foeNow = dshotWatch(foeNow);
+  }
   // THINKLOG=<file> (2026-10-11, the code audit): each answer's thinking time, one line a question (seed, who, seat,
   // the question's kind, its options, ms), the choices untouched.
   if (process.env.THINKLOG) {
@@ -1123,6 +1169,8 @@ for (let seed = from; seed <= to; seed++) {
     if (!x || (x.kind === 'mech' ? x.partStates.torso === 'destroyed' : x.partStates.main === 'destroyed')) lost[w.side] += w.pts;
   }
   console.log(`${String(seed).padStart(4)} ${foeNow ? `[subject ${subjectSeat}] ` : ''}${fx ? `[fx ${fx}] ` : ''}${scenario.map}/${scenario.mission} | ${sq('probe-s1')} v ${sq('probe-s2')} | ${kind}${end.kind === 'over' ? ` ${end.result.winner ?? 'level'} ${vpNow.s1}-${vpNow.s2} lost ${lost.s1}/${lost.s2}` : ` (${last}) ${(end.decision ? `[${end.decision}${end.option ? ` -> ${end.option}` : ''}] ` : '') + (end.why ?? '')}`}`.slice(0, 400) + openNote + secNote);
+  if (dodgeGame) console.log(`  dodges s1 ${dodgeGame.s1} s2 ${dodgeGame.s2}`);
+  if (dshotGame) console.log(`  droneshots s1 ${dshotGame.s1.shots.size}/${dshotGame.s1.acts.size} s2 ${dshotGame.s2.shots.size}/${dshotGame.s2.acts.size}`);
   if (linesGame) console.log(`  lines s1 ${linesGame.s1[0]}/${linesGame.s1[1]} s2 ${linesGame.s2[0]}/${linesGame.s2[1]} drones s1 ${linesGame.s1[2]}/${linesGame.s1[3]} s2 ${linesGame.s2[2]}/${linesGame.s2[3]}`);
   if (end.kind !== 'over' && t?.state.script) {
     // What the table is waiting on: every debt the script holds, the open activation, and the last commands.
