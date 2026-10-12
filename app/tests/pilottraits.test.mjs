@@ -1230,9 +1230,12 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
   check('and offers it to YOYU\'s seat, whichever side that is',
     /take\.disabled = !this\.mayPress\(yoyuWho\);/.test(combatSrc), true);
 
+  // The same function since the code audit (2026-10-12): units.ts provokeChoice,
+  // which provokeOffer returns through too.
   check('freeplay\'s ElectronicHelper reads the same rule, in both roles',
-    /provokeWhy\(this\.data, c\.initiator, c\.responder\) === null \? 'init'/.test(combatSrc)
-      && /provokeWhy\(this\.data, c\.responder, c\.initiator\) === null \? 'resp'/.test(combatSrc), true);
+    [/provokeChoice\(this\.data, c\.initiator, c\.responder, c\.initiatorWins\)/.test(combatSrc),
+      /offer\.yoyu === c\.initiator \? 'init' : 'resp'/.test(combatSrc),
+      /return provokeChoice\(data, initiator, responder, initiatorWins\);/.test(src('units.ts'))], [true, true, true]);
   check('and sends the same command',
     /kind: 'provoke', seat: yoyu\.side, uid: yoyu\.uid, targetUid: other\.uid, take: true/.test(combatSrc), true);
   // The printed "may" is a real decision here, unlike Pulse, Ion, Fierce Assault

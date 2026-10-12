@@ -6077,6 +6077,19 @@ export function counterWon(data: GameData, tokens: Token[], c: CounterRoll, init
   return resolveCounterRoll(a, b).initiatorWins;
 }
 
+// WHO MAY PROVOKE WHOM once a Counter-roll is settled: "When Electronic Counter
+// Roll is successful", in EITHER role: 4.11.2 fires an on-success Passive
+// "regardless of whether the Unit was acting as the Initiator or Responder".
+// Yoyu as Responder succeeds when the Initiator does not (ties go to the
+// Initiator); as Initiator, when it wins. It was offered to the Responder only
+// (ruled 2026-09-25, audit Phase 3, F16). The one reading the record's offer
+// (provokeOffer) and the combat window's (combat.ts) share (the code audit,
+// 2026-10-12: the window had its own copy).
+export function provokeChoice(data: GameData, initiator: Token, responder: Token, initiatorWins: boolean): { yoyu: Token; target: Token } | null {
+  const [yoyu, target] = initiatorWins ? [initiator, responder] : [responder, initiator];
+  return provokeWhy(data, yoyu, target) === null ? { yoyu, target } : null;
+}
+
 export function provokeOffer(
   data: GameData,
   tokens: Token[],
@@ -6091,13 +6104,7 @@ export function provokeOffer(
   const responder = tokens.find((x) => x.uid === c.responderUid);
   const initiator = tokens.find((x) => x.uid === c.initiatorUid);
   if (!responder || !initiator) return null;
-  // "When Electronic Counter Roll is successful", in EITHER role: 4.11.2 fires
-  // an on-success Passive "regardless of whether the Unit was acting as the
-  // Initiator or Responder". Yoyu as Responder succeeds when the Initiator
-  // does not (ties go to the Initiator); as Initiator, when it wins. It was
-  // offered to the Responder only (ruled 2026-09-25, audit Phase 3, F16).
-  const [yoyu, target] = initiatorWins ? [initiator, responder] : [responder, initiator];
-  return provokeWhy(data, yoyu, target) === null ? { yoyu, target } : null;
+  return provokeChoice(data, initiator, responder, initiatorWins);
 }
 
 // A Mech Maneuvers at the Maneuver Value printed on its Chassis; a Drone moves at
