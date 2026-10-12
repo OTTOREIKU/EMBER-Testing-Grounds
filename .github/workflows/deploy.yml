@@ -34,9 +34,9 @@ jobs:
         working-directory: app
         run: npx tsc --noEmit
 
-      - name: Rules tests
+      - name: Tests
         working-directory: app
-        run: node tests/offset.test.mjs
+        run: node tests/fast.mjs
 
       - name: Build
         working-directory: app
