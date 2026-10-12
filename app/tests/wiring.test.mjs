@@ -13,7 +13,7 @@
 // Prototype Blink and the Pholcus Unfold.
 import { readFileSync } from 'node:fs';
 
-const read = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
+const read = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const main = read('main.ts');
 const hud = read('matchhud.ts');
 const guide = read('playguide.ts');

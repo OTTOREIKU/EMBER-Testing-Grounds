@@ -23,7 +23,7 @@ const turnSrc = readFileSync(new URL('../src/turn.ts', import.meta.url), 'utf8')
 
 const root = new URL('../../', import.meta.url);
 const env = JSON.parse(readFileSync(new URL('data/environments.json', root), 'utf8'));
-const src = (f) => readFileSync(new URL(`app/src/${f}`, root), 'utf8');
+const src = (f) => readFileSync(new URL(`app/src/${f}`, root), 'utf8').replace(/\r\n/g, '\n');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -213,8 +213,8 @@ ok('the search count is a corner badge on a phone',
   /#ref-tabs button \.tab-n, \.ref-tabs button \.tab-n \{[^}]*position: absolute/.test(refcss));
 // The pad's Find scopes ARE that strip: its own chips scrolled sideways.
 ok('the pad\'s Find scopes wear the Reference\'s strip, not a copy of it',
-  /<div class="ref-tabs pad-find-scopes" id="pad-find-scopes"><\/div>/.test(readFileSync(new URL('../pad/pad.ts', import.meta.url), 'utf8'))
-  && !/\.pad-find-scopes \{/.test(readFileSync(new URL('../pad/pad.css', import.meta.url), 'utf8')));
+  /<div class="ref-tabs pad-find-scopes" id="pad-find-scopes"><\/div>/.test(readFileSync(new URL('../pad/pad.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n'))
+  && !/\.pad-find-scopes \{/.test(readFileSync(new URL('../pad/pad.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n')));
 
 // High Temperature hands out a Fragile Token, which the app already models.
 ok('the Fragile Token it grants is a real status',
@@ -386,11 +386,14 @@ console.log('\nthe effects, driven');
 const rulesSrc = src('rules.ts');
 const typesSrc = src('types.ts');
 const dataSrc2 = src('data.ts');
+// Each piece ends with a newline: a comment at the end of one piece swallowed
+// the first line of the next (`let GRIDS`) once the sources were read with LF
+// (the code audit, 2026-10-11).
 const cut = (s, a, b, what) => {
   const i = s.indexOf(a);
   const j = s.indexOf(b, i);
   if (i < 0 || j <= i) throw new Error(`could not locate ${what}`);
-  return s.slice(i, j);
+  return `${s.slice(i, j)}\n`;
 };
 const fxTmp = new URL('./_enveffects.slice.ts', import.meta.url);
 writeFileSync(fxTmp, 'type Token = any;\ntype GameData = any;\ntype GameState = any;\ntype SmokeScreen = any;\ntype Side = any;\ntype TerrainPiece = any;\ntype Card = any;\ntype LargeGrid = { c: number; r: number };\ntype StatusDef = any;\ntype TokenShape = any;\n'

@@ -3,16 +3,22 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { FOOTPRINT } from './_footprint.mjs';
 
-const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
+const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const rStart = rules.indexOf('let GRIDS');
 const rEnd = rules.indexOf('export function losBetween');
 const tmp = new URL('./_knockback.slice.ts', import.meta.url);
 writeFileSync(tmp, FOOTPRINT + 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + rules.slice(rStart, rEnd));
 const { attackDirection, knockbackPath } = await import(tmp.href);
 
-const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
+const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+// From the Knockback reader to the Lightning readers' end: every reader this
+// file imports (knockbackOf, the [Stationary] pair, lightningExchangeOf and
+// lightningLinkDrain). The end marker was a comment deleted the day this test
+// was written, so the slice ran to the end of units.ts (the code audit,
+// 2026-10-11): a missing marker now stops the test.
 const kStart = units.indexOf('export interface Knockback');
-const kEnd = units.indexOf('// Direct Fire needs sight');
+const kEnd = units.indexOf('export interface Resupply', kStart);
+if (kStart < 0 || kEnd <= kStart) throw new Error('could not locate the Knockback reader in units.ts');
 const ktmp = new URL('./_knockback.units.ts', import.meta.url);
 writeFileSync(ktmp, 'type CardAction = any;\n' + units.slice(kStart, kEnd));
 const { knockbackOf } = await import(ktmp.href);

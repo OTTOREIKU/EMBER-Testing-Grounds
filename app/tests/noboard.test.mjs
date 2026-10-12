@@ -14,11 +14,11 @@ const check = (name, got, want) => {
 
 console.log('No board\n');
 
-const cmds = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8');
-const types = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8');
-const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
-const secrecy = readFileSync(new URL('../src/secrecy.ts', import.meta.url), 'utf8');
-const pad = readFileSync(new URL('../pad/pad.ts', import.meta.url), 'utf8');
+const cmds = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const types = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const secrecy = readFileSync(new URL('../src/secrecy.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const pad = readFileSync(new URL('../pad/pad.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 check('the flag is a table field', /noBoard\?: boolean;/.test(types), true);
 check('configureTable carries it', /roundLimit\?: number; noBoard\?: boolean(; [^}]*)? \}/.test(cmds), true);

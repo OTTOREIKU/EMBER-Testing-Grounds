@@ -18,7 +18,7 @@ const check = (name, got, want) => {
   if (g === w) { pass++; console.log(`  ok   ${name}`); }
   else { fail++; console.log(`  FAIL ${name}\n       want ${w}, got ${g}`); }
 };
-const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
+const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const cut = (s, a, b, what) => {
   const i = s.indexOf(a), j = s.indexOf(b, i);
   if (i < 0 || j < 0) throw new Error(`could not locate ${what}`);

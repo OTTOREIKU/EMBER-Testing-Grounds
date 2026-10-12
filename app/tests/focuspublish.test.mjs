@@ -24,7 +24,7 @@ const check = (name, got, want) => {
   if (g === w) { pass++; console.log(`  ok   ${name}`); }
   else { fail++; console.log(`  FAIL ${name}\n       want ${w}, got ${g}`); }
 };
-const src = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8');
+const src = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 console.log('Combat mirror publish ordering\n');
 
@@ -57,7 +57,7 @@ check('a Surplus round refuses the attacker — the Mutilation case',
 // Karl Fried's Link, and only the board can find his Mech.
 check('canFocus asks the one shared affordability reader',
   /canAffordFocus\(this\.data, t, this\.tokens\?\.\(\) \?\? undefined\)/.test(canFocus), true);
-const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
+const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const afford = units.slice(units.indexOf('export function canAffordFocus'), units.indexOf('// LPA-23-2 Onyx Mellow Chord'));
 check('a non-Mech attacker is refused — the Drone case', /t\.kind !== 'mech'/.test(afford), true);
 // > 1, not > 0: a Mech at exactly 1 Link cannot spend it (4.10, FAQ L1), and
@@ -84,8 +84,8 @@ check('so the publish must come after it — the reason is recorded on publishMi
 // that there stays exactly ONE renderer — this app has drifted every time the
 // same thing was drawn twice, and a strip reading "dodged" on one screen and
 // "blocked" on the other is worse than the nothing the defender used to get.
-const matchSrc = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
-const hudSrc = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
+const matchSrc = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const hudSrc = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 check('the strip is published on the view', /resolution: c\.step === 'resolve'/.test(src), true);
 // Only at the resolution step: before it nothing is settled, and a strip left

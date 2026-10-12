@@ -1,0 +1,18 @@
+# Every text file is kept and checked out with LF line endings, on every machine. The tests read source files
+# as text, and the suite once passed only on one machine's own mix of CRLF and LF (the code audit, 2026-10-11).
+* text=auto eol=lf
+
+# Never text, whatever their contents look like.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.avif binary
+*.pdf binary
+*.zip binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary

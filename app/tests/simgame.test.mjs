@@ -14,20 +14,20 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 // ---------- the same slice commands.test.mjs compiles, plus the script state ----------
-const commands = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8');
-const ticks = readFileSync(new URL('../src/ticks.ts', import.meta.url), 'utf8');
-const types = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8');
-const setupSrc = readFileSync(new URL('../src/setup.ts', import.meta.url), 'utf8');
-const tacticsSrc = readFileSync(new URL('../src/tactics.ts', import.meta.url), 'utf8');
-const tasksSrc = readFileSync(new URL('../src/tasks.ts', import.meta.url), 'utf8');
-const loopSrc = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8');
-const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
+const commands = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const ticks = readFileSync(new URL('../src/ticks.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const types = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const setupSrc = readFileSync(new URL('../src/setup.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const tacticsSrc = readFileSync(new URL('../src/tactics.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const tasksSrc = readFileSync(new URL('../src/tasks.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const loopSrc = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const smokeRules = rules.slice(rules.indexOf('export function smokeKey'), rules.indexOf('export function smokeBlocks'));
 // Command Generation is sliced in whole rather than stubbed: the stubbed
 // tokenCards below already reads the real card database, so the sim gets the
 // printed numbers off the actual Torso cards and a squad built on a GoF core
 // generates 4 here exactly as it would in a game.
-const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
+const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const commandGen = unitsSrc.slice(
   unitsSrc.indexOf('// ---------- Commands (rulebook 3.2.1) ----------'),
   unitsSrc.indexOf('// ---------- Charge (rulebook 4.14) ----------'),
@@ -83,7 +83,7 @@ const maneuvering = unitsSrc.slice(
 if (!maneuvering) throw new Error('could not locate maneuverRange in units.ts');
 // canBeForceMoved, the real one: forceMove refuses an immovable unit (4.3.4;
 // audit Phase 4, B2).
-const meleeSrc = readFileSync(new URL('../src/melee.ts', import.meta.url), 'utf8');
+const meleeSrc = readFileSync(new URL('../src/melee.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const forceable = meleeSrc.slice(meleeSrc.indexOf('export function canBeForceMoved'), meleeSrc.indexOf('// ---------- Break Away ----------'));
 if (!forceable) throw new Error('could not locate canBeForceMoved in melee.ts');
 const phase2At = unitsSrc.indexOf('// ---------- Mechanics audit Phase 2 readers ----------');
@@ -351,7 +351,7 @@ let sliceSrc =
   + freehand
   + classifiers
   // The name cleaner commands.ts imports (renameUnit, importSquad, rollbackRequest).
-  + readFileSync(new URL('../src/safetext.ts', import.meta.url), 'utf8')
+  + readFileSync(new URL('../src/safetext.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
   + commands.replace(/^import[^\n]*\n/gm, '');
 // The driver builds real script states and opportunities, which live outside
 // the ranges above; pull them (and asSide, which normaliseScript leans on) in

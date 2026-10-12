@@ -19,7 +19,7 @@ const check = (name, got, want) => {
 console.log('RWS: a Mech commanded in the Command Phase\n');
 
 // ---------- the readers, against the shipped cards ----------
-const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
+const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const from = units.indexOf('// ---------- Self-applied Tokens');
 const to = units.indexOf('export function interceptCapacity(');
 if (from < 0 || to <= from) throw new Error('could not locate the RWS readers in units.ts');
@@ -61,7 +61,7 @@ check("last round's Commands do not count", R.rwsCommandsLeft(data, state([R.rws
 check('the fired key names the Part', R.rwsFiredKey(2, 7, '550_A'), '2:rws:7:550_A');
 
 // ---------- the loop, against the real loop.ts ----------
-const loopSrc = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8');
+const loopSrc = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const loop = new URL('./_rws.loop.ts', import.meta.url);
 writeFileSync(loop, [
   'type GameState = any;', 'type Side = any;', 'type Token = any;', 'type Timing = any;', 'type GameData = any;',
@@ -98,9 +98,9 @@ check('and loopComplete waits for the RWS Mech', [L.loopComplete(only, 'Command'
 check('and nextTurn hands the turn to the squad that can still command it', L.nextTurn(only, 'Command', 's2', DATA), 's1');
 
 // ---------- the command layer and the pages, by source ----------
-const cmds = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8');
-const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
-const guide = readFileSync(new URL('../src/playguide.ts', import.meta.url), 'utf8');
+const cmds = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const guide = readFileSync(new URL('../src/playguide.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 check('designate judges eligibility with the cards', /eligibleUnits\(state, phase, cmd\.seat, data\)\.some/.test(cmds), true);
 check('and every turn derivation in the command layer too',
   (cmds.match(/nextTurn\(state, phase, [a-z.]+, data\)/g) ?? []).length >= 3 && /loopComplete\(state, ph, data\)/.test(cmds), true);
