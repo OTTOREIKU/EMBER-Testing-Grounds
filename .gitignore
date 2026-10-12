@@ -14,19 +14,17 @@ Thumbs.db
 # every run. There is no exception, and app/tests/.gitignore says the same thing
 # closer to the files.
 #
-# EXACTLY ONE harness file under `_` is hand written — _combatdrive.mjs, the DOM
-# shim and esbuild loader rejoin.test.mjs and surplusdefense.test.mjs import —
-# and it is un-ignored below. An earlier pass here claimed three were, and that
-# the two .entry.ts files "are rewritten by nobody"; both claims were wrong.
-# Measured against a clean `git checkout-index` export: with _combatdrive.mjs
-# present and the two entry files DELETED, rejoin is 27/27 and surplusdefense
-# 16/16 and both entry files are back on disk afterwards; with _combatdrive.mjs
-# deleted, ERR_MODULE_NOT_FOUND before a single assertion runs.
+# The hand-written files under `_` are un-ignored below BY NAME: the harnesses
+# the tests import (_combatdrive.mjs, the DOM shim and esbuild loader;
+# _footprint.mjs; _engine.mjs; _sightref.mjs) and the AI lab's tools (see
+# tools/ai-lab/README.md). Everything else under `_` is written by a run. (Of
+# the two .entry.ts files once thought hand written: _combatdrive.mjs's
+# loadCombat(name) rewrites them on every run.)
 app/tests/_*.ts
 # The bundles those entry points are built into are build artefacts too.
 app/tests/_*.mjs
-# The one negation that is real. Nothing deeper ignores .mjs, so this is the
-# line that decides it.
+# Nothing deeper ignores .mjs, so the negations below are the lines that decide
+# it. The DOM shim and esbuild loader:
 !app/tests/_combatdrive.mjs
 # The footprint reader fifteen slice harnesses prepend (types.ts baseCells):
 # source, not an artefact.
@@ -34,6 +32,29 @@ app/tests/_*.mjs
 # The real engine, bundled and run with no page (solosetup and the computer
 # seat's suites import it): source too.
 !app/tests/_engine.mjs
+# The reference walk of a line of sight losexact.test and turn.test check the
+# engine's against (2026-10-08): source.
+!app/tests/_sightref.mjs
+# THE AI LAB (the code audit, 2026-10-11: the computer's measurements and every
+# push's proof ran on these, and they lived on one machine only): the players and
+# probes, run as `node tests/<tool>` from app/. tools/ai-lab holds the rest.
+!app/tests/_squadprobe.mjs
+!app/tests/_policies.mjs
+!app/tests/_samegames.mjs
+!app/tests/_samesmoke.mjs
+!app/tests/_hudprint.mjs
+!app/tests/_moveprint.mjs
+!app/tests/_launchprint.mjs
+!app/tests/_p7d_lib.mjs
+!app/tests/_baseline.mjs
+!app/tests/_squadmatch.mjs
+!app/tests/_community.mjs
+!app/tests/_lossprobe.mjs
+!app/tests/_dronesets.mjs
+!app/tests/_droneswaps.mjs
+!app/tests/_stall8527.mjs
+# A lab run's report.
+tools/ai-lab/*.out.txt
 
 # Cached responses from the publisher's card API (tools/sync_official.mjs).
 .cache/

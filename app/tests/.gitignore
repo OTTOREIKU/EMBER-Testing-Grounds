@@ -9,6 +9,6 @@
 # grounds that they were hand written and "rewritten by nobody"; both claims
 # were wrong. Measured: delete both, and rejoin.test.mjs still passes 27/27 and
 # surplusdefense.test.mjs 16/16, with both files back on disk afterwards. The
-# only hand-written harness file down here is _combatdrive.mjs itself, which the
-# repo-root .gitignore un-ignores.
+# hand-written files down here are all .mjs (the harnesses the tests import and
+# the AI lab's tools), and the repo-root .gitignore un-ignores each by name.
 _*.ts
