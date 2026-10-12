@@ -294,7 +294,8 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   check('the Match Centre apply branch handles a Scan before the FCI fallback',
     /act === 'apply'\) \{[\s\S]{0,1600}?const win = ewWinCommands\(data, init, resp, a,/.test(contestSrc)
       && !/STATUSES\.find\(\(x\) => x\.id === 'fci'\)/.test(hud + contestSrc) && /sendContestAct\(\{/.test(hud), true);
-  check('stripping the Tokens there too', /for \(const cmd of win\.cmds\) won = send\(cmd\)\.ok && won;/.test(contestSrc), true);
+  // (`joined`: the pad's one tap for Undo, since the pad sends through it too.)
+  check('stripping the Tokens there too', /for \(const cmd of win\.cmds\) won = send\(joined\(cmd\)\)\.ok && won;/.test(contestSrc), true);
   check('and queueing the manifest debt for the target player',
     /kind: 'manifest', fromUid: uid/.test(win) && /ewWinCommands\(/.test(contestSrc), true);
   // 2. Freeplay consumes reactions per-kind and had no manifest branch, so a

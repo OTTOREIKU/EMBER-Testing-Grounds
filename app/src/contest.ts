@@ -13,12 +13,12 @@
 // same press (AI-OPPONENT-PLAN.md, rule R3). Every comment below came across
 // with the line it explains.
 import type { EwAct, EwArg } from './combat';
-import type { CheckResult, Command } from './commands';
+import type { Command } from './commands';
 import type { GameData } from './data';
 import { normaliseTasks, TERMINAL_EV, TERMINAL_UID, terminalStandIn } from './tasks';
 import { actionOf } from './turn';
 import { statusCount, zonesOf } from './types';
-import type { CounterRoll, DiceData, GameState, Side, Token } from './types';
+import type { CardAction, CounterRoll, DiceData, GameState, Side, Token } from './types';
 import { counterOffensive, electronicStrength, ewWinCommands, focusIsFree, resolveCounterRoll, tallyCounter } from './units';
 
 export interface ContestEnv {
@@ -26,15 +26,35 @@ export interface ContestEnv {
   state: GameState;
   // The seat sending: its own on a shared table.
   seat: Side;
-  // Sends one command as this seat.
-  send: (cmd: Command) => CheckResult;
+  // Sends one command as this seat (check()'s verdict). A refusal with no `why`
+  // is one the page has already told the player about.
+  send: (cmd: Command) => { ok: boolean; why?: string };
   // `n` Yellow dice from the table's dice source, told to the table as `label`.
-  rollHits: (n: number, label: string) => Promise<{ dice: { face: number }[] }>;
+  // Null: no dice came, and the page has already said so.
+  rollHits: (n: number, label: string) => Promise<{ dice: { face: number }[] } | null>;
   // Told to the player: a refusal (the default), something done, or the dice
   // source failing.
   say?: (text: string, kind?: 'refused' | 'done' | 'system') => void;
   // Called once a press has been dealt with, so a page can redraw.
   done?: () => void;
+  // The Action the record names, found as the page finds it (turn.ts actionOf
+  // by default). The pad has no board to judge Contact on, so its finds a lent
+  // Load's wherever the carrier stands: the table judged the Contact (FAQ O5).
+  actionOf?: (t: Token, actionId: string) => CardAction | undefined;
+  // What a roll is called where the dice are thrown. The Match Centre's dice
+  // tell the table "<seat> rolls 3 for the Electronic Counter-roll" (the
+  // default); the pad asks for the faces under the unit's own name.
+  rollLabel?: (unit: Token, what: 'roll' | 'focus' | 'terminal', n: number) => string;
+  // A win's effects and the close as ONE tap for Undo, every command after the
+  // first joining it (the pad's per-tap Undo; commands.ts CommandChain).
+  chain?: boolean;
+}
+
+// The Match Centre's names for a roll.
+function tableLabel(data: GameData, unit: Token, what: 'roll' | 'focus' | 'terminal', n: number): string {
+  if (what === 'terminal') return `rolls ${n} for the ${unit.label}`;
+  if (what === 'focus') return focusIsFree(data, unit) ? 'Focuses the Counter-roll for free (Will to Survive)' : 'Focuses the Counter-roll';
+  return `rolls ${n} for the Electronic Counter-roll`;
 }
 
 // THE READING OF A COUNTER-ROLL, before a die is thrown: how many Yellow dice
@@ -78,6 +98,8 @@ export function contestAct(env: ContestEnv, act: EwAct, arg?: EwArg): void {
   const { data, state: s, send } = env;
   const say = env.say ?? (() => {});
   const done = env.done ?? (() => {});
+  const actionIn = env.actionOf ?? ((t: Token, id: string) => actionOf(data, s, t, id));
+  const label = env.rollLabel ?? ((u: Token, what: 'roll' | 'focus' | 'terminal', n: number) => tableLabel(data, u, what, n));
   const c = s.script?.counter;
   if (!c) return;
   const init = s.tokens.find((x) => x.uid === c.initiatorUid);
@@ -86,7 +108,8 @@ export function contestAct(env: ContestEnv, act: EwAct, arg?: EwArg): void {
   // The Terminal's hand is the opponent's to roll, as a table command: no
   // unit on the board is it, and it never Focuses (ruling I25).
   if (act === 'roll' && arg?.uid === TERMINAL_UID && c.terminal !== undefined) {
-    void env.rollHits(TERMINAL_EV, `rolls ${TERMINAL_EV} for the ${resp.label}`).then((res) => {
+    void env.rollHits(TERMINAL_EV, label(resp, 'terminal', TERMINAL_EV)).then((res) => {
+      if (!res) { done(); return; }
       const v = send({ kind: 'rollTerminal', seat: env.seat, faces: res.dice.map((d) => d.face) });
       if (!v.ok && v.why) say(v.why);
       done();
@@ -104,9 +127,10 @@ export function contestAct(env: ContestEnv, act: EwAct, arg?: EwArg): void {
     // Action's Strength +X, the Initiator's only (audit Phase 3, D2), though
     // no card prints one since the 2026-09-28 list ruling retired Scream's.
     const ev = unit.uid === init.uid
-      ? electronicStrength(data, s.tokens, unit, 'initiator', actionOf(data, s, init, c.actionId))
+      ? electronicStrength(data, s.tokens, unit, 'initiator', actionIn(init, c.actionId))
       : electronicStrength(data, s.tokens, unit, 'responder');
-    void env.rollHits(ev, `rolls ${ev} for the Electronic Counter-roll`).then((res) => {
+    void env.rollHits(ev, label(unit, 'roll', ev)).then((res) => {
+      if (!res) { done(); return; }
       send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces: res.dice.map((d) => d.face) });
       done();
     }).catch(() => {
@@ -141,9 +165,8 @@ export function contestAct(env: ContestEnv, act: EwAct, arg?: EwArg): void {
     }
     // The Link was paid at the declare. It used to be spent HERE, and a retry
     // after a server that did not answer spent it a second time.
-    void env.rollHits(idx.length, focusIsFree(data, unit)
-      ? 'Focuses the Counter-roll for free (Will to Survive)'
-      : 'Focuses the Counter-roll').then((res) => {
+    void env.rollHits(idx.length, label(unit, 'focus', idx.length)).then((res) => {
+      if (!res) { done(); return; }
       const faces = had.slice();
       idx.forEach((at, k) => { const f = res.dice[k]?.face; if (f !== undefined) faces[at] = f; });
       send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces, focused: true });
@@ -162,16 +185,18 @@ export function contestAct(env: ContestEnv, act: EwAct, arg?: EwArg): void {
     const yoyu = arg?.uid === init.uid ? init : resp;
     const other = yoyu === init ? resp : init;
     const verdict = send({ kind: 'provoke', seat: yoyu.side, uid: yoyu.uid, targetUid: other.uid, take });
-    say(verdict.ok
-      ? take
+    if (verdict.ok) {
+      say(take
         ? `${yoyu.label} provokes ${other.label} into Offensive Stance (LPA-22 Yoyu).`
-        : `${yoyu.label} leaves ${other.label}'s Stance alone.`
-      : `${yoyu.label} cannot provoke ${other.label}: ${verdict.why}`, verdict.ok ? 'done' : 'refused');
+        : `${yoyu.label} leaves ${other.label}'s Stance alone.`, 'done');
+    } else if (verdict.why) {
+      say(`${yoyu.label} cannot provoke ${other.label}: ${verdict.why}`, 'refused');
+    }
     done();
     return;
   }
   if (act === 'apply') {
-    const a = actionOf(data, s, init, c.actionId);
+    const a = actionIn(init, c.actionId);
     // On a shared table the combat window's applyEffects NEVER RUNS (the
     // verdict is derived, nobody presses Resolve), so the Initiator's seat
     // sends the effects from here, through the reading every seam shares
@@ -184,12 +209,18 @@ export function contestAct(env: ContestEnv, act: EwAct, arg?: EwArg): void {
     // it was the reaction because its Command Token is already spent.
     if (!a) { send({ kind: 'clearCounterRoll', seat: init.side }); done(); return; }
     const win = ewWinCommands(data, init, resp, a, { reaction: !!c.reaction, thenAttack: c.thenAttack, terminal: c.terminal });
+    let first = true;
+    const joined = (cmd: Command): Command => {
+      const out = env.chain && !first ? { ...cmd, chain: 'join' } as Command : cmd;
+      first = false;
+      return out;
+    };
     let won = true;
-    for (const cmd of win.cmds) won = send(cmd).ok && won;
+    for (const cmd of win.cmds) won = send(joined(cmd)).ok && won;
     if (won) say(win.lines.length
       ? `${init.label} succeeds: ${win.lines.join('; ')}.`
       : `${init.label} succeeds, and ${a.name?.en || a.id} has nothing this table can apply: follow the card.`, 'done');
-    send({ kind: 'clearCounterRoll', seat: init.side });
+    send(joined({ kind: 'clearCounterRoll', seat: init.side }));
     done();
     return;
   }

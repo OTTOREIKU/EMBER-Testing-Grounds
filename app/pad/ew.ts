@@ -1,16 +1,17 @@
 // THE ELECTRONIC COUNTER-ROLL on the pad: the shared ElectronicHelper
-import type { RollGroup } from '../src/combat';
 // (combat.ts), mounted beside the attack window, driven the way the Match
 // Centre drives it. A Guided game holds the exchange on `script.counter`, so
 // both phones draw the one record and each presses only its own hand; a
 // Freeform table has no record and runs the helper's own local exchange on
 // the attacker's phone, the defender rolling across the table.
+import type { RollGroup } from '../src/combat';
 import type { Command } from '../src/commands';
 import { ElectronicHelper, type EwAct, type EwArg } from '../src/combat';
+import { contestAct as sendContestAct, counterResponder } from '../src/contest';
 import { forSeat } from './attack';
-import { electronicStrength, ewWinCommands, tokenCards, loanedParts } from '../src/units';
-import { normaliseTasks, TERMINAL_EV, TERMINAL_UID, terminalStandIn, type TaskItem } from '../src/tasks';
-import { type CardAction, type CounterRoll, type DiceData, type GameState, type Side, type Token } from '../src/types';
+import { tokenCards, loanedParts } from '../src/units';
+import { TERMINAL_UID, terminalStandIn, type TaskItem } from '../src/tasks';
+import { type CardAction, type DiceData, type GameState, type Side, type Token } from '../src/types';
 import type { NoticeKind } from '../src/notices';
 import type { GameData } from '../src/data';
 
@@ -219,16 +220,6 @@ export function beginTerminal(attacker: Token, actionId: string, item: TaskItem,
   return true;
 }
 
-// The record's Responder: a unit, or a Remote Access's Terminal stand-in.
-function responderOf(c: CounterRoll, init: Token | undefined): Token | undefined {
-  const a = api!;
-  const s = a.state();
-  if (c.terminal === undefined) return s.tokens.find((t) => t.uid === c.responderUid);
-  const item = normaliseTasks(s.tasks).items.find((i) => i.id === c.terminal);
-  if (!item || !init) return undefined;
-  return terminalStandIn(item, init.side, a.data.zoneData.zones.find((z) => z.id === item.zone)?.name ?? item.zone);
-}
-
 // Target Tracing (174): "may spend 1 Command Token to perform an Electronic
 // Counter Roll against the Attacker. If successful, the Attacker loses 1
 // Link." In a room the command that opens the record spends the Token and
@@ -262,7 +253,7 @@ export function syncContest(): void {
     return;
   }
   const init = s.tokens.find((t) => t.uid === c.initiatorUid);
-  const resp = responderOf(c, init);
+  const resp = counterResponder(a.data, s, c, init);
   const action = init ? actionOf(init, c.actionId) : undefined;
   if (!init || !resp || !action) { if (helper?.watching) helper.closeContest(); return; }
   if (!root) { a.openCombat(); return; }
@@ -275,102 +266,31 @@ export function syncContest(): void {
   a.openCombat();
 }
 
-// Every press the window makes, as commands - the Match Centre's contestAct.
+// Every press the window makes, as commands: the one sender the Match Centre
+// and a computer seat use too (src/contest.ts), given the pad's own ways in.
+// The pad kept a copy of it until the code audit (2026-10-12), which had
+// drifted: it said nothing of a Provoke, of a win with nothing to apply, or of
+// a free Scan's attack that ends with it (FAQ I11).
 function contestAct(act: EwAct, arg?: EwArg): void {
   const a = api!;
-  const s = a.state();
-  const c = s.script?.counter;
-  if (!c) return;
-  const init = s.tokens.find((x) => x.uid === c.initiatorUid);
-  const resp = responderOf(c, init);
-  if (!init || !resp) { a.send({ kind: 'clearCounterRoll', seat: a.me() }); a.render(); return; }
-  // The Terminal's hand, this phone's to roll as the opponent's: a table
-  // command, since no unit on the board is it (ruling I25).
-  if (act === 'roll' && arg?.uid === TERMINAL_UID && c.terminal !== undefined) {
-    void a.rollFaces(TERMINAL_EV, `${resp.label}: Electronic Counter-roll`).then((faces) => {
-      if (faces.length !== TERMINAL_EV) return;
-      a.send({ kind: 'rollTerminal', seat: a.me(), faces });
-      a.render();
-    });
-    return;
-  }
-  const unit = arg?.uid !== undefined ? s.tokens.find((x) => x.uid === arg.uid) : undefined;
-  if (act === 'roll' && unit) {
-    // The Initiator's pool carries its Action's Strength +X (audit Phase 3,
-    // D2), though no card prints one since the 2026-09-28 list ruling retired
-    // Scream's.
-    const ev = unit.uid === init.uid
-      ? electronicStrength(a.data, s.tokens, unit, 'initiator', actionOf(init, c.actionId))
-      : electronicStrength(a.data, s.tokens, unit, 'responder');
-    void a.rollFaces(ev, `${unit.label}: Electronic Counter-roll`).then((faces) => {
-      if (faces.length !== ev) return;
-      a.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces });
-      a.render();
-    });
-    return;
-  }
-  if (act === 'declare' && unit) {
-    // FAQ G4: the declare pays the Link on arrival (declareCounterFocus), so
-    // the reroll after it costs nothing more, even asked for twice.
-    // A Drone may pay its reroll with a Whistle's Command Token (ZYBP-202).
-    a.send({
-      kind: 'declareCounterFocus', seat: unit.side, uid: unit.uid, use: !!arg?.use,
-      ...(arg?.whistleUid !== undefined ? { whistleUid: arg.whistleUid } : {}),
-    });
-    a.render();
-    return;
-  }
-  if (act === 'focus' && unit) {
-    const had = unit.uid === init.uid ? c.initRoll : c.respRoll;
-    const idx = (arg?.indices ?? []).filter((i) => had && i >= 0 && i < had.length);
-    if (!had) return;
-    // Keeping the roll closes this side's reroll turn with the faces it had.
-    if (!idx.length) {
-      a.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces: had.slice(), focused: true });
-      a.render();
-      return;
-    }
-    void a.rollFaces(idx.length, `${unit.label}: Focus reroll`).then((rolled) => {
-      if (rolled.length !== idx.length) return;
-      const faces = had.slice();
-      idx.forEach((at, k) => { faces[at] = rolled[k]; });
-      a.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces, focused: true });
-      a.render();
-    });
-    return;
-  }
-  if (act === 'provoke' || act === 'provokepass') {
-    // Yoyu is whichever side the window named: either role (4.11.2; audit
-    // Phase 3, F16). A press naming nobody meant the Responder.
-    const yoyu = arg?.uid === init.uid ? init : resp;
-    const other = yoyu === init ? resp : init;
-    a.send({ kind: 'provoke', seat: yoyu.side, uid: yoyu.uid, targetUid: other.uid, take: act === 'provoke' });
-    a.render();
-    return;
-  }
-  if (act === 'apply') {
-    const action = actionOf(init, c.actionId);
-    // The result and the close are one tap: every command after the first
-    // joins it for Undo (commands.ts CommandChain).
-    let sent = 0;
-    const join = () => (sent++ ? { chain: 'join' as const } : {});
-    // The reading every seam shares (ewWinCommands). This copy used to find the
-    // first top-level status and fall back to Fire Control Interference, so
-    // Manipulation Interference gave FCI instead of Immobilized, and Scream,
-    // The Red Shoes and Overload Inject gave FCI too; a free Scan's attack lost
-    // its Charge (audit Phase 3, D1). Target Tracing is the record's own
-    // `reaction`, its Command Token already spent.
-    if (action) {
-      const win = ewWinCommands(a.data, init, resp, action, { reaction: !!c.reaction, thenAttack: c.thenAttack, terminal: c.terminal });
-      for (const cmd of win.cmds) a.send({ ...cmd, ...join() } as Command);
-      if (win.lines.length) a.toast(`${init.label} succeeds: ${win.lines.join('; ')}.`);
-    }
-    a.send({ kind: 'clearCounterRoll', seat: init.side, ...join() });
-    a.render();
-    return;
-  }
-  if (act === 'close') {
-    a.send({ kind: 'clearCounterRoll', seat: a.me() });
-    a.render();
-  }
+  sendContestAct({
+    data: a.data,
+    state: a.state(),
+    seat: a.me(),
+    // The pad's send tells the player about a refusal itself.
+    send: (cmd) => ({ ok: a.send(cmd) }),
+    // Dice the server never answered come back empty, and the pad has said so.
+    rollHits: async (n, label) => {
+      const faces = await a.rollFaces(n, label);
+      return faces.length === n ? { dice: faces.map((face) => ({ face })) } : null;
+    },
+    say: (text, kind) => a.toast(text, kind ?? 'refused'),
+    done: () => a.render(),
+    // A lent Load's Action wherever the carrier stands (FAQ O5).
+    actionOf: (t, actionId) => actionOf(t, actionId),
+    // The faces are asked for under the unit's own name.
+    rollLabel: (unit, what) => `${unit.label}: ${what === 'focus' ? 'Focus reroll' : 'Electronic Counter-roll'}`,
+    // The result and the close are one tap for Undo.
+    chain: true,
+  }, act, arg);
 }

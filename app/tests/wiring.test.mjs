@@ -259,9 +259,12 @@ check('and the Match Centre hands it the page\'s own send and dice',
 // Twice since the audit's Phase 3 (D2): the Initiator's pool carries its
 // Action's Strength +X and the Responder's never does, so each role is asked
 // for by name rather than through one expression.
+// The Initiator's Action is found as the page finds it: turn.ts actionOf unless
+// the page hands its own (the pad's finds a lent Load anywhere, FAQ O5).
 check('and sizes the roll with electronicStrength',
   [(contestFn.match(/electronicStrength\(/g) ?? []).length,
-    /electronicStrength\(data, s\.tokens, unit, 'initiator', actionOf\(data, s, init, c\.actionId\)\)/.test(contestFn)], [2, true]);
+    /electronicStrength\(data, s\.tokens, unit, 'initiator', actionIn\(init, c\.actionId\)\)/.test(contestFn),
+    /const actionIn = env\.actionOf \?\? \(\(t: Token, id: string\) => actionOf\(data, s, t, id\)\);/.test(contestFn)], [2, true, true]);
 check('and never rolls the printed value', contestFn.includes('electronicValue('), false);
 // THE FOCUS REROLL IS NOT A POOL. 4.10 is 'reroll any Dice in that roll',
 // player's choice, and the retired panel rerolled the whole hand instead --

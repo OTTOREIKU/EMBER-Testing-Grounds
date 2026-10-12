@@ -19,7 +19,7 @@ faction features feltclip fingerprint flight focuspublish followup formswitch fp
 hindered hostileinput idleactions immobilized intercept jamkeep keystone keywordlink knockback largeboard launch
 learned ledger linkaudit linksupport linktick loads lockon loops lowprofile maneuver mapeditor martyrdom mechanics
 mechanics1 mechanics2 mechanics3 mechanics4 mechanics5 mechanics6 mechbuilder mechlayers meleelock mines movepath
-movespot multitarget net noboard nonhumanoid noticepages notices offset onhit padreference padstrip padticks
+movespot multitarget net noboard nonhumanoid noticepages notices offset onhit padew padreference padstrip padticks
 partfaces pilottraits playerodds projflight protection reaction refglossary reftone rejoin report riposte rollback
 rulings rws safetext scanattack script season seasonplay seat seataccessfirst seatboxplace seathorizon seatlines
 seatreach seatseconds seattow selfgrant setup shockattack sidecolours sightview signout simgame singleshot smoke
