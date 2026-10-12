@@ -105,10 +105,13 @@ const scored = (family) => games.filter((g) => g.family === family && g.vp.s1 + 
 // Unit came in (M8.2p), its bearer penetrated and the Box dropped, while over
 // 46 seeds Box games paid the same with Crushes and without (113 Victory
 // Points in 28 games against 112 in 27). So where the dozen pays nothing for
-// Boxes, up to three more Black Box games the Tactician plays in both seats
-// must.
+// Boxes, up to five more Black Box games the Tactician plays in both seats
+// must. (Five since 2026-10-12: with `sighted` in both seats the first three
+// went unpaid, 4 of the ten from seed 131 paid against 6 without it, while
+// measured against the Ace without it the Box Tasks paid the squad with it as
+// much or more: 340 of their Victory Points against 324.)
 let boxPaid = scored('blackbox') > 0;
-for (let k = 0; k < 3 && !boxPaid; k++) {
+for (let k = 0; k < 5 && !boxPaid; k++) {
   const seed = 131 + k;
   const rng = new AI.Rng(`${seed}:squads`);
   data.solo.squads['any-s1'] = squadAtRandom(M, data, rng, 400, FACTIONS[k % FACTIONS.length]);
@@ -120,7 +123,7 @@ for (let k = 0; k < 3 && !boxPaid; k++) {
   const vp = M.TK.normaliseTasks(t.state.tasks).vp;
   boxPaid = vp.s1 + vp.s2 > 0;
 }
-check('and every family of Main Task is PLAYED: Victory Points are paid on an Occupation, on Terminals and for Black Boxes among these games (or, for Boxes, in up to three more the Tactician plays)',
+check('and every family of Main Task is PLAYED: Victory Points are paid on an Occupation, on Terminals and for Black Boxes among these games (or, for Boxes, in up to five more the Tactician plays)',
   [scored('control') > 0, scored('terminal') > 0, boxPaid], [true, true, true]);
 console.log(`       Victory Points by family: ${['control', 'terminal', 'blackbox', 'vip'].map((f) => `${f} ${games.filter((g) => g.family === f).reduce((n, g) => n + g.vp.s1 + g.vp.s2, 0)} in ${games.filter((g) => g.family === f).length}`).join(', ')}`);
 

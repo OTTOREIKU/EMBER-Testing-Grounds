@@ -369,6 +369,18 @@ export interface Skills {
   // the End Phase, and a Terminal is accessed once a round: where an enemy Mech can still Remote Access it first
   // (`terminalAtRisk`), it is worth a Remote Access as one nobody holds. OFF until measured.
   accessFirst: boolean;
+  // SIGHT BEFORE SAFETY (2026-10-12; OTTO, watching the Veteran's UN squad: "They keep moving the porcupine away from
+  // a shooting angle so it's on the other side of the map unable to attack much"). A gun of Range 12 claims a shot
+  // from every Grid as geometry reads it, so of the Grids asked what could be done there a turn later (`FUTURES`) the
+  // safest half went to the far corner and the strongest half, by the fewest enemies that could answer, beside it:
+  // on the VIP crossroads the Porcupine was asked about ten Grids behind the buildings and stood in its corner four
+  // rounds. Here the board says who would be SEEN from each Grid (`seen`), and a Grid where no enemy its guns claim
+  // would be seen is asked about after the rest (`blindOf`). MEASURED LEVEL, ON FOR EVERY LEVEL (2026-10-12,
+  // measure_sighted.sh, against the Ace: random squads the Veteran 75 of 200 against 70, the Brawler 83 against 81,
+  // the Ace 104 against 103; community squads 23 of 60 against 25, 35 against 39, 30 against 30; no sign test below
+  // p 0.23, no thinking lost). Where it changes the Veteran's play its Drones attack in more of their Automatic
+  // activations (17.8% to 21.0%, random squads); the Ace too left its Porcupine in the VIP corner without it.
+  sighted: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -378,7 +390,7 @@ export const SKILLS: Skills = {
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
   squadDials: false, secName: true, hunter: false, cardPick: true, clearLines: true, leash: true, lanes: false, trueRange: false,
-  accessFirst: false,
+  accessFirst: false, sighted: true,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -2493,6 +2505,21 @@ function claimAt(at: Grid, facing: number, c: Ctx): number {
   return 0;
 }
 
+// THE GRIDS SIGHT DENIES (`sighted`): of Grids a Movement ends in, the ones where the unit's guns claim an enemy by
+// Range and arc and none of those enemies would be seen from there, as the board says (`seen`, asked once for them
+// all). Geometry stands in for the engine only in choosing what to ask it; this is the board's half of that choice.
+function blindOf(at: { o: Option; at: Grid }[], c: Ctx): Set<Option> {
+  const blind = new Set<Option>();
+  const eyes = c.d.here?.().seen(c.me.uid, at.map((x) => x.at));
+  if (!eyes) return blind;
+  at.forEach((x, i) => {
+    const locked = lockedAt(c.me, x.at, c.foes);
+    const guns = c.foes.filter((f) => couldStrike(c.me, x.at, facingOf(x.o) ?? c.me.facing, f, locked));
+    if (guns.length && !guns.some((f) => eyes[i]?.includes(f.uid))) blind.add(x.o);
+  });
+  return blind;
+}
+
 // A MINE UNDERFOOT. A Movement that ends in a Mine's Grid sets it off (the
 // seam says which answers do: `mined`), and what the blast is likely to do to
 // the unit is the answer's own odds: charged to the plan as an enemy's attack
@@ -2946,11 +2973,15 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
   const nexts = new Map<Option, number>();
   const idle = ranked.filter((x) => x.claim >= 1 && !deeds.get(x.o));
   const budget = me.kind === 'mech' ? LIMITS.MECH_FUTURES : LIMITS.FUTURES;
+  // (Of those, a Grid where sight denies what geometry claims goes after the rest: `sighted`.)
+  const blind = c.skills.sighted && idle.length > budget ? blindOf(idle, c) : null;
+  const sees = (x: { o: Option }): number => (blind?.has(x.o) ? 0 : 1);
   const safest = idle
     .map((x) => ({ ...x, open: open(x.at), clear: c.foes.length ? clear(x.at) : 0 }))
-    .sort((a, b) => Number(b.open) - Number(a.open) || b.clear - a.clear)
+    .sort((a, b) => Number(b.open) - Number(a.open) || (blind ? sees(b) - sees(a) : 0) || b.clear - a.clear)
     .slice(0, Math.ceil(budget / 2));
-  const strongest = idle.filter((x) => !safest.some((y) => y.o === x.o)).slice(0, budget - safest.length);
+  const rest = idle.filter((x) => !safest.some((y) => y.o === x.o));
+  const strongest = (blind ? rest.sort((a, b) => sees(b) - sees(a)) : rest).slice(0, budget - safest.length);
   for (const l of [...safest, ...strongest]) {
     nexts.set(l.o, nextTurn(l.o, l.at, c));
     yield;

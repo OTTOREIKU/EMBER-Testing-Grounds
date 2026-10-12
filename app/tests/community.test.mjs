@@ -35,7 +35,9 @@ check('EVERY CARD OF THE SIX IS ONE THE DATA KNOWS',
   Object.values(SQUADS).flatMap((s) => [...s.mechs.flatMap((m) => Object.values(m.loadout)), ...s.drones.flatMap((d) => [d.cardId, d.backpack].filter(Boolean))]).filter((id) => !data.byId.get(id)), []);
 
 const GAMES = [
-  { s1: 'UN-2', s2: 'Top_Core_RDL', map: 'crossroads', mission: 'vip-commander-assassination', seed: 1 },
+  // Seed 2 since 2026-10-12: with `sighted` UN-2 takes RDL's Commander in round 2 of seed 1's game, a game that says
+  // nothing about being stuck; seed 2's goes all five rounds with both squads attacking.
+  { s1: 'UN-2', s2: 'Top_Core_RDL', map: 'crossroads', mission: 'vip-commander-assassination', seed: 2 },
   // Deployed as dealt before a squad could deploy where its own units waited (_engine.mjs dealt): dealt anew, RDL_Melee1
   // starts in the corner and wins 8 to 4 on the Boxes without one attack, a game that says nothing about being stuck.
   { s1: 'HeavyDisruption', s2: 'RDL_Melee1', map: 'alley', mission: 'blackbox-key-facilities', seed: 2,

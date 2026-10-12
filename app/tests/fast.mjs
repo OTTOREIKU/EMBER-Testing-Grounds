@@ -22,7 +22,7 @@ mechanics1 mechanics2 mechanics3 mechanics4 mechanics5 mechanics6 mechbuilder me
 movespot multitarget net noboard nonhumanoid noticepages notices offset onhit padew padreference padstrip padticks
 partfaces pilottraits playerodds projflight protection reaction refglossary reftone rejoin report riposte rollback
 rulings rws safetext scanattack script season seasonplay seat seataccessfirst seatboxplace seathorizon seatlines
-seatreach seatseconds seattow selfgrant setup shockattack sidecolours sightview signout simgame singleshot smoke
+seatreach seatseconds seatsighted seattow selfgrant setup shockattack sidecolours sightview signout simgame singleshot smoke
 smokesquad solosetup squadpanel squadtactics stacked stakes standing stealth stock straightline supplement104
 suppression surplus surplusdefense tabletokens tactichand tactics targettrace tasks tether ticks tiebreak
 tokendecay tokenshapes tracepath tracer traits twohanded update104 updates viewline vippending vprider whitedwarf

@@ -589,9 +589,11 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
       W(turn, o('End this Opportunity', ['end']), 'end_activation'), W(turn, o('Mire: Sprint to E4', ['move']), 'no_such_reason'),
       W(turn, o('Mire: Sprint to E4', ['move']), 'constructor'), W(turn, o('Mire: Sprint to E4', ['move']), undefined)],
     [null, null, null, null, null, null]);
-  // A whole game against the Ace: every line it told, with the phase it was told in.
+  // A whole game against the Ace: every line it told, with the phase it was told in. (Seed 1 since 2026-10-12: with
+  // `sighted` the seed-5 game's Raven walked for a zone in round 1 and was lost before it could interfere; seed 1's
+  // Raven makes its Fire Control Interference four times.)
   const lines = [];
-  const p = page(alley, 's1', { seed: 5, opponent: 'tactician', told: (seat, line) => lines.push({ seat, line, phase: p.state.round.phase,
+  const p = page(alley, 's1', { seed: 1, opponent: 'tactician', told: (seat, line) => lines.push({ seat, line, phase: p.state.round.phase,
     named: line.startsWith('Command ') || p.state.tokens.some((t) => t.side === seat && (line.startsWith(`${t.label}:`) || line.startsWith(`${t.label} `))) }) });
   p.table.start();
   const end = await p.play();
