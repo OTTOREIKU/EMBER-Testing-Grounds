@@ -132,19 +132,24 @@ const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
 const match = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
 
-// The grant chain runs wherever stationaryAdjusted already ran, so a granted
-// keyword reaches every reader a printed one reaches - the combat window's
-// Snipe designation included.
-check('freeplay folds grants into the attack action', /grantAdjusted\(steadied, t, opp0/.test(main), true);
-check('the Match Centre attack panel does', /grantAdjusted\(steadied, by, opp0/.test(hud), true);
+// The grant chain runs wherever stationaryAdjusted runs, so a granted keyword
+// reaches every reader a printed one reaches - the combat window's Snipe
+// designation included. Since the code audit (2026-10-12) the chain is ONE
+// function, units.ts grantedAction, and every door calls it.
+check('the chain is one function: the Stationary bonus, then the grants',
+  /export function grantedAction\([\s\S]{0,300}return grantAdjusted\(stationaryAdjusted\(a, opp\), t, opp\);/.test(unitsSrc), true);
+check('freeplay folds grants into the attack action, at both of its doors',
+  [(main.match(/grantedAction\(act, t, opp\)|grantedAction\(action, t, opp\)/g) ?? []).length], [2]);
 // Three since the 1.04 Containers: a Container target re-checks the same way.
 // The list itself is read in turn.ts attackReading; the two re-checks are the
 // page's own presses.
-check('three times - the target and Container re-checks too',
-  [(hud.match(/grantAdjusted\(steadied, by, opp0/g) ?? []).length, (turnSrc.match(/grantAdjusted\(steadied, by, opp0/g) ?? []).length], [2, 1]);
+check('the Match Centre attack panel does, three times - the target and Container re-checks too',
+  [(hud.match(/grantedAction\(raw, by, opp0\?\.uid === by\.uid \? opp0 : null\)/g) ?? []).length, (turnSrc.match(/grantedAction\(raw, by, opp0\?\.uid === by\.uid \? opp0 : null\)/g) ?? []).length], [2, 1]);
 // The deriver is turn.ts attackActionBuilt since 2026-10-01; the page asks it.
 check('and the combat window action deriver does',
-  [/grantAdjusted\(stationaryAdjusted\(printed, opp\), t, opp\)/.test(turnSrc), /turnAttackActionOf\(data, state, t, actionId, twoHandedDeclined, charge\)/.test(match)], [true, true]);
+  [/handsFor\(data, state, t, grantedAction\(printed, t, opp\), twoHandedDeclined \? 'declined' : undefined\)\.action/.test(turnSrc), /turnAttackActionOf\(data, state, t, actionId, twoHandedDeclined, charge\)/.test(match)], [true, true]);
+// Nothing writes the chain out by hand any more.
+check('and no page writes the chain out by hand', [main, hud, turnSrc].map((s) => /grantAdjusted\(stationaryAdjusted\(/.test(s)), [false, false, false]);
 
 // Freeplay: the offer, the free walk, then the same targeting either way.
 check('freeplay offers the walk before targeting', /Shock Attack \$\{shock\}[\s\S]{0,600}?startMove\(uid, \{ range: shock/.test(main), true);
@@ -158,7 +163,9 @@ check('and the walk continues into it, on both doors, knowing it moved',
 // Match Centre: ONE door asks, every route funnels through it.
 check('openAttackPick is the single door', /function openAttackPick\(t: Token, a: CardAction, refund\?[\s\S]{0,1400}?shockPick = \{/.test(hud), true);
 check('asked exactly once', /shockAsked = false/.test(hud) && /openAttackPick\(t, a, after\.refund, true\)/.test(hud), true);
-check('an Immobilized Mech is not offered the walk', /shockMoveAllowed\(t\) && !immobilizedStop\(t, null\)/.test(hud), true);
+// (Read by turn.ts shockWalk, which the door asks: the code audit, 2026-10-12.)
+check('an Immobilized Mech is not offered the walk',
+  [/export function shockWalk\([\s\S]{0,300}shockMoveAllowed\(t\) && !immobilizedStop\(t, null\)/.test(turnSrc), /const x = turn\.shockWalk\(hudRef\.state, t, a\);/.test(hud)], [true, true]);
 // THE PAYMENT ORDER. The command layer only allows a free move once its Action
 // has been performed this Opportunity, so the Action pays BEFORE the walk -
 // and a refused payment refunds the Charge and stops.

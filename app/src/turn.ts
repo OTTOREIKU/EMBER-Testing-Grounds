@@ -33,11 +33,11 @@ import {
   commonActionStop, commonPartKey, containerTargets, detonationBar, electronicAll, electronicAllTargets, electronicDash, electronicOrigins,
   electronicStrength, electronicTargetWhy, electronicValue, explosionScope, fliesToTarget, jumpsToTarget, keptWithoutTarget, missileFlight,
   projectileDelivery, scannable, volleyFor,
-  envCardAt, envFlightFrom, envForcedStop, envMoveRules, extraActivationOf, flightGrant, formSwitch, freehandSlots, grantAdjusted, isGroundUnit, knockbackOf,
+  envCardAt, envFlightFrom, envForcedStop, envMoveRules, extraActivationOf, flightGrant, formSwitch, freehandSlots, grantedAction, isGroundUnit, knockbackOf,
   guidedActions, highlightTargets, ignoresProtection, immobilizedStop, interceptHeld, interceptOwedAt, interceptsOwed, isAirborneAction, isChargeAction, isElectronicAttack, isPositionSwap,
   isRwsAction, isScanAction, linkShockOf, linkSupportOf, loanedParts, maneuverRange, mineStopIndex, needsSightToLanding, nonHumanoidCost,
   nonHumanoidStop, overwatchOf, ownCards, phasesThroughUnits, projectileReach, providesUnitProtectionToAllies, repairSpec, resupplyOf,
-  riderOnDrone, selfStatusGrant, shockAttackOf, shockMoveAllowed, stanceFeedbackOf, stanceShaped, startOpts, stationaryAdjusted, straightLineBonus,
+  riderOnDrone, selfStatusGrant, shockAttackOf, shockMoveAllowed, stanceFeedbackOf, stanceShaped, startOpts, straightLineBonus,
   targetStatusGrant, tetheredBy, tokenCleanupOf, transformOffer, twoHandedUse, unfoldsOwed,
   type Knockback, type MultiTarget, minesLayable, minesOwed, type MineLaying,
 } from './units';
@@ -267,7 +267,7 @@ export function actionMove(a: CardAction): { actionId: string; range: number | u
 export function shockWalk(state: GameState, t: Token, a: CardAction): number {
   const opp0 = state.script?.opp;
   const opp = opp0?.uid === t.uid ? opp0 : null;
-  const x = shockAttackOf(grantAdjusted(stationaryAdjusted(a, opp), t, opp));
+  const x = shockAttackOf(grantedAction(a, t, opp));
   return x > 0 && shockMoveAllowed(t) && !immobilizedStop(t, null) ? x : 0;
 }
 
@@ -1710,10 +1710,10 @@ export function attackLines(data: GameData, state: GameState, pick: AttackPick):
   if (!by || !raw) return null;
   // [Stationary] pays out when the attacker has not moved this Opportunity:
   // the Mire's railguns reach 2 grids further, and nobody could see why not.
+  // Then [condition] 获得X, folded in so a granted keyword reads as a printed
+  // one (grantedAction).
   const opp0 = s.script?.opp ?? null;
-  const steadied = stationaryAdjusted(raw, opp0?.uid === by.uid ? opp0 : null);
-  // [condition] 获得X, folded in so a granted keyword reads as a printed one.
-  const granted = grantAdjusted(steadied, by, opp0?.uid === by.uid ? opp0 : null);
+  const granted = grantedAction(raw, by, opp0?.uid === by.uid ? opp0 : null);
   // [Two-Handed]: offered, not applied. FAQ A16: the player may decline the
   // designation and perform the Action one-handed; the panel's row says which
   // way this attack is going, and the press reads the same helper.
@@ -1843,20 +1843,17 @@ export function attackActionBuilt(data: GameData, state: GameState, t: Token | u
     .flatMap(({ card }) => card.actions ?? [])
     .find((a) => a.id === actionId) ?? data.commonActions.find((a) => a.id === actionId);
   const oppNow = state.script?.opp;
-  // The stationary bonus AND the [condition] grants, in that order, so the
-  // AttackHelper's ctx.action carries a granted keyword (Stationary Snipe,
-  // stance-granted Shock) the same way it carries a printed one.
+  // The stationary bonus AND the [condition] grants, in that order
+  // (grantedAction), so the AttackHelper's ctx.action carries a granted keyword
+  // (Stationary Snipe, stance-granted Shock) the same way it carries a printed
+  // one.
   const opp = oppNow?.uid === t.uid ? oppNow : null;
   if (!printed) return printed;
-  const granted = grantAdjusted(stationaryAdjusted(printed, opp), t, opp);
   // [Two-Handed] LAST, as on every other site (twohanded.test.mjs). The Match
   // Centre used to stop at the grants, so it rolled a Two-Handed weapon
   // without its rider while the turn panel had promised it. FAQ A16: the
   // player may decline, and the declined copy is marked so the window says so.
-  // A Load lent by a Carrier in Contact can be the Freehand (FAQ O16).
-  const loans = loanedParts(data, state.tokens, t);
-  if (twoHandedDeclined) return twoHandedUse(data, t, granted, boxHands(state.tasks, t.uid), loans) ? { ...granted, twoHandedDeclined: true } : granted;
-  return twoHandedUse(data, t, granted, boxHands(state.tasks, t.uid), loans)?.action ?? granted;
+  return handsFor(data, state, t, grantedAction(printed, t, opp), twoHandedDeclined ? 'declined' : undefined).action;
 }
 
 export function attackActionOf(data: GameData, state: GameState, t: Token | undefined, actionId: string, twoHandedDeclined = false, charge?: { spent?: boolean; choice?: string }): CardAction | undefined {

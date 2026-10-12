@@ -553,6 +553,19 @@ export function grantAdjusted(
   return { ...shaped, keywords: [...(shaped.keywords ?? []), ...held.map((k) => ({ inline: k }))] };
 }
 
+// THE ACTION AS THE OPPORTUNITY GRANTS IT, the chain every attack door builds
+// (the code audit, 2026-10-12: it was written out by hand in a dozen places):
+// the printed [Stationary] bonus while the unit has not moved this Opportunity,
+// then what its Stance and its [condition]s grant, in that order. [Two-Handed]
+// comes after, as each door's own question (turn.ts handsFor; FAQ A16).
+export function grantedAction(
+  a: CardAction,
+  t: { stance?: string } | null | undefined,
+  opp: { maneuvered?: boolean; moved?: boolean } | null | undefined,
+): CardAction {
+  return grantAdjusted(stationaryAdjusted(a, opp), t, opp);
+}
+
 // The two Stance lines that change a NUMBER rather than grant a keyword, which
 // conditionalGrants (only "[X] gains Y") never read (audit Phase 2, D2):
 //   ZHRA-201_B "[Offensive Stance]+{1R}": one more Red die. The bundle carries

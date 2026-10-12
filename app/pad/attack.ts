@@ -11,8 +11,9 @@
 import type { GameData } from '../src/data';
 import type { Command, CheckResult } from '../src/commands';
 import { boxHands, normaliseTasks } from '../src/tasks';
+import { handsFor } from '../src/turn';
 import { AttackHelper, combatRoleFor, type MirrorAct } from '../src/combat';
-import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, tokenCards, twoHandedUse, loanedParts, reactionDebt } from '../src/units';
+import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, coolingBonus, grantedAction, kcArmorReady, multiTargetLimit, pilotDiceBonus, tokenCards, loanedParts, reactionDebt } from '../src/units';
 import type { NoticeKind } from '../src/notices';
 import type { CardAction, DiceData, DieColor, GameState, Side, Token } from '../src/types';
 import type { RolledDie } from '../src/net';
@@ -264,13 +265,10 @@ function attackActionOf(t: Token, actionId: string, verdict?: TableVerdict): Car
   // table's answer stands in for it.
   const opp = oppNow?.uid === t.uid ? oppNow
     : !a.state().script && verdict?.stationary !== undefined ? { moved: !verdict.stationary } : null;
-  const granted = grantAdjusted(stationaryAdjusted(printed, opp), t, opp);
-  // A Load lent by a Carrier in Contact can be the Freehand (FAQ O16), as
-  // turn.ts attackActionBuilt reads it (the code audit, 2026-10-11).
-  const loans = loanedParts(a.data, a.state().tokens, t);
-  // FAQ A16: the designation may be declined, and the declined copy says so.
-  if (verdict?.twoHanded === 'declined') return twoHandedUse(a.data, t, granted, boxHands(a.state().tasks, t.uid), loans) ? { ...granted, twoHandedDeclined: true } : granted;
-  return twoHandedUse(a.data, t, granted, boxHands(a.state().tasks, t.uid), loans)?.action ?? granted;
+  // The Action as the Opportunity grants it, then [Two-Handed] as turn.ts reads
+  // it for every door: a Load lent by a Carrier in Contact can be the Freehand
+  // (FAQ O16), and a declined designation is a marked one-handed copy (FAQ A16).
+  return handsFor(a.data, a.state(), t, grantedAction(printed, t, opp), verdict?.twoHanded === 'declined' ? 'declined' : undefined).action;
 }
 
 // In a FREEFORM room this phone runs both halves of the attack, so the

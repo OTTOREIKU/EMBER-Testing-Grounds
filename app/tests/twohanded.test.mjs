@@ -39,18 +39,23 @@ check('and freeplay asks it at both of its doors',
   (main.match(/askTwoHanded\(t, granted\)/g) ?? []).length, 2);
 // Where the attack starts is turn.ts attackActionBuilt, which the page's
 // startAttack opens its window with (attackOpening).
+// (Through handsFor, the same reading as the panel's, since the code audit,
+// 2026-10-12.)
 check('and the Match Centre applies it where the attack starts',
-  [/twoHandedUse\(data, t, granted, boxHands\(state\.tasks, t\.uid\), loans\)\?\.action \?\? granted/.test(turnSrc),
+  [/handsFor\(data, state, t, grantedAction\(printed, t, opp\), twoHandedDeclined \? 'declined' : undefined\)\.action/.test(turnSrc),
     /const open = attackOpening\(data, state, uid, actionId, targetUid, mode, opts\);/.test(match)], [true, true]);
+// The Stationary adjustment and the grants are one function (units.ts
+// grantedAction, Stationary first); the question comes after it.
 check('both sit AFTER the Stationary adjustment, so the riders compound',
-  /const steadied = raw \? stationaryAdjusted[\s\S]{0,900}handsFor/.test(hud)
-  && /const steadied = stationaryAdjusted[\s\S]{0,900}askTwoHanded/.test(main), true);
+  /export function grantedAction\([\s\S]{0,300}return grantAdjusted\(stationaryAdjusted\(a, opp\), t, opp\);/.test(units)
+  && /const granted = by && raw \? grantedAction\(raw[\s\S]{0,300}handsFor/.test(hud)
+  && /const granted = grantedAction\(action, t, opp\);[\s\S]{0,900}askTwoHanded/.test(main), true);
 
 // ---------- Offered, not applied (FAQ A16) ----------
 check('the helper applies and the pages offer, with the reasoning recorded',
   /the pages OFFER it \(FAQ A16/.test(units), true);
 check('a declined designation is a marked one-handed copy on every page',
-  /twoHandedDeclined: true/.test(turnSrc) && /twoHandedDeclined: true/.test(main) && /\? \{ \.\.\.granted, twoHandedDeclined: true \} : granted;/.test(turnSrc), true);
+  /twoHandedDeclined: true/.test(turnSrc) && /twoHandedDeclined: true/.test(main) && /if \(choice === 'declined'\) return \{ action: \{ \.\.\.granted, twoHandedDeclined: true \}, use \};/.test(turnSrc), true);
 check('and the combat window reports the decline instead of re-deriving the bonus',
   /if \(c\.action\.twoHandedDeclined\) return/.test(combat), true);
 check('and the mirror rebuilds the same one-handed Action',

@@ -73,7 +73,8 @@ import { configureNotices, explainOnHold, notify, redrawNotice, speakInPlace, ty
 import { boxHands, normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, vipFallen } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from '../src/tactics';
-import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, jumpsToTarget,explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop, volleyFor } from '../src/units';
+import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, jumpsToTarget,explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, volleyFor } from '../src/units';
+import { shockWalk } from '../src/turn';
 import { gameResult } from '../src/tasks';
 import { GameTrack, gameReport, matchKey, squadWiped } from '../src/gamelog';
 import { isSilentAction, actionSilenceDenier, auraReach, auraEffectsOf, auraActionOf, auraCanReach, auraReachable, inAuraReach, aurasAtRoll, type AuraAtRoll, actionRange, manifestationRange, targetStatusTargets, activatesCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, discardSlots, commonActionStop, commonPartKey } from '../src/units';
@@ -1720,10 +1721,10 @@ function declareRows(attacker: Token, a: CardAction | undefined, defender: Token
   const rows: DeclareRow[] = [];
   // Shock Attack X: "Before performing this Action, may move X grids." The
   // walk is Movement, so it spoils [Stationary] (audit Phase 4, E1). Made on
-  // the table first; the line of sight below is judged from where it ends.
-  const oppNow = table.script?.opp?.uid === attacker.uid ? table.script.opp : null;
-  const shock = a && !d.resumed ? shockAttackOf(grantAdjusted(stationaryAdjusted(a, oppNow), attacker, oppNow)) : 0;
-  if (a && shock > 0 && shockMoveAllowed(attacker) && !immobilizedStop(attacker, null)) {
+  // the table first; the line of sight below is judged from where it ends. The
+  // walk as turn.ts reads it for every door (shockWalk).
+  const shock = a && !d.resumed ? shockWalk(table, attacker, a) : 0;
+  if (a && shock > 0) {
     // Led with the walk, as its dialog did: left unanswered, the row must not
     // pay a Stationary bonus the walk spoiled (review, 2026-09-29).
     rows.push({ key: 'shock', label: `Shock Attack ${shock}`, options: [{ id: 'moved', label: `Moved first, up to ${shock}` }, { id: 'no', label: 'Straight to it' }] });

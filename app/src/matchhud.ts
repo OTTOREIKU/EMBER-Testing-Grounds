@@ -25,7 +25,7 @@ import { actionIdOf, actionPipCount, canAttackMode, canManeuver, canOverload, co
 import { boxHands, boxPlaceTurn, deployGrids, deployOpenGrids, gameResult, normaliseTasks, TERMINAL_UID, terminalsInReach, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, zoneCellsOf } from './scoring';
 import type { NoticeKind } from './notices';
-import { firewatchOn, targetStatusGrant, targetStatusTargets, linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, straightLineBonus, selfStatusGrant, selfGrantWhy, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
+import { firewatchOn, targetStatusGrant, targetStatusTargets, linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, grantedAction, twoHandedUse, tokenCards, straightLineBonus, selfStatusGrant, selfGrantWhy, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
 import * as turn from './turn';
 import type { Thought } from './solo';
 
@@ -4514,10 +4514,8 @@ function openAttackPick(t: Token, a: CardAction, refund?: { uid: number; slot: s
   // the printed condition holds. An Immobilized Mech is not offered a walk it
   // cannot take (6.3.2), and the chassis gate is the keyword's own line.
   if (!shockAsked && hudRef) {
-    const opp0 = ensureScript(hudRef.state).opp;
-    const opp = opp0?.uid === t.uid ? opp0 : null;
-    const x = shockAttackOf(grantAdjusted(stationaryAdjusted(a, opp), t, opp));
-    if (x > 0 && shockMoveAllowed(t) && !immobilizedStop(t, null)) {
+    const x = turn.shockWalk(hudRef.state, t, a);
+    if (x > 0) {
       shockPick = { uid: t.uid, actionId: a.id, x, refund };
       return;
     }
@@ -6572,8 +6570,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const by = s.tokens.find((x) => x.uid === m.uid);
     const raw = by ? actionOn(ctx, by, m.actionId) : undefined;
     const opp0 = ensureScript(s).opp;
-    const steadied = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
-    const granted = by && steadied ? grantAdjusted(steadied, by, opp0?.uid === by.uid ? opp0 : null) : steadied;
+    const granted = by && raw ? grantedAction(raw, by, opp0?.uid === by.uid ? opp0 : null) : undefined;
     const a = by && granted ? handsFor(ctx, by, granted, m.twoHanded).action : granted;
     const id = el.dataset.attackbox!;
     if (!by || !a || !containerTargets(ctx.data, s.tokens, terrainOf(ctx), by, a, s.smoke ?? []).some((b) => b.id === id)) {
@@ -6602,8 +6599,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const t = s.tokens.find((x) => x.uid === Number(el.dataset.attacktarget));
       const raw = by ? actionOn(ctx, by, m.actionId) : undefined;
       const opp0 = ensureScript(s).opp;
-      const steadied = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
-      const granted = by && steadied ? grantAdjusted(steadied, by, opp0?.uid === by.uid ? opp0 : null) : steadied;
+      const granted = by && raw ? grantedAction(raw, by, opp0?.uid === by.uid ? opp0 : null) : undefined;
       const a = by && granted ? handsFor(ctx, by, granted, m.twoHanded).action : granted;
       // A target in Optical Camouflage: the designation earns one FREE Scan
       // first (4.12.2, FAQ I12). The Tick is paid now - the attack is declared

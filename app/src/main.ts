@@ -67,7 +67,7 @@ import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, Opportunity, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { cellsOf, DEFAULT_GRIDS, isLineUnit, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { interceptHeld, interceptPayer, allyRepairTargets, boxNoteText, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, containerTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, blastTurn, blastsReady, jumpsToTarget, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, actionIdleWhy, type IdleWorld, resupplyHolders, selfRepairOptions, isCharged, discardSlots, actionPartWhy, chassisGone, commonActionStop, riposteMelees, ignoresProtection, volleyFor, reactionDebt } from './units';
+import { interceptHeld, interceptPayer, allyRepairTargets, boxNoteText, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, containerTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, blastTurn, blastsReady, jumpsToTarget, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, formSwitch, grantedAction, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, actionIdleWhy, type IdleWorld, resupplyHolders, selfRepairOptions, isCharged, discardSlots, actionPartWhy, chassisGone, commonActionStop, riposteMelees, ignoresProtection, volleyFor, reactionDebt } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -580,8 +580,7 @@ async function init() {
     const act = findAction(t, actionId);
     const opp0 = state.script?.opp;
     const opp = opp0?.uid === t.uid ? opp0 : null;
-    const steadied = act ? stationaryAdjusted(act, opp) : undefined;
-    const granted = steadied ? grantAdjusted(steadied, t, opp) : undefined;
+    const granted = act ? grantedAction(act, t, opp) : undefined;
     // [Two-Handed] is OFFERED (FAQ A16), the same question performGuided asks.
     void (granted ? askTwoHanded(t, granted) : Promise.resolve(undefined)).then((adjusted) => {
     const proceed = (walked?: boolean): void => {
@@ -1538,11 +1537,11 @@ async function init() {
       // (Range +N or +NY). Judged here so the rings, the hint and the helper
       // all read the same reach. Mirrors attackPanel in matchhud.ts.
       const opp0 = state.script?.opp;
-      const steadied = stationaryAdjusted(action, opp0?.uid === uid ? opp0 : null);
+      const opp = opp0?.uid === uid ? opp0 : null;
       // [condition] 获得X: stance- and Stationary-granted keywords, folded in
       // as inline keywords so every reader downstream — the Snipe designation
       // included — sees a granted keyword exactly as it sees a printed one.
-      const granted = grantAdjusted(steadied, t, opp0?.uid === uid ? opp0 : null);
+      const granted = grantedAction(action, t, opp);
       // [Two-Handed]: OFFERED (FAQ A16), through the one question both doors
       // on this page ask; the Match Centre asks it as a switch on its picker.
       void askTwoHanded(t, granted).then((adjusted) => {
@@ -1567,7 +1566,7 @@ async function init() {
         // Said only when [Stationary] really paid: comparing the copy with the
         // printed Action also caught every Stance grant, and a walk now takes
         // the bonus away.
-        const still = !walkedFrom && steadied !== action;
+        const still = !walkedFrom && stationaryAdjusted(action, opp) !== action;
         const reach = used.range ? ` Range ${used.range} is shown.${still ? ' Stationary applies.' : ''}` : '';
         // FAQ O9: an Auto Action with no enemy in reach MAY take Breakable Terrain
         // instead, and only the nearest. Said here because it is the half a player
@@ -6919,7 +6918,7 @@ async function init() {
   function afterShockWalk(t: Token, raw: CardAction, asked: CardAction, both: boolean): CardAction {
     const opp0 = state.script?.opp;
     const opp = { ...(opp0?.uid === t.uid ? opp0 : {}), moved: true };
-    const granted = grantAdjusted(stationaryAdjusted(raw, opp), t, opp);
+    const granted = grantedAction(raw, t, opp);
     if (asked.twoHandedDeclined) return { ...granted, twoHandedDeclined: true };
     return (both ? twoHandedUse(data, t, granted, boxHands(state.tasks, t.uid), loanedParts(data, state.tokens, t))?.action : undefined) ?? granted;
   }
