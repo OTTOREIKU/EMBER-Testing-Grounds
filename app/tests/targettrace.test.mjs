@@ -64,9 +64,11 @@ check('freeplay offers it too', /r\.kind === 'trace'/.test(main), true);
 // spends the Token by its own command before the helper opens.
 check('and spends the Token the same way',
   /kind: 'spendCommand'[\s\S]{0,200}electronicHelper\.start\(defender, act, from, \{ linkLoss: 1 \}\)/.test(main), true);
-check('both senders tag the debt they write',
-  /kind: 'trace' as const, fromUid: attacker\.uid/.test(match)
-  && /kind: 'trace' as const, fromUid: attacker\.uid/.test(main), true);
+// The debt is written by one mapping (units.ts reactionDebt; the code audit,
+// 2026-10-12, where four copies had been), which tags it with the attacker.
+check('both senders write the debt through the one mapping, which tags it',
+  [/kind: 'trace', fromUid: attacker\.uid/.test(src('units.ts')),
+    [match, main].every((s) => /items: \[reactionDebt\(defender, reaction, attacker\)\]/.test(s))], [true, true]);
 
 // ---------- The effect ----------
 // The card hands out no token, so no path may fall through to a default. Every

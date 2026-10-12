@@ -23,7 +23,7 @@ import { cardName, FACTION_LABEL, dataUrl, loadData, mechArtLayers, missionImage
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells, resetHudTools, startActionFromCard, startSupportPick, type LogStatus } from './matchhud';
 import { printedDeployment } from './overlays';
-import { actionIdleWhy, knockbackOf, migrateState, squadPoints, tokenCards, unfoldsOwed } from './units';
+import { actionIdleWhy, knockbackOf, migrateState, squadPoints, tokenCards, unfoldsOwed, reactionDebt } from './units';
 import { idleWorldFor } from './glue';
 import { countHits, normaliseSetup } from './setup';
 import { boxHands, normaliseTasks } from './tasks';
@@ -1389,13 +1389,7 @@ function mountSide(): void {
     attackHelper.onReaction = (defender, reaction, attacker) => {
       send({
         kind: 'queueReactions', seat: mySeat() ?? defender.side,
-        items: [reaction.smoke
-          ? { uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range, kind: 'smoke' as const }
-          : reaction.stance
-            ? { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'stance' as const }
-            : reaction.riposte
-              ? { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'riposte' as const, fromUid: attacker.uid }
-              : { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'trace' as const, fromUid: attacker.uid }],
+        items: [reactionDebt(defender, reaction, attacker)],
       });
       render();
     };

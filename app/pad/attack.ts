@@ -12,7 +12,7 @@ import type { GameData } from '../src/data';
 import type { Command, CheckResult } from '../src/commands';
 import { boxHands, normaliseTasks } from '../src/tasks';
 import { AttackHelper, combatRoleFor, type MirrorAct } from '../src/combat';
-import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, tokenCards, twoHandedUse, loanedParts } from '../src/units';
+import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, tokenCards, twoHandedUse, loanedParts, reactionDebt } from '../src/units';
 import type { NoticeKind } from '../src/notices';
 import type { CardAction, DiceData, DieColor, GameState, Side, Token } from '../src/types';
 import type { RolledDie } from '../src/net';
@@ -383,13 +383,7 @@ export function mountAttack(into: HTMLElement): AttackHelper | null {
     if (a.state().script) {
       a.send({
         kind: 'queueReactions', seat: a.me(),
-        items: [reaction.smoke
-          ? { uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range, kind: 'smoke' as const }
-          : reaction.stance
-            ? { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'stance' as const }
-            : reaction.riposte
-              ? { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'riposte' as const, fromUid: attacker.uid }
-              : { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'trace' as const, fromUid: attacker.uid }],
+        items: [reactionDebt(defender, reaction, attacker)],
       });
     } else {
       a.toast(`${defender.label} may react: ${reaction.name}.`, 'table');

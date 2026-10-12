@@ -1,7 +1,7 @@
 import { clampBoardArt, clampGridColour, DEFAULT_BOARD } from './boards';
 import type { CommonAction, GameData } from './data';
 import { cardName, discardFaceOf, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
-import type { ExtraTick, Card, CardAction, CounterRoll, DiceData, GameRuleEffect, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
+import type { ExtraTick, Card, CardAction, CounterRoll, DiceData, GameRuleEffect, GameState, MechLoadout, PartSlot, ScriptState, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
 import type { Command } from './commands';
 import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseFreeTicks, normaliseScript, removableTokens, statusCount, STATUSES, TIMINGS } from './types';
 import { incompleteMechWhy, normaliseSetup } from './setup';
@@ -2488,6 +2488,21 @@ export interface AttackReaction {
   // is removed from the battlefield immediately". This field used to say yes,
   // and the Phase 2 build copied that onto both Reapers (audit Phase 4, G10).
   afterDestroyed: boolean;
+}
+
+// The debt a reaction leaves in shared state (`queueReactions`), the
+// defender's to answer: Emergency Smoke's Screens, a Stance changed, a Riposte
+// or Target Tracing, the last two back at the attacker. The one mapping the
+// Match Centre, the tabletop, the pad and the computer's seat all write (the
+// code audit, 2026-10-12: it was copied out four times).
+export function reactionDebt(defender: Token, reaction: AttackReaction, attacker: Token): ScriptState['reactions'][number] {
+  return reaction.smoke
+    ? { uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range, kind: 'smoke' }
+    : reaction.stance
+      ? { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'stance' }
+      : reaction.riposte
+        ? { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'riposte', fromUid: attacker.uid }
+        : { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'trace', fromUid: attacker.uid };
 }
 
 // ---------- Guidance Support (PDAM-006 RMA "Rumba" Terminal Guidance Beacon) ----------

@@ -22,7 +22,7 @@ import type { Decision, Forecast, Option } from '../seat';
 import { boxHands } from '../tasks';
 import { attackActionOf, attackOpening, boxDropSpots, boxesKnocked, interceptAgain, multiTargetHeld, terrainOf, type AttackMode, type InterceptAttempt } from '../turn';
 import type { CardAction, CombatView, DiceData, DieColor, Side, Token } from '../types';
-import { knockbackOf, type MultiTarget } from '../units';
+import { knockbackOf, reactionDebt, type MultiTarget } from '../units';
 import { largeGridOf } from '../rules';
 import type { Host } from './driver';
 import { InHand, type Odds } from './odds';
@@ -225,13 +225,7 @@ export class BotCombat {
     h.onReaction = (defender, reaction, attacker) => {
       send({
         kind: 'queueReactions', seat: this.seat,
-        items: [reaction.smoke
-          ? { uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range, kind: 'smoke' as const }
-          : reaction.stance
-            ? { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'stance' as const }
-            : reaction.riposte
-              ? { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'riposte' as const, fromUid: attacker.uid }
-              : { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'trace' as const, fromUid: attacker.uid }],
+        items: [reactionDebt(defender, reaction, attacker)],
       });
     };
     // What the other player's screen draws the attack from. On change only.

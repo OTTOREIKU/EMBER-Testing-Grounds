@@ -41,8 +41,11 @@ check('and reads it back for that same target',
 // Phase 3, so a new kind is typed once: the next check pins that it holds this one.
 check('the queue can carry a stance debt', /items: ScriptState\['reactions'\];/.test(commands), true);
 check('and so can the saved state', /'smoke' \| 'trace' \| 'stance'/.test(types), true);
-check('both senders tag it',
-  /kind: 'stance' as const/.test(match) && /kind: 'stance' as const/.test(main), true);
+// Both senders write the debt through one mapping (units.ts reactionDebt; the
+// code audit, 2026-10-12, where four copies had been).
+check('both senders tag it, through the one mapping',
+  [/kind: 'stance' \}/.test(src('units.ts')),
+    [match, main].every((s) => /items: \[reactionDebt\(defender, reaction, attacker\)\]/.test(s))], [true, true]);
 
 // ---------- The command ----------
 // The reason this is not a setStance: the lock has to keep working for everyone.

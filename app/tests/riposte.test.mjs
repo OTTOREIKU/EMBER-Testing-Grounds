@@ -76,9 +76,11 @@ check('freeplay offers it too', /r\.kind === 'riposte'/.test(main), true);
 // (audit Phase 7, P7B 6).
 check('and opens the Melee directly, since the play guide is built around an Opportunity',
   /granted: true \}\);[\s\S]{0,300}attackHelper\.start\(defender, swing, from/.test(main), true);
-check('both senders tag the debt with the attacker',
-  /kind: 'riposte' as const, fromUid: attacker\.uid/.test(match)
-  && /kind: 'riposte' as const, fromUid: attacker\.uid/.test(main), true);
+// Both senders write the debt through one mapping (units.ts reactionDebt; the
+// code audit, 2026-10-12, where four copies had been).
+check('both senders tag the debt with the attacker, through the one mapping',
+  [/kind: 'riposte', fromUid: attacker\.uid/.test(src('units.ts')),
+    [match, main].every((s) => /items: \[reactionDebt\(defender, reaction, attacker\)\]/.test(s))], [true, true]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
