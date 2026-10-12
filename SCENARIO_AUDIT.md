@@ -1,5 +1,8 @@
 # Scenario accuracy audit
 
+The scenarios have been off the tabletop since 2026-10-05. Their data stays in
+`data/scenarios.json`, and this audit describes it as it stands.
+
 All ten demo booklets by **Luna Lilly Games** were re-checked line by line against the versions
 built into EMBER Testing Grounds (`data/scenarios.json`). Text was extracted from the original
 PDFs and compared field by field: team lists and points, deployment grids and facings, terrain,
@@ -9,10 +12,12 @@ objective markers, round counts and scoring rows.
 from a booklet is one of the causes below, each recorded per scenario in the JSON and shown
 in-app when the scenario loads.
 
-Every printed team total was reconciled arithmetically against the cards the app actually places,
-and all twenty side totals now account for themselves exactly. Hold Until Extraction and
-Asymmetric Duel match their printed totals with nothing left over; the rest differ only by
-specific non-card lines or slot conflicts named below.
+Every printed team total was reconciled arithmetically against the cards the app placed at the
+time, and all twenty side totals accounted for themselves exactly. Hold Until Extraction and
+Asymmetric Duel match their printed totals with nothing left over. The rest differ by specific
+non-card lines, slot conflicts, or the substitutions named below. Two rounds of substitutions came
+after the audit (2026-07-28 and 2026-07-30) and were chosen for what a side teaches, not for its
+points, so those sides no longer match their printed totals.
 
 | Scenario | Deployment | Terrain | Markers | Rounds | Scoring |
 |---|---|---|---|---|---|
@@ -38,19 +43,25 @@ and 28 (UN), and Missile Umbrella applies a **Teaching balance adjustment of −
 list. No sum of cards can reach those printed totals, by design.
 
 **2. Loadouts with two parts in one slot.** A mech has one of each slot, but some lists give two.
-Each case is recorded and the second part is left off:
+Each case is recorded and the second part is left off. Where that left the Mech's other hand
+empty, a substitute arm now fills it (2026-07-30), chosen for the lesson the side teaches; the
+booklets print nothing there. The last column shows what the app fits.
 
-| Scenario | Unit | Booklet lists | Conflict |
-|---|---|---|---|
-| UN Core Box Demo | Red Fireline M.A.P. | R33 Sniper Rifle **and** R7 Automatic Rifle | cards 106 and 104 are both right-hand only |
-| Advanced Stealth Duel | (stealth ace) | R6SD SMG **and** R9B Tactical Rifle | cards 124 and 127 are both right-hand only |
-| Signal Relay War | Relay Marksman | AC-32 **and** R-35 Heavy Railgun | both right-hand only |
-| Signal Relay War | Network Breaker | R6SD SMG **and** R9B Tactical Rifle; OCSP Pack **and** EBS/X40 | right hand, then two backpacks |
-| Missile Umbrella | RDL Missile Artillery | ML-34 Quad Missile Rack **and** ECS-2 Cooler | both backpacks |
-| Missile Umbrella | UN Escort | M15BO Katana **and** R6SD SMG | both right-hand only |
-| Breach the Gate | UN Anchor | S9 Meteor Shield + IGX106 **and** S100 Shield | both left-hand only |
-| Power Spike | RDL Missile Brawler | ML-34 Quad Missile Rack **and** SH-15 Field Repair System | both backpacks |
-| Advanced Stealth Duel | RDL Fire Hunter | Type 55 Shield + PC-9 + Smoke Grenade (R) **and** R-35 Heavy Railgun | both right-hand only; resolved by substitution, see below |
+| Scenario | Unit | Booklet lists | Conflict | The app fits |
+|---|---|---|---|---|
+| UN Core Box Demo | Red Fireline M.A.P. | R33 Sniper Rifle **and** R7 Automatic Rifle | cards 106 and 104 are both right-hand only | the R33; left arm MDXS "Fairy" System + R6 SMG (117), whose Full-auto is a Laser Weapon |
+| Advanced Stealth Duel | UN Elite Stealth M.A.P. (Octopus Ace) | R6SD SMG **and** R9B Tactical Rifle | cards 124 and 127 are both right-hand only | the SMG; left arm K9 Nail Gun + M14BO Wakizashi (126), whose Nail has Silence |
+| Signal Relay War | Relay Marksman | AC-32 **and** R-35 Heavy Railgun | both right-hand only | the railgun; left arm Type 55 Shield + MES Beacon Launcher (064), to put a beacon down |
+| Signal Relay War | Network Breaker | R6SD SMG **and** R9B Tactical Rifle; OCSP Pack **and** EBS/X40 | right hand, then two backpacks | the rifle and the OCSP Pack; left arm MSH1 Assistance Arm (121) |
+| Missile Umbrella | RDL Missile Artillery | ML-34 Quad Missile Rack **and** ECS-2 Cooler | both backpacks | the ML-34 |
+| Missile Umbrella | UN Escort | M15BO Katana **and** R6SD SMG | both right-hand only | the Katana; left arm S100 Shield (142), see 3 |
+| Breach the Gate | UN Anchor | S9 Meteor Shield + IGX106 **and** S100 Shield | both left-hand only | the S9 Meteor Shield + IGX106 |
+| Power Spike | RDL Missile Brawler | ML-34 Quad Missile Rack **and** SH-15 Field Repair System | both backpacks | the ML-34 |
+| Advanced Stealth Duel | RDL Fire Hunter | Type 55 Shield + PC-9 + Smoke Grenade (R) **and** R-35 Heavy Railgun | both right-hand only; resolved by substitution, see below | the railgun; left arm Type 55 Shield + PC-9 Shotgun (L) (053) |
+
+Three of the substitute arms carry the Freehand tag, which matters more than it looks: Freehand
+is a tag on an arm card, not merely an open hand (4.17), so the [Two-Handed] Range +2 on the
+Octopus Ace's SMG and the Network Breaker's rifle works only with such an arm fitted.
 
 The Fire Hunter is the one case not resolved by leaving a part off. Its shield/shotgun/smoke piece
 is card 048 at 51 points and is right-hand only, which collides with the R-35 Heavy Railgun. The
@@ -60,8 +71,11 @@ lost by the substitution, so proxy it if you want that part of the teaching.
 
 **3. Two parts are missing from the community card database.** Missile Umbrella's UN Escort
 M.A.P. calls for **TM17 "Wolfhound" Guard Core** (42) and **LM108 Agile Chassis** (30). Neither
-appears in the card data the app is built from, so that mech is placed with only the parts that do
-exist. This is the one gap that is not a booklet quirk and not fixable on our side.
+appears in the card data the app is built from. This is the one gap that is not a booklet quirk.
+Since 2026-07-28 the Escort is rebuilt from the closest legal UN parts, with the reasoning in the
+scenario's notes: TM35B Bison Assault Core (098) for the Guard Core, LM213B Combat Chassis (101)
+so it keeps pace with the VIP, S100 Shield (142) in the left arm, and pilot LPA-20 Panzer, which
+avoids repeating the VIP's Pilot. 246 points.
 
 **4. Terrain and deployment that the booklets do not print.** Signal Relay War and Missile Umbrella
 describe the centre as terrain-heavy or blocked without itemising grids, so the series-standard
