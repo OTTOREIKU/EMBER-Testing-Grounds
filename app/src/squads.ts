@@ -74,8 +74,6 @@ export interface SquadCallbacks {
   onPlayTactic(side: Side, id: string): void;
   // Takes a Tactics Card back out of the squad's hand.
   onDropTactic?(side: Side, id: string): void;
-  scenarioName(id: string): string | null;
-  onShowScenario(): void;
 }
 
 // Whether every one of this Token the unit wears shows its red face (2.5.3):
@@ -311,7 +309,7 @@ export class SquadTracker {
       }
       const tac = this.tacticsBlock(side);
       if (tac) sec.appendChild(tac);
-      // A prebuilt scenario is played as printed, mixed factions and all.
+      // A ready-made game against the computer is played as built, mixed factions and all.
       for (const p of this.state.scenario ? [] : factionProblems(this.data, tokens)) {
         const bad = document.createElement('p');
         bad.className = 'squad-illegal';
@@ -494,10 +492,7 @@ export class SquadTracker {
     const tasks = normaliseTasks(s.tasks);
     const mission = s.mission ? this.data.missions.cards.find((m) => m.id === s.mission) : undefined;
     const anySecondary = tasks.secondary.s1 || tasks.secondary.s2;
-    // A scenario briefing is written into the Details panel once on load and is
-    // gone at the next click, so it gets a permanent way back in too.
-    const scenario = s.scenario ? this.cb.scenarioName(s.scenario) : null;
-    if (!mission && !anySecondary && !scenario) return null;
+    if (!mission && !anySecondary) return null;
 
     const bar = document.createElement('div');
     bar.className = 'sq-tasks';
@@ -515,8 +510,6 @@ export class SquadTracker {
     // the line under it rather than all three wrapping as one run of chips.
     const secRow = document.createElement('div');
     secRow.className = 'sq-task-row';
-
-    if (scenario) bar.appendChild(chip('Scenario', scenario, () => this.cb.onShowScenario()));
 
     if (mission) {
       bar.appendChild(chip('Main Task', mission.name, () => {

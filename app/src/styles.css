@@ -458,17 +458,11 @@ main { display: flex; flex: 1; min-height: 0; }
 .marker-blackbox circle { stroke: #e9eaec; }
 .marker-blackbox text { fill: #e9eaec; }
 
-#scn-dialog, #map-dialog, #mis-dialog, #mp-dialog, #env-dialog { position: fixed; inset: 0; z-index: 900; background: rgba(0, 0, 0, 0.62); display: flex; align-items: center; justify-content: center; }
+#map-dialog, #mis-dialog, #mp-dialog, #env-dialog { position: fixed; inset: 0; z-index: 900; background: rgba(0, 0, 0, 0.62); display: flex; align-items: center; justify-content: center; }
 .scn-row.current { outline: 1px solid var(--accent); background: var(--accent-lt); }
 /* Why a pick was refused, shown above the list. Hidden until it has something
    to say, so the dialog does not open with an empty red box. */
 .mis-note { font-size: 12px; color: var(--red, #ea6d76); background: var(--red-lt, rgba(234, 109, 118, .14)); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; }
-.scn-watch {
-  border: none; background: var(--blue-lt); color: var(--blue); font-weight: 700;
-  border-radius: var(--radius); padding: 6px 10px; font-size: 11.5px; cursor: pointer;
-  font-family: var(--font); white-space: nowrap; transition: background 0.12s, color 0.12s;
-}
-.scn-watch:hover { background: var(--blue); color: #06121a; }
 
 .zones .zone-fill { stroke: none; }
 .zones .zone-edge { fill: none; stroke-width: 2; stroke-linecap: square; }
@@ -1045,12 +1039,6 @@ main { display: flex; flex: 1; min-height: 0; }
   border-radius: var(--radius); padding: 6px 12px; cursor: pointer; font-size: 12.5px;
 }
 .map-del:hover { background: var(--red-lt); color: var(--red); }
-.map-bulk { margin-top: 10px; display: flex; justify-content: flex-end; }
-.map-bulk button {
-  border: none; background: var(--surface2); color: var(--text2);
-  border-radius: var(--radius); padding: 7px 14px; cursor: pointer; font-size: 12.5px;
-}
-.map-bulk button:hover { background: var(--red-lt); color: var(--red); }
 .scn-load {
   border: none; background: var(--accent-lt); color: var(--accent); font-weight: 600;
   border-radius: var(--radius); padding: 6px 14px; cursor: pointer; font-size: 12.5px;
@@ -1291,34 +1279,6 @@ main { display: flex; flex: 1; min-height: 0; }
 }
 #editor-bar .ed-primary:hover { filter: brightness(1.08); background: var(--accent); color: var(--on-accent); }
 #editor-bar .dim { font-size: 11px; }
-#replay-bar {
-  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;
-  column-gap: 9px; row-gap: 6px;
-  padding: 7px 12px; background: #101d24; border-bottom: 1px solid var(--blue); font-size: 12px;
-}
-#replay-bar[hidden] { display: none; }
-#replay-bar b { color: var(--blue); letter-spacing: 0.8px; font-size: 11px; font-weight: 700; }
-#replay-bar .ed-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-#replay-bar button, #replay-bar select {
-  border: none; background: #ffffff14; color: var(--text2);
-  border-radius: var(--radius-sm); padding: 5px 9px; font-size: 11.5px; cursor: pointer;
-  font-family: var(--font); transition: background 0.12s, color 0.12s;
-}
-#replay-bar button:hover:not(:disabled) { background: #ffffff26; color: var(--text); }
-#replay-bar button:disabled { opacity: 0.35; cursor: default; }
-#replay-bar .ed-primary { background: var(--blue); color: #06121a; font-weight: 700; min-width: 82px; }
-#replay-bar .ed-primary:hover { filter: brightness(1.1); background: var(--blue); color: #06121a; }
-#replay-bar .rp-pos { font-family: var(--mono); font-size: 11px; color: var(--blue); font-weight: 700; }
-#replay-bar .rp-where { font-size: 11px; color: #9fc8e4; white-space: nowrap; }
-#replay-bar .rp-speed { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text2); }
-.rp-brief .rp-read {
-  background: var(--accent-lt); border-left: 3px solid var(--accent);
-  padding: 7px 9px; border-radius: var(--radius); margin: 8px 0;
-}
-.rp-brief .rp-vp { font-family: var(--mono); font-size: 12px; margin-top: 10px; }
-.rp-brief .rp-red { color: var(--red); font-weight: 700; }
-.rp-brief .rp-blue { color: var(--blue); font-weight: 700; }
-body.replaying #board .token { cursor: default; }
 #editor-bar .ed-zone { border: 1px solid #e0175b8c; color: #ff8fb0; }
 #editor-bar .ed-zone.active { background: #e0175b; border-color: #e0175b; color: #fff; font-weight: 700; }
 #editor-bar .ed-dz-black { border: 1px solid #8b93a08c; color: #c3cad6; }

@@ -52,8 +52,6 @@ import { smokePerGroup, syncSeason } from './season';
 import { handCommand, handCount, handIds, saltFor, setHandRoom } from './tactichand';
 import { arcGrids, boxDropCellIn, boxDropCells, fitsAt, routeStops, spotInGrid, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSightLine, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot, mineSpot } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, crawlHolders, lockersOf, obstructSurcharge, tetherCap, tetherNote } from './melee';
-import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
-import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
 import { SquadTracker } from './squads';
 import { warmAllImagesWhenIdle, watchImageFallbacks } from './images';
 import { runFirstVisitPreload } from './preload';
@@ -101,7 +99,6 @@ async function init() {
   // The Firing Arc control is on: the board shows the selected unit's Forward
   // Arc (renderArc).
   let arcOn = false;
-  let replayActive = false;
   // Blasts waiting for the combat panel (startBlastWhenFree).
   const heldBlasts: { uid: number; actionId: string }[] = [];
   let pendingAttack: {
@@ -872,15 +869,6 @@ async function init() {
     },
     onDropTactic(side, id) {
       dropTactic(side, id);
-    },
-    scenarioName(id) {
-      return scenarios.find((x) => x.id === id)?.name ?? null;
-    },
-    onShowScenario() {
-      const scn = scenarios.find((x) => x.id === state.scenario);
-      if (!scn) return;
-      document.getElementById('details-body')!.replaceChildren(scenarioBriefing(scn));
-      showSideTab('details');
     },
   });
 
@@ -6639,7 +6627,6 @@ async function init() {
   }
 
   function save(): void {
-    if (replayActive) return;
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
   }
 
@@ -7311,7 +7298,7 @@ async function init() {
   // A Ground Unit standing in an Abyss Grid, however it got there. The
   // knockback resolver handles its own case with the kill credited to the
   // forcing player; what this catches is every other road - a sandbox drag,
-  // a scenario built over the card - where there is nobody to credit, so the
+  // a saved board loaded over the card - where there is nobody to credit, so the
   // destruction goes through despawn rather than recordKill. Same offered-once
   // guard as the mine sweep, for the same reason.
   const abyssSeen = new Set<number>();
@@ -7744,18 +7731,16 @@ async function init() {
         const zones = map.zones.filter((z) => z.cells.length).length;
         const spawns = map.deploy.black.length || map.deploy.white.length;
         const extra = [zones ? `${zones} zone${zones === 1 ? '' : 's'}` : '', spawns ? 'deployment zones' : ''].filter(Boolean);
-        const scn = n.startsWith('[scn] ');
         const inUse = state.map === `custom:${n}`;
         return `<div class="map-row">
           <div class="map-info">
-            <b>${escapeHtml(scn ? n.slice(6) : n)}</b>
-            <span class="dim">${scn ? 'from a scenario' : 'saved by you'} · ${pieces} piece${pieces === 1 ? '' : 's'}${extra.length ? ` · ${extra.join(' · ')}` : ''}${inUse ? ' · in use now' : ''}</span>
+            <b>${escapeHtml(n)}</b>
+            <span class="dim">${pieces} piece${pieces === 1 ? '' : 's'}${extra.length ? ` · ${extra.join(' · ')}` : ''}${inUse ? ' · in use now' : ''}</span>
           </div>
           <button class="map-del" data-name="${escapeHtml(n)}">Delete</button>
         </div>`;
       })
       .join('');
-    const scnCount = names.filter((n) => n.startsWith('[scn] ')).length;
     dlg.innerHTML = `<div class="scn-panel">
       <button id="map-close" class="dlg-close" title="Close">✕</button>
       <div class="inv-head"><b>Map settings</b></div>
@@ -7787,10 +7772,9 @@ async function init() {
       </div>
       ${
         names.length
-          ? `<p class="dim">A saved map holds its terrain and any zones you painted into it. Those zones show up in the toolbar's Zones list, so you can put them on any board. Loading a scenario saves its map here too; deleting one only removes it from this list, the scenario itself still loads fine.</p>
-             <div class="scn-list">${rows}</div>
-             ${scnCount > 1 ? `<div class="map-bulk"><button id="map-del-scn">Delete all ${scnCount} scenario maps</button></div>` : ''}`
-          : '<p class="dim">No saved maps yet. Build one in the map editor, where you can also paint objective zones and deployment zones, or load a scenario.</p>'
+          ? `<p class="dim">A saved map holds its terrain and any zones you painted into it. Those zones show up in the toolbar's Zones list, so you can put them on any board.</p>
+             <div class="scn-list">${rows}</div>`
+          : '<p class="dim">No saved maps yet. Build one in the map editor, where you can also paint objective zones and deployment zones.</p>'
       }
     </div>`;
     dlg.addEventListener('click', (ev) => {
@@ -7897,7 +7881,7 @@ async function init() {
         const name = b.dataset.name!;
         const inUse = state.map === `custom:${name}`;
         const ok = await confirmDialog({
-          title: `Delete "${name.startsWith('[scn] ') ? name.slice(6) : name}"?`,
+          title: `Delete "${name}"?`,
           body: inUse
             ? 'This map is on the board right now, so the board will go back to an empty grid. Units and markers stay where they are.'
             : 'The saved map is removed from this browser. Units on the board are left alone.',
@@ -7907,16 +7891,6 @@ async function init() {
         if (ok) dropMaps([name]);
       }),
     );
-    dlg.querySelector('#map-del-scn')?.addEventListener('click', async () => {
-      const victims = names.filter((n) => n.startsWith('[scn] '));
-      const ok = await confirmDialog({
-        title: `Delete all ${victims.length} scenario maps?`,
-        body: 'These are the boards saved automatically when you loaded a scenario. Loading that scenario again recreates its map, so nothing is lost for good.',
-        confirmLabel: 'Delete them',
-        danger: true,
-      });
-      if (ok) dropMaps(victims);
-    });
     document.body.appendChild(dlg);
   }
 
@@ -8281,8 +8255,8 @@ async function init() {
     const setup = normaliseSetup(state.setup);
     // Two levels. The map and zone pickers are open during the opening stage,
     // since that is where the battlefield is agreed, then frozen. The tools that
-    // replace the whole board are shut for the entire game, because a Mission or
-    // Scenario would swap the map and units out from under the lock.
+    // replace the whole board are shut for the entire game, because they would
+    // swap the map and units out from under the lock.
     const locked = battlefieldLocked(setup);
     // The map is settled first, but the Main Task is chosen AFTER the roll
     // and before the edge (ruling I3), so the Missions dialog and the zone
@@ -8295,7 +8269,7 @@ async function init() {
     zoneSelect.title = tl ? why : '';
     const zoneBtn = document.getElementById('btn-zones') as HTMLButtonElement | null;
     if (zoneBtn) zoneBtn.disabled = tl && !state.zoneSet;
-    for (const id of ['btn-scenarios', 'btn-mapedit', 'btn-mapmanage', 'btn-import-squad']) {
+    for (const id of ['btn-mapedit', 'btn-mapmanage', 'btn-import-squad']) {
       const b = document.getElementById(id) as HTMLButtonElement | null;
       if (!b) continue;
       b.disabled = locked;
@@ -8660,286 +8634,11 @@ async function init() {
   }
   document.getElementById('btn-inventory')!.addEventListener('click', () => inventory.openDialog());
 
-  // ---------- scenarios ----------
-
-  const scenarios = await loadScenarios();
-  const replays = await loadReplays();
-
-  function scenarioBriefing(scn: Scenario): HTMLElement {
-    const div = document.createElement('div');
-    div.className = 'scn-brief';
-    div.innerHTML = `<h3>${escapeHtml(scn.name)}</h3>
-      ${scn.subtitle ? `<p class="dim">${scn.subtitle}</p>` : ''}
-      ${scn.description ? `<p>${scn.description}</p>` : ''}
-      ${scn.rounds ? `<p><b>${scn.rounds} rounds.</b></p>` : ''}
-      ${
-        scn.scoring?.length
-          ? `<h4>Scoring</h4><ul>${scn.scoring.map((s) => `<li><b>${s.points}</b> ${escapeHtml(s.name)}${s.note ? ` <span class="dim">(${escapeHtml(s.note)})</span>` : ''}</li>`).join('')}</ul>`
-          : ''
-      }
-      ${scn.simplifications?.length ? `<h4>First-run simplifications</h4><ul>${scn.simplifications.map((s) => `<li>${s}</li>`).join('')}</ul>` : ''}
-      ${scn.notes?.length ? `<h4>Notes</h4><ul>${scn.notes.map((s) => `<li>${s}</li>`).join('')}</ul>` : ''}`;
-    return div;
-  }
-
-  // ---------- scripted replay ----------
-
-  const replayBar = document.getElementById('replay-bar')!;
-  let replay: ReplayPlayer | null = null;
-  let beforeReplay: string | null = null;
-
-  function replayNarration(script: ReplayScript, step: ReplayStep | null, tally: ReplayTally): HTMLElement {
-    const div = document.createElement('div');
-    div.className = 'scn-brief rp-brief';
-    if (!step) {
-      div.innerHTML = `<h3>${escapeHtml(script.title)}</h3>${(script.intro ?? []).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}
-        <p class="dim">Press play, or step through one beat at a time.</p>`;
-      return div;
-    }
-    const vp = `<p class="rp-vp"><b>VP</b> <span class="rp-red">Red ${tally.vp.s2}</span> · <span class="rp-blue">Blue ${tally.vp.s1}</span></p>`;
-    div.innerHTML = `<h3>${escapeHtml(step.title)}</h3>
-      <p class="dim">Round ${step.round} · ${PHASES[step.phase] ?? ''} Phase</p>
-      ${(step.say ?? []).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}
-      ${step.dice?.reading ? `<p class="rp-read"><b>Reading the dice.</b> ${escapeHtml(step.dice.reading)}</p>` : ''}
-      ${tally.scored.length ? vp : ''}`;
-    return div;
-  }
-
-  function renderReplayBar(): void {
-    if (!replay) {
-      replayBar.hidden = true;
-      return;
-    }
-    const r = replay;
-    const at = r.index;
-    const step = at >= 0 ? r.script.steps[at] : null;
-    replayBar.hidden = false;
-    replayBar.innerHTML = `
-      <b>DEMO</b>
-      <div class="ed-line">
-        <button id="rp-prev" title="Previous step"${at < 0 ? ' disabled' : ''}>◀</button>
-        <button id="rp-play" class="ed-primary" title="${r.playing ? 'Pause' : 'Play'}">${r.playing ? '❚❚ Pause' : '▶ Play'}</button>
-        <button id="rp-next" title="Next step"${at >= r.total - 1 ? ' disabled' : ''}>▶❙</button>
-        <span class="rp-pos">${at + 1} / ${r.total}</span>
-        <span class="rp-where">${step ? `R${step.round} · ${PHASES[step.phase] ?? ''}` : 'ready'}</span>
-        <span class="ed-gap"></span>
-        <label class="rp-speed">Speed
-          <select id="rp-speed">
-            <option value="5000"${r.stepSpeed === 5000 ? ' selected' : ''}>Slow</option>
-            <option value="3200"${r.stepSpeed === 3200 ? ' selected' : ''}>Normal</option>
-            <option value="1800"${r.stepSpeed === 1800 ? ' selected' : ''}>Brisk</option>
-          </select>
-        </label>
-        <button id="rp-restart" title="Back to the start">↺ Restart</button>
-        <button id="rp-exit">Exit demo</button>
-      </div>`;
-    replayBar.querySelector('#rp-prev')!.addEventListener('click', () => r.prev());
-    replayBar.querySelector('#rp-next')!.addEventListener('click', () => {
-      r.pause();
-      r.next();
-      renderReplayBar();
-    });
-    replayBar.querySelector('#rp-play')!.addEventListener('click', () => {
-      if (r.playing) r.pause();
-      else r.play();
-      renderReplayBar();
-    });
-    replayBar.querySelector('#rp-restart')!.addEventListener('click', () => {
-      r.pause();
-      r.goto(-1);
-      tray.clear();
-      document.getElementById('details-body')!.replaceChildren(replayNarration(r.script, null, r.tally));
-      renderReplayBar();
-    });
-    replayBar.querySelector('#rp-exit')!.addEventListener('click', () => stopReplay());
-    replayBar.querySelector<HTMLSelectElement>('#rp-speed')!.addEventListener('change', (ev) => {
-      r.setSpeed(Number((ev.target as HTMLSelectElement).value));
-      renderReplayBar();
-    });
-  }
-
-  function startReplay(scn: Scenario, script: ReplayScript): void {
-    if (editor.active) exitEditor();
-    beforeReplay = JSON.stringify(state);
-    replayActive = true;
-    const result = instantiateScenario(scn, state, data);
-    state.tokens = result.tokens;
-    // A different board: every earlier snapshot belongs to a game that is gone.
-    clearHistory();
-    state.markers = result.markers;
-    state.smoke = [];
-    state.sideNames = result.sideNames;
-    state.map = result.mapKey;
-    // Scenarios are authored on the printed board: any larger size or authored
-    // zones left over from the previous map would put the demo on the wrong
-    // battlefield entirely.
-    delete state.grids;
-    delete state.zones;
-    delete state.deployZones;
-    state.removedTerrain = [];
-    state.scenario = scn.id;
-    state.round = { n: 1, phase: 0, firstPlayer: 's1' };
-    state.commandTokens = { s1: 0, s2: 0 };
-    state.scale = 'skirmish';
-    state.roundLimit = scn.rounds ?? 3;
-    selectedUid = null;
-    populateMapSelect();
-    board.panEnabled = true;
-
-    replay = new ReplayPlayer(script, state, data, {
-      onState: () => {
-        board.renderTokens(state);
-        board.renderMarkers(state.markers ?? []);
-        board.renderTaskItems(normaliseTasks(state.tasks).items, zoneCentre);
-        squadTracker.update(state, null);
-        roundTracker.update(state);
-      },
-      onStep: (step, _i, _n, tally) => {
-        document.getElementById('details-body')!.replaceChildren(replayNarration(script, step, tally));
-        showSideTab('details');
-        if (step.dice?.groups?.length) tray.showGroups(step.dice.groups);
-        else if (step.dice?.roll?.length) tray.showFixed(step.dice.roll);
-        else tray.clear();
-        const first = (step.focus ?? [])[0];
-        if (first) {
-          const t = state.tokens.find((x) => {
-            const raw = first.includes(':') ? first.split(':')[1] : first;
-            const side = first.includes(':') ? first.split(':')[0] : null;
-            return (!side || x.side === side) && x.label.toLowerCase().includes(raw.trim().toLowerCase());
-          });
-          board.setSelected(t?.uid ?? null);
-        } else {
-          board.setSelected(null);
-        }
-        renderReplayBar();
-      },
-      onFinish: () => {
-        document.getElementById('details-body')!.replaceChildren(replayNarration(script, null, replay!.tally));
-        renderReplayBar();
-      },
-    });
-    renderAll();
-    replay.goto(-1);
-    tray.clear();
-    document.getElementById('details-body')!.replaceChildren(replayNarration(script, null, replay.tally));
-    showSideTab('details');
-    renderReplayBar();
-    document.body.classList.add('replaying');
-  }
-
-  function stopReplay(): void {
-    replay?.stop();
-    replay = null;
-    replayActive = false;
-    replayBar.hidden = true;
-    document.body.classList.remove('replaying');
-    tray.clear();
-    board.setSelected(null);
-    if (beforeReplay) {
-      const prior = migrateState(JSON.parse(beforeReplay), data);
-      if (prior) state = prior;
-      beforeReplay = null;
-    }
-    selectedUid = null;
-    populateMapSelect();
-    panel.clear();
-    document.getElementById('details-body')!.replaceChildren();
-    showSideTab('squad');
-    renderAll();
-  }
-
   // A game against the computer is set up here and played on the Match
   // Centre's table (solosetup.ts; AI-OPPONENT-PLAN.md, M4.4). This board is
   // left as it stands: it is still here when the player comes back.
   document.getElementById('btn-solo')!.addEventListener('click', () => {
     openSoloSetup(data, (address) => { location.href = address; });
-  });
-
-  // ARCHIVED (OTTO, 2026-10-05): the Setup tab no longer offers Scenarios, so
-  // there is no row to bind (table/index.html keeps it, commented out). The
-  // picker below and its replays stay as they were, for the day it returns.
-  document.getElementById('btn-scenarios')?.addEventListener('click', () => {
-    document.getElementById('scn-dialog')?.remove();
-    const dlg = document.createElement('div');
-    dlg.id = 'scn-dialog';
-    dlg.innerHTML = `<div class="scn-panel">
-      <button id="scn-close" class="dlg-close" title="Close">✕</button>
-      <div class="inv-head"><b>Scenarios</b></div>
-      ${scenarios.length ? '' : '<p class="dim">No scenarios found (data/scenarios.json missing).</p>'}
-      <div class="scn-list">${scenarios
-        .map(
-          (s, i) => `<div class="scn-row">
-            <div class="scn-info"><b>${escapeHtml(s.name)}</b><br><span class="dim">${escapeHtml(s.subtitle ?? '')}</span></div>
-            ${replays.some((r) => r.scenarioId === s.id) ? `<button data-i="${i}" class="scn-watch" title="Watch this game played out step by step">▶ Watch</button>` : ''}
-            <button data-i="${i}" class="scn-load">Load</button>
-          </div>`,
-        )
-        .join('')}</div>
-    </div>`;
-    dlg.addEventListener('click', (ev) => {
-      if (ev.target === dlg) dlg.remove();
-    });
-    dlg.querySelector('#scn-close')!.addEventListener('click', () => dlg.remove());
-    dlg.querySelectorAll<HTMLButtonElement>('.scn-watch').forEach((b) =>
-      b.addEventListener('click', async () => {
-        const scn = scenarios[Number(b.dataset.i)];
-        const script = replays.find((r) => r.scenarioId === scn.id);
-        if (!script) return;
-        if (state.tokens.length) {
-          const ok = await confirmDialog({
-            title: `Watch "${script.title}"?`,
-            body: 'This replaces whatever is on the board with the scenario setup, then plays the game out step by step.',
-            confirmLabel: 'Watch it',
-          });
-          if (!ok) return;
-        }
-        dlg.remove();
-        startReplay(scn, script);
-      }),
-    );
-    dlg.querySelectorAll<HTMLButtonElement>('.scn-load').forEach((b) =>
-      b.addEventListener('click', async () => {
-        const scn = scenarios[Number(b.dataset.i)];
-        if (state.tokens.length) {
-          const ok = await confirmDialog({
-            title: `Load "${scn.name}"?`,
-            body: 'This replaces the units, terrain and objective markers currently on the board.',
-            confirmLabel: 'Load scenario',
-          });
-          if (!ok) return;
-        }
-        const result = instantiateScenario(scn, state, data);
-        state.tokens = result.tokens;
-        state.markers = result.markers;
-        state.smoke = [];
-        state.sideNames = result.sideNames;
-        state.map = result.mapKey;
-        // Scenarios are authored on the printed board: any larger size or authored
-        // zones left over from the previous map would put the demo on the wrong
-        // battlefield entirely.
-        delete state.grids;
-        delete state.zones;
-        delete state.deployZones;
-        state.removedTerrain = [];
-        state.scenario = scn.id;
-        state.round = { n: 1, phase: 0, firstPlayer: 's1' };
-        state.commandTokens = { s1: 0, s2: 0 };
-        state.roundLimit = scn.rounds ?? 5;
-        selectedUid = null;
-        populateMapSelect();
-        renderAll();
-        panel.clear();
-        document.getElementById('details-body')!.replaceChildren(scenarioBriefing(scn));
-        showSideTab('details');
-        dlg.remove();
-        // No popup on load. What is left in `unmatched` is a second backpack or
-        // a second same-hand weapon the booklet lists but a Mech has no slot
-        // for, which nothing can fix, so raising it every time only worries a
-        // player about a squad that is already correct. The notes stay in
-        // scenarios.json for anyone reading the data.
-      }),
-    );
-    document.body.appendChild(dlg);
   });
 
   function clearUnits(): void {
@@ -9117,7 +8816,7 @@ async function init() {
       // A guest's table controls go quiet: the host sets up the table, and a
       // control that only mutates one board is how the playtest desynced.
       const guest = !!view.room && !view.host;
-      for (const id of ['map-select', 'zone-select', 'btn-missions', 'btn-scenarios', 'btn-mapedit', 'btn-mapmanage', 'btn-import', 'btn-clear']) {
+      for (const id of ['map-select', 'zone-select', 'btn-missions', 'btn-mapedit', 'btn-mapmanage', 'btn-import', 'btn-clear']) {
         const el = document.getElementById(id) as HTMLButtonElement | HTMLSelectElement | null;
         if (!el) continue;
         el.disabled = guest;

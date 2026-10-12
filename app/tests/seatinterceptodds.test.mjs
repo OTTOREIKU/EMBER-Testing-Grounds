@@ -6,7 +6,6 @@
 // interceptor trying while it has Interception Tokens left (FAQ M5), each try
 // at the combat window's own odds of destroying it. Played on the Power Spike
 // squads (RDL's Hyena Missiles against UN's Porcupine CIWS) on Key Facility.
-import { readFileSync } from 'node:fs';
 import { botTable, loadEngine } from './_engine.mjs';
 
 let pass = 0, fail = 0;
@@ -19,19 +18,22 @@ const check = (name, got, want) => {
 console.log('A launch at its Interception odds\n');
 
 const { M, data } = await loadEngine('seatinterceptodds', ["export * as SEAT from '../src/seat';", "export * as AI from '../src/ai/index';", "export * as HUD from '../src/matchhud';", "export * as ODDS from '../src/ai/odds';"]);
-const SLOT_KEYS = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack', 'pilot'];
-const scripted = JSON.parse(readFileSync(new URL('../../data/scenarios.json', import.meta.url), 'utf8'));
-const squadOf = (ref) => {
-  const [id, s] = ref.split(':');
-  const side = scripted.find((x) => x.id === id).sides[s];
-  return {
-    name: ref, faction: 'RDL', points: 0,
-    mechs: side.units.filter((u) => u.kind === 'mech').map((u) => ({ name: u.name, loadout: Object.fromEntries(SLOT_KEYS.filter((k) => u[k]).map((k) => [k, u[k]])) })),
-    drones: side.units.filter((u) => u.kind === 'drone' && u.cardId && data.byId.get(u.cardId)).map((u) => ({ cardId: u.cardId })),
-  };
+// The two sides of the old Power Spike demo board, as its data held them (the
+// demo scenarios left the repo on 2026-10-12): UN's Burst Striker with a Raven
+// and a Porcupine, RDL's Railgun Gunner and Missile Brawler with a Hyena.
+data.solo.squads['io-s1'] = {
+  name: 'power-spike:s1', faction: 'RDL', points: 0,
+  mechs: [{ name: 'UN Burst Striker', loadout: { torso: '091', chasis: '101', leftHand: '540', rightHand: '145', backpack: '081', pilot: 'LPA-19' } }],
+  drones: [{ cardId: '166' }, { cardId: '160' }],
 };
-data.solo.squads['io-s1'] = squadOf('power-spike:s1');
-data.solo.squads['io-s2'] = squadOf('power-spike:s2');
+data.solo.squads['io-s2'] = {
+  name: 'power-spike:s2', faction: 'RDL', points: 0,
+  mechs: [
+    { name: 'RDL Railgun Gunner', loadout: { torso: '012', chasis: '021', leftHand: '032', rightHand: '030', backpack: '002', pilot: 'FPA-01' } },
+    { name: 'RDL Missile Brawler', loadout: { torso: '012', chasis: '020', leftHand: '023', backpack: '004', pilot: 'FPA-14' } },
+  ],
+  drones: [{ cardId: '079' }],
+};
 const p = M.AI.makeTactician();
 const t = botTable(M, data, { ...data.solo.scenarios[0], id: 'io-7', seats: { s1: 'io-s1', s2: 'io-s2' }, mission: 'blackbox-key-facilities' }, { seed: 7, policies: { s1: p, s2: p }, glue: M.HUD.glueAfter });
 let hit = null;

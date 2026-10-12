@@ -1,14 +1,14 @@
 // The board dimension is data (E1), and two things guard that.
 //
-// 1. THE FIVE GRID-REF PARSERS. data.ts has the canonical one; tasks.ts holds
+// 1. THE FOUR GRID-REF PARSERS. data.ts has the canonical one; tasks.ts holds
 //    TWO private copies because that module is compiled standalone by the test
-//    slices (the imports-nothing-but-types rule), and matchhud.ts and
-//    scenarios.ts hold one each. They cannot be deduplicated into an import
+//    slices (the imports-nothing-but-types rule), and matchhud.ts holds one. They cannot be deduplicated into an import
 //    without breaking the slices, so they are pinned in step instead: if one
 //    widens to a bigger board and another does not, a zone ref silently stops
 //    resolving on exactly one code path, which no behavioural test would catch.
-//    The plan said there were THREE. There are five; the extra two were found
-//    by grepping for the old character class after fixing the known ones.
+//    The plan said there were THREE. There were five, the extra two found by
+//    grepping for the old character class after fixing the known ones; the
+//    demo scenarios took theirs with them (2026-10-12).
 //
 // 2. THE SIZE CONSTANT IS GONE. board.ts must not reintroduce a module-level
 //    CELLS/SIZE: the whole point of E1 is that no module caches the board's
@@ -34,7 +34,6 @@ const PARSERS = [
   { file: 'tasks.ts', fn: 'gridRef', clamps: false },
   { file: 'tasks.ts', fn: 'zoneRef', clamps: true },
   { file: 'matchhud.ts', fn: 'zref', clamps: false },
-  { file: 'scenarios.ts', fn: 'parseGrid', clamps: true },
 ];
 
 const bodyOf = (file, fn) => {
@@ -49,7 +48,7 @@ const bodyOf = (file, fn) => {
 const CLASS = /\[A-Ra-r\]/;
 const BOUND = /> 17\b/;
 
-check('all five parsers are still present', PARSERS.filter((p) => bodyOf(p.file, p.fn)).length, 5);
+check('all four parsers are still present', PARSERS.filter((p) => bodyOf(p.file, p.fn)).length, 4);
 
 for (const p of PARSERS) {
   const body = bodyOf(p.file, p.fn);
@@ -59,7 +58,7 @@ for (const p of PARSERS) {
 }
 
 // Nothing anywhere may still carry the printed-board character class.
-for (const f of ['data.ts', 'tasks.ts', 'matchhud.ts', 'scenarios.ts', 'main.ts', 'commands.ts', 'board.ts']) {
+for (const f of ['data.ts', 'tasks.ts', 'matchhud.ts', 'main.ts', 'commands.ts', 'board.ts']) {
   ok(`${f} has no A-L grid-ref class left`, !/\[A-La-l\]/.test(src(f)));
 }
 

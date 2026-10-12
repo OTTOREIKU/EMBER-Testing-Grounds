@@ -726,7 +726,7 @@ export class Board {
       this.attachInspect(g, {
         title: `${m.kind.charAt(0).toUpperCase()}${m.kind.slice(1)} marker`,
         sub: `Grid ${String.fromCharCode(65 + m.col)}${m.row + 1}`,
-        lines: ['Scenario objective. The scenario briefing says how it scores.'],
+        lines: ['Clear on the Setup tab takes it off the board.'],
       });
       this.gMarkers.appendChild(g);
     }

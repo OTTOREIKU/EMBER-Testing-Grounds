@@ -1079,8 +1079,6 @@ function mountSide(): void {
       startTacticPick(side, id);
       render();
     },
-    scenarioName: () => null,
-    onShowScenario: () => {},
   });
   panel = new Panel(data, {
     world: () => ({ tokens: state.tokens, terrain: terrainNow() }),

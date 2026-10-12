@@ -1750,7 +1750,7 @@ export function protectionFor(
   // board OTTO hit: 1-inch terrain between A and C gives nothing.
   //
   // `providesProtection` already carries the answer and is set false for both
-  // Container sizes wherever terrain is built (mapeditor.ts, scenarios.ts). It
+  // Container sizes wherever terrain is built (mapeditor.ts). It
   // simply was not asked, so the little green boxes were handing the defender
   // +2 White while the note beside them read "obstructed by terrain >=2\"".
   // The Barricades stand as terrain here too and pay Terrain Protection like

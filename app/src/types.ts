@@ -1692,7 +1692,7 @@ export const SCALES: ScaleDef[] = [
 // 1200-point games and possibly an extra player -- and 18x18 is ours, for
 // four-player tables where 12x12 would sit four squads in each other's laps.
 //
-// ABSENCE IS THE PRINTED BOARD. Every save, checkpoint and scenario written
+// ABSENCE IS THE PRINTED BOARD. Every save and checkpoint written
 // before this field existed has no `grids` and must keep playing as a 12x12
 // board forever, so `gridsOf` treats anything that is not exactly 16 or 18 as
 // 12 rather than trusting the number. That also makes it safe against a
@@ -1890,6 +1890,8 @@ export interface GameState {
   ready?: Partial<Record<Side, boolean>>;
   mission?: string | null;
   tasks?: TaskState | null;
+  // The ready-made game against the computer this table is (data/solo.json): its
+  // squads are played as built, mixed factions and all.
   scenario?: string | null;
   setup?: SetupState | null;
   showZones?: boolean;
@@ -1898,7 +1900,7 @@ export interface GameState {
   boardTheme?: string;
   // How strongly the board's art is painted, 0.2 to 1. A display setting like
   // boardTheme: it rides in the state so it survives a reload and a shared
-  // scenario, and no rule reads it.
+  // board, and no rule reads it.
   boardArt?: number;
   // The one colour the grid lines, letters and numbers are drawn in, #rrggbb.
   gridColour?: string;

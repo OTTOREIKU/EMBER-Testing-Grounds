@@ -55,7 +55,7 @@
             </select>
           </div>
           <button class="setup-row" id="btn-mapedit" data-tip-title="Map editor" data-tip="Builds a custom map from the official terrain pieces.|Paint zones and deployment strips onto it too.">Map editor<span class="ct">build a map</span></button>
-          <button class="setup-row" id="btn-mapmanage" data-tip-title="Manage maps" data-tip="Delete saved and scenario maps you no longer want in the list.">Manage maps<span class="ct">saved &amp; scenario</span></button>
+          <button class="setup-row" id="btn-mapmanage" data-tip-title="Manage maps" data-tip="Delete saved maps you no longer want in the list.">Manage maps<span class="ct">saved maps</span></button>
 
           <div class="field">
             <label for="zone-select">Zones</label>
@@ -66,10 +66,6 @@
           <p class="setup-eyebrow">Battlefield</p>
           <button class="setup-row" id="btn-missions" data-tip-title="Missions" data-tip="Reads a Main Task card and puts its zones on the board.|Locked once the battlefield is set, because Tasks are chosen before the roll (3.1.1).">Missions<span class="ct">Main Task</span></button>
           <button class="setup-row" id="btn-environments" data-tip-title="Environment Cards" data-tip="Lays an Environment Card on a Grid, giving it a special effect.|How many you may place is printed on the Battlefield Card (5.4.1).">Environments<span class="ct">Grid effects</span></button>
-          <!-- ARCHIVED (OTTO, 2026-10-05: "hide the Scenarios button and popup / functionality from tabletop ... keep
-               the functionality and data archived"): the Scenarios row stood here. Its picker (main.ts, #btn-scenarios),
-               the replays it offered and data/scenarios.json are all kept; putting this row back brings them back:
-               <button class="setup-row" id="btn-scenarios" data-tip-title="Scenarios" data-tip="Loads a demo scenario complete with squads, terrain and objectives.|Good for trying a mechanic without building a list first.">Scenarios<span class="ct">demo boards</span></button> -->
           <button class="setup-row setup-cta" id="btn-solo" data-tip-title="Play the computer" data-tip="A full game against a computer opponent: the squads, the map and the Main Task are set for you.|It opens on the Match Centre's table, with no account and no connection needed.">Play the computer<span class="ct">solo game</span></button>
 
           <p class="setup-eyebrow">Board</p>
@@ -100,7 +96,6 @@
       <div id="board-col">
         <div id="round-tracker"></div>
         <div id="smoke-prompt" hidden></div>
-        <div id="replay-bar" hidden></div>
         <div id="board-wrap">
           <div class="zone-ctrl">
             <button id="btn-zones" data-tip-title="Zone overlay" data-tip="Shows or hides the tactical zone and deployment overlay drawn on the board." aria-pressed="false">Zones</button>

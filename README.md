@@ -71,10 +71,8 @@ account.
 
 The game, its artwork and its rules belong to **Beijing Queti Technology Co., Ltd.** The card
 database and art are a mix of **watermelon02's** community squad builder and Queti's official card
-pages. The ten demo scenarios in the data are **Luna Lilly Games'** work, which I found thanks to
-**u/Soavon** sharing them on Reddit; they are off the tabletop for now. This is an unofficial fan
-tool, made for learning and not for profit. Full details in [ATTRIBUTION.md](ATTRIBUTION.md), and
-the scenario conversions are audited line by line in [SCENARIO_AUDIT.md](SCENARIO_AUDIT.md).
+pages. This is an unofficial fan tool, made for learning and not for profit. Full details in
+[ATTRIBUTION.md](ATTRIBUTION.md).
 
 If you play and notice something here is wrong, please tell me. I would rather fix it than have
 someone learn a rule incorrectly from my tool.

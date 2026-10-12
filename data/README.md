@@ -93,4 +93,3 @@ Images: `assets/cards/en/<id>.webp` (373 of the 425 cards), token art `assets/to
 |---|---|
 | `solo.json` | the ready-made games against the computer: map, Main Task, length and squads |
 | `ai/judge-v4.json` | the Ace's learned judge of a position |
-| `scenarios.json`, `replays.json` | the ten demo scenarios and their scripted play-throughs; off the tabletop since 2026-10-05 and kept for later (see [SCENARIO_AUDIT.md](../SCENARIO_AUDIT.md)) |

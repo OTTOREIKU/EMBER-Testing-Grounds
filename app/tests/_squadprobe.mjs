@@ -178,30 +178,8 @@ function squadOf(rng, budgetNow, want) {
   return { name: `${faction} ${total}`, faction, points: total, mechs, drones };
 }
 
-// PROBE_SET=scenarios (M12, the custom squad set): both squads drawn from squads players built, not made at
-// random: the two of each scripted scenario (data/scenarios.json), each as its booklet placed it (a unit with
-// no card in the database left out), and the two Raid starters.
-const SLOT_KEYS = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack', 'pilot'];
-const SET = process.env.PROBE_SET ? (() => {
-  const scenarios = JSON.parse(readFileSync(new URL('../../data/scenarios.json', import.meta.url), 'utf8'));
-  const out = [];
-  for (const sc of scenarios) {
-    for (const seat of ['s1', 's2']) {
-      const side = sc.sides?.[seat];
-      if (!side) continue;
-      const mechs = side.units.filter((u) => u.kind === 'mech').map((u) => ({ name: u.name, loadout: Object.fromEntries(SLOT_KEYS.filter((k) => u[k]).map((k) => [k, u[k]])) }));
-      const drones = side.units.filter((u) => u.kind === 'drone' && u.cardId && data.byId.get(u.cardId)).map((u) => ({ cardId: u.cardId }));
-      const torso = mechs[0] ? data.byId.get(mechs[0].loadout.torso) : null;
-      const points = mechs.reduce((n, m) => n + Object.values(m.loadout).reduce((a, id) => a + price(id), 0), 0) + drones.reduce((n, d) => n + price(d.cardId), 0);
-      out.push({ name: `${sc.id} ${seat}`, faction: torso ? data.factionOf(torso) : 'RDL', points, mechs, drones });
-    }
-  }
-  for (const id of ['raid-rdl', 'raid-un']) if (data.solo.squads[id]) out.push({ ...data.solo.squads[id], name: id });
-  // The scenarios are RDL and UN only: two squads of each other allegiance, made at random once and kept
-  // (their draws are named, so they are the same squads in every run).
-  for (const f of ['GOF', 'PD', 'COLLABORATION']) for (const n of [1, 2]) out.push({ ...squadOf(new M.AI.Rng(`set:${f}:${n}`), 450, f), name: `set ${f} ${n}` });
-  return out;
-})() : null;
+// (PROBE_SET=scenarios, the M12 custom set built from the demo scenarios, left with them on 2026-10-12: the
+// community squads, PROBE_COMMUNITY, are the custom set now.)
 
 // PROBE_COMMUNITY=<file> (2026-10-04, OTTO's Discord saves): both squads drawn from those squads ({ name: SoloSquad },
 // tests/_community.mjs), within PROBE_MIN and PROBE_MAX points; each game's line names them.
@@ -602,8 +580,8 @@ for (let seed = from; seed <= to; seed++) {
     id: `probe-${seed}`, map: rng.pick(MAPS), mission: rng.pick(MISSIONS), rounds: 5, secondaries, tactics: false,
     seats: { s1: `probe-s1`, s2: `probe-s2` },
   };
-  data.solo.squads['probe-s1'] = COMMUNITY ? rng.pick(COMMUNITY) : SET ? rng.pick(SET) : squadOf(rng, budget);
-  data.solo.squads['probe-s2'] = COMMUNITY ? rng.pick(COMMUNITY) : SET ? rng.pick(SET) : squadOf(rng, budget);
+  data.solo.squads['probe-s1'] = COMMUNITY ? rng.pick(COMMUNITY) : squadOf(rng, budget);
+  data.solo.squads['probe-s2'] = COMMUNITY ? rng.pick(COMMUNITY) : squadOf(rng, budget);
   if (FIXED) data.solo.squads[(process.env.SWAP ? seed % 2 === 0 : seed % 2 === 1) ? 'probe-s1' : 'probe-s2'] = FIXED;
   if (SUBJECTS) data.solo.squads[(process.env.SWAP ? seed % 2 === 0 : seed % 2 === 1) ? 'probe-s1' : 'probe-s2'] = SUBJECTS[seed % SUBJECTS.length];
   // DUMP=1: the game's table and both squads as JSON (to stage it in a test).

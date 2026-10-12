@@ -418,12 +418,12 @@ ok('and reads the working set for the base when it is open', /editor\.task === n
 ok('configureTable apply normalises zones off the wire', /const zs = \(Array\.isArray\(cmd\.zones\)/.test(commands));
 ok('and deployZones', /const dz = \{ black: refs\(cmd\.deployZones\?\.black\)/.test(commands));
 
-// 3. Every reset path clears the derived board trio. clearTerrain, clearZones,
-//    deleting the map, and BOTH scenario loaders each left grids/zones/
-//    deployZones standing from the previous map.
+// 3. Every reset path clears the derived board trio. clearTerrain, clearZones
+//    and deleting the map each left grids/zones/deployZones standing from the
+//    previous map (and so did the demo scenarios' two loaders, gone 2026-10-12).
 const trioClears = (main.match(/delete state\.deployZones;/g) ?? []).length;
-ok('at least five reset paths clear deployZones (clears, delete-map, two scenario loads)', trioClears >= 5);
-ok('and the map size goes with the map', (main.match(/delete state\.grids;/g) ?? []).length >= 4);
+ok('at least three reset paths clear deployZones (the two clears and deleting the map)', trioClears >= 3);
+ok('and the map size goes with the map', (main.match(/delete state\.grids;/g) ?? []).length >= 2);
 
 // 4. The Match Centre overlay decides zones and deployment INDEPENDENTLY: a
 //    map may author deployment and no zones, and what is drawn must be what

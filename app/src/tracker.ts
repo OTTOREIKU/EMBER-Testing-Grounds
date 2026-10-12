@@ -243,7 +243,6 @@ export class RoundTracker {
       lines: [
         'A standard game runs 5 rounds, then it ends and you total Victory Points.',
         'The rulebook sets the same 5 rounds for every battle scale. Skirmish, Standard and Large differ only in the points you may spend, not in how long the game lasts.',
-        'Loading a scenario sets this to that scenario’s printed length, so change it back here when you go back to a normal game.',
       ],
     });
     limitSel.addEventListener('change', () => {
@@ -275,7 +274,7 @@ export class RoundTracker {
         over
           ? `This game was set to ${limit} rounds and is now on round ${s.round.n}. Nothing stops you playing on, but the printed game ended at ${limit}. Use the round selector to change the length, or the reset button to start the track again.`
           : 'A standard game runs 5 rounds, then it ends and you total Victory Points.',
-        'The dropdown beside this sets the length. Loading a scenario overrides it with that scenario’s printed count.',
+        'The dropdown beside this sets the length.',
       ],
     });
 
