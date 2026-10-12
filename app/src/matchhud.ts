@@ -1,4 +1,4 @@
-import { ammoAvailable, ammoHolder, ammoPay, checkAfter, liveIntercepts, rebootOwed, rebootWhy, clearDroneCommands, missionZones, readyCommands, seedCommandTokens, strictNow, taskDesignations, type Command, type CheckResult, swarmFor } from './commands';
+import { ammoAvailable, ammoPay, checkAfter, liveIntercepts, rebootOwed, rebootWhy, missionZones, readyCommands, strictNow, taskDesignations, type Command, type CheckResult, swarmFor } from './commands';
 import { choiceDialog, confirmDialog } from './dialog';
 import { askIssuer, askTowFacing, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
@@ -6,26 +6,26 @@ import { actionIconUrl, cardName, parseGridRef, secondaryImageUrl, squadLabel, e
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, straightStops, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { interceptHeld, allyRepairTargets, overwatchOf, explosionCamo, detonationBar, immediatesOwed, blastScanState, chassisStop, blastTurn, blastsReady, bitPortOf, bitsToRecover, coordinationAfterManeuver, controlledMoveActions, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, overloadPackOn, cruising, transformOffer, opportunityBonusOn, ripostePart, martyrdomOwed, targetTracingOn, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, isGroundUnit, stealthValue, manifestationRange, manifestTargets, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, containerTargets, blinkTargets, camoBrokenBy, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptOwedAt, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, type ExtraActivation, type Resupply, discardSlots, chassisGone, riposteMelees } from './units';
+import { interceptHeld, allyRepairTargets, explosionCamo, detonationBar, immediatesOwed, blastScanState, blastTurn, blastsReady, bitPortOf, bitsToRecover, coordinationAfterManeuver, controlledMoveActions, actionRange, chargeChoices, stanceFeedbackTargets, overloadPackOn, cruising, transformOffer, opportunityBonusOn, martyrdomOwed, immobilizedStop, isScanAction, formSwitch, envCardAt, isGroundUnit, stealthValue, manifestationRange, manifestTargets, immediateDetonation, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, containerTargets, blinkTargets, isAirborneAction, loanedParts, minesOwed, pilotCard, type MineLaying, type MineTrigger, SLOT_LABEL, repairSpec, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptOwedAt, projectileReach, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, type ExtraActivation, type Resupply, discardSlots, chassisGone, riposteMelees } from './units';
 import { ElectronicHelper, type EwAct, type EwArg } from './combat';
 import { contestAct as sendContestAct, counterResponder as contestResponder } from './contest';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
-import { smokePerGroup, syncSeason } from './season';
+import { smokePerGroup } from './season';
 import { handIds, saltFor } from './tactichand';
-import { boxDropCellIn, boxDropCells, fitsAt, spotInGrid,  inContact, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSightLine, losNote, smokeBlocks, pathCost, rangeBetween, reachableGrids, standingSpot, mineSpot, type LargeGrid } from './rules';
+import { boxDropCellIn, boxDropCells, fitsAt, spotInGrid,  attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, dissipationFor, largeGridOf, boardGrids, setBoardGrids, losBetween, firingSightLine, losNote, smokeBlocks, rangeBetween, reachableGrids, standingSpot, mineSpot, type LargeGrid } from './rules';
 import { breakAwayNote, canBeForceMoved, crawlHolders, tetherNote } from './melee';
-import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
+import { ICON_DICE, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
-import { ensureScript, enterPhase, glueAfter as glueCore, makeInit, opportunity } from './glue';
-import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, ScriptState, Side, Stance, TerrainPiece, Timing, Token, ExtraTick, Opportunity } from './types';
-import { isLineUnit, statusCount, gridsOf, newOpportunity, newScriptState, PHASES, removableTokens, STATUSES, TIMINGS, zonesOf } from './types';
+import { ensureScript, glueAfter as glueCore, makeInit, opportunity } from './glue';
+import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, ScriptState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
+import { isLineUnit, statusCount, gridsOf, PHASES, removableTokens, STATUSES, TIMINGS, zonesOf } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
-import { actionPhaseComplete, activationOrder, alive, canAct, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, tiedChoices, type InitLookup, type LoopPhase } from './loop';
+import { activationOrder, alive, canAct, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, tiedChoices, type LoopPhase } from './loop';
 import { actionIdOf, actionPipCount, canAttackMode, canManeuver, canOverload, costLabel, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { boxHands, boxPlaceTurn, deployGrids, deployOpenGrids, gameResult, normaliseTasks, TERMINAL_UID, terminalsInReach, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, zoneCellsOf } from './scoring';
 import type { NoticeKind } from './notices';
-import { firewatchOn, targetStatusGrant, targetStatusTargets, linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
+import { firewatchOn, targetStatusGrant, targetStatusTargets, linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, straightLineBonus, selfStatusGrant, selfGrantWhy, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
 import * as turn from './turn';
 import type { Thought } from './solo';
 
@@ -124,7 +124,6 @@ function esc(s: string): string {
 // guided mode. This page adds the one piece a board needs on top: the smoke
 // dissipation queue, which is geometry the pad never has.
 
-export { ensureScript, enterPhase, makeInit } from './glue';
 
 // Runs after any command lands, ours or theirs, so both clients derive the
 // same turn bookkeeping without it ever crossing the wire.
@@ -3079,19 +3078,6 @@ function owedItems(ctx: HudCtx): { uid: number; actionId: string; targetUid: num
 function interceptSide(ctx: HudCtx): Side | null {
   ensureScript(ctx.state);
   return turn.interceptSide(ctx.state);
-}
-
-// Whoever is acting: normally the unit holding the Action Opportunity, but for
-// as long as an Interception is being resolved it is the intercepting unit —
-// otherwise the damage would be attributed to whoever happened to be activating.
-function actingToken(ctx: HudCtx): Token | undefined {
-  const s = ctx.state;
-  if (interceptNow) return s.tokens.find((x) => x.uid === interceptNow!.uid);
-  // A detonating Projectile is the attacker for its own Explosion (4.7.6), and
-  // it is nobody's Action Opportunity.
-  if (detonateNow) return s.tokens.find((x) => x.uid === detonateNow!.uid);
-  const sc = ensureScript(s);
-  return sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
 }
 
 // The attempt is remembered so the 4.9 obligation can be judged when it ends,

@@ -14,7 +14,7 @@
 // are synchronous string builders called during a render; a module-level await
 // here would make every importer async. Each page calls useCardData() once,
 // after its own loadData() resolves and before it draws anything.
-import { FACTION_LABEL, HELP_CARDS, TOKEN_PRINT, actionIconUrl, cardName, helpCardUrl, mechPartUrl, portraitUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenPrintUrl, traitName, zeroCostReason, type BoxDef, type ChangeEntry, type GameData, type KeywordDef, type MechanicDef, type RuleChange, type SeasonDef, type SeasonRule, type TableToken, type TokenFace, type TokenFamily } from './data';
+import { FACTION_LABEL, HELP_CARDS, TOKEN_PRINT, actionIconUrl, cardName, helpCardUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tokenPrintUrl, traitName, zeroCostReason, type BoxDef, type ChangeEntry, type GameData, type KeywordDef, type MechanicDef, type RuleChange, type SeasonDef, type SeasonRule, type TableToken, type TokenFace, type TokenFamily } from './data';
 import { LENGTH_NAME, TICK_COST, costLabel, lengthOf, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule, type CapsuleShort } from './glyphs';
 import { linkIcon } from './icons';

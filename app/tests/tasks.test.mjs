@@ -199,24 +199,12 @@ check('level on both is a draw', T.gameResult(state({ vp: { s1: 2, s2: 2 } }), [
 const dead = (uid, side) => unit(uid, side, 5, 5, {
   partStates: { torso: 'destroyed', chasis: 'destroyed', leftHand: 'destroyed', rightHand: 'destroyed' },
 });
-check('a Squad with every Mech destroyed is wiped out', T.wipedOut([unit(1, 's1', 0, 0), dead(2, 's2')]), 's2');
-check('but the survivor does not win on it: the Victory Points decide',
+check('a Squad with every Mech destroyed does not lose on it: the Victory Points decide',
   T.gameResult(state({ vp: { s1: 0, s2: 9 } }), [unit(1, 's1', 0, 0), dead(2, 's2')]).winner, 's2');
 check('and the result says so',
   T.gameResult(state({ vp: { s1: 0, s2: 9 } }), [unit(1, 's1', 0, 0), dead(2, 's2')]).why, '0 Victory Points to 9');
 check('a concession decides the game, whatever the score',
   T.gameResult(state({ vp: { s1: 0, s2: 9 }, conceded: 's2' }), [unit(1, 's1', 0, 0), unit(2, 's2', 5, 5)]).winner, 's1');
-// A Mech with ONE Part left is still a Mech, which is the same test the
-// activation order uses to decide whether it can still be given an Opportunity.
-check('a Mech with a single Part left is not wiped out',
-  T.wipedOut([unit(1, 's1', 0, 0), unit(2, 's2', 5, 5, { partStates: { torso: 'destroyed', chasis: 'intact' } })]), null);
-// Nobody has lost a Mech before anybody has placed one.
-check('an undeployed Squad has not lost its Mechs',
-  T.wipedOut([unit(1, 's1', 0, 0), unit(2, 's2', 5, 5, { deployed: false })]), null);
-check('and a board with both Squads standing is nobody', T.wipedOut([unit(1, 's1', 0, 0), unit(2, 's2', 5, 5)]), null);
-// Drones do not keep a Squad alive: the game needs a MECH to activate.
-check('a Squad left with only Drones is still wiped out',
-  T.wipedOut([unit(1, 's1', 0, 0), dead(2, 's2'), drone(3, 's2', 5, 5)]), 's2');
 
 // The Match Centre STOPS on a concession, and where that sits in the panel
 // order is the whole of whether the Black Box a dying Mech drops still gets

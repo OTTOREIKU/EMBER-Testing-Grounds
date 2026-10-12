@@ -34,7 +34,7 @@ import '../src/partpicker.css';
 // The attack window's own stylesheet, shared with the board and the Match
 // Centre: the pad draws the same window.
 import '../src/combat.css';
-import { EmberApi, ApiError, type Account, type RegistrationInfo, type SquadEntry } from '../src/api';
+import { EmberApi, ApiError, type Account, type RegistrationInfo } from '../src/api';
 import { Relay, type NetView, type RolledDie } from '../src/net';
 import { ammoAvailable, applyRemote, check, rebootWhy, onBeforeApply, onPerformed, onRefused, perform, taskDesignations, type Command } from '../src/commands';
 import { glueAfter, idleWorldFor } from '../src/glue';
@@ -76,7 +76,7 @@ import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWind
 import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, jumpsToTarget,explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop, volleyFor } from '../src/units';
 import { gameResult } from '../src/tasks';
 import { GameTrack, gameReport, matchKey, squadWiped } from '../src/gamelog';
-import { isSilentAction, actionSilenceDenier, auraReach, auraEffectsOf, auraActionOf, auraCanReach, auraReachable, inAuraReach, aurasAtRoll, type AuraAtRoll, actionRange, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf, discardSlots, commonActionStop, commonPartKey } from '../src/units';
+import { isSilentAction, actionSilenceDenier, auraReach, auraEffectsOf, auraActionOf, auraCanReach, auraReachable, inAuraReach, aurasAtRoll, type AuraAtRoll, actionRange, manifestationRange, targetStatusTargets, activatesCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, discardSlots, commonActionStop, commonPartKey } from '../src/units';
 import { canManeuver, canPerform, costOf, lengthOf, LENGTH_NAME, markAction, markExtra, markManeuver, spendAction, spendManeuver, tickBarState, timingOf } from '../src/ticks';
 import { actionIdleWhy, cardFitsSquad, extrasFor, factionProblems, squadPoints, startOpts } from '../src/units';
 import { tickBar, type CapsuleShort } from '../src/glyphs';
@@ -3813,7 +3813,6 @@ async function detonate(proj: Token, actionId: string, joined = false): Promise<
   if (!data) return;
   const a = tokenCards(data, proj).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId);
   if (!a) return;
-  const name = a.name.en || actionId;
   const smoke = smokePlacement(a);
   if (smoke) {
     toast(`${proj.label}: ${smoke.count} Smoke Screen${smoke.count === 1 ? '' : 's'} on the table.`, 'table');

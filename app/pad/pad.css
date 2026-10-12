@@ -1495,7 +1495,6 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .td-face.on { opacity: 1; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
 .td-ic { display: flex; align-items: center; justify-content: center; gap: 1px; min-height: 22px; }
 .td-ic svg { width: 18px; height: 18px; }
-.td-part { font-size: 10px; font-weight: 600; line-height: 1.1; text-align: center; }
 .td-face.die-black { background: #222; color: #fff; }
 
 .td-head { margin: 6px 0 0; font-size: 12px; font-weight: 700; color: var(--text2); }

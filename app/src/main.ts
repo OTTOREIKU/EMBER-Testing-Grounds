@@ -4,16 +4,16 @@ import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
 import { openSoloSetup } from './solosetup';
 import { lowValueOf } from './scoring';
-import { boxHands, boxPlaceTurn, deployOpenGrids, gameResult, isLowValue, newTaskState, normaliseTasks, remoteAccessWhy, taskItemsFor, terminalsInReach, terminalStandIn, zoneCentreGrid, type GameResult, type TaskItem, type TaskState } from './tasks';
+import { boxHands, deployOpenGrids, gameResult, normaliseTasks, remoteAccessWhy, taskItemsFor, terminalsInReach, terminalStandIn, zoneCentreGrid, type GameResult, type TaskState } from './tasks';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
-import { factionColour, ICON_BURST, squadColour } from './icons';
-import { ammoAvailable, ammoHolder, ammoPay, applyRemote, check, checkAfter, missionZones, onPerformed, onRefused, perform, strictNow, taskDesignations, type Command, onBeforeApply } from './commands';
+import { ICON_BURST, squadColour } from './icons';
+import { ammoAvailable, ammoPay, applyRemote, check, checkAfter, missionZones, onPerformed, onRefused, perform, strictNow, taskDesignations, type Command, onBeforeApply } from './commands';
 import { installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
 import { openBoardReport } from './reportui';
 import { Relay } from './net';
 import { alive, getLocalSeat, setLocalSeat } from './loop';
-import { ApiError, EmberApi, type SquadEntry } from './api';
+import { ApiError, EmberApi } from './api';
 import { gameReport } from './gamelog';
 import { MultiplayerDialog } from './multiplayer';
 import { Inventory } from './inventory';
@@ -25,14 +25,13 @@ import {
 } from './boards';
 import { openColourPicker } from './colourpicker';
 import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
-import { cardName, dataUrl, discardFaceOf, environmentAllowance, environmentLookup, isAerial, isMine, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, type SecondaryTask, setSquadNames, SQUAD_ORDER, squadLabel, unitSize } from './data';
+import { cardName, dataUrl, discardFaceOf, environmentAllowance, environmentLookup, isAerial, isMine, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, setSquadNames, SQUAD_ORDER, squadLabel, unitSize } from './data';
 import {
   deleteCustomMap,
   emptyCustomMap,
   loadCustomMap,
   loadCustomMaps,
   makePiece,
-  OBJECTIVE_KINDS,
   PALETTE,
   pieceCells,
   resolveLayer,
@@ -51,7 +50,7 @@ import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
 import { smokePerGroup, syncSeason } from './season';
 import { handCommand, handCount, handIds, saltFor, setHandRoom } from './tactichand';
-import { arcGrids, boxDropCellIn, boxDropCells, fitsAt, routeStops, spotInGrid, inContact, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSightLine, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot, mineSpot } from './rules';
+import { arcGrids, boxDropCellIn, boxDropCells, fitsAt, routeStops, spotInGrid, lineSpot, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSightLine, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot, mineSpot } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, crawlHolders, lockersOf, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -68,11 +67,11 @@ import { labelFor, namesFrom } from './ledger';
 import { askTowFacing, offerHarpyDrag as sharedHarpyDrag } from './commandpick';
 import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, Opportunity, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
-import { addStatus, cellsOf, DEFAULT_GRIDS, isLineUnit, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
+import { cellsOf, DEFAULT_GRIDS, isLineUnit, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { interceptHeld, interceptPayer, allyRepairTargets, boxNoteText, electronicStrength, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, containerTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, blastTurn, blastsReady, jumpsToTarget, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, type AttackReaction, actionIdleWhy, type IdleWorld, resupplyHolders, selfRepairOptions, isCharged, discardSlots, actionPartWhy, chassisGone, commonActionStop, riposteMelees, ignoresProtection, volleyFor } from './units';
+import { interceptHeld, interceptPayer, allyRepairTargets, boxNoteText, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, containerTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, blastTurn, blastsReady, jumpsToTarget, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, actionIdleWhy, type IdleWorld, resupplyHolders, selfRepairOptions, isCharged, discardSlots, actionPartWhy, chassisGone, commonActionStop, riposteMelees, ignoresProtection, volleyFor } from './units';
 import { registerOffline } from './offline';
-import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
+import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { dialsOf, hashDials, newSalt } from './secrecy';
 import { printedDeployment, resolveZoneSetData } from './overlays';
@@ -1896,34 +1895,6 @@ async function init() {
     onChanged();
   }
 
-  // Everything a squad brought, as card ids with their category. Duplicates are
-  // kept on purpose: two of the same Part is two uses, which is exactly what
-  // "most used" should count.
-  function squadEntriesFor(side: Side): SquadEntry[] {
-    const out: SquadEntry[] = [];
-    const push = (id: string): void => {
-      const card = data.byId.get(id);
-      if (card) out.push({ id, cat: (card.category ?? 'mech_part') as SquadEntry['cat'] });
-    };
-    // Everything the side FIELDED, so a Mech that died still counts as brought
-    // — see rememberFielded. A board from before the roster existed has none,
-    // and falls back to whatever is still standing.
-    const roster = state.fielded?.[side];
-    if (roster && Object.keys(roster).length) {
-      for (const ids of Object.values(roster)) for (const id of ids) push(id);
-    } else {
-      for (const t of state.tokens) {
-        if (t.side !== side || t.kind === 'projectile') continue;
-        for (const { card } of tokenCards(data, t)) push(card.id);
-      }
-    }
-    for (const id of handIds(state, side, handRoom)) {
-      if (data.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
-    }
-    // The server caps a squad at 80 entries; no real list comes close.
-    return out.slice(0, 80);
-  }
-
   // Logging is the player's choice (the account screen: OTTO, 2026-10-10) and
   // never blocks ending a game. The board asks only which squad was yours, for
   // a player who switched it on. A failure here is reported and then dropped:
@@ -2401,7 +2372,6 @@ async function init() {
     perform(data, state, { kind: 'launch', seat: t.side, uid: t.uid, actionId: id, cardId: m.card.id, to: { col: spot.col, row: spot.row }, facing: face });
     if (state.tokens.length === before) return;
     m.paidPools.push(pool);
-    const placed = state.tokens[state.tokens.length - 1];
     // A Missile Group lands as several Units off one launch (6.2); all of them
     // are this placement, so taking it back takes them all.
     m.placedUids.push(...state.tokens.slice(before).map((x) => x.uid));
@@ -6152,11 +6122,6 @@ async function init() {
     }));
   }
 
-  function editorTaskName(id: string | null): string {
-    if (!id) return 'Base map';
-    return editorTasks().find((m) => m.id === id)?.name ?? id;
-  }
-
   // The zone NAMES this task needs bound, straight off the mission card. These
   // are OTTO's "variables": the card says Bravo/Charlie/Delta and the author
   // paints an area for each.
@@ -8071,10 +8036,6 @@ async function init() {
   });
 
   // ---------- zone sets ----------
-
-  function activeMission(): (typeof data.missions.cards)[number] | undefined {
-    return state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
-  }
 
   function currentCustomMap(): CustomMap | null {
     return mapDoc(state.map);

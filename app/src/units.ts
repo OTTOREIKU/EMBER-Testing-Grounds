@@ -4604,24 +4604,6 @@ export function interceptOwedAt(state: GameState, byUid: number, actionId: strin
   return (state.script?.intercepts ?? []).some((o) => o.uid === byUid && o.actionId === actionId && o.targetUid === targetUid);
 }
 
-// The longest reach of any Intercept Action a unit carries. Nothing calls this
-// - it was written for an intercept-range overlay that was never built, and the
-// FAQ audit flagged it as a loose end. Kept rather than deleted because it is
-// the correct reading if that overlay is ever wanted (per ACTION range, not per
-// unit), but do not mistake it for part of the live path: `interceptsOwed` does
-// its own per-action range test, since one unit can carry two Intercept Actions
-// of different reach and the longer one must not lend its range to the shorter.
-export function interceptReach(data: GameData, t: Token): number {
-  let best = 0;
-  for (const { card } of tokenCards(data, t)) {
-    for (const a of card.actions ?? []) {
-      if (interceptCapacity(a) === undefined) continue;
-      best = Math.max(best, a.range ?? 0);
-    }
-  }
-  return best;
-}
-
 export function interceptLeft(t: Token): number {
   return Object.values(t.intercept ?? {}).reduce((s, n) => s + n, 0);
 }
@@ -5284,7 +5266,6 @@ export function makeDroneToken(state: GameState, data: GameData, card: Card, sid
 export function makeMechToken(state: GameState, data: GameData, loadout: MechLoadout, side: Side, name?: string): Omit<Token, 'col' | 'row' | 'facing'> {
   const cards = mechCards(data, loadout);
   const pilot = loadout.pilot ? data.byId.get(loadout.pilot) : undefined;
-  const torso = loadout.torso ? data.byId.get(loadout.torso) : undefined;
   const partStates: Token['partStates'] = {};
   for (const slot of PART_SLOTS) if (loadout[slot]) partStates[slot] = 'intact';
   return {
@@ -6225,22 +6206,6 @@ export function squadPoints(data: GameData, tokens: Token[], side: Side, hand: s
 // Dense Armor and KC Armor are printed on PARTS (the GOF armored cores and
 // the UN KC cores), so they are read off the equipped, non-destroyed cards
 // rather than off the Action being resolved.
-
-function partKeyword(data: GameData, t: Token, re: RegExp): { slot: string; card: Card } | null {
-  for (const { slot, card } of tokenCards(data, t)) {
-    if (slot === 'pilot') continue;
-    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
-    if ((card.keywords ?? []).some((k) => re.test(`${k.key ?? ''} ${k.en ?? ''}`))) return { slot, card };
-  }
-  return null;
-}
-
-// 致密装甲 anywhere on the unit. The effect is the PART's since GoF 1.021 (see
-// denseArmorSlot, which this now asks); nothing in the attack reads the old
-// whole-unit "{Defense} may offset {Heavy Hit}" any more.
-export function denseArmorOn(data: GameData, t: Token): boolean {
-  return !!denseArmorSlot(data, t);
-}
 
 // KC装甲: consume a Charge Token to exchange {Lightning} in the Defense Roll
 // for {Defense}. Returns the Part holding a FACE-UP Charge Token, because the

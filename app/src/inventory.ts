@@ -5,9 +5,8 @@ import { collectionOn, copiesOf, hasAny, loadCollection, onCollection, saveColle
 // The rows, the exclusivity rule and the two-column comparison live in
 // boxcompare.ts, shared with the reference's Boxes tab. This class keeps what
 // is the inventory's own: the owned counts, the flyouts, the box grid.
-import { boxItems, boxPicker, boxesOf, compareGrid, esc, exclusiveToggle, FACTION_SHORT, sharedCount, type BoxInfo } from './boxcompare';
+import { boxItems, boxPicker, compareGrid, esc, exclusiveToggle, FACTION_SHORT, sharedCount, type BoxInfo } from './boxcompare';
 
-export type { BoxInfo };
 
 const PEEK_MS = 1500;
 
@@ -131,10 +130,6 @@ export class Inventory {
 
   private boxContents(key: string) {
     return boxItems(this.cards, key);
-  }
-
-  private boxesOf(id: string): string[] {
-    return boxesOf(this.cards, this.sellableBoxes(), id);
   }
 
   private showContents(dlg: HTMLElement, key: string): void {

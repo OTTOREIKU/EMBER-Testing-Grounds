@@ -18,7 +18,7 @@ import { idleWorldFor } from './glue';
 import { alive, droneActionWhy, droneLockPhase, droneMoveWhy, isLoopPhase, onExtraOpportunity } from './loop';
 import { breakAwayCost, breakAwayLinkBudget, canBeForceMoved, crawlHolders, obstructSurcharge, tetherCap } from './melee';
 import {
-  arcGrids, attackDirection, boardGrids, boxDropCells, breakAwayLinkDue, crushTargets, extendPath, firingSight, inArc, knockbackPath, largeGridOf, lineSpot, losNote, mineSpot, movePaths, pathCost, protectionFor,
+  arcGrids, attackDirection, boardGrids, boxDropCells, breakAwayLinkDue, crushTargets, extendPath, knockbackPath, largeGridOf, lineSpot, losNote, mineSpot, movePaths, pathCost, protectionFor,
   reachableGrids, routeStops, sightBetween, standingSpot, type CrushVictims, type LargeGrid,
 } from './rules';
 import { zoneCellsOf } from './scoring';
@@ -2091,30 +2091,3 @@ export function arcOf(state: GameState, t: Token): { c: number; r: number }[] {
   return arcGrids(t, gridsOf(state));
 }
 
-// EVERY GRID A UNIT HAS A LINE OF SIGHT TO, the board's Line of Sight control
-// as it was (OTTO's playtest, 2026-10-03: "This would help to see what each
-// unit's line of sight covers so I know to turn the unit if needed"; the Firing
-// Arc took its place 2026-10-08): seen as a unit filling that Grid would be
-// (rules.ts firingSight: the terrain, the units and the Smoke on the line; the
-// units standing in that Grid are what would be looked at, never in the way),
-// and whether the Grid lies in its Forward Arc (4.2.5). A line through cover is
-// `clear: false`. Its own Grid is not listed.
-export function sightOf(data: GameData, state: GameState, t: Token): { c: number; r: number; arc: boolean; clear: boolean }[] {
-  const terrain = terrainOf(data, state);
-  const smoke = state.smoke ?? [];
-  const standing = state.tokens.filter((x) => x.deployed !== false && x.uid !== t.uid);
-  const here = largeGridOf(t);
-  const size = gridsOf(state);
-  const out: { c: number; r: number; arc: boolean; clear: boolean }[] = [];
-  for (let c = 0; c < size; c++) {
-    for (let r = 0; r < size; r++) {
-      if (c === here.c && r === here.r) continue;
-      const there = { ...t, uid: -1, cardId: '', kind: 'mech', col: c * 3, row: r * 3, size: 3, aerial: false } as Token;
-      const between = standing.filter((x) => { const g = largeGridOf(x); return g.c !== c || g.r !== r; });
-      const sight = firingSight(t, there, terrain, between, smoke);
-      if (sight === 'blocked' || sight === 'smoked') continue;
-      out.push({ c, r, arc: inArc(t, there, 'forward'), clear: sight === 'clear' });
-    }
-  }
-  return out;
-}

@@ -68,12 +68,6 @@ export const ICON_BLOCKED = '<svg viewBox="0 0 24 24" fill="none" stroke="curren
   + ' stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/>'
   + '<path d="M6.6 6.6 17.4 17.4"/></svg>';
 
-// Something the player should read before it costs them.
-export const ICON_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
-  + ' stroke-linejoin="round" aria-hidden="true"><path d="M12 3.4 22 20.6H2Z"/>'
-  + '<path d="M12 9.6v4.6" stroke-linecap="round"/>'
-  + '<circle cx="12" cy="17.4" r="1.15" fill="currentColor" stroke="none"/></svg>';
-
 export const ICON_EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"'
   + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
   + '<path d="M14 4h6v6"/><path d="M10 20H4v-6"/><path d="M20 4l-7 7"/><path d="M4 20l7-7"/></svg>';

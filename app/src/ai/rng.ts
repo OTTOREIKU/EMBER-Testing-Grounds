@@ -74,18 +74,4 @@ export class Rng {
     for (let i = 0; i < bytes; i++) out += this.int(256).toString(16).padStart(2, '0');
     return out;
   }
-
-  // A second stream that shares nothing with this one but the seed it came
-  // from, so the dice and the choices can each be replayed alone.
-  fork(label: string): Rng {
-    return new Rng((this.word() ^ seedOf(label)) >>> 0);
-  }
-
-  snapshot(): [number, number, number, number] {
-    return [this.a, this.b, this.c, this.d];
-  }
-
-  restore(s: readonly [number, number, number, number]): void {
-    [this.a, this.b, this.c, this.d] = s;
-  }
 }

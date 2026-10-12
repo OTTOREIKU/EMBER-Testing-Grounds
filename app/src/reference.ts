@@ -1,21 +1,17 @@
 import { barcodeSvg } from './barcode';
 import './reference.css';
 import './ui.css';
-import { actionIconUrl, battlefieldCardUrl, boxCoverUrl, cardName, environmentImageUrl, HELP_CARDS, helpCardUrl, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type EnvironmentCard, type FactionDef, type GameData, type KeywordDef } from './data';
+import { battlefieldCardUrl, boxCoverUrl, cardName, environmentImageUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, missionImageUrl, secondaryImageUrl, type BoxDef, type EnvironmentCard, type FactionDef, type GameData } from './data';
 import { mountCardImage, mountCardImageCopy, preloadCardImages, warmAllImagesWhenIdle, watchImageFallbacks } from './images';
 import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
-import { SHAPE_NOTE, TIMINGS, type Card, type StatusDef, type TerrainMap } from './types';
+import { type Card, type TerrainMap } from './types';
 import { registerOffline } from './offline';
-import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
-import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
-import { iconSvg } from './dice';
-import { linkIcon } from './icons';
-import { cardRow, currentSeason, dieEntries, esc, fillPortraits, keywordCard, kwLabel, linkKeywords, matchDie, matchTokenEntry, mechBlocks, rulesTab, sheetHtml, sheetLabel, SLOT_LABEL, SPEED_MARK, tokenEntries, useCardData } from './refcards';
-import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSeason, matchSecondary, matchStance, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSeason, nmSecondary, norm, rank } from './refsearch';
+import { cardRow, currentSeason, dieEntries, esc, fillPortraits, keywordCard, linkKeywords, matchDie, matchTokenEntry, mechBlocks, rulesTab, sheetHtml, sheetLabel, SLOT_LABEL, tokenEntries, useCardData } from './refcards';
+import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSeason, matchSecondary, matchStance, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmSeason, nmSecondary, norm, rank } from './refsearch';
 import { installDiagnostics } from './diagnostics';
 import { boxPicker, compareGrid, exclusiveToggle, isExclusiveTo, sharedCount } from './boxcompare';
-import { applyChangelogFilter, decorateSheetHead, drawsAdvanced, holdDetailHeight, noteSheetLeft, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, showDetailTab, type SheetNav } from './refsheet';
+import { applyChangelogFilter, decorateSheetHead, drawsAdvanced, holdDetailHeight, noteSheetLeft, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, type SheetNav } from './refsheet';
 import type { ReportCategory } from './report';
 import { openReferenceReport } from './reportui';
 // FIRST, before anything else in this module runs. A net that is installed

@@ -1703,7 +1703,6 @@ export const SCALES: ScaleDef[] = [
 // already carries the map to both ends. The map is where a size is authored;
 // this is where it is played.
 export type BoardGrids = 12 | 16 | 18;
-export const BOARD_GRID_SIZES: BoardGrids[] = [12, 16, 18];
 export const DEFAULT_GRIDS: BoardGrids = 12;
 
 export function gridsOf(s: { grids?: number } | null | undefined): BoardGrids {

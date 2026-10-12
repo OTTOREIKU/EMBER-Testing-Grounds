@@ -172,13 +172,6 @@
    here" -- both players can see the offer exists, which is the same reason the
    Focus reroll is drawn on every screen rather than only the one that owns it. */
 .rerolls button:disabled { opacity: 0.45; cursor: default; }
-/* The squad reroll pots keep their own colour and take the same outline, so the
-   whole family reads as one control rather than two designs. */
-#rr-blue { background: var(--blue-lt); color: var(--blue); border-color: var(--blue); }
-#rr-blue:hover:not(:disabled) { background: var(--blue); color: var(--on-accent); }
-#rr-red { background: var(--red-lt); color: var(--red); border-color: var(--red); }
-#rr-red:hover:not(:disabled) { background: var(--red); color: var(--on-accent); }
-
 
 /* ---------- attack helper ---------- */
 .attack-helper { display: flex; flex-direction: column; gap: 8px; position: relative; }
@@ -248,7 +241,6 @@
    take an accent colour. The icons are inline SVG on currentColor now, so the
    filter is gone and only the sizing is left. Kept as a class because the
    combat window still wraps a couple of icons in it. */
-
 
 /* The swept icons sit inline in a sentence or a button label, so they align to
    the text rather than to the line box. */
@@ -706,7 +698,6 @@
 .range-ring { fill: var(--accent); stroke: #f0b429; stroke-width: 0.75; }
 .range-ring-self { fill: #fff; stroke: #fff; }
 .range-ring-dist { font-size: 10px; fill: #f0b429; font-weight: 700; pointer-events: none; }
-
 
 /* ---------- per-unit combat log (bottom of the Combat tab) ---------- */
 .combat-idle { padding: 10px 12px; margin: 0; font-size: 12px; line-height: 1.5; }

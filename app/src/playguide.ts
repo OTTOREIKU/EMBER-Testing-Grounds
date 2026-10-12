@@ -1,17 +1,17 @@
-import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token } from './types';
+import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Token } from './types';
 import { newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS, tokenFaces, zonesOf } from './types';
-import type { GameData, MissionCard } from './data';
+import type { GameData } from './data';
 import { BASE, cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { actionPartWhy, chassisGone, commonActionStop, commonPartKey, immobilizedStop, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, firewatchOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, actionIdleWhy, type IdleWorld } from './units';
+import { actionPartWhy, chassisGone, commonActionStop, commonPartKey, immobilizedStop, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, firewatchOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, SLOT_LABEL, actionIdleWhy, type IdleWorld } from './units';
 import { actionPipCount, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
-import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens, strictNow, taskDesignations, swarmFor } from './commands';
+import { check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens, strictNow, taskDesignations, swarmFor } from './commands';
 import { closeDeadOpportunity, idleWorldFor, openActivation, popDeadExtras } from './glue';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
 import { tacticFitsPhase, tacticSpec, tacticUsedRound, tacticWindowWhy } from './tactics';
-import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, tiedChoices, type InitLookup, type Activation } from './loop';
+import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, tiedChoices, type InitLookup } from './loop';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { boxPlaceTurn, normaliseTasks, remoteAccessWhy, settleControl, type ScoreResult, type TaskState } from './tasks';
 import { gameEndsThisRound, previewScore, vipFallen, zoneCellsOf } from './scoring';
@@ -57,11 +57,6 @@ function loadUi(): GuideUi {
     return { open: true, collapsed: false, rules: false, x: null, y: null };
   }
 }
-
-// The alternating designation loops and the Action Phase activation order live
-// in loop.ts, shared with the command layer.
-export { LOOP_PHASES, isLoopPhase, commandTokensFor, eligibleUnits, canAct, loopComplete, nextTurn, activationOrder, nextActivation, onExtraOpportunity, actionPhaseComplete } from './loop';
-export type { Activation, InitLookup, LoopPhase } from './loop';
 
 export interface GuideCallbacks {
   world(): ActionWorld;
@@ -754,10 +749,6 @@ export class PlayGuide {
     const doomed = s.tokens.filter(
       (t) => t.kind === 'mech' && Object.values(t.partStates).filter((p) => p !== 'destroyed').length <= 2,
     );
-    const marked = s.tokens.filter((t) => (t.statuses ?? []).some((id: string) => {
-      const def = STATUSES.find((d) => d.id === id);
-      return def?.shape === 'square' || def?.shape === 'hexagon';
-    }));
     const cmd = (s.commandTokens.s1 ?? 0) + (s.commandTokens.s2 ?? 0);
     const done = new Set(sc.endDone);
     // `wait`: the earlier step this one follows. "Performed in the following
@@ -2093,7 +2084,7 @@ export class PlayGuide {
   // it is offered right where the tokens are being spent. Hidden entirely when
   // no Aster is fielded, rather than shown greyed on every board.
   private asterHtml(s: GameState): string {
-    const sc = this.script(s);
+    this.script(s);
     const mine = getLocalSeat();
     const rows = s.tokens
       .filter((t) => t.kind === 'mech' && alive(t) && pilotCard(this.data, t)?.id === 'ZPA-36')

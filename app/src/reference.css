@@ -262,7 +262,6 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
   font-size: 12px; color: var(--text2); letter-spacing: 0.2px;
 }
 .card-framed .card-title { padding-right: 46px; }
-.card-orig { margin-left: auto; font-size: 11.5px; color: var(--text3); }
 .card-badges {
   display: flex; gap: 5px; flex-wrap: wrap;
   margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
@@ -359,8 +358,7 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 .card-foot .tag.mono { white-space: normal; }
 
 .act-icons { display: inline-flex; gap: 3px; align-items: center; }
-.act-icon,
-.stat-icon {
+.act-icon {
   width: 18px !important;
   height: 18px !important;
   max-width: 18px;
@@ -373,7 +371,6 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
   display: inline-block;
   vertical-align: -4px;
 }
-.stat-icon { margin-right: 5px; }
 /* The publisher's Link mark, masked so it can take the pilot's faction colour
    the way the printed card does. --lk-src is set inline by linkIcon(). */
 .lk-icon {
@@ -1307,9 +1304,6 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 
 /* 5. The thumbnail on the Card tab: the printed card at a glance, and a button
    that opens the Photo tab. */
-.dtop { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
-.dtop-b { flex: 1; min-width: 0; }
-.dtop-b > :first-child { margin-top: 0; }
 .dthumb {
   flex: 0 0 76px; width: 76px; padding: 0; border: 1px solid var(--border);
   border-radius: 5px; overflow: hidden; background: var(--surface2); cursor: pointer; display: block;
@@ -1354,10 +1348,6 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 .dhead-t { flex: 1; min-width: 0; }
 .dhead-t h2 { margin-top: 0; }
 .dhead .dthumb { flex: 0 0 58px; width: 58px; margin-top: 2px; }
-/* The old spot above the strip is gone; these keep any stragglers honest. */
-.dtop { display: flex; gap: 12px; align-items: flex-start; }
-.dtop-b { flex: 1; min-width: 0; }
-
 .ref-stats .dsv i { font-size: 9px; letter-spacing: 0.4px; }
 
 /* ---------- the Photo tab fills the space it is given ----------
@@ -1386,12 +1376,7 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 }
 .dthumb div.card-ph.wide > span { -webkit-line-clamp: 3; }
 
-/* Environment Cards (5.4.1). The printed card is square and doubled, so the
-   shipped art is its upright half: a wide strip that wants the full column. */
-.env-art {
-  display: block; width: 100%; height: auto; margin: 10px 0 4px;
-  border-radius: 6px;
-}
+/* Environment Cards (5.4.1). */
 .env-intro .card-body p:last-child { margin-bottom: 0; }
 
 /* ---------- the Boxes tab's two doors: exclusive cards, and compare ----------

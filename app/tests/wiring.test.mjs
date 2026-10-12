@@ -290,9 +290,12 @@ check('the printed value is still what gates initiating',
 // O3/O16). Both launch UIs sized that cap off their own `t.ammo`, found nothing
 // there, and offered shots commands.ts now refuses. playguide.ts has no launch
 // flow, so these two are the whole set.
+// Both now read the magazine through the command layer's ammoAvailable and
+// ammoPay, which ask ammoHolder themselves (the pages' own ammoHolder imports
+// went unused and were taken out by the code audit, 2026-10-12).
 for (const [name, src] of [['main.ts', main], ['matchhud.ts', hud]]) {
-  check(`${name} imports ammoHolder from the command layer`,
-    /import \{[^}]*\bammoHolder\b[^}]*\} from '\.\/commands'/.test(src), true);
+  check(`${name} reads the magazine through the command layer (ammoAvailable, ammoPay)`,
+    [/import \{[^}]*\bammoAvailable\b[^}]*\} from '\.\/commands'/.test(src), /import \{[^}]*\bammoPay\b[^}]*\} from '\.\/commands'/.test(src)], [true, true]);
 }
 const startLaunch = main.slice(main.indexOf('function startLaunch(t: Token'), main.indexOf('function endTargeting'));
 check('freeplay startLaunch was located', startLaunch.includes('volleyFor'), true);

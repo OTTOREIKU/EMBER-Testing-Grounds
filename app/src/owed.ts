@@ -32,7 +32,7 @@ import {
   actionRange, allyRepairTargets, autoDetonationsOwed, bitPortOf, bitsToRecover, blastsReady, blastTurn, blinkTargets, cruising, pilotCard, canActivateCamo, chargeableSlots, chargeChoices, commandCoordination, coordinationAfterManeuver, coordinationFor,
   detonationToken, discardSlots, envCardAt, explosionCamo, extraActivationOf, fliesToTarget, formSwitch, immediateDetonation, immediatesOwed, isGroundUnit, linkSupportOf, linkSupportTargets, manifestTargets, martyrdomOwed, maxLink, minesLayable, repairSpec,
   resupplyHolders, resupplyOf, riposteMelees, selfGrantWhy, selfStanceShift, selfRepairOptions, selfStatusGrant, smokePlacement, stabiliseAsk, STABILISE_KEEP_LABEL, stabiliseRowLabel, stanceFeedbackTargets,
-  targetStatusGrant, targetStatusTargets, tokenCards, tokenCleanupOf, tokenCleanupTargets, transformOffer, unfoldsOwed, controlledMoveActions, knockbackOf,
+  targetStatusGrant, targetStatusTargets, tokenCards, tokenCleanupOf, tokenCleanupTargets, transformOffer, controlledMoveActions, knockbackOf,
   interceptPayer, overwatchOf, containerTargets, lowProfileAuraOf,
 } from './units';
 

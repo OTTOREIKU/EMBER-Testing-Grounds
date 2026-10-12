@@ -3,7 +3,6 @@ import { cardName, discardFaceOf } from './data';
 import { iconSvg } from './dice';
 import { ICON_BLOCKED, ICON_BOLT, ICON_BURST, ICON_DICE, ICON_PIERCE, ICON_SHIELD, ICON_SIGNAL } from './icons';
 import { linkMechanics } from './inspector';
-import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, Opportunity, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { fitViewLine, statusCount, STATUSES } from './types';
 import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, partUsable, dragPrinted, designationsOn, lockOnPenalty, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, tallyCounter, resolveCounterRoll, type AttackReaction, type MultiTarget, ignoresProtection } from './units';
@@ -788,10 +787,6 @@ export class DiceSpinner {
 
   constructor(dice: DiceData) {
     this.dice = dice;
-  }
-
-  get running(): boolean {
-    return this.timer !== undefined;
   }
 
   // The spin still running, or null.

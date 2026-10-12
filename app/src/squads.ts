@@ -18,7 +18,7 @@ const linkMechanics = (
   mechanics: Parameters<typeof linkBase>[1],
   opts?: { pin?: boolean; mark?: boolean },
 ): void => linkBase(root, mechanics, { ...opts, floating: false });
-import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, Token } from './types';
+import type { GameState, PartSlot, Side, Stance, Timing, TimingDef, Token } from './types';
 import { PHASES, SCALES, SHAPE_NOTE, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS, tokenFaces } from './types';
 import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
@@ -29,7 +29,7 @@ import { defaultUnitLabel, emptyCarriers, factionProblems, initiativeFor, pilotC
 import { alertDialog, promptDialog } from './dialog';
 import { cleanName } from './safetext';
 import { inSmoke } from './rules';
-import { factionColour, ICON_EDIT, ICON_LOCK, linkIcon, squadColour } from './icons';
+import { ICON_EDIT, ICON_LOCK, linkIcon, squadColour } from './icons';
 import { handCount, handIds, handSealed } from './tactichand';
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -63,7 +63,6 @@ function placeDialPopout(pop: HTMLElement, trigger: HTMLElement): void {
   pop.style.top = `${Math.max(8, Math.min(t.top - 6, window.innerHeight - p.height - 8))}px`;
 }
 
-const NEXT_STATE: Record<PartState, PartState> = { intact: 'damaged', damaged: 'destroyed', destroyed: 'intact' };
 const STANCES: Stance[] = ['offensive', 'defensive', 'mobility', 'shutdown'];
 const STANCE_SHORT: Record<Stance, string> = { offensive: 'OFF', defensive: 'DEF', mobility: 'MOB', shutdown: 'SHUT' };
 
@@ -1189,73 +1188,6 @@ export class SquadTracker {
         pilot ? `${cardName(pilot)} initiative: ${all}` : 'This Mech has no Pilot card, so it has no Initiative values.',
       ],
     };
-  }
-
-  private statusRow(t: Token): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.className = 'status-row';
-    for (const s of statusesFor(t.kind)) {
-      const n = statusCount(t.statuses, s.id);
-      // The board derives "In smoke" from its screens (audit Phase 4, G12),
-      // and a Repaired Token comes from its Action (C7).
-      if ((s.id === 'smoke' || s.handPlaced === false) && n === 0) continue;
-      const on = n > 0;
-      const b = document.createElement('button');
-      b.className = `status-chip shape-${s.shape}${on ? ' on' : ''}`;
-      // The printed token, so the chip here and the strip on the board are the
-      // same object and a player learns the real artwork. Colour comes from the
-      // token's DURATION side, not an identity tint: on the table, colour says
-      // when it comes off, and two tokens sharing one are telling you they
-      // expire together.
-      // Red when every one worn shows red (audit Phase 6, C9).
-      const face = tokenFace(s.id, s.decay, allRed(t, s.id));
-      b.style.setProperty('--chip-tint', face.colour);
-      if (face.art) {
-        b.classList.add('has-art');
-        const im = document.createElement('img');
-        im.src = tokenPrintUrl(face.art);
-        im.alt = '';
-        b.appendChild(im);
-        if (s.stacking && n > 1) {
-          const c = document.createElement('span');
-          c.className = 'chip-n';
-          c.textContent = `×${n}`;
-          b.appendChild(c);
-        }
-      } else {
-        b.textContent = s.stacking && n > 1 ? `${s.icon}×${n}` : s.icon;
-      }
-      inspectOnHover(b, {
-        title: s.stacking && on ? `${s.label} ×${n}` : s.label,
-        sub: on ? `${s.icon} · on ${t.label}` : `${s.icon} · not on this unit`,
-        lines: [
-          SHAPE_NOTE[s.shape],
-          s.note,
-          s.stacking
-            ? on
-              ? `${n} token${n === 1 ? '' : 's'}, so ${n} fewer White ${n === 1 ? 'die' : 'dice'} on defence. Click to add another, shift-click to remove one.`
-              : 'Click to put a token on the unit.'
-            : on
-              ? 'Click to take this token off the unit.'
-              : 'Click to put this token on the unit.',
-        ],
-      });
-      const change = (delta: number) => this.toggleToken(t, s.id, delta);
-      b.addEventListener('click', (ev) => {
-        if (!s.stacking) {
-          change(statusCount(t.statuses, s.id) ? -1 : 1);
-          return;
-        }
-        change(ev.shiftKey ? -1 : 1);
-      });
-      b.addEventListener('contextmenu', (ev) => {
-        if (!s.stacking) return;
-        ev.preventDefault();
-        change(-1);
-      });
-      wrap.appendChild(b);
-    }
-    return wrap;
   }
 
   private partTable(t: Token): HTMLElement {

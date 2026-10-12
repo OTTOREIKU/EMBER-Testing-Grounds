@@ -47,7 +47,7 @@ const mainSrc = srcOf('main.ts');
 // that has the two fields renderTerrain touches besides them.
 const fills = cut(boardSrc, 'const TERRAIN_FILL', 'const SVG_NS', 'the terrain fills');
 const svgNs = cut(boardSrc, 'const SVG_NS', '\n', 'the SVG namespace');
-const maker = cut(boardSrc, 'function el<', 'function badgeWidth', 'the element maker');
+const maker = cut(boardSrc, 'function el<', 'function badgeShape', 'the element maker');
 const render = cut(boardSrc, '  renderTerrain(pieces: TerrainPiece[], editable = false): void {', '  renderZones(', 'renderTerrain');
 const slice = new URL('./_containerclick.board.slice.ts', import.meta.url);
 writeFileSync(slice, `type TerrainPiece = any; type SVGElementTagNameMap = any;

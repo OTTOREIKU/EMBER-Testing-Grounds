@@ -12,10 +12,9 @@ import type { GameData } from '../src/data';
 import type { Command, CheckResult } from '../src/commands';
 import { boxHands, normaliseTasks } from '../src/tasks';
 import { AttackHelper, combatRoleFor, type MirrorAct } from '../src/combat';
-import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, armorPiercing, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, structureOf, tokenCards, twoHandedUse, loanedParts } from '../src/units';
-import { statusCount } from '../src/types';
+import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, tokenCards, twoHandedUse, loanedParts } from '../src/units';
 import type { NoticeKind } from '../src/notices';
-import type { CardAction, DiceData, DieColor, GameState, PartSlot, Side, Token } from '../src/types';
+import type { CardAction, DiceData, DieColor, GameState, Side, Token } from '../src/types';
 import type { RolledDie } from '../src/net';
 
 export interface AttackApi {
@@ -79,12 +78,6 @@ const kwSide = (name: string): 'attack' | 'defense' | null => {
 
 function englishOf(a: CardAction): string {
   return (a.description?.en || api!.data.actionTranslation(a.id)?.english || '').trim();
-}
-
-// The slot of the Part that prints this Action, for its Charge Token.
-function slotOfAction(t: Token, id: string): string | null {
-  for (const { slot, card } of tokenCards(api!.data, t)) if ((card.actions ?? []).some((x) => x.id === id)) return String(slot);
-  return null;
 }
 
 // What the table should keep in mind for a roll: the Action's own keywords by

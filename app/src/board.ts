@@ -10,8 +10,6 @@ import type { InspectInfo } from './inspector';
 
 // Lives in types.ts now, so a page with no board (the pad) can stack a Mech's
 // Parts without importing this module. Re-exported for the callers that had it.
-import { MECH_LAYER_ORDER } from './types';
-export { MECH_LAYER_ORDER };
 
 export const CELL = 30;
 // Subcells per side for a board of `grids` Large Grids. This REPLACED the old
@@ -74,14 +72,6 @@ function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
   const e = document.createElementNS(SVG_NS, tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
   return e;
-}
-
-function badgeWidth(shape: TokenShape, stacked: boolean): number {
-  const base = stacked ? 24 : 17;
-  if (shape === 'hexagon') return base + 6;
-  if (shape === 'triangle') return base + 11;
-  if (shape === 'round') return base + 4;
-  return base;
 }
 
 function badgeShape(shape: TokenShape, bx: number, by: number, w: number, tint: string): SVGElement {
@@ -237,12 +227,6 @@ export class Board {
 
   private get size(): number {
     return CELL * this.cells;
-  }
-
-  // Which board this is drawn at, for callers that have to do their own
-  // geometry (snapPlacement and the free-spot scans).
-  get gridCount(): BoardGrids {
-    return this.grids;
   }
 
   // Change the board's dimension. Everything measured in world space has to be

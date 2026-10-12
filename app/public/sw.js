@@ -96,18 +96,6 @@ function isAsset(url) {
   return url.pathname.includes('/assets/') && /\.(webp|png|jpe?g|svg|avif)$/i.test(url.pathname);
 }
 
-// Kept for nothing today, but the shape a truly immutable asset would want.
-// Images are NOT that: a card scan gets replaced by a better one at the same
-// path, which is why they go through the pair below instead.
-async function cacheFirst(req, cacheName) {
-  const cache = await caches.open(cacheName);
-  const hit = await cache.match(req, { ignoreSearch: true, ignoreVary: true });
-  if (hit) return hit;
-  const res = await fetch(req);
-  if (res && res.ok) cache.put(req, res.clone());
-  return res;
-}
-
 // STALE-WHILE-REVALIDATE, in two halves so the refresh can be handed to
 // waitUntil SYNCHRONOUSLY from the fetch handler. Starting it inside an async
 // responder would hand waitUntil a promise after the event stopped
@@ -171,20 +159,4 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   e.respondWith(networkFirst(req, RUNTIME_CACHE));
-});
-
-self.addEventListener('message', (e) => {
-  if (e.data !== 'ember-cache-stats') return;
-  e.waitUntil(
-    (async () => {
-      const counts = {};
-      for (const name of KEEP) {
-        const cache = await caches.open(name);
-        counts[name] = (await cache.keys()).length;
-      }
-      for (const client of await self.clients.matchAll()) {
-        client.postMessage({ type: 'ember-cache-stats', counts });
-      }
-    })(),
-  );
 });
