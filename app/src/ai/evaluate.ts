@@ -16,6 +16,12 @@
 // No rule is read here and no card is known here: a Part is worth its points
 // whatever it is. The numbers are the weights, and they are data (section 7:
 // a tuner plays one set of them against another).
+//
+// RETIRED (the code audit, 2026-10-12): weights measured as changing no game,
+// or as making the computer worse, were taken out with their code: `contest`,
+// `jammer`, `zoneShare`, `approach`, `lastWalk`, `walkTurn`, `boxMore`,
+// `boxShare`, `borrowed`, `dialAll` and `reshape`, and the skill `tickReach`.
+// What each was and what it measured stays in the plan.
 import type { Forecast, SeatView, UnitView } from '../seat';
 
 export interface Weights {
@@ -44,11 +50,6 @@ export interface Weights {
   // What a Victory Point a round later is worth of one now: a Control dial
   // goes on paying, but the other squad has a round to take the zone back.
   missionFuture: number;
-  // The share of a zone's worth that is at risk when it is held by its dial
-  // alone, with nobody inside it and an enemy unit near enough to walk in. A
-  // unit standing in the zone keeps the dial whoever comes; a unit that has
-  // walked off has left it to be taken.
-  contest: number;
   // How much of what an enemy could do to a unit counts against standing
   // there: when that enemy's turn is still to come this round, and when it
   // comes only next round (by when the unit may have moved again).
@@ -79,11 +80,6 @@ export interface Weights {
   // that stands for that when nothing says what it could do.
   jam: number;
   jamIdle: number;
-  // An ENEMY that carries an Electronic Attack is worth what it would take
-  // away: this share of what this squad's best gun does in a round, at the
-  // chance of the Counter-roll (`jam`), counted as its "firepower" in what it
-  // would go on to do (`threat`).
-  jammer: number;
   // THE WALK TO A ZONE the Main Task scores that is not its squad's: this
   // share of what the zone would pay from the round the unit could be standing
   // in it (a zone two activations off pays two rounds less), a zone the other
@@ -93,23 +89,16 @@ export interface Weights {
   // Grids that are the same number of activations away.
   zonePull: number;
   zoneStep: number;
-  // A zone another unit of the squad would be standing in sooner could be left
-  // to that unit: what is left of its worth to this one. At 1 (measured: the
-  // best) nothing is shared out and every unit walks for the zone worth most
-  // to it. And a zone an enemy unit stands in cannot be taken while it stands
-  // there: what is left of its worth to walk to meanwhile.
-  zoneShare: number;
+  // A zone an enemy unit stands in cannot be taken while it stands there: what
+  // is left of its worth to walk to meanwhile.
   zoneHeld: number;
   // An enemy unit destroyed where it stands in a zone holds the zone no longer:
   // this share of what the Main Task would gain on the board without it, for
   // the chance the attack destroys it before the round ends.
   holder: number;
-  // The walk to a fight, for each Grid still to go to its own Range of an
-  // enemy: a flat amount (`contactStep`) and a share of what destroying that
-  // enemy is worth (`approach`). With no share of the prize the enemy walked
-  // to is the nearest; with one, it is the enemy worth most for the walk.
+  // The walk to a fight: a flat amount for each Grid still to go to its own
+  // Range of the nearest enemy.
   contactStep: number;
-  approach: number;
   // THE RANGE A UNIT FIGHTS AT (`blade`; OTTO, 2026-10-05: "melee squads still
   // hang back"): the walk to a fight ends at the reach of the unit's strongest
   // attacks, not its longest. Where its blades weigh `blade` times what its
@@ -129,12 +118,6 @@ export interface Weights {
   // 100 against the Ace's 37 and 87 of 200 against 85, TopTierMelee 31 of 100
   // against 28, random squads 90 of 200 against 87 (193 the same game).
   charge: number;
-  // THE LAST WALK (`lastWalk`, tactician.ts zoneWalk): a walk to a Task paid
-  // as the game ends that would arrive in its last round pulls `lastWalk` of
-  // the way from `zonePull` to the whole of what it pays. At 0, `zonePull`.
-  // MEASURED (2026-10-05): every Black Box Task, fewer games 0 to 0 (57 to 46
-  // of 200) and fewer won (98 against 107): stays 0.
-  lastWalk: number;
   // A Remote Access: the chance its Counter-roll against the Terminal is won,
   // as a share of what the Terminal pays. MEASURED at 0.5 on Terminals:
   // Receive Signal (plan section 12, tm1b to tm3b): 345 of 400 against the
@@ -153,19 +136,8 @@ export interface Weights {
   // board stands (missionOf): a Box outside the zone pays nothing there.
   carry: number;
   // A Black Box pays once, as the game ends: what a Victory Point of that is
-  // worth of one paid now, for each round still to play. And what a walk for a
-  // Box (to fetch it, to carry it home) is worth for each activation it still
-  // takes: a long walk is less sure than a short one, and nothing else tells
-  // two Grids apart on a Task that pays the same whenever the walk is done.
+  // worth of one paid now, for each round still to play.
   boxFuture: number;
-  walkTurn: number;
-  // A unit carrying a Box with a hand still free: whether the walk to fetch a
-  // second one counts the Boxes it has (1: fetched on the way home, both pay)
-  // or the new one alone (0). And what a Box lying loose is worth to a unit
-  // when another of its squad would have it sooner: 1 is the whole of it to
-  // every unit.
-  boxMore: number;
-  boxShare: number;
   // THE OTHER SQUAD'S BOXES (M11; OTTO, 2026-10-03: "if I saw someone go for
   // the box in an attempt to get an extra point to take the victory I would
   // plan accordingly to try to intercept and stop them or steal it myself").
@@ -194,13 +166,6 @@ export interface Weights {
   // Acting one Timing sooner, on the dial: enough to choose between two plans
   // worth the same, and no more.
   tempo: number;
-  // What a plan loses for starting on a Timing its dial only BORROWS (from an
-  // ally's aura, on the board as it stands): the lender may not be there when
-  // the Opportunity comes. MEASURED at 0.5: as RDL on the alley it gains four
-  // games in a hundred against the eager policy and loses nine against the
-  // Brawler (the Movement dial it sends a Sprint to acts after every Firing
-  // dial). 0 until something better than a flat charge is found.
-  borrowed: number;
   // What an enemy would go on to do is part of what destroying it is worth:
   // this share of its best attack on the squad as the board stands, for each
   // of up to `threatRounds` rounds it has left to make one in.
@@ -208,15 +173,9 @@ export interface Weights {
   threatRounds: number;
   // What a plan must be better by before a unit leaves where it stands.
   better: number;
-  // Two things switched for measuring. The dial: every Timing offered is asked
-  // what it would open (1), or only those the Mech's own Actions are printed
-  // with, and Melee and Movement (0). MEASURED: with every Timing asked, RDL on
-  // the alley wins 89 of 100 against the Brawler where it wins 99 without (the
-  // extra dials are the ones that open only borrowed Timings). And a zone
-  // entered by a Maneuver and the Movement Action after it is planned as one
-  // move (1: 92 of 100 against the eager policy, 88 without) or left to the
-  // walk (0).
-  dialAll: number;
+  // A zone entered by a Maneuver and the Movement Action after it is planned
+  // as one move (1: 92 of 100 against the eager policy, 88 without) or left to
+  // the walk (0).
   entry: number;
   // A Tactics Card is used once a game (FAQ P2): what playing one must gain
   // over keeping it, where what it would do is weighed (Hit and Run,
@@ -456,15 +415,6 @@ export interface Weights {
   // `dialDoubt` x the share of the Timings that come before its own. At 0 a
   // dial takes the attack as certain.
   dialDoubt: number;
-  // THE UNIT AS A PLAN LEAVES IT (1 on, 0 off): what standing somewhere costs
-  // a plan that changes the unit itself (a Mode, a Stance, a Token, a Bit's
-  // face) is read with the unit as that plan's table has it, its guns and its
-  // Parts with it. At 0 it is read with the unit as it stands: a VIP
-  // Commander's White Dwarf priced its Cruise Mode at 0.00 from Assault Mode
-  // (what it could do back came from its Assault guns) and at 1.23 once in it,
-  // and changed Mode twice in one activation to end where it began (random game
-  // 51001).
-  reshape: number;
   // A DRONE LAUNCHED TO MEND AN ALLY: the SU1 a Nest Guardian Swarm puts down
   // mends nothing as it lands, and was launched by nobody (a census of 21
   // random games with one aboard: never), since a launch was worth only what
@@ -644,7 +594,6 @@ export const TACTICIAN: Weights = {
   vipOwn: 1.5,
   vipPart: 0.5,
   missionFuture: 0.85,
-  contest: 0,
   exposure: 0.8,
   exposureLater: 0.35,
   ahead: 0.35,
@@ -654,34 +603,25 @@ export const TACTICIAN: Weights = {
   launch: 0.8,
   jam: 0.5,
   jamIdle: 0.25,
-  jammer: 0,
   zonePull: 0.6,
   zoneStep: 0.02,
-  zoneShare: 1,
   zoneHeld: 0.5,
   holder: 0.75,
   contactStep: 0.04,
-  approach: 0,
   blade: 0,
   charge: 1,
-  lastWalk: 0,
   access: 1,
   carry: 0.5,
   boxFuture: 0.85,
-  walkTurn: 1,
-  boxMore: 0,
-  boxShare: 1,
   boxRace: 0.5,
   boxSteal: 1,
   deny: 1,
   restore: 0.1,
   lane: 0.15,
   tempo: 0.01,
-  borrowed: 0,
   threat: 0.5,
   threatRounds: 2,
   better: 0.01,
-  dialAll: 0,
   entry: 1,
   card: 0.3,
   stakes: 0,
@@ -721,7 +661,6 @@ export const TACTICIAN: Weights = {
   cover: 0,
   nextAfter: 1,
   dialDoubt: 0,
-  reshape: 0,
   patch: 1,
   spotter: 1,
   smokeAlly: 0.15,
@@ -979,11 +918,11 @@ export function marginOf(view: SeatView, w: Weights): number {
   }
   if (!task || task.family !== 'control') return banked;
   if (task.cadence !== 'per-round') {
-    return banked + task.vp * zoneLead(view, w) * (view.round >= view.roundLimit ? 1 : w.missionFuture ** (view.roundLimit - view.round));
+    return banked + task.vp * zoneLead(view) * (view.round >= view.roundLimit ? 1 : w.missionFuture ** (view.roundLimit - view.round));
   }
   let rounds = 0;
   for (let r = Math.max(view.round, task.fromRound); r <= view.roundLimit; r++) rounds += w.missionFuture ** (r - view.round);
-  return banked + task.vp * zoneLead(view, w) * rounds;
+  return banked + task.vp * zoneLead(view) * rounds;
 }
 
 // VIP: the Victory Points the round limit will pay for the Parts of each Commander already destroyed, to the seat
@@ -1080,20 +1019,13 @@ export function stride(u: UnitView): number {
 
 // The zones the Main Task scores that would be this squad's when the round
 // ended, less the other squad's. A zone somebody holds now is that squad's. A
-// zone nobody holds stays with the squad its dial names: in full while one of
-// that squad's units stands in it (nobody can take it then), and for less
-// while it stands empty with one of the other squad's near enough to walk in.
-function zoneLead(view: SeatView, w: Weights): number {
+// zone nobody holds stays with the squad its dial names.
+function zoneLead(view: SeatView): number {
   let lead = 0;
   for (const z of view.zones) {
     if (!z.scoring) continue;
-    if (z.holder) { lead += z.holder === view.seat ? 1 : -1; continue; }
-    if (!z.control) continue;
-    const cells = z.cells.map((cell) => cell.split(',').map(Number));
-    const near = (u: UnitView): number => Math.min(...cells.map(([col, row]) => Math.abs(u.grid.col - col) + Math.abs(u.grid.row - row)));
-    const kept = view.units.some((u) => u.side === z.control && holds(u) && near(u) === 0);
-    const taken = !kept && view.units.some((u) => u.side !== z.control && holds(u) && near(u) <= stride(u));
-    lead += (z.control === view.seat ? 1 : -1) * (taken ? 1 - w.contest : 1);
+    if (z.holder) lead += z.holder === view.seat ? 1 : -1;
+    else if (z.control) lead += z.control === view.seat ? 1 : -1;
   }
   return lead;
 }

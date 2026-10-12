@@ -127,23 +127,13 @@ const zone = (id, cells, more = {}) => ({ id, name: id, cells, holder: null, con
     [0, true]);
   check('a Task that pays once, as the game ends, is that payment at the distance the end is at',
     near(missionOf(board([zone('a', ['5,5'], { holder: 's1' })], { round: 3, task: { ...CONTROL, cadence: 'at-end' } }), W), CONTROL.vp * W.missionFuture ** 2), true);
-  // A zone held by its dial alone, with an enemy near enough to walk in.
-  const risky = { ...W, contest: 0.4 };
+  // A zone held by its dial alone. (Counting it for less with an enemy near
+  // enough to walk in, `contest`, was measured and retired, 2026-10-12.)
   const at = (u, col, row) => ({ ...u, grid: { col, row } });
-  const dial = [zone('a', ['5,5', '6,5'], { control: 's1' })];
-  const last = (units) => viewOf(units, { task: CONTROL, zones: dial, round: 5 });
-  check('a zone held by its dial alone is at risk while an enemy that could hold it stands within a Movement of it: it counts for less by the weight on that',
-    [near(missionOf(last([at(me, 0, 0), at(foe, 7, 5)]), risky), CONTROL.vp * (1 - risky.contest)), near(missionOf(last([at(me, 0, 0), at(foe, 9, 9)]), risky), CONTROL.vp)], [true, true]);
-  check('a Mech\'s reach is its Maneuver and the Movement Action it carries: with a Sprint of 4 it is a threat from five Grids',
-    [near(missionOf(last([at(me, 0, 0), at({ ...foe, weapons: [{ ...gun(4), type: 'Moving', timing: 'movement' }] }, 11, 5)]), risky), CONTROL.vp * (1 - risky.contest)),
-      near(missionOf(last([at(me, 0, 0), at(foe, 11, 5)]), risky), CONTROL.vp)], [true, true]);
-  check('a unit of the dial\'s own squad standing in the zone keeps it whoever comes; a Low Value unit and a Shutdown Mech neither take a zone nor keep one',
-    [near(missionOf(last([at({ ...me, lowValue: true }, 0, 0), at(unit(3, 's1', 'drone', 5, 5), 5, 5), at(foe, 6, 5)]), risky), CONTROL.vp),
-      near(missionOf(last([at(me, 0, 0), at({ ...foe, lowValue: true }, 7, 5)]), risky), CONTROL.vp), near(missionOf(last([at(me, 0, 0), at({ ...foe, stance: 'shutdown' }, 7, 5)]), risky), CONTROL.vp)],
-    [true, true, true]);
-  check('the same holds the other way: a zone the other squad\'s dial names counts for less against while this squad stands near enough to take it',
-    near(missionOf(viewOf([at(me, 7, 5), at(foe, 0, 0)], { task: CONTROL, zones: [zone('a', ['5,5', '6,5'], { control: 's2' })], round: 5 }), risky), -CONTROL.vp * (1 - risky.contest)), true);
-  check('with no weight on it a dial is a dial, whoever is near', near(missionOf(last([at(me, 0, 0), at(foe, 7, 5)]), { ...W, contest: 0 }), CONTROL.vp), true);
+  const dial = (control) => [zone('a', ['5,5', '6,5'], { control })];
+  check('a zone held by its dial alone counts in full, for or against, whoever stands near it',
+    [near(missionOf(viewOf([at(me, 0, 0), at(foe, 7, 5)], { task: CONTROL, zones: dial('s1'), round: 5 }), W), CONTROL.vp),
+      near(missionOf(viewOf([at(me, 7, 5), at(foe, 0, 0)], { task: CONTROL, zones: dial('s2'), round: 5 }), W), -CONTROL.vp)], [true, true]);
   // What a zone pays from a round on: what walking to one is counted in.
   const f = W.missionFuture;
   const in2 = viewOf([me], { task: CONTROL, round: 2 });
@@ -187,7 +177,7 @@ const ask = (v, options, more = {}) => ({ id: 'q', kind: 'opp.act', seat: 's1', 
 // A policy with only some skills, and nothing pulling it anywhere unless a
 // check says so: no walk toward a zone or an enemy, and no learned judge (it
 // reads every table a plan leaves, and these checks count what is asked).
-const still = { zoneStep: 0, zonePull: 0, contactStep: 0, approach: 0, learned: 0 };
+const still = { zoneStep: 0, zonePull: 0, contactStep: 0, learned: 0 };
 // A policy remembers what the table in front of it has been asked. Here one
 // table is asked different things from one check to the next, so every check
 // is put to a policy that has been asked nothing.
@@ -741,44 +731,20 @@ const plain = only({});
   check('the dial is the Timing whose Opportunity opens the plan worth most, by the same sum an Opportunity is planned by',
     [c.option, c.reason, c.why.includes('attack:fire')], ['dial:firing', 'dial_by_plan', true]);
   check('the Timings planned are the ones something of the Mech\'s is played on: its weapons\', and Melee and Movement, which every Mech has', [...new Set(asked)].sort(), ['firing', 'melee', 'movement']);
+  // A gun fired on the dial BEFORE its own Timing is fired before the guns on
+  // that Timing: a Mech that carries a launcher besides has its Projectile dial
+  // asked too, and where that dial opens the gun as well it is the one set.
+  const loaded = { ...me, weapons: [gun(6), { ...gun(6), actionId: 'rack', name: 'Rack', type: 'Projectile', timing: 'projectile' }] };
+  const lv = viewOf([loaded, foe], { phase: 1, phaseName: 'Planning' });
+  const openedL = (options) => ({ ...opened(options), here: () => outlook(lv) });
   asked.length = 0;
-  only({ dials: true }, { dialAll: 1 }).choose(d({ firing: opened([fire, end()]), melee: opened([punch, end()]) }), v, rng);
-  check('with the weight on it, every Timing offered is asked what it would open (a dial may open the Actions of the Timing beside it, where something lends it)',
-    [...new Set(asked)].sort(), ['firing', 'melee', 'movement', 'projectile', 'swift', 'tactical']);
-  // A gun fired on the dial BEFORE its own Timing is fired before the guns on that Timing.
-  const wide = (skills, weights = {}) => only(skills, { dialAll: 1, ...weights });
-  c = wide({ dials: true }).choose(d({ firing: opened([fire, end()]), projectile: opened([fire, end()]) }), v, rng);
-  check('then, where the dial before a weapon\'s own Timing opens the same attack, that is the dial set: the attack is made sooner', c.option, 'dial:projectile');
-  // A PLAN THAT BORROWS ITS TIMING. The Starting Action must be of the dial's
-  // own Timing unless something on the board lends the one beside it, and the
-  // lender may be gone when the Opportunity comes.
-  const own = shot('attack:own', 2, odds(0.5, 0.5, 0), { facts: { uid: 1, targetUid: 2, actionId: 'gun' } });
-  const both = d({ firing: opened([own, end()]), projectile: opened([own, end()]) });
-  const LENT = 0.5;
-  check('with a weight on it, of two dials that open the same attack the one whose own Timing the attack is printed with is set, though the other acts sooner: a Timing a dial only borrows may not be there when the Opportunity comes',
-    [wide({ dials: true }, { borrowed: LENT }).choose(both, v, rng).option, wide({ dials: true }).choose(both, v, rng).option, W.borrowed], ['dial:firing', 'dial:projectile', 0]);
-  const better = shot('attack:own', 2, odds(0.5 + (LENT + 0.1) / gainOf(odds(1, 1, 0), foe, v, W), 0.5, 0), { facts: { uid: 1, targetUid: 2, actionId: 'gun' } });
-  check('and a borrowed Timing is still set where what it opens is worth more than that',
-    wide({ dials: true }, { borrowed: LENT }).choose(d({ firing: opened([own, end()]), projectile: opened([better, end()]) }), v, rng).option, 'dial:projectile');
-  // What a plan starts with: the Movement Action it moves by, or behind a Maneuver the first thing it does.
-  const runner = unit(1, 's1', 'mech', 0, 0, { facing: 1, timing: undefined, weapons: [gun(6), { ...gun(4), type: 'Moving', timing: 'movement', actionId: 'sprint' }] });
-  const rv = viewOf([runner, foe], { phase: 1, phaseName: 'Planning' });
-  const dash = { id: 'move:sprint:1,0:1', label: 'Sprint to 1,0', tags: ['move', 'facing:1'], commands: [{}], facts: { uid: 1, to: { c: 1, r: 0 }, facing: 1, grids: 1, actionId: 'sprint' },
-    later: () => looked([shot('attack:later', 2, odds(0.5, 0.5, 0))]) };
-  const openedFor = (options) => ({ id: 'opened', kind: 'opp.act', seat: 's1', unit: 1, options, fallback: 'end', facts: {}, here: () => outlook(rv) });
-  const sprints = { id: 'dial', kind: 'planning.dial', seat: 's1', unit: 1, fallback: 'dial:movement', facts: {},
-    options: TIMINGS.map((t) => dialOf(t, openedFor(t === 'firing' || t === 'movement' ? [dash, end({ later: () => null })] : [end({ later: () => null })]))) };
-  check('a plan that starts with a Sprint is set on the Movement dial, whose own Timing a Sprint is, and not on the Firing dial that would open it sooner',
-    [wide({ dials: true }, { borrowed: LENT }).choose(sprints, rv, rng).option, wide({ dials: true }).choose(sprints, rv, rng).option], ['dial:movement', 'dial:firing']);
-  const stepThenFire = step(1, 0, 1, { then: (kinds) => (kinds.includes('attack') ? looked([own]) : null) });
-  const stepped = { id: 'dial', kind: 'planning.dial', seat: 's1', unit: 1, fallback: 'dial:movement', facts: {},
-    options: TIMINGS.map((t) => dialOf(t, openedFor(t === 'projectile' || t === 'firing' ? [stepThenFire, end({ later: () => null })] : [end({ later: () => null })]))) };
-  check('behind a Maneuver it is the attack that starts the plan: the dial set is the attack\'s own',
-    wide({ dials: true }, { borrowed: LENT }).choose(stepped, rv, rng).option, 'dial:firing');
+  c = only({ dials: true }).choose(d({ firing: openedL([fire, end()]), projectile: openedL([fire, end()]) }), lv, rng);
+  check('where the dial before a weapon\'s own Timing opens the same attack, that is the dial set: the attack is made sooner',
+    [c.option, [...new Set(asked)].sort()], ['dial:projectile', ['firing', 'melee', 'movement', 'projectile']]);
   // Each Timing is planned for itself: two that open the same answers may differ in what follows them.
   const reaches = (f) => opened([step(1, 0, 1, { then: (kinds) => (kinds.includes('attack') && f ? looked([shot('attack:after', 2, f, { tags: ['attack', 'melee'] })]) : null) }), end()]);
-  c = wide({ dials: true }).choose(d({ swift: reaches(null), melee: reaches(odds(0.6, 0.6, 0)) }), v, rng);
-  check('two Timings that open the same answers are still planned each for itself: the same Maneuver leads to an attack on one dial and to nothing on the other', [c.option, c.reason], ['dial:melee', 'dial_by_plan']);
+  c = only({ dials: true }).choose(d({ melee: reaches(null), firing: reaches(odds(0.6, 0.6, 0)) }), v, rng);
+  check('two Timings that open the same answers are still planned each for itself: the same Maneuver leads to an attack on one dial and to nothing on the other', [c.option, c.reason], ['dial:firing', 'dial_by_plan']);
   c = only({ dials: true }).choose(d({ firing: opened([fire, end()]), melee: opened([fire, end()]) }), v, rng);
   check('of two Timings that open plans worth the same, the earlier is taken: acting sooner is worth a little by itself', c.option, 'dial:melee');
   const whole60 = gainOf(odds(1, 1, 0), foe, v, W);
