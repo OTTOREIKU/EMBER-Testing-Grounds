@@ -237,7 +237,7 @@ function blocksFor(side: 'attack' | 'defense', pool: Record<string, number>): Ro
   // The window's OWN White sources (AttackHelper.whiteSources), so this
   // breakdown and the pool it explains are one derivation. It used to redo the
   // sum here, and so it kept the old zero floor the day the window's was fixed
-  // (p.50: never below 1 White). Protection is split back into Terrain and Unit
+  // (p.50: never REDUCED below 1 White). Protection is split back into Terrain and Unit
   // from the verdict, which is the one thing the window does not name.
   const from = verdict.protectionFrom ?? (verdict.protection === 4 ? 'both' : 'terrain');
   const parts: { n: number; why?: string }[] = [];

@@ -2039,15 +2039,21 @@ export class AttackHelper {
   // Fragile definition and our own token help give the same floor. The
   // empty-pool handling further down stays, for a pool a table nudges to 0 in
   // the editor.
+  //
+  // THE FLOOR STOPS A REMOVAL, AND ONLY THAT. Armor 0 collects no White: the 17
+  // Armor 0 missiles, rockets and grenades and the unfolded SGM-2 Pholcus defend
+  // with their Blue Dodge dice alone, as printed. The printed Armor used to be
+  // clamped to 1 here, which handed every one of them a White die the book does
+  // not (penetration audit 2026-10-12, finding 2).
   private whiteParts(slot: string): { n: number; why: string }[] {
     const c = this.ctx!;
     const d = c.defender;
     const card = this.defenderPartCard(slot);
     const st = d.partStates[slot as PartSlot | 'main'] ?? 'intact';
-    // structureOf so an Anser Chassis rolls the granted 2 rather than falling
-    // through to the min-1 clamp.
+    // structureOf so an Anser Chassis rolls the granted 2 rather than the
+    // printed 0.
     const base = st === 'damaged' ? structureOf(this.data, d, slot as PartSlot | 'main') : card?.armor ?? 0;
-    const parts = [{ n: Math.max(1, base), why: st === 'damaged' ? 'Structure' : 'Armor' }];
+    const parts = [{ n: Math.max(0, base), why: st === 'damaged' ? 'Structure' : 'Armor' }];
     // Surplus Damage grants the defender no Terrain or Unit Protection (4.8).
     if (!c.surplusRound && c.protection) parts.push({ n: c.protection, why: 'Protection' });
     // "Ally Units within Range +1W on hit" (RT-18T Escarpment, Defense
@@ -5440,7 +5446,10 @@ export class AttackHelper {
     const sources = this.whiteSources();
     const removal = (why: string, want: number): string => {
       const took = -sources.filter((p) => p.why === why).reduce((s, p) => s + p.n, 0);
-      const floor = 'a Defense Roll never drops below 1 White (p.50)';
+      // An Armor 0 unit has no White to take.
+      const floor = sources.some((p) => p.n > 0)
+        ? 'a removal never takes a Defense Roll below 1 White (p.50)'
+        : 'there is no White to take';
       if (took >= want) return `<b>−${took} White</b> is already taken off the pool below`;
       if (took > 0) return `<b>−${took} White</b> is already taken off the pool below, and no more: ${floor}`;
       return `nothing comes off the pool below, because ${floor}`;
@@ -5457,7 +5466,7 @@ export class AttackHelper {
             } carried over from the first Penetration stand in for it, and Terrain Protection, Unit Protection and Parry are all barred here (4.8).</p>`
           : ''
       }
-      <p class="dim">White = target Part ${st === 'damaged' ? 'STRUCTURE (part is Damaged)' : 'Armor'} (min 1)${
+      <p class="dim">White = target Part ${st === 'damaged' ? 'STRUCTURE (part is Damaged)' : 'Armor'}${
         prot ? ` + ${prot} protection` : ''
       }${c.defender.stance === 'mobility' ? ' · MOB stance: + Blue = Dodge value' : ''}${
         c.defender.stance === 'defensive' ? ' · DEF stance: hollow Defense icons count as solid' : ''
@@ -5600,7 +5609,8 @@ export class AttackHelper {
       if (!mine && elsewhere) {
         const wait = document.createElement('p');
         wait.className = 'ah-note';
-        wait.textContent = `Waiting for ${c.defender.label}'s player to roll their defence: ${c.defensePool.white} White${c.defensePool.blue ? ` + ${c.defensePool.blue} Blue` : ''}.`;
+        const pool = [c.defensePool.white ? `${c.defensePool.white} White` : '', c.defensePool.blue ? `${c.defensePool.blue} Blue` : ''].filter(Boolean).join(' + ') || 'no dice';
+        wait.textContent = `Waiting for ${c.defender.label}'s player to roll their defence: ${pool}.`;
         wrap.appendChild(wait);
       }
       // THE DEFENDER'S HALO DECLARES, BEFORE THE ROLL: both spends are declared

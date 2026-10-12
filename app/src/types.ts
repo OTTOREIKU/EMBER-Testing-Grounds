@@ -505,7 +505,7 @@ export const STATUSES: StatusDef[] = [
     tint: '#f0916b',
     stacking: true,
     rule: 'Each token costs 1 White die on Defense Rolls, and they stack.',
-    note: 'Each Fragile Token costs this unit 1 White die on its Defense Rolls, and they stack. Laser Weapon grants one on every hit, and Ion Weapon may exchange Lightning for a Heavy Hit against a unit bearing one. A Defense Roll can never drop below 1 White (4.4.1), so on an Armor 0 unit such as most missiles this often changes nothing except the Ion Weapon trigger.',
+    note: 'Each Fragile Token costs this unit 1 White die on its Defense Rolls, and they stack. Laser Weapon grants one on every hit, and Ion Weapon may exchange Lightning for a Heavy Hit against a unit bearing one. A removal never takes a Defense Roll below 1 White (4.4.1), and an Armor 0 unit such as a missile has no White to lose, so there it changes nothing except the Ion Weapon trigger.',
   },
   {
     id: 'hindered',

@@ -140,6 +140,26 @@ console.log('Phase 1: attack and damage\n');
   check('A2 a Surplus roll carries no Armor Piercing (4.8)', [sum(h.whiteSources()), h.whiteSources().some((p) => p.why === 'Armor Piercing')], [5, false]);
 }
 
+// ---------- A2b: Armor 0 rolls no White; the floor stops a removal only ----------
+// The penetration audit (2026-10-12, finding 2): the printed Armor was clamped
+// to 1, so every Armor 0 missile, rocket and grenade, and the unfolded Pholcus,
+// rolled a White die the book does not give them.
+{
+  const atk = kit(mech(1, 's1', 'Railgun', 1), { rightHand: 'ZHRA-202' });
+  const missile = { ...drone(2, 's2', '071', 3), kind: 'projectile', aerial: true, stance: 'mobility', statuses: ['fragile'] };
+  check('A2b the MC-3 Razor prints Armor 0 and Dodge 6', [data.byId.get('071')?.armor, data.byId.get('071')?.dodge], [0, 6]);
+  const { h, root } = windowOn([atk, missile]);
+  h.start(atk, act('ZHRA-202', 'ZHRA-202_A'), missile, 'clear');
+  check('A2b an Armor 0 missile rolls no White, only its Dodge in Blue (4.4.1 step 4, p.50)', h.ctx.defensePool, { white: 0, blue: 6 });
+  check('A2b and Fragile and Armor Piercing take nothing from nothing', h.whiteSources().filter((p) => p.n < 0).length, 0);
+  resolveWith(h, [['yellow', faceOf('yellow', 'lightHit')]], Array.from({ length: 6 }, () => ['blue', BLANK('blue')]));
+  check('A2b so one Light Hit against six blank Blue gets through', findButtons(root).some((b) => /^Apply Penetration/.test(label(b))), true);
+  const pholcus = { ...drone(3, 's2', '167', 5), stance: 'mobility' };
+  const w2 = windowOn([atk, pholcus]);
+  w2.h.start(atk, act('ZHRA-202', 'ZHRA-202_A'), pholcus, 'clear');
+  check('A2b the unfolded Pholcus (Armor 0, Dodge 2) rolls 2 Blue and no White', w2.h.ctx.defensePool, { white: 0, blue: 2 });
+}
+
 // ---------- A3: a conditional Mutilation is a grant, not a keyword ----------
 {
   check('A3 an Ion shot with no Charge spent does not Mutilate', M.surplusEffects(act('122', '122_A')).map((e) => e.name), []);
