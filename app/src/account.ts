@@ -66,7 +66,7 @@ export function openAccount(host: AccountHost): void {
 
     <section class="acc-sect" data-acc-logging>
       <h4>Game logging</h4>
-      <p class="acc-note">Off unless you switch it on. A logged game helps balance the factions and tune the computer.</p>
+      <p class="acc-note">Logged games help track various statistics like most used cards and various win rates. Computer matches help me fine tune the bots.</p>
       <label class="acc-switch">
         <input type="checkbox" data-acc-log-computer>
         <span>Games against the computer</span>
@@ -80,7 +80,7 @@ export function openAccount(host: AccountHost): void {
       <details class="acc-kept">
         <summary>What is kept</summary>
         <p>The cards each side brought, by card number, with factions and points. The battlefield, the Main Task and the Secondary Tasks. Who went first, the score by round and what scored it, the units destroyed and when, the Tactics Cards played, the winner and how the game ended. Season rules on or off, the computer's level, the app's version, and how long the game took.</p>
-        <p>Never kept: your name or any name you typed (squads, Mechs, units), your device, your browser, or where you connect from.</p>
+        <p><b>Never kept:</b> your name or any name you typed (squads, Mechs, units), your device, your browser, or where you connect from.</p>
         <p>In a game against another player only your own side is linked to your account. The other side stays anonymous unless that player logs the game too.</p>
       </details>
       <div class="acc-actions">
