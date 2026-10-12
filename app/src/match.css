@@ -717,16 +717,6 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
   cursor: pointer; font-size: 13px; line-height: 1; transition: background 0.12s;
 }
 .acct .x:hover { background: var(--red-lt); color: var(--red); }
-.acct .rec {
-  display: flex; gap: 8px; margin: 4px 0 6px;
-}
-.acct .rec > div {
-  flex: 1; background: var(--surface3); border-radius: var(--radius-sm);
-  padding: 8px 6px; text-align: center;
-}
-.acct .rec b { display: block; font-family: var(--mono); font-size: 15px; }
-.acct .rec span { font-size: 9.5px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text3); }
-.acct .sect { font-size: 9.5px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text3); font-weight: 700; margin: 16px 0 2px; }
 .acct .row2 { display: flex; gap: 8px; margin-top: 10px; }
 .acct .row2 .btn { flex: 1; }
 
@@ -789,15 +779,6 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
   .scrollbox { overflow: visible; padding-right: 0; margin-right: 0; }
 }
 
-/* The record blocks, shared with the account popup's shape but standing on
-   their own here rather than crammed under a password form. */
-.panel .rec { display: flex; gap: 6px; margin: 4px 0 6px; }
-.panel .rec > div {
-  flex: 1; min-width: 0; background: var(--surface3); border-radius: var(--radius-sm);
-  padding: 8px 4px; text-align: center;
-}
-.panel .rec b { display: block; font-family: var(--mono); font-size: 15px; }
-.panel .rec span { font-size: 9px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text3); }
 .panel .sect {
   font-size: 9.5px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text3);
   font-weight: 700; margin: 14px 0 4px;
@@ -832,41 +813,11 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
 .sl-rank { flex: 0 0 13px; font-family: var(--mono); font-size: 9.5px; color: var(--text3); text-align: right; }
 .sl-name { flex: 1; min-width: 0; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .statrow:hover .sl-name { color: var(--text); }
-/* A second line under the name: a squad's faction and size, a player's W/D/L.
-   It carries its own clipping, since the parent's ellipsis stops at the text
-   node above it. */
-.sl-sub {
-  display: block; font-style: normal; font-size: 9px; color: var(--text3);
-  letter-spacing: 0.4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-/* Your own row on the leaderboard, so it can be found without reading. */
-.statrow.me { background: var(--accent-lt); }
-.statrow.me .sl-name, .statrow.me:hover .sl-name { color: var(--accent); }
-/* A row that opens something says so. */
-.statrow.pick { cursor: pointer; }
-.statrow.pick:hover { background: var(--accent-lt); }
-.statrow.pick:hover .sl-name { color: var(--accent); }
-
-/* One squad, opened: the cards behind the record, each putting its own art up
-   on the right as it is hovered. Taller and wider than the account popup, and
-   it scrolls itself rather than the page. */
-.acct.squadpop {
-  max-width: 440px; max-height: min(760px, calc(100vh - 40px));
-  display: flex; flex-direction: column; overflow-y: auto;
-}
-.acct.squadpop .statrow { background: var(--surface3); }
-.acct.squadpop .statrow:hover { background: var(--bg); }
-.acct.squadpop .statrow:hover .sl-name { color: var(--accent); }
-.acct.squadpop .sl-name { white-space: normal; }
 .sl-bar { flex: 0 0 56px; height: 5px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
 .statrow:hover .sl-bar { background: var(--bg); }
 .sl-bar i { display: block; height: 100%; background: var(--accent); }
 .sl-n { flex: 0 0 26px; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--text); }
 .sl-w { flex: 0 0 34px; text-align: right; font-family: var(--mono); font-size: 10.5px; color: var(--text3); }
-.sl-res { flex: 0 0 40px; text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
-.sl-res.won { color: var(--green); }
-.sl-res.lost { color: var(--red); }
-.sl-res.draw { color: var(--text3); }
 .sl-date { flex: 0 0 58px; text-align: right; font-family: var(--mono); font-size: 10px; color: var(--text3); }
 
 /* ---------- admin ---------- */

@@ -194,7 +194,7 @@ function leaks(e, seen = new Set()) {
 // Judged by what is PRINTED: both branches of a conditional, both sides of a
 // fallback or a join, a call's arguments. A value that is only compared
 // (`state.map === m.id ? ' sel' : ''`) prints nothing of itself.
-const WIRE = /^(GameState|Token|ScriptState|RoundState|LogEntry|Marker|SmokeGroup|MineState|SavedSquad|MechPreset|MechLoadout|NetRoom|NetView|RolledDie|Account|AdminUser|AdminInvite|LeaderPlayer|LeaderSquad|MyRecord|CardStat|FactionStat|StatsSummary|SquadEntry|GameReport|Collection|HeldCard)$/;
+const WIRE = /^(GameState|Token|ScriptState|RoundState|LogEntry|Marker|SmokeGroup|MineState|SavedSquad|MechPreset|MechLoadout|NetRoom|NetView|RolledDie|Account|AdminUser|AdminInvite|MyRecord|PublicStats|SquadEntry|GameReport|Collection|HeldCard)$/;
 const WIRE_FILE = /\/src\/commands\.ts$/;
 function wireOwner(n) {
   const sym = checker.getSymbolAtLocation(n.name);

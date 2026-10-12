@@ -161,7 +161,9 @@ for (const f of files) {
 // their "—" empty option to the shared builder, whose empty rows say "empty".
 // 16 since 2026-10-11: the Match Centre's Stats tables (logged games) mark a
 // win rate with too few games behind it, in three columns.
-check('and the table placeholders are still exactly the known set', placeholders, 16);
+// 15 since 2026-10-12: the parked Stats view went (the code audit), and its
+// average-rounds figure with it.
+check('and the table placeholders are still exactly the known set', placeholders, 15);
 
 // The pages themselves. Every dash in the markup is on screen.
 console.log('\nand none in the markup');

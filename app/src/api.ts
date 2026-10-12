@@ -96,20 +96,6 @@ export interface MyRecord {
   reported: number;
 }
 
-export interface CardStat { card: string; uses: number; wins: number }
-export interface FactionStat { faction: string; played: number; wins: number }
-// The table as a whole: how much has been played, by how many, and how it ends.
-export interface StatsSummary { games: number; players: number; avg_rounds: number | null; draws: number }
-
-// Who wins, and what wins. A squad's identity is the set of cards in it, so
-// `key` is the sorted id list — the server groups on it, and `squad` is one
-// recorded copy of the list, kept for putting names to it here.
-export interface LeaderPlayer { username: string; played: number; won: number; drawn: number }
-export interface LeaderSquad {
-  key: string; played: number; won: number;
-  faction: string | null; squad: SquadEntry[];
-}
-
 // Admin-only views. The server refuses these to anyone whose role is not
 // admin, so the client's job is only to not offer them.
 export interface AdminUser {
@@ -388,25 +374,6 @@ export class EmberApi {
 
   async myRecord(): Promise<MyRecord> {
     return this.call<MyRecord>('/stats/me');
-  }
-
-  async topCards(cat?: SquadEntry['cat'], limit = 10): Promise<CardStat[]> {
-    const query = `?limit=${limit}${cat ? `&cat=${cat}` : ''}`;
-    const r = await this.call<{ cards: CardStat[] }>(`/stats/cards${query}`);
-    return r.cards;
-  }
-
-  async factionUsage(): Promise<FactionStat[]> {
-    const r = await this.call<{ factions: FactionStat[] }>('/stats/factions');
-    return r.factions;
-  }
-
-  async statsSummary(): Promise<StatsSummary> {
-    return this.call<StatsSummary>('/stats/summary');
-  }
-
-  async leaderboard(limit = 10): Promise<{ players: LeaderPlayer[]; squads: LeaderSquad[] }> {
-    return this.call<{ players: LeaderPlayer[]; squads: LeaderSquad[] }>(`/stats/leaderboard?limit=${limit}`);
   }
 
   async adminUsers(): Promise<AdminUser[]> {

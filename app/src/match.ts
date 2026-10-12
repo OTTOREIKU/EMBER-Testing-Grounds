@@ -1,5 +1,5 @@
 import { openAccount } from './account';
-import { ApiError, EmberApi, type Account, type AdminInvite, type RegistrationInfo, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type PublicStats, type SquadEntry, type StatsSummary } from './api';
+import { ApiError, EmberApi, type Account, type AdminInvite, type RegistrationInfo, type AdminUser, type PublicStats, type SquadEntry } from './api';
 import { bindBotLogs, BotLog, fileLog, keepLog, type BotGameEnd } from './botlog';
 import { bindCollection } from './collection';
 import { bindLibrary, onLibrary } from './library';
@@ -29,7 +29,7 @@ import { countHits, normaliseSetup } from './setup';
 import { boxHands, normaliseTasks } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { loadMechPresets } from './presets';
-import { hideTooltip, installTooltip, preloadCards } from './tooltip';
+import { installTooltip, preloadCards } from './tooltip';
 import { warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { syncUpdateNotice, watchForUpdates } from './updates';
@@ -106,28 +106,6 @@ onLibrary(() => { if (pickerOpen) render(); });
 
 let data: GameData | null = null;
 let account: Account | null = null;
-let record: MyRecord | null = null;
-// The table's own numbers, fetched once when the Stats view is first opened.
-// Everything here is an aggregate the server already computes; the client only
-// arranges it and puts names to the card ids.
-let tableStats: {
-  summary: StatsSummary;
-  pilots: CardStat[];
-  parts: CardStat[];
-  drones: CardStat[];
-  tactics: CardStat[];
-  factions: FactionStat[];
-  players: LeaderPlayer[];
-  squads: LeaderSquad[];
-} | null = null;
-let statsLoading = false;
-let statsErr: string | null = null;
-// Which "most used" list is on show. All four are rendered and the rest are
-// hidden, so switching costs neither a fetch nor a re-render.
-type StatCat = 'pilots' | 'parts' | 'drones' | 'tactics';
-let statCat: StatCat = 'pilots';
-type LeadCat = 'players' | 'squads';
-let leadCat: LeadCat = 'players';
 // The admin lists' filters. They live out here because the lists are filtered
 // in the DOM rather than by re-rendering — see applyListFilters.
 let userQ = '';
@@ -1815,152 +1793,8 @@ function cardLabel(id: string): string {
 // the page reads, not cards that once existed.
 const known = (id: string): boolean => !!data?.byId.get(id);
 
-// One row per card: rank, name, a bar for how often it is fielded, the count
-// and the share of games won with it. The bar is relative to the top row, so
-// the shape of the list reads before any number does. data-tip-card is what
-// puts the card itself on screen when a row is hovered — the same preview the
-// roster and the squad tab use, pinned to the edge of the column.
-function statRows(all: CardStat[], empty: string): string {
-  const rows = all.filter((r) => known(r.card));
-  if (!rows.length) return `<p class="hint">${empty}</p>`;
-  const top = rows[0].uses || 1;
-  return `<div class="statlist">${rows.map((r, i) => {
-    const rate = r.uses ? Math.round((r.wins / r.uses) * 100) : 0;
-    return `<div class="statrow" data-tip-card="${esc(r.card)}">
-      <span class="sl-rank">${i + 1}</span>
-      <span class="sl-name">${esc(cardLabel(r.card))}</span>
-      <span class="sl-bar"><i style="width:${Math.max(4, Math.round((r.uses / top) * 100))}%"></i></span>
-      <span class="sl-n">${r.uses}</span><span class="sl-w">${rate}%</span>
-    </div>`;
-  }).join('')}</div>`;
-}
-
-// A squad has no name, so it is called by its pilots — the part of a list
-// The cards of a squad that this build can actually name, in a stable reading
-// order rather than the order they happened to be recorded in.
-//
-// No Projectiles: a Projectile is never deployed, it arrives when something
-// launches it and is swept off the board afterwards, so neither recorder writes
-// one — what was in flight at the final bell is an accident of timing, not a
-// squad choice. It belongs to the card that launched it.
-const CAT_ORDER: SquadEntry['cat'][] = ['pilot', 'mech_part', 'drone', 'tactics_or_upgrade'];
-// Anything unranked sorts last rather than first, which is what a bare
-// indexOf would do with its -1.
-const catRank = (c: SquadEntry['cat']): number => {
-  const i = CAT_ORDER.indexOf(c);
-  return i < 0 ? CAT_ORDER.length : i;
-};
-
-function squadCards(sq: LeaderSquad): SquadEntry[] {
-  return sq.squad.filter((c) => known(c.id))
-    .sort((a, b) => catRank(a.cat) - catRank(b.cat)
-      || cardLabel(a.id).localeCompare(cardLabel(b.id)));
-}
-
-// What a recorded game says about itself comes back from the server, where
-// any account may have put it, so the panel prints only what this page knows:
-// a card it holds (statRows), a faction with a label, a Main Task by its
-// card's name. The server's own word for a squad of no single faction is the
-// one row kept as it stands.
-const NO_FACTION = 'unknown';
-
-function factionTag(faction: string | null): string {
-  const label = faction ? FACTION_LABEL[faction] : undefined;
-  return label ? `${esc(label)} · ` : '';
-}
-
-function knownFactions(all: FactionStat[]): FactionStat[] {
-  return all.filter((f) => f.faction === NO_FACTION || !!FACTION_LABEL[f.faction]);
-}
-
-function recordedMission(id: string | null): string {
-  if (!id) return 'Free battle';
-  return data?.missions.cards.find((m) => m.id === id)?.name ?? 'Main Task';
-}
-
-// A squad has no name, so it is called by its pilots — the part of a list
-// anyone reading it would say out loud.
-function squadName(sq: LeaderSquad): string {
-  const cards = squadCards(sq);
-  const pilots = cards.filter((c) => c.cat === 'pilot');
-  const named = (pilots.length ? pilots : cards.slice(0, 2)).map((c) => cardLabel(c.id));
-  return named.join(', ') || 'Unnamed squad';
-}
-
-function squadRows(rows: LeaderSquad[]): string {
-  if (!rows.length) return '<p class="hint">No squad has been brought twice yet.</p>';
-  const top = rows[0].played || 1;
-  return `<div class="statlist">${rows.map((r, i) => {
-    const cards = squadCards(r);
-    const rate = r.played ? Math.round((r.won / r.played) * 100) : 0;
-    return `<div class="statrow pick" data-squad="${esc(r.key)}">
-      <span class="sl-rank">${i + 1}</span>
-      <span class="sl-name">${esc(squadName(r))}
-        <em class="sl-sub">${factionTag(r.faction)}${cards.length} card${cards.length === 1 ? '' : 's'}</em></span>
-      <span class="sl-bar"><i style="width:${Math.max(4, Math.round((r.played / top) * 100))}%"></i></span>
-      <span class="sl-n">${r.played}</span><span class="sl-w">${rate}%</span>
-    </div>`;
-  }).join('')}</div>`;
-}
-
-// ---------- one squad, opened ----------
-//
-// Which cards actually won, laid out to be inspected: every card is a row that
-// puts its own art up on the right the moment it is hovered.
-let squadOpen: string | null = null;
-
-const CAT_LABEL: Record<string, string> = {
-  pilot: 'Pilots', mech_part: 'Mech parts', drone: 'Drones',
-  tactics_or_upgrade: 'Tactics and upgrades',
-};
-
-function squadHtml(): string {
-  const sq = tableStats?.squads.find((x) => x.key === squadOpen);
-  if (!sq) return '';
-  const cards = squadCards(sq);
-  const rate = sq.played ? Math.round((sq.won / sq.played) * 100) : 0;
-  let out = '';
-  for (const cat of CAT_ORDER) {
-    const inCat = cards.filter((c) => c.cat === cat);
-    if (!inCat.length) continue;
-    out += `<div class="sect">${CAT_LABEL[cat] ?? cat}</div>
-      <div class="statlist">${inCat.map((c) => `<div class="statrow" data-tip-card="${esc(c.id)}">
-        <span class="sl-name">${esc(cardLabel(c.id))}</span>
-      </div>`).join('')}</div>`;
-  }
-  return `<div class="mc-veil" id="mc-squadveil">
-    <div class="acct squadpop" data-tip-side="right">
-      <button class="x" id="mc-squad-x">✕</button>
-      <h3>${esc(squadName(sq))}</h3>
-      <div class="role">${factionTag(sq.faction)}${cards.length} card${cards.length === 1 ? '' : 's'}</div>
-      <div class="rec">
-        <div><b>${sq.played}</b><span>played</span></div>
-        <div><b>${sq.won}</b><span>won</span></div>
-        <div><b>${rate}%</b><span>win rate</span></div>
-      </div>
-      ${out}
-    </div>
-  </div>`;
-}
-
-function playerRows(rows: LeaderPlayer[]): string {
-  if (!rows.length) return '<p class="hint">No games recorded yet.</p>';
-  const top = rows[0].played || 1;
-  return `<div class="statlist">${rows.map((r, i) => {
-    const rate = r.played ? Math.round((r.won / r.played) * 100) : 0;
-    return `<div class="statrow${r.username === account?.username ? ' me' : ''}">
-      <span class="sl-rank">${i + 1}</span>
-      <span class="sl-name">${esc(r.username)}
-        <em class="sl-sub">${r.won}W ${r.drawn}D ${r.played - r.won - r.drawn}L</em></span>
-      <span class="sl-bar"><i style="width:${Math.max(4, Math.round((r.played / top) * 100))}%"></i></span>
-      <span class="sl-n">${r.won}</span><span class="sl-w">${rate}%</span>
-    </div>`;
-  }).join('')}</div>`;
-}
-
-// STATS IS PARKED (OTTO, 2026-09-25): the tab shows only "Coming Soon" until
-// the stats area is reworked, since there are few live stats to show yet. The
-// old view below is kept for that rework and is no longer rendered or fetched.
+// What the Admin door shows once the account on it is not an admin's (signed
+// out while it was open): the tab itself is offered to admins only.
 function soonHtml(): string {
   return '<div class="mc-col mc-soon"><p>Coming Soon</p></div>';
 }
@@ -2083,97 +1917,6 @@ function publicStatsHtml(): string {
   </div>`;
 }
 
-function statsHtml(): string {
-  const r = record?.record;
-  const recent = record?.recent ?? [];
-  const t = tableStats;
-  const chip = (id: StatCat, label: string): string =>
-    `<button class="chipf${statCat === id ? ' on' : ''}" data-cat="${id}">${esc(label)}</button>`;
-  const list = (id: StatCat, rows: CardStat[], empty: string): string =>
-    `<div data-catlist="${id}"${statCat === id ? '' : ' hidden'}>${statRows(rows, empty)}</div>`;
-  const lead = (id: LeadCat, label: string): string =>
-    `<button class="chipf${leadCat === id ? ' on' : ''}" data-lead="${id}">${esc(label)}</button>`;
-  return `<div class="mc-col wide" data-tip-side="right">
-    <h1 class="mc-h">Stats</h1>
-    <div class="mc-row fill">
-      <div class="panel pane">
-        <h3>Your record</h3>
-        ${r
-          ? `<div class="rec">
-              <div><b>${r.played}</b><span>played</span></div>
-              <div><b>${r.won}</b><span>won</span></div>
-              <div><b>${r.drawn}</b><span>drawn</span></div>
-              <div><b>${r.lost}</b><span>lost</span></div>
-            </div>
-            <p class="hint">${r.played ? `${Math.round((r.won / r.played) * 100)}% won` : 'No games recorded yet.'}${
-              (record?.reported ?? 0) > r.played ? ` · ${record!.reported} reported from this account, hotseat included.` : ''
-            }</p>`
-          : '<p class="hint">Loading…</p>'}
-        <div class="sect">Recent games</div>
-        <div class="scrollbox">
-          ${recent.length
-            ? `<div class="statlist">${recent.map((g) => `<div class="statrow">
-                <span class="sl-name">${esc(recordedMission(g.mission))}</span>
-                <span class="sl-date">${esc(shortDate(g.played_at))}</span>
-                <span class="sl-n">${Number(g.vp)} VP</span>
-                <span class="sl-res ${esc(String(g.result))}">${esc(String(g.result))}</span>
-              </div>`).join('')}</div>`
-            : '<p class="hint">Games you record from a finished match land here.</p>'}
-        </div>
-      </div>
-      <div class="panel pane">
-        <h3>The table</h3>
-        ${statsErr ? `<div class="mc-err">${esc(statsErr)}</div>` : ''}
-        ${t
-          ? `<div class="rec">
-              <div><b>${t.summary.games}</b><span>games</span></div>
-              <div><b>${t.summary.players}</b><span>players</span></div>
-              <div><b>${t.summary.avg_rounds ?? '—'}</b><span>avg rounds</span></div>
-              <div><b>${t.summary.draws}</b><span>draws</span></div>
-            </div>
-            <div class="sect">Factions</div>
-            <div class="scrollbox">
-              ${knownFactions(t.factions).length
-                ? `<div class="statlist">${knownFactions(t.factions).map((f) => {
-                    const share = t.summary.games ? Math.round((f.played / t.summary.games) * 100) : 0;
-                    return `<div class="statrow">
-                      <span class="sl-name">${esc(FACTION_LABEL[f.faction] ?? f.faction)}</span>
-                      <span class="sl-bar"><i style="width:${Math.max(4, share)}%"></i></span>
-                      <span class="sl-n">${f.played}</span>
-                      <span class="sl-w">${f.played ? Math.round((f.wins / f.played) * 100) : 0}%</span>
-                    </div>`;
-                  }).join('')}</div>`
-                : '<p class="hint">No factions recorded yet.</p>'}
-            </div>
-`
-          : statsLoading ? '<p class="hint">Reading the table…</p>' : '<p class="hint">Nothing recorded yet.</p>'}
-      </div>
-      <div class="panel pane">
-        <h3>Leaderboard</h3>
-        <div class="chiprow">${lead('players', 'Top players')}${lead('squads', 'Top squads')}</div>
-        <div class="scrollbox">
-          ${t
-            ? `<div data-leadlist="players"${leadCat === 'players' ? '' : ' hidden'}>${playerRows(t.players)}</div>
-               <div data-leadlist="squads"${leadCat === 'squads' ? '' : ' hidden'}>${squadRows(t.squads)}</div>`
-            : statsLoading ? '<p class="hint">Reading the table…</p>' : '<p class="hint">Nothing recorded yet.</p>'}
-        </div>
-      </div>
-      <div class="panel pane">
-        <h3>Most used</h3>
-        <div class="chiprow">${chip('pilots', 'Pilots')}${chip('parts', 'Parts')}${chip('drones', 'Drones')}${chip('tactics', 'Tactics')}</div>
-        <div class="scrollbox">
-          ${t
-            ? list('pilots', t.pilots, 'No pilot has been fielded yet.')
-              + list('parts', t.parts, 'No parts recorded yet.')
-              + list('drones', t.drones, 'No drones recorded yet.')
-              + list('tactics', t.tactics, 'No tactics or upgrades recorded yet.')
-            : statsLoading ? '<p class="hint">Reading the table…</p>' : '<p class="hint">Nothing recorded yet.</p>'}
-        </div>
-      </div>
-    </div>
-  </div>`;
-}
-
 function doorTabs(): string {
   const tab = (id: Door, label: string): string =>
     `<button class="doortab${door === id ? ' on' : ''}" data-door="${id}">${esc(label)}</button>`;
@@ -2210,18 +1953,6 @@ const shortDate = (iso: string | null): string =>
 // only hidden and shown — and this runs again after each real render, to put
 // the view back the way the reader left it.
 function applyListFilters(): void {
-  root.querySelectorAll<HTMLElement>('[data-catlist]').forEach((el) => {
-    el.hidden = el.dataset.catlist !== statCat;
-  });
-  root.querySelectorAll<HTMLElement>('[data-cat]').forEach((b) => {
-    b.classList.toggle('on', b.dataset.cat === statCat);
-  });
-  root.querySelectorAll<HTMLElement>('[data-leadlist]').forEach((el) => {
-    el.hidden = el.dataset.leadlist !== leadCat;
-  });
-  root.querySelectorAll<HTMLElement>('[data-lead]').forEach((b) => {
-    b.classList.toggle('on', b.dataset.lead === leadCat);
-  });
   root.querySelectorAll<HTMLElement>('[data-codefilter]').forEach((b) => {
     b.classList.toggle('on', b.dataset.codefilter === codeFilter);
   });
@@ -3441,8 +3172,7 @@ function render(): void {
         <button class="btn ghost" id="mc-leave" style="margin-top:6px">Leave the table</button>
       </div></div>`
     : '';
-  veilhost.innerHTML = `${pickerOpen ? pickerHtml() : ''}${
-    squadOpen ? squadHtml() : ''}${pauseVeil}${soloVeilHtml()}`;
+  veilhost.innerHTML = `${pickerOpen ? pickerHtml() : ''}${pauseVeil}${soloVeilHtml()}`;
   if (hud) {
     const stage = bodyhost.querySelector('.mc-stage.hudmode');
     let host = stage as HTMLElement | null;
@@ -3531,22 +3261,9 @@ function wire(): void {
       onGone: () => {
         relay.leave();
         account = null;
-        record = null;
         render();
       },
     });
-  });
-  // The parked Stats view's squad rows only: the Bring picker's rows carry
-  // data-squad too, and answered this as well (the code audit, 2026-10-11).
-  root.querySelectorAll<HTMLElement>('.statrow[data-squad]').forEach((r) =>
-    r.addEventListener('click', () => { squadOpen = r.dataset.squad!; render(); }),
-  );
-  // The preview has to go with the panel it was hovered inside, or it hangs
-  // over the page with nothing behind it.
-  const shutSquad = (): void => { squadOpen = null; hideTooltip(); render(); };
-  $('mc-squad-x')?.addEventListener('click', shutSquad);
-  $('mc-squadveil')?.addEventListener('pointerdown', (ev) => {
-    if ((ev.target as HTMLElement).id === 'mc-squadveil') shutSquad();
   });
   $('mc-picker-x')?.addEventListener('click', () => { pickerOpen = false; render(); });
   $('mc-veil2')?.addEventListener('pointerdown', (ev) => {
@@ -3645,12 +3362,6 @@ function wire(): void {
   onFind('mc-codeq', (v) => { codeQ = v; });
   root.querySelectorAll<HTMLButtonElement>('[data-codefilter]').forEach((b) =>
     b.addEventListener('click', () => { codeFilter = b.dataset.codefilter as CodeFilter; applyListFilters(); }),
-  );
-  root.querySelectorAll<HTMLButtonElement>('[data-cat]').forEach((b) =>
-    b.addEventListener('click', () => { statCat = b.dataset.cat as StatCat; applyListFilters(); }),
-  );
-  root.querySelectorAll<HTMLButtonElement>('[data-lead]').forEach((b) =>
-    b.addEventListener('click', () => { leadCat = b.dataset.lead as LeadCat; applyListFilters(); }),
   );
 
   // Revoking a code and shutting an account out both take a second click on a
@@ -3856,33 +3567,6 @@ function wire(): void {
       });
   });
 
-}
-
-// The table's aggregates, fetched once the Stats view is actually asked for —
-// queries nobody waiting at the door should pay for.
-function loadTableStats(): void {
-  if (tableStats || statsLoading || !account) return;
-  statsLoading = true;
-  statsErr = null;
-  void Promise.all([
-    api.statsSummary(),
-    api.topCards('pilot', 10),
-    api.topCards('mech_part', 10),
-    api.topCards('drone', 10),
-    api.topCards('tactics_or_upgrade', 10),
-    api.factionUsage(),
-    api.leaderboard(10),
-  ])
-    .then(([summary, pilots, parts, drones, tactics, factions, board]) => {
-      tableStats = { summary, pilots, parts, drones, tactics, factions, ...board };
-    })
-    .catch((e) => {
-      statsErr = e instanceof ApiError ? e.message : 'Could not read the table stats.';
-    })
-    .finally(() => {
-      statsLoading = false;
-      render();
-    });
 }
 
 // The dial lock lives here rather than in the HUD module, because this page

@@ -21,7 +21,7 @@ const entry = new URL('./_hostile.entry.ts', import.meta.url);
 const out = new URL('./_hostile.bundle.mjs', import.meta.url);
 writeFileSync(entry, [
   "export { applyRemote } from '../src/commands';",
-  "export { FACTION_LABEL, loadData } from '../src/data';",
+  "export { cardName, FACTION_LABEL, loadData } from '../src/data';",
   "export { newScriptState, SCALES } from '../src/types';",
   "export { migrateState, makeMechToken, makeDroneToken } from '../src/units';",
   "export { tacticSpec } from '../src/tactics';",
@@ -142,30 +142,40 @@ check('a scale outside the three is the standard one, and a Main Task that is no
   check('every scale does', M.SCALES.map((s) => s.id).filter((id) => !API.scale.test(id)), []);
 }
 
-// ---------- a recorded game, read back in the Stats panel ----------
-// Any account may have recorded it, so the panel prints a faction only by its
-// label and a Main Task only by its card's name. The three helpers are the
-// Match Centre's own, lifted out of the page and run here.
+// ---------- the Stats tab, read back from the server ----------
+// Its figures come from games any signed-in player may have logged, so the tab
+// names a card only when this page holds it, calls a squad by the cards of it
+// this page holds, and prints a faction by its label, or as it came, through
+// the escaper. The helpers are the Match Centre's own, lifted out of the page
+// and run here. (The parked view this block used to read went in the code
+// audit, 2026-10-12.)
 {
   const page = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
-  const from = page.indexOf("const NO_FACTION = 'unknown';");
-  const to = page.indexOf('// A squad has no name, so it is called by its pilots', from);
-  const js = (await transform(page.slice(from, to), { loader: 'ts' })).code;
-  const stats = new Function('FACTION_LABEL', 'esc', 'data',
-    `${js}\nreturn { factionTag, knownFactions, recordedMission };`)(M.FACTION_LABEL, M.escapeHtml, data);
-  const rows = ['RDL', 'constructor', 'unknown', '<b>x</b>', '__proto__', 'GOF', 'toString', 'ANYTHING'].map((faction) => ({ faction, played: 1, wins: 0 }));
-  check('the faction list keeps the factions the page knows and the no-single-faction row',
-    [from > 0 && to > from, stats.knownFactions(rows).map((f) => f.faction)], [true, ['RDL', 'unknown', 'GOF']]);
-  check("a squad's faction is printed by its label, or not at all",
-    ['GOF', 'constructor', '__proto__', '<img>', 'ANYTHING', null].map((f) => stats.factionTag(f)), ['GoF \u00b7 ', '', '', '', '', '']);
-  const real = data.missions.cards[0];
-  check('a recorded Main Task is named by its card, and an unknown one is not printed',
-    [real.id, 'constructor', '<b>x</b>', null, ''].map((id) => stats.recordedMission(id)),
-    [real.name, 'Main Task', 'Main Task', 'Free battle', 'Free battle']);
-  check('the panel uses them for every faction and Main Task it prints',
-    [/knownFactions\(t\.factions\)\.map/.test(page), /esc\(recordedMission\(g\.mission\)\)/.test(page),
-      (page.match(/factionTag\((?:r|sq)\.faction\)/g) ?? []).length, /\?\? (?:r|sq)\.faction/.test(page), /g\.mission \|\|/.test(page)],
-    [true, true, 2, false, false]);
+  const cut = (a, b) => {
+    const i = page.indexOf(a);
+    const j = page.indexOf(b, i);
+    return i > 0 && j > i ? page.slice(i, j) : '';
+  };
+  const names = cut('function cardLabel(id: string): string {', 'function soonHtml');
+  const helpers = cut('const pct = (n: number, of: number): string =>', 'function publicStatsHtml');
+  const js = (await transform(`${names}\n${helpers}`, { loader: 'ts' })).code;
+  const stats = new Function('FACTION_LABEL', 'cardName', 'data',
+    `${js}\nreturn { factionText, pubSquadName };`)(M.FACTION_LABEL, M.cardName, data);
+  const pilot = data.cards.find((c) => c.category === 'pilot');
+  const part = data.cards.find((c) => c.category === 'mech_part');
+  check('the helpers were found', [names.length > 0, helpers.length > 0], [true, true]);
+  check('a faction is printed by its label, or as it came, and never as something else',
+    ['GOF', 'constructor', '__proto__', '<b>x</b>', null].map((f) => stats.factionText(f)),
+    ['GoF', 'constructor', '__proto__', '<b>x</b>', 'Mixed']);
+  check('a squad is called by its pilots this page holds, and a card it does not hold is left out',
+    [stats.pubSquadName([{ id: 'constructor', cat: 'pilot' }, { id: pilot.id, cat: 'pilot' }, { id: '<img>', cat: 'pilot' }]),
+      stats.pubSquadName([{ id: part.id, cat: 'mech_part' }, { id: '__proto__', cat: 'mech_part' }]),
+      stats.pubSquadName([{ id: 'constructor', cat: 'pilot' }])],
+    [M.cardName(pilot), M.cardName(part), 'A squad']);
+  check('the tab prints every faction and squad name through the escaper, and lists only cards it holds',
+    [(page.match(/esc\(factionText\(/g) ?? []).length > 0, (page.match(/\$\{factionText\(/g) ?? []).length,
+      /esc\(pubSquadName\(q\.squad\)\)/.test(page), /\.filter\(\(r\) => known\(r\.card\)\)/.test(page)],
+    [true, 0, true, true]);
 }
 
 // ---------- commands from the other side ----------
