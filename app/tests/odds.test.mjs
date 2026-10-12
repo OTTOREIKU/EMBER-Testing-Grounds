@@ -535,16 +535,18 @@ const reading = (over) => ({
   // to get past. The Surplus round has none of it (4.8).
   const covered = forecastOf({ ...r, parts: [part('torso', 'damaged', 0), part('chasis', 'destroyed', 8, { surplus: { white: 0, blue: 0 } })] });
   check('the Surplus round is rolled against the Part\'s own pool for it, with none of the Protection the first hit had to get past', near(covered.destroy, 0.75), true);
-  // The Part first hit is an arm with no Structure, destroyed outright. The
-  // Surplus die that finds it again finds a Part that is gone, and lands on
-  // the Torso as any die that finds a gone Part does.
+  // The Part first hit is an arm with no Structure, destroyed outright. A
+  // Surplus die that names it again is rerolled all the same: "if the same Part
+  // as the initial hit is rolled ... the roll must be rerolled" (Supplementary
+  // Rules 1.04, 4.2 and 4.3). It used to land on the Torso, as a die that finds
+  // a gone Part does (penetration audit 2026-10-12, finding 3).
   const armGone = new Sheet(reading({
     mech: true, attack: { red: 2, yellow: 0 }, surplus: ['Scatter-shot'], partsLeft: 5, link: 3,
     location: { fixed: null, attackerPicks: false, die: ['torso', 'chasis', 'leftHand', 'leftHand', 'leftHand', 'leftHand'], declare: [] },
     parts: [part('torso', 'damaged', 0), part('chasis', 'damaged', 0), part('leftHand', 'destroyed', 0)],
   })).surplusPlan('leftHand', 1, 0).ends;
-  check('a Part the first hit destroyed is gone when the Surplus die is rolled: a face that finds it lands on the Torso',
-    [near(armGone.get('leftHand>destroyed|torso>damaged'), 5 / 6), near(armGone.get('chasis>damaged|leftHand>destroyed'), 1 / 6)], [true, true]);
+  check('a Surplus die that names the Part the first hit destroyed is rerolled, so the Torso and the Chassis share it',
+    [near(armGone.get('leftHand>destroyed|torso>damaged'), 1 / 2), near(armGone.get('chasis>damaged|leftHand>destroyed'), 1 / 2)], [true, true]);
   const dead = new Sheet({ ...r, parts: [part('torso', 'destroyed', 0), part('chasis', 'destroyed', 0)] }).surplusPlan('torso', 1, 0);
   check('a Mech whose Torso the first hit destroyed is off the board: its Surplus has nowhere to go', [dead.keyword, [...dead.ends]], [null, [['torso>destroyed', 1]]]);
   // What the round is spent on is weighed by what the round ADDS. The first
@@ -635,6 +637,19 @@ const reading = (over) => ({
   check('in a Surplus round the forecast is of what is left: the die finds the Chassis, and the carried Hit destroys it',
     [near(second.partRoll().destroy, 1), second.partRoll().pick, near(second.keyword('Scatter-shot').destroy, 1), second.partRoll().damage], [true, 'chasis', true, 0]);
   check('a Part picked in a Surplus round is forecast for the icons carried into it, not for a whole attack', near(second.partPick('chasis').destroy, 1), true);
+  // The first hit destroyed the Left Arm, so the table now sends its face (and
+  // the gone Right Arm's and Backpack's) to the Torso. The Surplus round still
+  // rerolls the face that NAMES the Left Arm (Supplementary Rules 1.04, 4.2 and
+  // 4.3): the Torso is found on 3 faces of the 5 that count, and the ANY goes to
+  // it too, the kill being worth most.
+  const armOut = (rolled) => new InHand(reading({
+    mech: true, attack: { red: 1, yellow: 0 }, surplus: ['Scatter-shot'], partsLeft: 3, link: 3,
+    location: { fixed: null, attackerPicks: false, die: ['torso', 'chasis', 'torso', 'torso', 'torso', 'any'], ...(rolled ? { rolled } : {}), declare: [] },
+    parts: [part('torso', 'destroyed', 0, { state: 'damaged' }), part('chasis', 'damaged', 0)],
+    hand: { ...HAND, step: 'part', round: 1, carried: { heavy: 1, light: 0 }, original: 'leftHand' },
+  }));
+  check('a Surplus round under way rerolls the face naming the destroyed original Part (and without that record, would count it as the Torso)',
+    [near(armOut(['torso', 'chasis', 'leftHand', 'rightHand', 'backpack', 'any']).partRoll().kill, 4 / 5), near(armOut(null).partRoll().kill, 5 / 6)], [true, true]);
   // Both keywords to choose from, the Torso already Damaged by the first hit.
   const either = new InHand({ ...mech, partsLeft: 5, surplus: ['Mutilation', 'Scatter-shot'],
     parts: [part('torso', 'destroyed', 0, { state: 'damaged' }), part('chasis', 'destroyed', 0)],

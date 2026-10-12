@@ -160,6 +160,37 @@ console.log('Phase 1: attack and damage\n');
   check('A2b the unfolded Pholcus (Armor 0, Dodge 2) rolls 2 Blue and no White', w2.h.ctx.defensePool, { white: 0, blue: 2 });
 }
 
+// ---------- A2c: a Surplus die naming the Part the first hit destroyed is rerolled ----------
+// "If the same Part as the initial hit is rolled when determining the target
+// Part for Surplus Damage, the roll must be rerolled" (Supplementary Rules 1.04,
+// 4.2 and 4.3). The die used to send that face to the Torso, as it does any
+// destroyed Part (penetration audit 2026-10-12, finding 3).
+{
+  const atk = kit(mech(1, 's1', 'Shotgun', 1));
+  const def = kit(mech(2, 's2', 'Target', 3), { rightHand: '290' });
+  def.partStates.rightHand = 'damaged';
+  const { h, root } = windowOn([atk, def]);
+  h.instant = true;
+  const faces = [3, 3, 1];
+  h.blackRoller = async () => faces.shift();
+  check('A2c 053_A carries Scatter-shot', M.surplusEffects(act('053', '053_A')).map((e) => e.name), ['Scatter-shot']);
+  h.start(atk, act('053', '053_A'), def, 'clear');
+  h.pickPart('rightHand');
+  resolveWith(h, [['red', RED_HEAVY], ['red', RED_HEAVY], ['red', RED_HEAVY]], [['white', WHITE_BLANK]]);
+  await finishAttack(root);
+  check('A2c the first hit destroys the Damaged Right Arm and a Surplus round opens on the Part Die',
+    [def.partStates.rightHand, h.ctx.surplusRound, h.ctx.step], ['destroyed', 1, 'part']);
+  press(root, /Roll Black Die/);
+  await settle();
+  check('A2c the die names the destroyed Right Arm: rerolled, not sent to the Torso', h.ctx.targetPart, null);
+  press(root, /Roll Black Die/);
+  await settle();
+  check('A2c and again', h.ctx.targetPart, null);
+  press(root, /Roll Black Die/);
+  await settle();
+  check('A2c the third throw finds the Chassis, which takes the Surplus', h.ctx.targetPart, 'chasis');
+}
+
 // ---------- A3: a conditional Mutilation is a grant, not a keyword ----------
 {
   check('A3 an Ion shot with no Charge spent does not Mutilate', M.surplusEffects(act('122', '122_A')).map((e) => e.name), []);

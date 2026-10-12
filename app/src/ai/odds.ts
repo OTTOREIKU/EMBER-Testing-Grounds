@@ -328,15 +328,16 @@ export class Sheet {
         };
         const chosen = others.map(hitOn).reduce((a, b) => (b.gain > a.gain ? b : a));
         const landings: { ends: Ends; gain: number }[] = [];
-        for (const face of r.location.die) {
-          if (face === 'any') { landings.push(chosen); continue; }
-          // The original Part again is rerolled (FAQ D4), unless the first
-          // Penetration destroyed it: a Part that is gone sends the die to
-          // the Torso.
-          const to = face === part.slot ? (part.next === 'destroyed' ? 'torso' : null) : face;
-          const q = to ? others.find((x) => x.slot === to) : undefined;
+        const named = r.location.rolled ?? r.location.die;
+        r.location.die.forEach((face, i) => {
+          if (face === 'any') { landings.push(chosen); return; }
+          // A face naming the original Part is rerolled, even where the first
+          // Penetration destroyed it, and so is one a gone Part sends there
+          // (Supplementary Rules 1.04, 4.2 and 4.3; FAQ D4).
+          if (named[i] === part.slot || face === part.slot) return;
+          const q = others.find((x) => x.slot === face);
           if (q) landings.push(hitOn(q));
-        }
+        });
         if (!landings.length) continue;
         const ends: Ends = new Map();
         for (const e of landings) addEnds(ends, e.ends, 1 / landings.length);
@@ -461,11 +462,15 @@ export class Sheet {
     if (!others.length) return { ends: new Map([['none', 1]]), any: null };
     const chosen = others.map((q) => ({ q, ends: this.surplusOn(q.slot, heavy, light) })).reduce((a, b) => (this.worthOf(b.ends) > this.worthOf(a.ends) ? b : a));
     const landings: Ends[] = [];
-    for (const face of this.r.location.die) {
-      if (face === 'any') { landings.push(chosen.ends); continue; }
-      if (face === original) continue;
+    // A face naming the original Part is rerolled even now the first hit has
+    // destroyed it and `die` sends that face to the Torso (Supplementary Rules
+    // 1.04, 4.2 and 4.3).
+    const named = this.r.location.rolled ?? this.r.location.die;
+    this.r.location.die.forEach((face, i) => {
+      if (face === 'any') { landings.push(chosen.ends); return; }
+      if (face === original || named[i] === original) return;
       if (others.some((q) => q.slot === face)) landings.push(this.surplusOn(face, heavy, light));
-    }
+    });
     const ends: Ends = new Map();
     for (const e of landings) addEnds(ends, e, 1 / landings.length);
     return { ends: landings.length ? ends : new Map([['none', 1]]), any: chosen.q.slot };

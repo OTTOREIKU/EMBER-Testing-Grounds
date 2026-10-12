@@ -93,6 +93,11 @@ export interface AttackReading {
     attackerPicks: boolean;
     // Where each face of the Part Die lands; `any` is the attacker's to pick.
     die: string[];
+    // The Part each face NAMES, before a gone Part sends it to the Torso. A
+    // Surplus round rerolls a face naming the first hit's Part even where that
+    // hit destroyed it (Supplementary Rules 1.04, 4.2 and 4.3). Absent on a
+    // reading built by hand, where `die` stands in for it.
+    rolled?: string[];
     // What the defender may declare before the die, and the Parry it earns.
     declare: { slot: string; parry: number }[];
   };
@@ -3269,12 +3274,13 @@ export class AttackHelper {
       // the hit to the Torso).
       const repaired = d.repairedSlots ?? [];
       const fixed = !mech ? 'main' : cruising(this.data, d) ? 'torso' : null;
-      const lands = this.dice.dice.black.faces.map((f) => {
+      const rolled = this.dice.dice.black.faces.map((f) => {
         const part = f[0]?.part ?? 'any';
-        if (part === 'any') return 'any';
-        const slot = BLACK_SLOT[part] ?? 'torso';
-        return slot !== 'torso' && (this.partGone(slot) || repaired.includes(slot)) ? 'torso' : slot;
+        return part === 'any' ? 'any' : BLACK_SLOT[part] ?? 'torso';
       });
+      const lands = rolled.map((slot) => (
+        slot !== 'any' && slot !== 'torso' && (this.partGone(slot) || repaired.includes(slot)) ? 'torso' : slot
+      ));
       const offers = mech && !fixed ? this.designateOffers(ROLL) : [];
 
       // Each Part still standing, made the target in turn.
@@ -3332,6 +3338,7 @@ export class AttackHelper {
           fixed,
           attackerPicks: mech && !fixed && this.attackerMayDesignate(),
           die: lands,
+          rolled,
           declare: offers.map((x) => ({ slot: x.slot, parry: x.parry })),
         },
         parts,
@@ -4738,7 +4745,7 @@ export class AttackHelper {
     // test below asks the same question settleBlack will.
     const mapped = part === 'any' ? null : (BLACK_SLOT[part] ?? 'torso');
     const lands = mapped !== null && (c.defender.partStates[mapped as PartSlot] === undefined || c.defender.partStates[mapped as PartSlot] === 'destroyed') ? 'torso' : mapped;
-    const forced = c.surplusRound > 0 && lands !== null && lands === c.surplusOriginalPart;
+    const forced = c.surplusRound > 0 && ((mapped !== null && mapped === c.surplusOriginalPart) || (lands !== null && lands === c.surplusOriginalPart));
     // Not in a Surplus round: its Focus is the DEFENDER's alone (4.8.1 step 5),
     // and the Part Die is the attacker's roll, so there is nothing to offer.
     if (this.mirroring || c.blackFocusUsed || forced || c.surplusRound > 0
@@ -4805,6 +4812,23 @@ export class AttackHelper {
       return;
     }
     let slot = BLACK_SLOT[part] ?? 'torso';
+    // Surplus may not land back on the Part the original hit chose: "if the
+    // same Part as the initial hit is rolled ... the roll must be rerolled"
+    // (Supplementary Rules 1.04, 4.2 and 4.3; FAQ D4). The ROLL decides, so a
+    // die naming that Part is thrown again even where the first hit destroyed
+    // it. It used to redirect to the Torso as any destroyed Part does, which
+    // gave the Torso that Part's face too (penetration audit 2026-10-12,
+    // finding 3). The redirect below can funnel into it as well, so the check
+    // is asked again after it.
+    const reroll = (said: string): void => {
+      caption.textContent = `${SLOT_LABEL[slot as PartSlot] ?? part} was the original hit, so reroll the Black Die.`;
+      this.note(`${said} Surplus Damage must go elsewhere, so the die is rerolled (Supplementary Rules 1.04, 4.2 and 4.3).`);
+      this.after(900, () => { if (this.ctx === c) this.render(); });
+    };
+    if (c.surplusRound > 0 && slot === c.surplusOriginalPart) {
+      reroll(`Black Die: ${part}, the Part the original hit landed on.`);
+      return;
+    }
     const state = c.defender.partStates[slot as PartSlot];
     if (slot !== 'torso' && (c.defender.repairedSlots ?? []).includes(slot)) {
       // A Repaired Part the die lands on is removed at once, with no
@@ -4822,13 +4846,9 @@ export class AttackHelper {
       caption.textContent = `${SLOT_LABEL[slot as PartSlot] ?? part} takes the hit.`;
       this.note(`Black Die: ${part}.`);
     }
-    // Surplus may not land back on the Part the original hit chose: the Part
-    // Die "must be rerolled" on a repeat (FAQ D4), and the redirect above can
-    // funnel into it too, so the check comes after the redirect.
+    // The redirect sent it to the original Part (a Torso first hit): rerolled.
     if (c.surplusRound > 0 && slot === c.surplusOriginalPart) {
-      caption.textContent = `${SLOT_LABEL[slot as PartSlot] ?? part} was the original hit, so reroll the Black Die.`;
-      this.note(`Black Die: ${part}, the Part the original hit landed on. Surplus Damage must go elsewhere, so the die is rerolled (FAQ D4).`);
-      this.after(900, () => { if (this.ctx === c) this.render(); });
+      reroll('The Torso is the Part the original hit landed on.');
       return;
     }
     const landed = slot;
