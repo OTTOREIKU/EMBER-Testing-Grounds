@@ -87,6 +87,7 @@ const TAGS: Record<string, string[]> = {
   'designate.to': ['designate'],
   'defense.evade': ['spend-command'],
   'defense.dodge': ['spend-command'],
+  'resolve.dodgekeep': ['keep'],
 };
 
 // The question the live controls are asking, first match wins, and the press
@@ -104,6 +105,9 @@ const QUESTIONS: { kind: string; has: string[]; safe: string[] }[] = [
   { kind: 'attack.focus', has: ['focus.use', 'focus.pass', 'focus.lent', 'focus.whistle'], safe: ['focus.pass'] },
   { kind: 'attack.reroll', has: ['reroll.go', 'reroll.keep'], safe: ['reroll.keep'] },
   { kind: 'attack.resolve', has: ['defense.resolve'], safe: ['defense.resolve'] },
+  // The defender's Dodges, Hits or Lightning: the window's own default is what
+  // a seat sends (combat.ts safeHold); the stepper itself is not offered.
+  { kind: 'defence.dodges', has: ['resolve.dodgekeep'], safe: ['resolve.dodgekeep'] },
   { kind: 'attack.apply', has: ['resolve.apply', 'resolve.done', 'resolve.chef'], safe: ['resolve.apply', 'resolve.done'] },
   { kind: 'attack.surplus', has: ['surplus.effect', 'surplus.part', 'surplus.unit'], safe: ['surplus.effect', 'surplus.part', 'surplus.unit'] },
   { kind: 'attack.finish', has: ['finish.bonus', 'finish.decline', 'finish.done', 'finish.shutdown', 'finish.disarm', 'finish.immobilize', 'finish.faceaway'], safe: ['finish.decline', 'finish.done'] },
@@ -325,6 +329,7 @@ export class BotCombat {
     if (cmd.kind === 'designateHit') this.helper.designateAnswered(cmd.slot);
     if (cmd.kind === 'meleeEvade') this.helper.evadeDeclared();
     if (cmd.kind === 'dodgeEnhance') this.helper.dodgeEnhanceDeclared();
+    if (cmd.kind === 'dodgeHold') this.helper.dodgeHoldAnswered(cmd.n, cmd.seat);
   }
 
   // The window closed: the attack is over, and its picture comes down.

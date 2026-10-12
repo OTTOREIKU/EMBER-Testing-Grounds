@@ -89,6 +89,15 @@ export function defenderAct(env: DefenderEnv, act: MirrorAct, arg?: string | num
     env.done?.();
     return true;
   }
+  if (act === 'dodgehold') {
+    // How many Dodges go on the Lightning before any Hit (4.4.1 step 6): the
+    // attacker's window is waiting on it.
+    const n = typeof arg === 'string' ? Number(arg) : NaN;
+    if (!Number.isSafeInteger(n) || n < 0) return false;
+    const went = send({ kind: 'dodgeHold', seat, n });
+    env.done?.();
+    return went.ok;
+  }
   if (act === 'focususe') {
     // The Link spend gates the answer: a refused `focus` with the answer
     // still sent would advance the attacker's stage to a reroll nobody paid

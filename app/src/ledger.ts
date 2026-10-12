@@ -55,7 +55,7 @@ const BEGIN = new Set(['performAction', 'deployUnit', 'playTactic', 'launch', 'b
 const FOLLOW = new Set(['answerDefense', 'acceptRoll', 'focus', 'focusAnswer', 'focusReroll',
   'designate', 'designateHit', 'applyPenetration', 'applyStatus', 'removeStatus', 'ageStatus', 'recordKill',
   'drainLink', 'restoreLink', 'spendAmmo', 'restoreAmmo', 'spendCommand', 'coordinateCommand',
-  'kcArmor', 'meleeEvade', 'dodgeEnhance', 'provoke', 'suppress', 'defenseReaction',
+  'kcArmor', 'meleeEvade', 'dodgeEnhance', 'dodgeHold', 'provoke', 'suppress', 'defenseReaction',
   'resolveReaction', 'resolveIntercept', 'spendIntercept', 'restoreIntercept', 'rollCounter', 'rollTerminal', 'declareCounterFocus', 'forceShutdown', 'onBehalf',
   'crushSwap', 'forceMove', 'tether', 'disarm', 'destroyTerrain', 'placeSmoke', 'removeSmoke',
   'dissipateSmoke', 'despawn', 'dropBlackBox', 'breakRepaired', 'asterRestore', 'overload',

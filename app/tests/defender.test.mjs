@@ -88,6 +88,12 @@ for (const [act, cost, declare] of [
   const d = await press('designate', 'leftHand');
   check('a designation names its Part', [d.went, d.sent.map((c) => [c.kind, c.slot])], [true, [['designateHit', 'leftHand']]]);
   check('and one with no Part named sends nothing', (await press('designate', undefined)).kinds, []);
+  // Where the Dodges go, Hits or Lightning (penetration audit 2026-10-12, finding 1).
+  const h = await press('dodgehold', '1');
+  check('the Dodges held for the Lightning are one answer carrying their number', [h.went, h.sent.map((c) => [c.kind, c.seat, c.n])], [true, [['dodgeHold', 's2', 1]]]);
+  check('and no number, or not a count, sends nothing',
+    [(await press('dodgehold', undefined)).kinds, (await press('dodgehold', 'x')).kinds, (await press('dodgehold', '-1')).kinds, (await press('dodgehold', '1.5')).kinds], [[], [], [], []]);
+  check('and a refusal of it is reported', (await press('dodgehold', '0', { refuse: ['dodgeHold'] })).went, false);
 }
 
 // ---------- the dice ----------
@@ -128,7 +134,7 @@ for (const [act, cost, declare] of [
   const page = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   check('the mirror\'s presses are sent by defenderAct, with the page\'s own send, dice and notice line',
     /return defenderAct\(\{ data, state, seat, send, roll: rollDefensePool, say, done: render \}, act, arg\);/.test(page), true);
-  check('and the page keeps no second sender of them', /kind: 'focusAnswer'|kind: 'kcArmor'|kind: 'meleeEvade'|kind: 'dodgeEnhance'|kind: 'designateHit'/.test(page), false);
+  check('and the page keeps no second sender of them', /kind: 'focusAnswer'|kind: 'kcArmor'|kind: 'meleeEvade'|kind: 'dodgeEnhance'|kind: 'designateHit'|kind: 'dodgeHold'/.test(page), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -14,7 +14,7 @@ const FAST = `
 accountscreen activation aiseam ammo amplify announce api armorpiercing askband attackmode auditbugs aurareach
 auras autoshield blastorder boardart boardhover boardwalk boxes breakaway camo cardplaceholder changelog charge
 colourpicker combatrole commandgen commands containerclick contest coordination104 counterroll crush datashape
-deadopp defender defensereaction deployroom dialog disarm dodgedie emdash endaward englishtext environments
+deadopp defender defensereaction deployroom dialog disarm dodgedie dodgehold emdash endaward englishtext environments
 faction features feltclip fingerprint flight focuspublish followup formswitch fpstamp glyphs gofchassis gridref
 hindered hostileinput idleactions immobilized intercept jamkeep keystone keywordlink knockback largeboard launch
 learned ledger linkaudit linksupport linktick loads lockon loops lowprofile maneuver mapeditor martyrdom mechanics

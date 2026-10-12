@@ -528,6 +528,7 @@ export function attackOnCommand(cmd: Command): void {
   if (cmd.kind === 'designateHit') h.designateAnswered(cmd.slot);
   if (cmd.kind === 'meleeEvade') h.evadeDeclared();
   if (cmd.kind === 'dodgeEnhance') h.dodgeEnhanceDeclared();
+  if (cmd.kind === 'dodgeHold') h.dodgeHoldAnswered(cmd.n, cmd.seat);
 }
 
 // The defender's presses on the mirror, as commands. Each cost gates its
@@ -574,6 +575,12 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
       if (typeof arg !== 'string') return false;
       a.send({ kind: 'designateHit', seat, slot: arg });
       return true;
+    case 'dodgehold': {
+      // How many Dodges go on the Lightning before any Hit (4.4.1 step 6).
+      const n = typeof arg === 'string' ? Number(arg) : NaN;
+      if (!Number.isSafeInteger(n) || n < 0) return false;
+      return a.send({ kind: 'dodgeHold', seat, n });
+    }
     case 'focususe':
       if (!pay({ kind: 'focus', seat, uid: df.uid })) return false;
       a.send({ kind: 'focusAnswer', seat, use: true });

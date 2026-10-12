@@ -1204,6 +1204,10 @@ export interface CombatView {
   // What the attacker's window says about Protection. A host with a board
   // reads its own; a host without one (the pad) has only this to show.
   protectionNote?: string;
+  // Where the defender's Dodges go, Hits or Lightning, while that is open: how
+  // many could be held, how many are, and whether the attacking window waits
+  // on the defender's answer (combat.ts stepResolve).
+  dodgeHold?: { max: number; n: number; asked: boolean } | null;
 }
 
 // A boundary a rollback can return to. `available` false means a die roll has

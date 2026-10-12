@@ -515,6 +515,9 @@ export type Command = (
   | { kind: 'designateHit'; seat: Side; slot: string }
   | { kind: 'meleeEvade'; seat: Side }
   | { kind: 'dodgeEnhance'; seat: Side }
+  // How many of the defender's Dodges go on the attack's Lightning before any
+  // Hit (4.4.1 step 6), answered on the defender's own screen.
+  | { kind: 'dodgeHold'; seat: Side; n: number }
   // Defense Reaction (ZHLA-101 / ZHLA-301). Its own command rather than a
   // setStance, because the whole point of the card is that it changes Stance at
   // a moment 4.1 does not allow -- and a setStance that ignored the lock would
@@ -901,7 +904,7 @@ type TableKind =
   | 'clearCounterRoll' | 'rollTerminal'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'placeTaskItem' | 'setTactics' | 'setInventory' | 'setReady' | 'designateTask'
-  | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance' | 'riposte'
+  | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance' | 'riposte' | 'dodgeHold'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer'
   | 'claimItem' | 'claimZone' | 'leaveGuided' | 'setPartState' | 'onBehalf';
 const TABLE_KINDS = new Set<Command['kind']>([
@@ -913,7 +916,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'clearCounterRoll', 'rollTerminal',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'placeTaskItem', 'setTactics', 'setInventory', 'setReady', 'designateTask',
-  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte', 'dodgeHold',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'claimItem', 'claimZone', 'leaveGuided', 'setPartState', 'onBehalf',
 ]);
@@ -930,7 +933,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award', 'adjustVp',
   // Who asked and who answered is the whole record of a rollback, so both are
   // stamped with the sender's own seat like every other attributed command.
-  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte', 'dodgeHold',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'lockMap', 'acceptRoll', 'noteRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
@@ -1314,6 +1317,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (!state.script) return no('There is no game running.');
       return ok;
     }
+    case 'dodgeHold': {
+      if (!state.script) return no('There is no game running.');
+      if (!Number.isSafeInteger(cmd.n) || cmd.n < 0 || cmd.n > 40) return no('That is not a number of Dodges.');
+      return ok;
+    }
     case 'riposte': {
       const sc = state.script;
       if (!sc) return no('There is no game running.');
@@ -1364,6 +1372,13 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
         return no('That is not a Part Die.');
       }
       if ((view.log ?? []).some((l) => typeof l !== 'string' || l.length > VIEW_LINE_MAX)) return no('That is not a combat log.');
+      // The Dodge question is drawn as a stepper on the defender's screen, its
+      // numbers the stepper's bounds, so they are bounded here like the dice.
+      const dh = view.dodgeHold;
+      const count = (n: unknown): boolean => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 && n <= 40;
+      if (dh != null && (typeof dh !== 'object' || !count(dh.max) || !count(dh.n) || dh.n > dh.max || typeof dh.asked !== 'boolean')) {
+        return no('That is not a Dodge question.');
+      }
       // The resolution strip is drawn into the OTHER player's window, so it is
       // bounded here the way the pools and the log are. No legal attack makes
       // forty damage icons, and the summary is three lines plus its notes. The
@@ -4922,7 +4937,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     if (sc) sc.combat = null;
     return;
   }
-  if (cmd.kind === 'focusAnswer' || cmd.kind === 'focusReroll' || cmd.kind === 'kcArmor' || cmd.kind === 'designateHit' || cmd.kind === 'meleeEvade' || cmd.kind === 'dodgeEnhance') {
+  if (cmd.kind === 'focusAnswer' || cmd.kind === 'focusReroll' || cmd.kind === 'kcArmor' || cmd.kind === 'designateHit' || cmd.kind === 'meleeEvade' || cmd.kind === 'dodgeEnhance' || cmd.kind === 'dodgeHold') {
     // Consumed by the attacking client's combat window as the command is
     // observed, the same way answerDefense is — the board itself carries
     // nothing for them to change (KC Armor's Charge spend travels as its own
@@ -4944,6 +4959,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
             defense: cmd.view.defense?.map((f) => ({ ...f })) ?? null,
             log: [...cmd.view.log],
             focus: cmd.view.focus ? { ...cmd.view.focus } : null,
+            dodgeHold: cmd.view.dodgeHold ? { ...cmd.view.dodgeHold } : null,
             resolution: res
               ? {
                   duel: {

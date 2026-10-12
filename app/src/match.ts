@@ -1022,6 +1022,7 @@ function settleDefense(cmd: Command): void {
     if (cmd.kind === 'designateHit') attackHelper.designateAnswered(cmd.slot);
     if (cmd.kind === 'meleeEvade') attackHelper.evadeDeclared();
     if (cmd.kind === 'dodgeEnhance') attackHelper.dodgeEnhanceDeclared();
+    if (cmd.kind === 'dodgeHold') attackHelper.dodgeHoldAnswered(cmd.n, cmd.seat);
   }
 }
 

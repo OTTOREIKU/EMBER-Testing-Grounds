@@ -86,6 +86,10 @@ export interface AttackReading {
   // What the counted {Lightning} does to a Mech: strips Link (Concussion,
   // Wrecking), or rides (a Token, a Shutdown).
   drain: 'concussion' | 'wrecking' | null;
+  // The most {Lightning} the defender lets through before its Dodges go on the
+  // Lightning rather than the Hits, as the window's default puts them (combat.ts
+  // safeHold): null where it never holds any. Absent on a reading built by hand.
+  holdLimit?: number | null;
   location: {
     // No die: a Drone's `main`, a Mech in Cruise Mode's Torso.
     fixed: string | null;
@@ -142,7 +146,7 @@ export interface AttackReading {
 // attacker decides, because a mirror is never the attacker's window.
 export type MirrorAct =
   | 'rolldefense' | 'focususe' | 'focuspass' | 'focusreroll' | 'focuskeep'
-  | 'kcarmor' | 'meleeevade' | 'dodgeenhance' | 'designate';
+  | 'kcarmor' | 'meleeevade' | 'dodgeenhance' | 'designate' | 'dodgehold';
 
 // ---------- the viewer's role in one attack ----------
 //
@@ -202,6 +206,8 @@ function viewAwaits(v: CombatView, role: CombatRole): boolean {
   if (v.focus && (v.focus.stage === 'declareD' || v.focus.stage === 'rerollD')) return true;
   // WHERE THE HIT LANDS, when the choice is the defender's to make.
   if (v.designate) return true;
+  // WHERE THE DODGES GO, Hits or Lightning: the resolution waits for it.
+  if (v.dodgeHold?.asked) return true;
   return false;
 }
 
@@ -242,7 +248,9 @@ export interface CombatAsk {
   key: string;
 }
 
-type AskCtx = Pick<Ctx, 'step' | 'attackRoll' | 'defenseRoll' | 'focus' | 'surplusRound'>;
+// `holdAsked`: the resolution waits for a defender at another screen to say
+// where their Dodges go (stepResolve). Not on the Ctx: it is read off the roll.
+type AskCtx = Pick<Ctx, 'step' | 'attackRoll' | 'defenseRoll' | 'focus' | 'surplusRound'> & { holdAsked?: boolean };
 
 export function askOf(c: AskCtx): CombatAsk {
   const r = c.surplusRound;
@@ -281,6 +289,9 @@ export function askOf(c: AskCtx): CombatAsk {
       return { who: 'attacker', what: 'choosing what the Surplus does', blocking: true, key: `surplus:${r}` };
     case 'resolve':
     default:
+      // The one question in the resolution, and the defender's: a Dodge on a
+      // Hit or on a Lightning (4.4.1 step 6).
+      if (c.holdAsked) return { who: 'defender', what: 'placing the Dodges: on the Hits or on the [Lightning]', blocking: true, key: `dodges:${r}` };
       // Not blocking, deliberately: the result is on screen and both players
       // are reading it. A band pulsing for attention over a finished attack is
       // the noise that teaches people to ignore the band.
@@ -969,8 +980,12 @@ interface Ctx {
   // Dodges the defender holds back for the attack's Lightning instead of its
   // Hits (4.4.1: a Dodge offsets ANY one icon, and an Eye or Lightning that is
   // Dodged does not fire). Zero is the old behaviour: Hits first, Lightning
-  // only with what is left.
+  // only with what is left. ABSENT until the defender answers, and the window
+  // uses safeHold's default meanwhile.
   dodgeOnLightning?: number;
+  // The defender at another screen has answered how many (a dodgeHold
+  // command), so the resolution no longer waits on them.
+  dodgeHoldAnswered?: boolean;
   // FPA-04 Hammerhead: how many {Eye} 猛攻 Fierce Assault turned into Light
   // Hits on the last derivation. Same reason as lightningSwapped — derived, not
   // stored as a decision, so a re-roll cannot leave a stale count behind.
@@ -1071,6 +1086,11 @@ export class AttackHelper {
   // How many Dodges the defender COULD hold back for Lightning in the roll
   // just resolved; 0 when the choice would change nothing. Set by resolve().
   private lightningChoice = 0;
+  // How many it holds in that resolution: the defender's answer, or the
+  // default. Set by resolve().
+  private lightningHeld = 0;
+  // On the DEFENDER's screen, the number they are setting before they send it.
+  private holdPick: number | null = null;
   // The Part tapped on the designation chips and not yet confirmed.
   private pendingPart: string | null = null;
   // The Black Die has landed this attack (see spinBlack).
@@ -1397,6 +1417,14 @@ export class AttackHelper {
     const rolling = same ? this.spinner.inHand ?? this.spinPending : null;
     this.stopBlack();
     if (!same) this.duelPlayed = '';
+    // The defender's own pick of Dodges lasts while their question is open, and
+    // the next one starts from the attacking window's default again. So does
+    // the one-press latch on the answer: a Chef exchange after it asks again
+    // (stepResolve), and that ask must find the button live.
+    if (!same || !view.dodgeHold?.asked) {
+      this.holdPick = null;
+      if (this.asked?.endsWith(':dodgehold')) this.asked = null;
+    }
     this.mirroring = view;
     this.role = role;
     this.ctx = {
@@ -2380,6 +2408,83 @@ export class AttackHelper {
     this.onChanged();
   }
 
+  // THE DEFENDER'S DODGES WHERE THEY HAVE NOT SAID (penetration audit
+  // 2026-10-12, finding 1). Who offsets what is the defender's call (4.4.1 step
+  // 6), and with Concussion, Wrecking or a Lightning rider it is a real trade:
+  // a Dodge on a Hit or on a Lightning. Until they answer, and for a computer
+  // seat, which takes it as its answer: Hits first, as before, unless holding
+  // some for the Lightning keeps the Mech out of Shutdown, which Concussion or
+  // Wrecking do by taking its last Link and a Shutdown rider does outright. The
+  // fewest that do it, and none where none can.
+  private safeHold(
+    c: Ctx, heavy: number, light: number, dodge: number, defense: number, drained: number, perDie?: { heavy: number; light: number }[],
+  ): number {
+    const limit = this.holdLimit(c);
+    if (limit === null || !drained || !dodge) return 0;
+    const through = (h: number): number => {
+      const spare = offsetIcons(heavy, light, dodge - h, defense, false, perDie).spareDodge;
+      return drained - h - Math.min(drained - h, spare);
+    };
+    if (through(0) <= limit) return 0;
+    for (let h = 1; h <= Math.min(dodge, drained); h++) if (through(h) <= limit) return h;
+    return 0;
+  }
+
+  // The most {Lightning} the defender lets through before safeHold puts Dodges
+  // on it rather than on the Hits: one less than its Link against Concussion or
+  // Wrecking, none against a Shutdown rider. Null where it never holds: a
+  // Drone, a Mech already Shut Down, a Lightning that only costs a Token, a
+  // Surplus round. Read by the odds too (AttackReading.holdLimit), so the
+  // chances a player is shown are worked out with the same Dodges.
+  private holdLimit(c: Ctx): number | null {
+    if (c.defender.kind !== 'mech' || c.defender.stance === 'shutdown' || c.surplusRound > 0) return null;
+    const drainKind = lightningLinkDrain(c.action);
+    const rider = drainKind ? null : lightningRiderOf(c.action, this.data.actionTranslation(c.action.id)?.english ?? undefined);
+    const limit = drainKind ? (c.defender.link ?? 0) - 1 : rider?.kind === 'shutdown' ? 0 : -1;
+    return limit >= 0 ? limit : null;
+  }
+
+  // The Dodge question where it is open: how many could be held, how many are,
+  // whether the resolution waits on a defender at another screen, and, on that
+  // defender's own screen, whether their answer has gone. Null where the Dodges
+  // would land the same either way, at the table's own dice, and in a Surplus
+  // round, which carries no Lightning (4.8).
+  private holdOffer(c: Ctx): { max: number; n: number; asked: boolean; sent: boolean } | null {
+    // Only in the resolution: the count is worked out there, and one left from
+    // an earlier attack must not ask anything at another step.
+    if (this.handsOff || c.step !== 'resolve' || c.surplusRound > 0 || c.penetrated) return null;
+    const m = this.mirroring;
+    if (m) {
+      const h = m.dodgeHold;
+      if (!h || !h.max) return null;
+      return { max: h.max, n: Math.max(0, Math.min(this.holdPick ?? h.n, h.max)), asked: !!h.asked, sent: this.askSent('dodgehold') };
+    }
+    if (!this.lightningChoice) return null;
+    return { max: this.lightningChoice, n: this.lightningHeld, asked: this.holdAsked(c), sent: false };
+  }
+
+  // The resolution waits on the defender's Dodges: the choice is open, the
+  // defender is played at another screen, and they have not answered.
+  private holdAsked(c: Ctx): boolean {
+    return !this.mirroring && !this.handsOff && c.step === 'resolve' && c.surplusRound === 0 && !c.penetrated && this.lightningChoice > 0
+      && !c.dodgeHoldAnswered && !!this.focusRemote?.(c.defender);
+  }
+
+  // The remote defender's Dodges, carried by a dodgeHold command: how many of
+  // them offset the Lightning before any Hit. Their own screen sent it, and the
+  // resolution waits for it (stepResolve). Only the defending squad answers.
+  dodgeHoldAnswered(n: number, seat?: Side): void {
+    const c = this.ctx;
+    if (!c || this.mirroring || c.step !== 'resolve' || c.penetrated || c.dodgeHoldAnswered || !Number.isSafeInteger(n)) return;
+    if (seat && seat !== c.defender.side) return;
+    c.dodgeOnLightning = Math.max(0, Math.min(n, this.lightningChoice));
+    c.dodgeHoldAnswered = true;
+    this.note(c.dodgeOnLightning
+      ? `${c.defender.label} holds ${c.dodgeOnLightning} Dodge${c.dodgeOnLightning === 1 ? '' : 's'} for the [Lightning] before any Hit (4.4.1).`
+      : `${c.defender.label} puts its Dodges on the Hits first (4.4.1).`, [c.defender]);
+    this.render();
+  }
+
   // The remote defender's KC Armor declare, carried by a kcArmor command; the
   // Charge Token was spent by their own setCharge. Freeplay reaches this
   // directly from the button.
@@ -3120,12 +3225,17 @@ export class AttackHelper {
         ? `${drained} [Lightning]: one that no Dodge cancels may switch ${c.defender.label} into Shutdown Stance`
         : `${drained} [Lightning]: each one no Dodge cancels gives ${c.defender.label} a Fire Control Interference Token`);
     }
-    const held = bolt ? Math.max(0, Math.min(c.dodgeOnLightning ?? 0, dodge, drained)) : 0;
     // Dodge Enhancement's per-die grouping needs Attack DICE, and a Surplus
     // round has none: its icons are carried over (4.8), so there each {Dodge}
     // offsets one icon as normal. Grouped, the round had zero dice to cancel
     // and every Dodge was wasted, where FAQ D11 says HALO still applies.
-    const offsets = offsetIcons(heavy, light, dodge - held, defense, dense, c.dodgeDieUsed && !c.surplusRound ? this.attackIconsPerDie(c) : undefined);
+    const perDie = c.dodgeDieUsed && !c.surplusRound ? this.attackIconsPerDie(c) : undefined;
+    // The Dodges held for the Lightning: the defender's answer once they have
+    // given one, and until then the default, safeHold.
+    const want = bolt ? c.dodgeOnLightning ?? this.safeHold(c, heavy, light, dodge, defense, drained, perDie) : 0;
+    const held = bolt ? Math.max(0, Math.min(want, dodge, drained)) : 0;
+    this.lightningHeld = held;
+    const offsets = offsetIcons(heavy, light, dodge - held, defense, dense, perDie);
     const { icons, idleDefense, dodged, blocked, unoffset } = offsets;
     // Concussion / Wrecking: a {Dodge} left over after the damage icons may
     // cancel a Lightning (FAQ D2; 4.4.2's example fires Concussion on the
@@ -3334,6 +3444,7 @@ export class AttackHelper {
         faces,
         surplus: surplusEffects(c.action).map((e) => e.name),
         drain: lightningLinkDrain(c.action),
+        holdLimit: this.holdLimit(c),
         location: {
           fixed,
           attackerPicks: mech && !fixed && this.attackerMayDesignate(),
@@ -3455,7 +3566,8 @@ export class AttackHelper {
   // was sent, so the caller stops before touching the local context.
   private sendAct(act: MirrorAct, arg?: string | number[]): boolean {
     if (!this.mirroring) return false;
-    const paid = act === 'kcarmor' || act === 'meleeevade' || act === 'dodgeenhance';
+    // The Dodges are not paid for, but they are answered once all the same.
+    const paid = act === 'kcarmor' || act === 'meleeevade' || act === 'dodgeenhance' || act === 'dodgehold';
     // Guarded HERE as well as at the disabled attribute, because the guard is
     // the rule and the attribute is only its costume: a keyboard-focused
     // button still fires on Enter in some browsers' quirks, and the test
@@ -3565,6 +3677,10 @@ export class AttackHelper {
         // has to be on the table, because what it buys is decided against dice
         // that are already showing.
         dodgeDieReady: !c.dodgeDieUsed && c.step === 'defense' && dodgeEnhanceReady(this.data, c.defender),
+        // Where the defender's Dodges go, Hits or Lightning, while that is open:
+        // how many could be held, how many are, and whether this window waits
+        // on the defender's answer (stepResolve).
+        dodgeHold: (() => { const h = this.holdOffer(c); return h ? { max: h.max, n: h.n, asked: h.asked } : null; })(),
         // The resolution box, so the defending player watches the same icons
         // get dodged and blocked instead of learning the outcome from a line in
         // the dice feed (Otto, playing online 2026-08-19). ONLY on the
@@ -3761,7 +3877,11 @@ export class AttackHelper {
   private traceFlip = new Set<string>();
 
   private askBand(c: Ctx): HTMLElement {
-    const ask = askOf(c);
+    // Drawn before the step's own body, so the resolution is worked out here
+    // first for the Dodge question it may hold (resolve() only derives).
+    const holdAsked = this.mirroring ? !!this.mirroring.dodgeHold?.asked
+      : c.step === 'resolve' && !c.penetrated && !this.handsOff ? (this.resolve(), this.holdAsked(c)) : false;
+    const ask = askOf({ ...c, holdAsked });
     const band = document.createElement('div');
     const mine = ask.who === this.role;
     // THE WHOLE CLASS IN ONE ASSIGNMENT, never `className =` followed by
@@ -5927,31 +6047,66 @@ export class AttackHelper {
           // itself is combat-local and lives on this state.
           if (!accepted(this.onCommand({ kind: 'spendCommand', seat: c.attacker.side, uid: c.attacker.uid }))) return;
           c.eyeSwaps = (c.eyeSwaps ?? 0) + 1;
+          // The Exchange comes before the offsetting (4.4.1 step 6), so the
+          // defender places their Dodges against the icons it leaves: asked
+          // again if they had already answered.
+          c.dodgeOnLightning = undefined;
+          c.dodgeHoldAnswered = false;
           this.render();
         });
         wrap.appendChild(swap);
       }
-      // The defender's Dodges: Hits first by default, or held for Lightning.
-      if (!this.handsOff && this.lightningChoice > 0) {
-        const row = document.createElement('div');
-        row.className = 'ah-dodgepick';
-        const n = Math.min(c.dodgeOnLightning ?? 0, this.lightningChoice);
-        row.innerHTML = `<span>${esc(c.defender.label)}: Dodges held for [Lightning]</span>`;
-        const mk = (label: string, to: number, off: boolean): HTMLButtonElement => {
-          const b = document.createElement('button');
-          b.dataset.act = 'resolve.dodgehold'; b.dataset.arg = String(to);
-          b.className = 'ah-alt';
-          b.textContent = label;
-          b.disabled = off;
-          b.addEventListener('click', () => { c.dodgeOnLightning = to; this.render(); });
-          return b;
-        };
-        const count = document.createElement('b');
-        count.textContent = String(n);
-        row.append(mk('−', n - 1, n <= 0), count, mk('+', n + 1, n >= this.lightningChoice));
-        wrap.appendChild(row);
+    }
+    // THE DEFENDER'S DODGES: on the Hits first, or held for the Lightning
+    // (penetration audit 2026-10-12, finding 1). "The Defender offsets Icons"
+    // (4.4.1 step 6), so the choice is theirs. It used to sit under the
+    // attacker's controls: in a room the ATTACKING player set it and the
+    // defending one never saw it, and a computer never set it at all. Drawn for
+    // everyone, live only for the defender: here when they are played on this
+    // screen, and on their own screen when they are elsewhere, where the answer
+    // travels as a dodgeHold command and the resolution waits for it.
+    const hold = this.holdOffer(c);
+    if (hold) {
+      const mine = this.mayPress('defender') && !hold.sent;
+      const n = hold.n;
+      const row = document.createElement('div');
+      row.className = 'ah-dodgepick';
+      row.innerHTML = `<span>${esc(c.defender.label)}: Dodges held for [Lightning]</span>`;
+      const set = (to: number): void => {
+        if (this.mirroring) { this.holdPick = to; this.render(); return; }
+        c.dodgeOnLightning = to;
+        c.dodgeHoldAnswered = true;
+        this.render();
+      };
+      const mk = (label: string, to: number, off: boolean): HTMLButtonElement => {
+        const b = document.createElement('button');
+        b.dataset.act = 'resolve.dodgehold'; b.dataset.arg = String(to);
+        b.className = 'ah-alt';
+        b.textContent = label;
+        b.disabled = !mine || off;
+        b.addEventListener('click', () => set(to));
+        return b;
+      };
+      const count = document.createElement('b');
+      count.textContent = String(n);
+      row.append(mk('−', n - 1, n <= 0), count, mk('+', n + 1, n >= hold.max));
+      wrap.appendChild(row);
+      if (hold.asked && this.mirroring) {
+        const keep = document.createElement('button');
+        keep.dataset.act = 'resolve.dodgekeep';
+        keep.className = 'ah-primary';
+        keep.textContent = n ? `Hold ${n} Dodge${n === 1 ? '' : 's'} for the [Lightning]` : 'Put the Dodges on the Hits first';
+        keep.disabled = !mine;
+        keep.addEventListener('click', () => { this.sendAct('dodgehold', String(n)); });
+        wrap.appendChild(keep);
+      } else if (hold.asked) {
+        const wait = document.createElement('p');
+        wait.className = 'ah-note';
+        wait.textContent = `Waiting for ${c.defender.label}'s player to place their Dodges.`;
+        wrap.appendChild(wait);
       }
     }
+    const holding = this.holdAsked(c);
     // The timeout is not decoration: requestAnimationFrame does not fire while
     // the page is not compositing, so the strip is driven by timers and kicked
     // off outside the render that made its markup.
@@ -5987,7 +6142,7 @@ export class AttackHelper {
       apply.dataset.act = 'resolve.apply';
       apply.className = 'ah-primary';
       apply.textContent = `Apply Penetration to ${SLOT_LABEL[c.targetPart as PartSlot | 'main']}`;
-      apply.disabled = !this.mayDrive('attacker');
+      apply.disabled = !this.mayDrive('attacker') || holding;
       apply.addEventListener('click', () => {
         // The wait between render and this press is another checkpoint window.
         this.rebind(c);
@@ -6189,7 +6344,7 @@ export class AttackHelper {
       // the defence offset are Hits and on-hit riders such as Knockback fire on
       // them (4.4 note on Hit versus Penetration) — and Concussion/Wrecking's
       // Lightning drains Link whether anything got through or not.
-      done.disabled = !this.mayDrive('attacker');
+      done.disabled = !this.mayDrive('attacker') || holding;
       done.addEventListener('click', () => {
         this.sendLightningDrain();
         this.finish(wrap);

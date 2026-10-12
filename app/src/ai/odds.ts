@@ -18,8 +18,9 @@
 //
 // WHAT IT ASSUMES of the choices a roll leaves open, so that a number means
 // one thing: neither side spends a Link on a reroll (a seat weighs that when
-// it is asked, with the dice in front of it); no Dodge is held back for
-// {Lightning}; the defender declares the Parry or the Shield that costs the
+// it is asked, with the dice in front of it); the Dodges go where the window's
+// default puts them, on the Hits first unless holding some for the {Lightning}
+// keeps the Mech out of Shutdown; the defender declares the Parry or the Shield that costs the
 // attacker most; an attacker who may choose the Part, or the Surplus keyword,
 // takes the one worth most to it. Cleaving is read as going to another Part of
 // the same target (its other arm, another Unit in Range, is not weighed yet).
@@ -98,6 +99,23 @@ function offset(heavy: number, light: number, dodge: number, defense: number): O
   return o;
 }
 
+// Where the defender's Dodges go, as the window's default puts them (combat.ts
+// safeHold): on the Hits first, unless holding some for the {Lightning} keeps
+// the Mech out of Shutdown (the reading's holdLimit). The Hits offset with what
+// is left, and the {Lightning} that still gets through.
+function allot(r: AttackReading, heavy: number, light: number, bolts: number, dodge: number, defense: number): { o: Offset; through: number } {
+  const o = offset(heavy, light, dodge, defense);
+  const through = bolts - Math.min(bolts, o.spare);
+  const limit = r.holdLimit ?? null;
+  if (limit === null || through <= limit) return { o, through };
+  for (let h = 1; h <= Math.min(dodge, bolts); h++) {
+    const held = offset(heavy, light, dodge - h, defense);
+    const left = bolts - h - Math.min(bolts - h, held.spare);
+    if (left <= limit) return { o: held, through: left };
+  }
+  return { o, through };
+}
+
 // How the attack's {Lightning} and its damage are counted, read off the faces
 // themselves: a Wrecking's un-cancelled {Lightning} is a Hit and a Penetration
 // of its own, and an Action that causes no damage never Penetrates.
@@ -116,9 +134,9 @@ export function settle(
   r: AttackReading, a: { heavy: number; light: number; bolt: number }, d: { dodge: number; defense: number },
 ): Settled {
   const { wrecking, harmless } = traits(r);
-  const o = offset(a.heavy, a.light, d.dodge, d.defense);
-  // A {Dodge} left over after the Hits cancels a {Lightning} (FAQ D2).
-  const bolt = a.bolt - Math.min(a.bolt, o.spare);
+  // A {Dodge} left over after the Hits cancels a {Lightning} (FAQ D2), and one
+  // held for it does before any Hit.
+  const { o, through: bolt } = allot(r, a.heavy, a.light, a.bolt, d.dodge, d.defense);
   const wreck = wrecking ? bolt : 0;
   return {
     hits: o.hits + wreck,
@@ -369,8 +387,7 @@ export class Sheet {
       const bolts = ak >> 10;
       for (const [dk, dp] of defence) {
         const p = ap * dp;
-        const o = offset(heavy, light, dk & 31, dk >> 5);
-        const through = bolts - Math.min(bolts, o.spare);
+        const { o, through } = allot(this.r, heavy, light, bolts, dk & 31, dk >> 5);
         const wreck = this.wrecking ? through : 0;
         bolt += p * through;
         if (this.harmless || o.pen + wreck <= 0) {
