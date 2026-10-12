@@ -11,399 +11,29 @@
 //   * the game always progresses — a legal command exists at every step
 //   * the finished game replays deterministically from the initial state,
 //     which is the property networked mirroring stands on
-import { readFileSync, writeFileSync } from 'node:fs';
-
-// ---------- the same slice commands.test.mjs compiles, plus the script state ----------
-const commands = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const ticks = readFileSync(new URL('../src/ticks.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const types = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const setupSrc = readFileSync(new URL('../src/setup.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const tacticsSrc = readFileSync(new URL('../src/tactics.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const tasksSrc = readFileSync(new URL('../src/tasks.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const loopSrc = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const smokeRules = rules.slice(rules.indexOf('export function smokeKey'), rules.indexOf('export function smokeBlocks'));
-// Command Generation is sliced in whole rather than stubbed: the stubbed
-// tokenCards below already reads the real card database, so the sim gets the
-// printed numbers off the actual Torso cards and a squad built on a GoF core
-// generates 4 here exactly as it would in a game.
-const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const commandGen = unitsSrc.slice(
-  unitsSrc.indexOf('// ---------- Commands (rulebook 3.2.1) ----------'),
-  unitsSrc.indexOf('// ---------- Charge (rulebook 4.14) ----------'),
-);
-// The phase-7 pilot predicates. commands.ts now asks them inside
-// applyPenetration, advancePhase, focus and restoreLink, so the driver reaches
-// them on every simulated game — sliced rather than mirrored, because WHICH
-// pilot a rule answers to is the rule. The block starts AFTER pilotCard and
-// maxLink, which the stubs below already provide, so nothing is declared twice.
-const pilotTraits = unitsSrc.slice(
-  unitsSrc.indexOf('// ---------- Pilot traits (phase 7) ----------'),
-  unitsSrc.indexOf('// A Mech Maneuvers at the Maneuver Value'),
-);
-if (!pilotTraits) throw new Error('could not locate the phase-7 pilot predicates in units.ts');
-// Silence and the auras that deny it. commands.ts asks them inside the apply of
-// `maneuver` and `performAction` to shed a Low Profile Token (4.12.3), so the
-// driver reaches them on every simulated Maneuver and every Action — sliced
-// rather than stubbed, because WHICH Actions keep the Token is the rule, and
-// this sim runs against the real card database, so the real reader gets the
-// printed keywords off the actual cards.
 //
-// Both cuts checked against the two above before adding, the way every cut in
-// this project has to be: commandGen is 342-519 and pilotTraits 2917-3182,
-// while Silence is 572-700 and Auras 1583-1656 — no range overlaps, so nothing
-// is declared twice.
-const silence = unitsSrc.slice(
-  unitsSrc.indexOf('// ---------- Silence (rulebook'),
-  unitsSrc.indexOf('// ---------- Who breaks Optical Camouflage'),
-);
-const auras = unitsSrc.slice(
-  unitsSrc.indexOf('// ---------- Auras (FAQ Q1-Q4, J2) ----------'),
-  unitsSrc.indexOf('// LPA-21 Firefly'),
-);
-// The Immobilized ban and its Unstoppable exception, SLICED rather than stubbed:
-// a simulated game moves units constantly, so a stub that refuses nothing would
-// hide the rule breaking exactly where this file is meant to catch it.
-const immob = unitsSrc.slice(
-  unitsSrc.indexOf('export function isUnstoppable('),
-  unitsSrc.indexOf('// ---------- ON-HIT RIDERS'),
-);
-if (!silence || !auras || !immob) throw new Error('could not locate the Silence readers in units.ts');
-// The Mechanics Audit Phase 2 readers commands.ts imports (actionPartWhy,
-// startOpts, overloadPackOn, cruising...): one block, the last in units.ts, so
-// it overlaps no range above. SLOT_LABEL rides along because actionPartWhy
-// names the destroyed Part, and simulated attacks destroy plenty of them.
-// The Maneuver Value, which check() now bounds every Movement by (audit Phase
-// 4, E8). SLICED for the reason commands.test.mjs gives: a mirror could allow a
-// walk the app refuses. It begins where the pilotTraits cut ends.
-const maneuvering = unitsSrc.slice(
-  unitsSrc.indexOf('// A Mech Maneuvers at the Maneuver Value'),
-  unitsSrc.indexOf('export function initiativeFor'),
-);
-if (!maneuvering) throw new Error('could not locate maneuverRange in units.ts');
-// canBeForceMoved, the real one: forceMove refuses an immovable unit (4.3.4;
-// audit Phase 4, B2).
-const meleeSrc = readFileSync(new URL('../src/melee.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const forceable = meleeSrc.slice(meleeSrc.indexOf('export function canBeForceMoved'), meleeSrc.indexOf('// ---------- Break Away ----------'));
-if (!forceable) throw new Error('could not locate canBeForceMoved in melee.ts');
-const phase2At = unitsSrc.indexOf('// ---------- Mechanics audit Phase 2 readers ----------');
-if (phase2At < 0) throw new Error('could not locate the Phase 2 readers in units.ts');
-const phase2 = unitsSrc.slice(phase2At);
-const slotLabels = unitsSrc.slice(unitsSrc.indexOf('export const SLOT_LABEL'), unitsSrc.indexOf('let uidSource'));
-if (!slotLabels) throw new Error('could not locate SLOT_LABEL in units.ts');
-// extraActivationOf: performAction records the grant a Coordinate makes (FAQ
-// K3). No other cut here touches this range.
-const grants = unitsSrc.slice(unitsSrc.indexOf('export interface ExtraActivation'), unitsSrc.indexOf('export function freehandSlots'));
-if (!grants) throw new Error('could not locate extraActivationOf in units.ts');
-// consumesCharge: the Charge Action's Part check (FAQ H2) asks it, and a
-// random game performs Charge Actions. The same pure range commands.test.mjs
-// takes, starting at the module-level regex it reads.
-const chargeParser = unitsSrc.slice(unitsSrc.indexOf('const CHARGE_KEYWORD'), unitsSrc.indexOf('export function isChargeAction'));
-if (!chargeParser) throw new Error('could not locate consumesCharge in units.ts');
-// The [condition] grant block: performAction prices a Stance-gated length off
-// stanceShaped (ZHRA-102_A; audit Phase 2, D2). Checked against every range
-// taken here: it overlaps none (tests/_p2v_slices.mjs), and no stub shares a name.
-const grantBlock = unitsSrc.slice(
-  unitsSrc.indexOf('// ---------- [condition] 获得X: keywords GRANTED by a printed condition ----------'),
-  unitsSrc.indexOf('// Pulse Weapon: "May exchange'),
-);
-if (!grantBlock) throw new Error('could not locate the grant block in units.ts');
-// disarmOn: every simulated performAction records the Disarm an Action printing
-// it may cause (ruled R3; audit Phase 7, P7A 8). No other cut touches it.
-const disarmReader = unitsSrc.slice(unitsSrc.indexOf('export function disarmOn'), unitsSrc.indexOf("// The other half of 050's choice"));
-if (!disarmReader) throw new Error('could not locate disarmOn in units.ts');
-// freehandSlots: a Throw Action needs a free hand, and a random game throws
-// Beacons (ruled R7; audit Phase 7, P7A 6). The cut ends where commandGen
-// begins and starts where `grants` ends, so nothing is declared twice.
-const freehand = unitsSrc.slice(unitsSrc.indexOf('export function freehandSlots'), unitsSrc.indexOf('// ---------- Commands (rulebook 3.2.1) ----------'));
-if (!freehand) throw new Error('could not locate freehandSlots in units.ts');
-// The Action classifiers every simulated performAction now asks, for the
-// Counter-roll and the camouflage it pays for (ruled R1, R2; audit Phase 7,
-// P7C 1, 2): the real ones, each a single function no other cut touches.
-const fnCut = (name) => {
-  const i = unitsSrc.indexOf(`export function ${name}(`);
-  if (i < 0) throw new Error(`could not locate ${name} in units.ts`);
-  return unitsSrc.slice(i, unitsSrc.indexOf('\n}\n', i) + 3);
-};
-const camoLine = unitsSrc.slice(unitsSrc.indexOf('const CAMO_ACTIVATES'), unitsSrc.indexOf('\n', unitsSrc.indexOf('const CAMO_ACTIVATES')) + 1);
-const classifiers = camoLine + fnCut('activatesCamo') + fnCut('isScanAction') + fnCut('isElectronicAttack');
-const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
-const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
-const tmp = new URL('./_simgame.slice.ts', import.meta.url);
-// Missile Group X: the real reader, sliced so launch mints what the card says.
-// Through volleyOf too, which launch() now caps a performance with (C12).
-const groupParser = unitsSrc.slice(unitsSrc.indexOf('// MISSILE GROUP X'), unitsSrc.indexOf('// ---------- SNIPE 狙击 (keywords.json) ----------'));
-if (!groupParser) throw new Error('could not locate missileGroupOf in units.ts');
-const stubs = `
-// Flexible Timing reaches a Mech from an ally's AURA, which needs the whole
-// board. These fixtures have no aura sources, so the honest stub is "never" —
-// the adjacency rule itself is covered properly in ticks.test.mjs.
-// No fixture Mech here carries a Data Link, so the honest stub is "no rider".
-export function riderOnDrone(_data: any, _tokens: any, _t: any): any {
-  return { autoActions: false, preMove: 0 };
-}
-// No fixture in this simulation carries a lock_one Projectile (only cards 008
-// and PRDR-105 do), so the honest stub is "never commits" — the rule itself is
-// pinned against the real cards in charge.test.mjs and in commands.test.mjs,
-// which slices the real reader.
-// No fixture here carries an Ammunition Pack (only cards 086 + 129 pair up), so
-// "never lends a magazine" is the honest stub. The rule itself is pinned in
-// commands.test.mjs, which slices the REAL reader.
-export function ammoDeliveryPool(_data: any, _t: any, _actionId: string): string | undefined {
-  return undefined;
-}
-export function covertCarryLock(_a: any): boolean {
-  return false;
-}
-// apply() sweeps the Tether chips after every command, and no squad this
-// simulation builds carries the one card that places them (PDLH-202), so the
-// honest stub is a no-op. The removal conditions are pinned against the real
-// card in tether.test.mjs, and the command layer's half in commands.test.mjs,
-// which slices the real functions.
-export function settleTethers(_data: any, _state: any): void {}
-export function settleEnvironments(_data: any, _state: any): any[] { return []; }
-export function cutTethersOn(_data: any, _state: any, _t: any, _role: any): void {}
-export function tetherCap(_t: any, _tokens: any[]): any { return undefined; }
-export function cutTetherBetween(_data: any, _state: any, _t: any, _uid: number): void {}
-// performAction refuses a Firing Action while Melee Locked (audit Phase 4, D6).
-// The lock needs the whole board's line of sight, so the honest stub is
-// "nobody locks"; meleelock.test.mjs and mechanics4.test.mjs drive the real
-// readers. isMeleeFiring is the real one-liner.
-export function isMeleeFiring(a: any): boolean { return (a.keywords ?? []).some((k: any) => (k.inline ?? k.key) === '近战射击'); }
-export function lockersOf(_d: any, _t: any, _tokens: any, _terrain: any, _at?: any): any[] { return []; }
-export function tetherTo(_a: any, _b: any, _range: number): void {}
-export function transformPartOn(_data: any, _t: any, _slot: any, _cardId: string): void {}
-export function transformFaces(_data: any, _c: any): string[] { return []; }
-// No fixture here launches an Unfolded Pholcus (card 167 is the only one), so
-// the honest stub is "never" (audit Phase 5, A8).
-export function isUnfolded(_c: any): boolean { return false; }
-// No fixture here places a Mine, so the terrain check (Supplementary Rules 1.04,
-// 1.3) never applies.
-export function isMine(_c: any): boolean { return false; }
-// No fixture here plays a season, so the main rules stand; the Season Rules are
-// driven through the real engine in seasonplay.test.mjs.
-export function syncSeason(_data: any, _state: any): void {}
-export function smokePerGroup(_data: any, _state: any): number { return 1; }
-// No fixture here lays a Mine, so no blast is owed and there is no order to
-// keep (Supplementary Rules 1.04, 1.9); blastorder.test.mjs drives the real one.
-export function minesOwed(_data: any, _tokens: any): any[] { return []; }
-export function blastTurn(_data: any, _state: any): any { return null; }
-export function blastsReady(_data: any, _tokens: any): any[] { return []; }
-export function jumpsToTarget(_a: any): boolean { return false; }
-// No fixture here prints [Stationary] (the GSD7 Mortar is the card that does),
-// so the launch ceiling reads the printed Range (audit Phase 5, A8).
-export function stationaryAdjusted(a: any, _opp?: any): any { return a; }
-// No fixture launcher here names its Projectiles by a real list, so the
-// honest stub is "no list": the table places what it launches (audit Phase
-// 5, G5).
-export function launchableCards(_data: any, _tokens: any, _t: any, _actionId: string, _anywhere?: boolean): any { return null; }
-// The Mine readers are pinned against the real engine in mechanics5.test.mjs;
-// no fixture here lays one, so the honest stub marks nothing (audit Phase 5,
-// C2).
-export function settleMines(_data: any, _state: any): void {}
-// Nor does any stand in a Mine's Grid, so no reprieve is there to end (audit
-// Phase 5, C3).
-export function forgetMineSpares(_tokens: any, _moved?: number): void {}
-// No fixture here puts a folded Pholcus down, so none is owed its Unfold, and
-// the one the Unfold test turns over comes up in an empty Grid (audit Phase
-// 5, D2, D3).
-export function unfoldsOwed(_data: any, _tokens: any): any[] { return []; }
-export function unfoldOccupants(_tokens: any, _t: any): any[] { return []; }
-export function hasFlexibleTiming(_data: any, _tokens: any, _t: any): boolean {
-  return false;
-}
-// CQC is its own Starting Action option now (startOpts). A random squad may
-// field card 017, and this stub answers "never" as the one above does, so the
-// sim plays the stricter Starting Action rule: it refuses a Chop a real game
-// would allow, never the reverse. mechanics2.test.mjs pins the real any-timing arm.
-export function cqcFlexible(_data: any, _t: any, _a?: any): boolean {
-  return false;
-}
-export function tokenCards(data: any, t: any): any[] {
-  if (t.kind === 'mech') {
-    return Object.entries(t.mech ?? {}).map(([slot, id]) => ({ slot, card: data.byId.get(id) })).filter((x: any) => x.card);
-  }
-  return [{ slot: 'main', card: data.byId.get(t.cardId) }].filter((x: any) => x.card);
-}
-export function maxLink(data: any, t: any): number {
-  const pilot = t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
-  return pilot?.LV ?? 99;
-}
-export function pilotCard(data: any, t: any): any {
-  return t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
-}
-export function repeatersFor(data: any, tokens: any[], t: any): any[] {
-  const grid = (x: any) => ({ c: Math.floor(x.col / 3), r: Math.floor(x.row / 3) });
-  const apart = (a: any, b: any) => Math.abs(grid(a).c - grid(b).c) + Math.abs(grid(a).r - grid(b).r);
-  return tokens.filter((r: any) => r.uid !== t.uid && r.side === t.side && r.deployed !== false
-    && (r.partStates?.main ?? 'intact') !== 'destroyed'
-    && data.byId.get(r.cardId)?.repeater
-    && apart(t, r) <= (data.byId.get(r.cardId)?.repeaterRange ?? 0));
-}
-export function electronicOrigins(data: any, tokens: any[], t: any): any[] {
-  return [t, ...repeatersFor(data, tokens, t)];
-}
-export function loanedParts(data: any, tokens: any[], t: any): any[] {
-  if (t.kind !== 'mech') return [];
-  const touch = (a: any, b: any): boolean => {
-    const gapX = Math.max(a.col - (b.col + b.size), b.col - (a.col + a.size));
-    const gapY = Math.max(a.row - (b.row + b.size), b.row - (a.row + a.size));
-    if (gapX < 0 && gapY < 0) return true;
-    return (gapX === 0 && gapY < 0) || (gapY === 0 && gapX < 0);
-  };
-  return tokens
-    .filter((d: any) => d.uid !== t.uid && d.side === t.side && d.deployed !== false && d.droneBackpack
-      && (d.partStates?.main ?? 'intact') !== 'destroyed'
-      && (d.partStates?.backpack ?? 'intact') !== 'destroyed'
-      && data.byId.get(d.cardId)?.carrier && touch(t, d))
-    .map((d: any) => ({ slot: 'load:' + d.uid, card: data.byId.get(d.droneBackpack), from: d }))
-    .filter((x: any) => !!x.card);
-}
-export function extrasFor(data: any, t: any): any[] {
-  const have = new Set(tokenCards(data, t).flatMap((x: any) => (x.card.actions ?? []).map((a: any) => a.id)));
-  return (data.extraTicks ?? []).filter((g: any) => have.has(g.actionId)).map((g: any) => ({ id: g.actionId, label: g.label, timing: g.timing, check: g.check }));
-}
-export function makeDroneToken(state: any, data: any, card: any, side: any, backpack?: string): any {
-  return {
-    uid: state.nextUid++, side, kind: card.category === 'projectile' ? 'projectile' : 'drone',
-    cardId: card.id, droneBackpack: backpack, label: card.id, size: 1, aerial: false, stance: 'offensive',
-    partStates: { main: 'intact', ...(backpack ? { backpack: 'intact' } : {}) }, ammo: {},
-  };
-}
-export function makeMechToken(state: any, data: any, loadout: any, side: any, name?: string): any {
-  const partStates: any = {};
-  const ammo: any = {};
-  for (const slot of ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack']) {
-    if (loadout[slot]) partStates[slot] = 'intact';
-  }
-  for (const id of Object.values(loadout)) {
-    for (const a of (data.byId.get(id)?.actions ?? [])) if ((a.storage ?? 0) > 0) ammo[a.id] = a.storage;
-  }
-  const pilot = loadout.pilot ? data.byId.get(loadout.pilot) : undefined;
-  return {
-    uid: state.nextUid++, side, kind: 'mech', cardId: loadout.torso ?? '', mech: loadout,
-    label: name ?? 'Mech', size: 3, aerial: false, stance: 'offensive',
-    link: pilot?.LV ?? 3, partStates, ammo,
-  };
-}
-// Grace Note measures a distance, so the pilot block wants the Large-Grid sum.
-// These fixtures are not about range; the real Manhattan arithmetic is enough.
-// eligibleUnits lists a Mech in the Command Phase when it carries an RWS Part
-// with a Command left (遥控武器). No squad in this simulation fields the Ls197R,
-// so the honest stub is none; rws.test.mjs drives the real reader.
-// The 2026-09-03 rulings batch taught the command layer seven more readers
-// (self-applied Tokens, RWS, Jet Dash, Domestic Expert, Amplify). None of
-// them fires in this simulation, so each is stubbed neutral; their own test
-// files drive the real ones.
-export function selfStatusGrant(_a: any): any { return null; }
-export function selfGrantWhy(_t: any, _g: any): any { return null; }
-// Phase 7's P7C readers (audit Phase 7, P7C 1, 4, 8): no simulated game here
-// performs a Reveal or a Scan with nothing to change, hides a unit or makes a
-// Multi-Target, so each is stubbed neutral; mechanics7.test.mjs drives the
-// real ones.
-export function actionIdleWhy(_d: any, _t: any, _a: any, _w?: any): string | null { return null; }
-export function camoBrokenBy(_d: any, _tokens: any[], _t: any): any { return undefined; }
-export function multiTargetLimit(_a: any, _designated?: boolean): any { return undefined; }
-export function isRwsAction(_a: any): boolean { return false; }
-export function rwsCommandKey(round: number, uid: number): string { return round + ':rwscmd:' + uid; }
-export function rwsFiredKey(round: number, uid: number, id: string): string { return round + ':rws:' + uid + ':' + id; }
-export function straightLineBonus(_a: any): number { return 0; }
-export function linkTickTraitOn(_d: any, _t: any): any { return null; }
-export function actionRange(_d: any, _tk: any, _t: any, a: any): number { return a.range ?? 0; }
-export function rwsCommandsLeft(_d: any, _s: any, _t: any): number { return 0; }
-export function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }
-export function rangeBetween(a: any, b: any): any {
-  const ga = largeGridOf(a), gb = largeGridOf(b);
-  const dc = Math.abs(ga.c - gb.c), dr = Math.abs(ga.r - gb.r);
-  return { range: dc + dr, adjacent: dc <= 1 && dr <= 1, sameGrid: dc === 0 && dr === 0 };
-}
-`;
-let sliceSrc =
-  'type GameState = any;\ntype Side = any;\ntype Stance = any;\ntype Timing = any;\ntype TimingDef = any;\ntype Facing = any;\ntype GameData = any;\ntype CardAction = any;\ntype ExtraTick = any;\ntype Opportunity = any;\ntype Token = any;\ntype StatusDef = any;\ntype PartSlot = any;\ntype PartState = any;\n'
-  + timings
-  + statuses
-  + setupSrc.replace(/^import[^\n]*\n/gm, '')
-  + tacticsSrc.replace(/^import[^\n]*\n/gm, '')
-  + tasksSrc.replace(/^import[^\n]*\n/gm, '')
-  + loopSrc.replace(/^import[^\n]*\n/gm, '')
-  + smokeRules
-  + ticks.replace(/^import[^\n]*\n/gm, '')
-  + groupParser
-  + stubs
-  + pilotTraits
-  // After the stubs: maneuverBonus walks the stubbed tokenCards.
-  + maneuvering
-  + forceable
-  + commandGen
-  // After the stubs: aurasOn reads the stubbed tokenCards and rangeBetween, and
-  // a function declaration hoists where a `const` stub does not. Auras first,
-  // since silenceDenied reads aurasOn.
-  + auras
-  + immob
-  + silence
-  + slotLabels
-  // After the stubs: it reads the stubbed tokenCards, and a function hoists.
-  + phase2
-  + grants
-  + chargeParser
-  + grantBlock
-  + disarmReader
-  + freehand
-  + classifiers
-  // The name cleaner commands.ts imports (renameUnit, importSquad, rollbackRequest).
-  + readFileSync(new URL('../src/safetext.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
-  + commands.replace(/^import[^\n]*\n/gm, '');
-// The driver builds real script states and opportunities, which live outside
-// the ranges above; pull them (and asSide, which normaliseScript leans on) in
-// only when the ranges did not already cover them.
-if (!/export function asSide/.test(sliceSrc)) {
-  sliceSrc += types.slice(types.indexOf('export const LEGACY_SIDE'), types.indexOf('export type Stance'));
-}
-if (!/export function newScriptState/.test(sliceSrc)) {
-  sliceSrc += types.slice(types.indexOf('export function newOpportunity'), types.indexOf('export type BattleScale'));
-}
-// The board-size helpers, on the same only-if-missing footing as the two
-// above. commands.ts bounds every placement against them, so the simulated
-// games would refuse legal moves (or allow illegal ones) without the real
-// implementations.
-if (!/export function cellsOf/.test(sliceSrc)) {
-  sliceSrc += types.slice(types.indexOf('export type BoardGrids'), types.indexOf('export interface GameState'));
-}
-writeFileSync(tmp, sliceSrc);
-const C = await import(tmp.href);
+// ON THE REAL ENGINE since the code audit (2026-10-12). It used to build a copy
+// of the engine out of slices of the source text, with some forty stand-ins
+// that switched mechanics off, and it broke whenever code moved. It bundles the
+// modules themselves now (_engine.mjs), with the merged card data, so every
+// rule a game reaches is the one the pages play.
+import { loadEngine } from './_engine.mjs';
 
-// ---------- the real card database, merged the way data.ts merges it ----------
-const repo = new URL('../../', import.meta.url);
-const loadJson = (p) => JSON.parse(readFileSync(new URL(p, repo), 'utf8'));
-const cards = loadJson('data/cards.json');
-const byId = new Map(cards.map((c) => [c.id, c]));
-for (const [cid, patch] of Object.entries(loadJson('data/stat_overrides.json').cards ?? {})) {
-  const c = byId.get(cid);
-  if (c) for (const [k, v] of Object.entries(patch)) if (!k.startsWith('_')) c[k] = v;
-}
-const ammoOv = loadJson('data/ammo_overrides.json').actions ?? {};
-const actOv = loadJson('data/action_overrides.json').actions ?? {};
-for (const c of cards) {
-  for (const a of c.actions ?? []) {
-    if (ammoOv[a.id] !== undefined) a.storage = ammoOv[a.id];
-    const fix = actOv[a.id];
-    if (fix) for (const [k, v] of Object.entries(fix)) {
-      if (k.startsWith('_')) continue;
-      if (k === 'name' && v && typeof v === 'object') a.name = { ...a.name, ...v };
-      else a[k] = v;
-    }
-  }
-}
-const common = loadJson('data/common_actions.json');
-// The Secondary Task cards and the printed Deployment Zones, so the setup
-// steps are the rules' own: the Tasks step picks real cards, and a unit
-// deploys in its squad's strip (audit Phase 6, A1-A3).
-const zoneFile = JSON.parse(readFileSync(new URL('../../data/zones.json', import.meta.url), 'utf8'));
-const data = {
-  byId, commonActions: common.actions ?? [], overload: common.overload ?? [],
-  secondary: JSON.parse(readFileSync(new URL('../../data/secondary.json', import.meta.url), 'utf8')).cards,
-  zoneData: { zones: [], deployments: zoneFile.deployments, missionDeployment: zoneFile.missionDeployment },
+const { M, data } = await loadEngine('simgame', ["export * as TAC from '../src/tactics';"]);
+// The engine's functions the driver calls, under the names it calls them by.
+const C = {
+  check: M.C.check, perform: M.C.perform,
+  newScriptState: M.TY.newScriptState, PHASES: M.TY.PHASES, STATUSES: M.TY.STATUSES, TIMINGS: M.TY.TIMINGS,
+  newSetup: M.SU.newSetup, normaliseSetup: M.SU.normaliseSetup, deployTurn: M.SU.deployTurn, deploymentComplete: M.SU.deploymentComplete,
+  normaliseTasks: M.TK.normaliseTasks, deployGrids: M.TK.deployGrids, deployOpenGrids: M.TK.deployOpenGrids,
+  alive: M.L.alive, isLoopPhase: M.L.isLoopPhase, eligibleUnits: M.L.eligibleUnits,
+  loopComplete: M.L.loopComplete, actionPhaseComplete: M.L.actionPhaseComplete,
+  TACTIC_SPECS: M.TAC.TACTIC_SPECS, tacticSpec: M.TAC.tacticSpec, tacticTargets: M.TAC.tacticTargets,
 };
+const lost = Object.entries(C).filter(([, v]) => v === undefined).map(([k]) => k);
+if (lost.length) throw new Error(`the engine no longer exports ${lost.join(', ')}`);
+const cards = data.cards;
+const byId = data.byId;
 
 const partsOf = (ty) => cards.filter((c) => c.type === ty && (c.actions ?? []).length >= 0);
 const pilots = cards.filter((c) => c.category === 'pilot' && typeof c.LV === 'number');
@@ -504,54 +134,20 @@ function tacticCandidates(s, rng, out) {
   }
 }
 
-// ---------- the guide glue, mirrored from playguide.ts ----------
-// Both networked clients run this same deterministic bookkeeping between
-// commands, so the simulator is a faithful third client.
-const PKEY = { swift: 'swift', melee: 'melee', projectile: 'projectile', firing: 'firing', movement: 'moving', tactical: 'tactic' };
-const init = (t, timing) => {
-  const p = t.mech?.pilot ? byId.get(t.mech.pilot) : null;
-  return p ? p[PKEY[timing]] : undefined;
-};
-
-function enterPhase(s) {
-  const sc = s.script;
-  if (s.round.phase === 0) {
-    // The real seeder, not a reimplementation of it: it places the tokens on
-    // the Mechs as well as setting the pool, and the sim is the only test that
-    // then runs designate against them for real.
-    C.seedCommandTokens(data, s);
-    sc.commanded = [];
-    sc.freeCommand = [];
-  } else if ((sc.stage ?? '').split(':')[1] === '0') {
-    // Mirrors matchhud's glue: LEAVING the Command Phase strips the DRONES'
-    // Command Tokens only (3.2.3). The Mechs keep what they reserved, and a
-    // token a Drone is handed later through Command Coordination stays until
-    // the End Phase sweeps everything (3.7.2 / 4.15.4).
-    C.clearDroneCommands(s);
-  }
-  if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
-  sc.endDone = sc.endDone.filter((k) => k.startsWith(`${s.round.n}:`));
-  sc.opp = null;
-  sc.passed = [];
-  sc.turn = s.round.firstPlayer;
-  sc.stage = `${s.round.n}:${s.round.phase}`;
-}
+// ---------- the table's glue: the real one, as every client runs it ----------
+// The turn bookkeeping every client derives between commands (glue.ts): a phase
+// entered, an activation opened, the next Action Opportunity. The driver kept a
+// copy of it, mirrored from playguide.ts, until the code audit (2026-10-12).
+const init = M.G.makeInit(data);
 
 function glue(s) {
-  const sc = s.script;
-  if (s.round.phase === 2 && !sc.opp) {
-    const next = C.nextActivation(s, init);
-    if (next) sc.opp = C.newOpportunity(next.uid, next.timing);
-  }
+  if (s.round.phase === 2) M.G.opportunity(data, s);
 }
 
 function applyOne(s, cmd) {
   glue(s);
   const v = C.perform(data, s, cmd);
-  if (v.ok) {
-    if (cmd.kind === 'advancePhase' || cmd.kind === 'finishDeployment') enterPhase(s);
-    else if (cmd.kind === 'designate') s.script.opp = C.newOpportunity(cmd.uid, undefined);
-  }
+  if (v.ok) M.G.glueAfter(data, s, cmd);
   return v;
 }
 
@@ -773,7 +369,9 @@ function candidates(s, rng) {
     if (!sc.endDone.includes(`${s.round.n}:end:${step}`)) out.push({ kind: 'markEndStep', seat: pick(rng, ['s1', 's2']), step });
   }
   if (rng() < 0.2) out.push({ kind: 'award', seat: 's1', vp: { s1: irnd(rng, 2), s2: irnd(rng, 2) }, keys: [] });
-  if ((s.smoke ?? []).length && rng() < 0.5) out.push({ kind: 'dissipateSmoke', seat: 's1' });
+  // Smoke dissipation is one of the End Phase's own steps (3.7): the round
+  // cannot end before it, so it is always on offer while smoke stands.
+  if ((s.smoke ?? []).length) out.push({ kind: 'dissipateSmoke', seat: 's1' });
   const doneAll = ['tokens', 'remove', 'tasks'].every((st) => sc.endDone.includes(`${s.round.n}:end:${st}`));
   if (doneAll) out.push({ kind: 'advancePhase', seat: 's1' });
   return out;
@@ -860,13 +458,17 @@ for (let seed = 1; seed <= GAMES; seed++) {
       const j = irnd(rng, i + 1);
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
+    // Why each was refused, so a stall says what stood in the way.
+    const whys = [];
     for (const cmd of pool) {
-      if (C.check(data, state, cmd).ok) { chosen = cmd; break; }
+      const v = C.check(data, state, cmd);
+      if (v.ok) { chosen = cmd; break; }
+      whys.push(`${cmd.kind}: ${v.why}`);
       refusals++;
     }
     if (JSON.stringify(state) !== glued) { broke = 'check() itself mutated the state'; break; }
     if (!chosen) {
-      broke = `no legal command at round ${state.round.n} phase ${state.round.phase} (stage ${state.script.stage}, turn ${state.script.turn}, passed ${JSON.stringify(state.script.passed)})`;
+      broke = `no legal command at round ${state.round.n} phase ${state.round.phase} (stage ${state.script.stage}, turn ${state.script.turn}, passed ${JSON.stringify(state.script.passed)}); refused: ${[...new Set(whys)].slice(0, 6).join(' | ')}`;
       break;
     }
 

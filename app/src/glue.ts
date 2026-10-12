@@ -4,9 +4,9 @@
 // Opportunity it is, what a designation opens.
 //
 // It lived in matchhud.ts (mirrored from playguide.ts, and mirrored again in
-// tests/simgame.test.mjs). The pad's guided mode is a fourth client of the
-// same script, and a fourth copy is how two phones come to disagree about
-// whose turn it is. So the shared half lives here, and matchhud.ts imports it
+// tests/simgame.test.mjs, which runs this one since 2026-10-12). The pad's
+// guided mode is a fourth client of the same script, and a fourth copy is how
+// two phones come to disagree about whose turn it is. So the shared half lives here, and matchhud.ts imports it
 // and adds only what a board page needs on top (the smoke-dissipation queue).
 import type { GameData } from './data';
 import { copyAsJson } from './jsoncopy';

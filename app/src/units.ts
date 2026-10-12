@@ -7260,7 +7260,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
 // ---------- Mechanics audit Phase 2 readers ----------
 //
 // Kept together at the end of the file ON PURPOSE: several tests build commands.ts
-// from text slices of this file (commands, simgame, tether), and a helper dropped
+// from text slices of this file (auras, commands, pilottraits, tether), and a helper dropped
 // inside one of their ranges while calling something outside it fails there as a
 // ReferenceError. The harnesses slice this whole block by its heading.
 

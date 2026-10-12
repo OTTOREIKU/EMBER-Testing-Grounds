@@ -1,11 +1,11 @@
 // A harness that RUNS the real engine with no page.
 //
 // Checked in by hand, like _combatdrive.mjs beside it: the `_` only keeps it
-// out of the test list. simgame.test.mjs plays whole games on a copy of the
-// engine it slices out of the source text and stubs; this bundles the modules
-// themselves (commands, glue, loop, units, rules, scoring, setup, ticks, tasks,
-// combat) with esbuild, as linkaudit and tabletokens bundle the Reference, so a
-// computer seat is tested on the code a player's page runs. Measured
+// out of the test list. It bundles the modules themselves (commands, glue,
+// loop, units, rules, scoring, setup, ticks, tasks, combat) with esbuild, as
+// linkaudit and tabletokens bundle the Reference, so a computer seat, and
+// simgame.test's random games since the code audit (2026-10-12), are tested on
+// the code a player's page runs. Measured
 // 2026-10-01: the bundle takes about 190 ms, a copy of a mid-game state about
 // 60 microseconds and a check() about 2.5.
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
