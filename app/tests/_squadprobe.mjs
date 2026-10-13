@@ -129,8 +129,9 @@ const dodgeWatch = (p) => ({
 // and 2"): behaviour that may be a blind spot, counted, the choices untouched. Each unit's activation (a Mech's
 // Opportunity, a Drone's activation in the Command or the Automatic Phase): whether an attack was on offer (an answer
 // tagged attack, or electronic and not a Terminal's), whether one was made (a launch counts as one), and whether it
-// ended with one still on offer (passed up). Over the game, for each seat: units alive three rounds or more that never moved, and, of those carrying
-// something to strike with, that never struck; Drones that could have been given a Command and never were; Command
+// ended with one still on offer (passed up). Over the game, for each seat: units alive three rounds or more that
+// never moved (of those that can), and, of those carrying something to strike with, that never struck (an
+// Interception, an Overwatch Strike or a Riposte counts); Drones that could have been given a Command and never were; Command
 // Phases passed with a Drone to give one to; Charges made, and those still unspent as the game ends; Movements of a
 // Box's bearer that end further from where Boxes pay. Under the game's line `  blind s1 <json> s2 <json>`; in the
 // run's JSON line, by kind of unit (a Drone by its card, a Mech by its longest gun) and by subject and foe
@@ -144,7 +145,7 @@ const blindKind = (u) => {
 };
 const blindStrike = (o) => !!o && (o.tags.includes('attack') || (o.tags.includes('electronic') && !o.tags.includes('terminal')));
 const blindActed = (o) => blindStrike(o) || (!!o && o.tags[0] === 'launch' && !o.tags.includes('smoke'));
-const blindArmed = (u) => u.weapons.some((w) => ['Firing', 'Melee', 'Projectile', 'Tactic'].includes(w.type));
+const blindArmed = (u) => u.weapons.some((w) => ['Firing', 'Melee', 'Projectile'].includes(w.type));
 const blindFresh = () => ({ acts: new Map(), struckBy: new Set(), units: new Map(), droneSeen: new Set(), commanded: new Set(), cmdPass: 0, chargesMade: 0, boxAway: 0 });
 const blindWho = (seat) => (blindGame && seat === blindGame.subjectSeat ? 'subject' : 'foe');
 function blindLog(seat, round, u, what) {
@@ -167,6 +168,8 @@ function blindSee(d, view, c) {
     else { seen.u = u; seen.to = view.round; if (seen.first.col !== u.grid.col || seen.first.row !== u.grid.row) seen.moved = true; }
   }
   const chosen = d.options.find((x) => x.id === c.option);
+  // A strike made outside the unit's own activation (an Interception, an Overwatch Strike, a Riposte) is one all the same.
+  if (blindActed(chosen)) { const by = typeof chosen.facts?.uid === 'number' ? chosen.facts.uid : d.unit; if (typeof by === 'number') g.struckBy.add(by); }
   if ((d.kind === 'opp.act' || d.kind === 'activation.act') && typeof d.unit === 'number') {
     const u = view.units.find((x) => x.uid === d.unit);
     if (!u || u.kind === 'projectile') return;
@@ -210,19 +213,23 @@ function blindEnd(state) {
     let still = 0, silent = 0;
     const who = blindWho(seat);
     const cards = (tally.blindCards ??= {});
-    const row = (kind) => (cards[`${who}|${kind}`] ??= { acts: 0, offered: 0, struck: 0, passed: 0, units: 0, armed: 0, still: 0, silent: 0 });
+    const row = (kind) => (cards[`${who}|${kind}`] ??= { acts: 0, offered: 0, struck: 0, passed: 0, units: 0, mobile: 0, armed: 0, still: 0, silent: 0 });
     for (const x of g.units.values()) {
       if (x.to - x.from + 1 < 3) continue;
       const r = row(blindKind(x.u));
       r.units += 1;
-      if (!x.moved) { still += 1; r.still += 1; blindLog(seat, x.to, x.u, `stood where it deployed for ${x.to - x.from + 1} rounds`); }
+      const mobile = (x.u.kind === 'mech' ? x.u.maneuver : x.u.move) > 0;
+      if (mobile) r.mobile += 1;
+      if (!x.moved && mobile) { still += 1; r.still += 1; blindLog(seat, x.to, x.u, `stood where it deployed for ${x.to - x.from + 1} rounds`); }
       if (blindArmed(x.u)) {
         r.armed += 1;
         if (!g.struckBy.has(x.u.uid)) { silent += 1; r.silent += 1; blindLog(seat, x.to, x.u, `struck nothing in ${x.to - x.from + 1} rounds`); }
       }
     }
     const never = [...g.droneSeen].filter((uid) => !g.commanded.has(uid)).length;
-    const chargesLeft = state ? state.tokens.filter((x) => x.side === seat && (x.charge ?? []).length).reduce((n, x) => n + x.charge.length, 0) : 0;
+    const held = state ? state.tokens.filter((x) => x.side === seat && (x.charge ?? []).length) : [];
+    const chargesLeft = held.reduce((n, x) => n + x.charge.length, 0);
+    for (const x of held) { const seen = g.units.get(x.uid); if (seen) blindLog(seat, seen.to, seen.u, `held ${x.charge.length} Charge${x.charge.length === 1 ? '' : 's'} unspent as the game ended`); }
     line[seat] = {
       acts: acts.length, offered: acts.filter((a) => a.offered).length, struck: acts.filter((a) => a.struck).length, passed: acts.filter((a) => a.passed).length,
       still, silent, neverCommanded: never, cmdPass: g.cmdPass, chargesMade: g.chargesMade, chargesLeft, boxAway: g.boxAway,
@@ -828,6 +835,27 @@ for (let seed = from; seed <= to; seed++) {
     } } : inner);
     policyNow = watch(policyNow);
     foeNow = watch(foeNow);
+  }
+  // CMDLOG=<label part> (M22, 2026-10-12, the Command-only Drones): at every Command Phase question of either seat that
+  // offers a Command to a Drone whose label holds it, each Drone's best plans with a Command (the default switches),
+  // their terms, and the answer given. The choices are untouched.
+  if (process.env.CMDLOG) {
+    const part = process.env.CMDLOG;
+    const cmdWatch = (inner) => (inner ? { ...inner, ponder: undefined, choose(d, view, rng) {
+      const pick = inner.choose(d, view, rng);
+      if (d.kind === 'loop.designate.command' && d.options.some((o) => String(o.label).includes(part))) {
+        const g = (x) => (x ? `${String.fromCharCode(65 + x.col)}${x.row + 1}` : '?');
+        console.log(`       CMD r${view.round} ${view.seat} -> ${d.options.find((o) => o.id === pick.option)?.label ?? pick.option} | ${String(pick.why ?? '').slice(0, 80)}`);
+        for (const o of d.options.filter((x) => x.tags.includes('designate'))) {
+          const turn = o.then?.();
+          const rows = turn ? M.AI.weighed(turn, view, JSON.parse(process.env.WEIGHS ?? '{}'), JSON.parse(process.env.WEIGHW ?? '{}')).slice(0, 3) : [];
+          console.log(`         ${o.label.slice(0, 50)}: ${rows.map((r) => `${r.worth.toFixed(2)} ${r.how} ${g(r.at)} [now ${r.now.toFixed(2)} next ${r.next.toFixed(2)} mis ${r.mission.toFixed(2)} shape ${r.shape.toFixed(2)}]`).join(' | ')}`.slice(0, 400));
+        }
+      }
+      return pick;
+    } } : inner);
+    policyNow = cmdWatch(policyNow);
+    foeNow = cmdWatch(foeNow);
   }
   // SECRANDOM=1 (2026-10-09, the data nights with Secondary Tasks; argv[6] 1): each seat takes its Secondary Task by
   // lot, from the game's own seed and the seat, so every card is played by every kind of squad (the learned judge

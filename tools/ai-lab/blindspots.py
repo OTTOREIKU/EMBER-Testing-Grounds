@@ -70,18 +70,18 @@ for tag in sys.argv[1:]:
         if not rows:
             continue
         g = sums.get(who, Counter())
-        print(f'  {who} ({g["games"]} games): kind, activations, no attack on offer, passed up (of offered), units alive 3+ rounds, never moved, never struck (of armed)')
+        print(f'  {who} ({g["games"]} games): kind, activations, no attack on offer, passed up (of offered), units alive 3+ rounds, never moved (of those that can), never struck (of armed)')
         rows.sort(key=lambda r: -r[1]['acts'])
         for kind, v in rows:
             shares = {
                 'noTarget': ((v['acts'] - v['offered']) / v['acts'] if v['acts'] else 0, v['acts']),
                 'passed': (v['passed'] / v['offered'] if v['offered'] else 0, v['offered']),
-                'still': (v['still'] / v['units'] if v['units'] else 0, v['units']),
+                'still': (v['still'] / v.get('mobile', v['units']) if v.get('mobile', v['units']) else 0, v.get('mobile', v['units'])),
                 'silent': (v['silent'] / v['armed'] if v['armed'] else 0, v['armed']),
             }
             marks = [k for k, (share, n) in shares.items() if n >= FLAGS[k][1] and share >= FLAGS[k][0]]
             print(f'  {"*" if marks else " "} {named(kind)[:44]:44} {v["acts"]:5} {pct(v["acts"] - v["offered"], v["acts"])}'
-                  f' {pct(v["passed"], v["offered"])} of {v["offered"]:<4} {v["units"]:4} {pct(v["still"], v["units"])}'
+                  f' {pct(v["passed"], v["offered"])} of {v["offered"]:<4} {v["units"]:4} {pct(v["still"], v.get("mobile", v["units"]))}'
                   f' {pct(v["silent"], v["armed"])} of {v["armed"]:<4} {" ".join(marks)}')
         if g['games']:
             per = lambda k: g[k] / g['games']
