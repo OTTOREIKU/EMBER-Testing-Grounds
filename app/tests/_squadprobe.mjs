@@ -146,7 +146,7 @@ const blindKind = (u) => {
 const blindStrike = (o) => !!o && (o.tags.includes('attack') || (o.tags.includes('electronic') && !o.tags.includes('terminal')));
 const blindActed = (o) => blindStrike(o) || (!!o && o.tags[0] === 'launch' && !o.tags.includes('smoke'));
 const blindArmed = (u) => u.weapons.some((w) => ['Firing', 'Melee', 'Projectile'].includes(w.type));
-const blindFresh = () => ({ acts: new Map(), struckBy: new Set(), units: new Map(), droneSeen: new Set(), commanded: new Set(), cmdPass: 0, chargesMade: 0, boxAway: 0, rwsAsked: 0, rwsAim: 0, rwsGiven: 0, rwsAimPassed: 0, rwsShots: 0, rwsRounds: new Map(), launches: 0 });
+const blindFresh = () => ({ acts: new Map(), struckBy: new Set(), units: new Map(), droneSeen: new Set(), commanded: new Set(), cmdPass: 0, chargesMade: 0, boxAway: 0, rwsAsked: 0, rwsAim: 0, rwsGiven: 0, rwsAimPassed: 0, rwsShots: 0, rwsRounds: new Map(), launches: 0, projActed: new Set(), projStruck: new Set(), icptAsked: 0, icptMade: 0 });
 const blindWho = (seat) => (blindGame && seat === blindGame.subjectSeat ? 'subject' : 'foe');
 function blindLog(seat, round, u, what) {
   if (!process.env.BLINDLOG || !blindGame) return;
@@ -190,6 +190,17 @@ function blindSee(d, view, c) {
   }
   // Every Projectile the squad launches (a Smoke Grenade aside), each launch of a Volley one (M24, the missile barrage).
   if (chosen?.tags[0] === 'launch' && !chosen.tags.includes('smoke')) g.launches += 1;
+  // THE MISSILE DEFENCE (M24, 2026-10-13): each of the squad's Projectiles asked to act (its strike, or its blast), and
+  // those that struck something; each Interception the squad was offered, and those it made.
+  const flying = typeof d.unit === 'number' ? view.units.find((u) => u.uid === d.unit) : undefined;
+  if (flying?.kind === 'projectile' && flying.side === view.seat && (d.kind === 'activation.act' || d.kind === 'blast.resolve')) {
+    g.projActed.add(d.unit);
+    if (blindActed(chosen) || chosen?.tags.includes('detonate')) g.projStruck.add(d.unit);
+  }
+  if (d.kind === 'intercept.attempt') {
+    g.icptAsked += 1;
+    if (chosen?.tags.includes('intercept') && !chosen.tags.includes('decline')) g.icptMade += 1;
+  }
   if (d.kind === 'loop.designate.command') {
     const designates = d.options.filter((o) => o.tags.includes('designate'));
     for (const o of designates) if (typeof o.facts?.uid === 'number') g.droneSeen.add(o.facts.uid);
@@ -252,7 +263,7 @@ function blindEnd(state) {
     for (const x of held) { const seen = g.units.get(x.uid); if (seen) blindLog(seat, seen.to, seen.u, `held ${x.charge.length} Charge${x.charge.length === 1 ? '' : 's'} unspent as the game ended`); }
     line[seat] = {
       acts: acts.length, offered: acts.filter((a) => a.offered).length, struck: acts.filter((a) => a.struck).length, passed: acts.filter((a) => a.passed).length,
-      still, silent, neverCommanded: never, cmdPass: g.cmdPass, chargesMade: g.chargesMade, chargesLeft, boxAway: g.boxAway, launches: g.launches,
+      still, silent, neverCommanded: never, cmdPass: g.cmdPass, chargesMade: g.chargesMade, chargesLeft, boxAway: g.boxAway, launches: g.launches, projActed: g.projActed.size, projStruck: g.projStruck.size, icptAsked: g.icptAsked, icptMade: g.icptMade,
       ...(g.rwsAsked ? { rwsAsked: g.rwsAsked, rwsAim: g.rwsAim, rwsGiven: g.rwsGiven, rwsAimPassed: g.rwsAimPassed, rwsShots: g.rwsShots,
         rwsRounds: [...g.rwsRounds.entries()].sort((a, b) => a[0] - b[0]).map(([r, k]) => `${r}:${k}`).join(' ') } : {}),
     };
