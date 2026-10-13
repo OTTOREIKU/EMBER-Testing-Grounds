@@ -159,6 +159,11 @@ function lossStep(t, r) {
     }
   }
   lossGame.standing = now;
+  // (And each side's Projectiles: every one that came onto the table, and every one that struck: its own attack, or
+  // its blast. One that never struck was Intercepted, found nothing in reach, or put down no blast: a Smoke Grenade,
+  // a Mine still waiting, a Beacon.)
+  for (const x of t.state.tokens) if (x.kind === 'projectile' && !lossGame.projSeen.has(x.uid)) lossGame.projSeen.set(x.uid, x.side);
+  if (actor?.kind === 'projectile' && (tags.includes('attack') || tags.includes('detonate') || r?.decision?.kind === 'blast.resolve')) lossGame.projHit.add(actor.uid);
 }
 const blindKind = (u) => {
   if (u.kind !== 'mech') return `drone:${u.cardId}`;
@@ -933,7 +938,7 @@ for (let seed = from; seed <= to; seed++) {
     policyNow = linesWatch(policyNow);
     if (foeNow) foeNow = linesWatch(foeNow);
   }
-  if (process.env.LOSSLOG) lossGame = { s1: {}, s2: {}, standing: null, by: null, pts: new Map() };
+  if (process.env.LOSSLOG) lossGame = { s1: {}, s2: {}, standing: null, by: null, pts: new Map(), projSeen: new Map(), projHit: new Set() };
   if (process.env.BLINDSPOTS) {
     blindGame = { seed, subjectSeat, s1: blindFresh(), s2: blindFresh() };
     policyNow = blindWatch(policyNow);
@@ -1378,6 +1383,8 @@ for (let seed = from; seed <= to; seed++) {
   if (lossGame) {
     if (t) lossStep(t, null);
     console.log(`  losses s1 ${JSON.stringify(lossGame.s1)} s2 ${JSON.stringify(lossGame.s2)}`);
+    const proj = (side) => { const mine = [...lossGame.projSeen].filter(([, sd]) => sd === side).map(([uid]) => uid); return `${mine.filter((uid) => lossGame.projHit.has(uid)).length}/${mine.length}`; };
+    console.log(`  projectiles struck/launched s1 ${proj('s1')} s2 ${proj('s2')}`);
   }
   if (dodgeGame) console.log(`  dodges s1 ${dodgeGame.s1} s2 ${dodgeGame.s2}`);
   if (dshotGame) console.log(`  droneshots s1 ${dshotGame.s1.shots.size}/${dshotGame.s1.acts.size} s2 ${dshotGame.s2.shots.size}/${dshotGame.s2.acts.size}`);
