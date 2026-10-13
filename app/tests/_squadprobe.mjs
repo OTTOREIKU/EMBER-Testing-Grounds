@@ -146,7 +146,7 @@ const blindKind = (u) => {
 const blindStrike = (o) => !!o && (o.tags.includes('attack') || (o.tags.includes('electronic') && !o.tags.includes('terminal')));
 const blindActed = (o) => blindStrike(o) || (!!o && o.tags[0] === 'launch' && !o.tags.includes('smoke'));
 const blindArmed = (u) => u.weapons.some((w) => ['Firing', 'Melee', 'Projectile'].includes(w.type));
-const blindFresh = () => ({ acts: new Map(), struckBy: new Set(), units: new Map(), droneSeen: new Set(), commanded: new Set(), cmdPass: 0, chargesMade: 0, boxAway: 0 });
+const blindFresh = () => ({ acts: new Map(), struckBy: new Set(), units: new Map(), droneSeen: new Set(), commanded: new Set(), cmdPass: 0, chargesMade: 0, boxAway: 0, rwsAsked: 0, rwsAim: 0, rwsGiven: 0, rwsAimPassed: 0, rwsShots: 0 });
 const blindWho = (seat) => (blindGame && seat === blindGame.subjectSeat ? 'subject' : 'foe');
 function blindLog(seat, round, u, what) {
   if (!process.env.BLINDLOG || !blindGame) return;
@@ -193,7 +193,18 @@ function blindSee(d, view, c) {
     for (const o of designates) if (typeof o.facts?.uid === 'number') g.droneSeen.add(o.facts.uid);
     if (chosen?.tags.includes('designate') && typeof chosen.facts?.uid === 'number') g.commanded.add(chosen.facts.uid);
     if (chosen?.tags.includes('pass') && designates.length) g.cmdPass += 1;
+    // RWS (2026-10-13, OTTO's ask): a Mech offered a Command (an Ls197R Autocannon), whether its Command would have a
+    // shot, whether it was given one, and whether the squad passed with that shot on offer.
+    const mechs = designates.filter((o) => view.units.find((u) => u.uid === o.facts?.uid)?.kind === 'mech');
+    if (mechs.length) {
+      g.rwsAsked += 1;
+      const aimed = mechs.some((o) => (o.then?.()?.options ?? []).some(blindStrike));
+      if (aimed) g.rwsAim += 1;
+      if (mechs.includes(chosen)) g.rwsGiven += 1;
+      if (aimed && chosen?.tags.includes('pass')) { g.rwsAimPassed += 1; blindLog(view.seat, view.round, view.units.find((u) => u.uid === mechs[0].facts.uid), 'passed the Command Phase with an RWS shot on offer'); }
+    }
   }
+  if (d.kind === 'activation.act' && view.phaseName === 'Command' && view.units.find((u) => u.uid === d.unit)?.kind === 'mech' && blindActed(chosen)) g.rwsShots += 1;
 }
 const blindWatch = (p) => ({
   ...p,
@@ -233,6 +244,7 @@ function blindEnd(state) {
     line[seat] = {
       acts: acts.length, offered: acts.filter((a) => a.offered).length, struck: acts.filter((a) => a.struck).length, passed: acts.filter((a) => a.passed).length,
       still, silent, neverCommanded: never, cmdPass: g.cmdPass, chargesMade: g.chargesMade, chargesLeft, boxAway: g.boxAway,
+      ...(g.rwsAsked ? { rwsAsked: g.rwsAsked, rwsAim: g.rwsAim, rwsGiven: g.rwsGiven, rwsAimPassed: g.rwsAimPassed, rwsShots: g.rwsShots } : {}),
     };
     for (const a of acts) {
       const r = row(a.kind);
