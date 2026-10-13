@@ -502,6 +502,8 @@ interface Ctx {
   firepower: Map<number, number>;
   // What each enemy Projectile's strike would do to this squad (`strikeOf`, `shootDown`).
   downs: Map<number, number>;
+  // What each enemy's launches could do to a unit of this squad (`launchFire`, `launchThreat`).
+  launchFires: Map<number, number>;
   harms: Map<string, Harm>;
   nexts: Map<string, number>;
   walks: Map<string, Stroll | null>;
@@ -575,12 +577,12 @@ interface Target {
 // given to is then asked the very question that was planned. The answers the
 // engine gave are the same answers, so they are not asked for twice.
 export interface Memo {
-  table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>; downs: Map<number, number>;
+  table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>; downs: Map<number, number>; launchFires: Map<number, number>;
   walks: Map<string, Stroll | null>; targets: Map<string, Target[]>; holdings: Map<number, number>;
   handed: Map<string, number | null>; aims: Map<number, Map<number, number>>; races: { map: Map<string, Race> | null };
   backs: { map: Map<number, Back> | null }; calls: Map<number, number>; screens: Map<string, number>; clears: Map<string, number>;
 }
-export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), downs: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map(), clears: new Map() });
+export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), downs: new Map(), launchFires: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map(), clears: new Map() });
 
 // The table as far as those answers depend on it: every unit, where it stands
 // and in what state. Whose activation is open is left out, and so is a Command
@@ -688,7 +690,31 @@ function holding(e: UnitView, c: Ctx): number {
 function threatOf(e: UnitView, c: Ctx): number {
   if (e.side === c.view.seat) return 0;
   const rounds = Math.min(c.w.threatRounds, c.view.roundLimit - c.view.round + (e.done ? 0 : 1));
-  return rounds > 0 ? c.w.threat * firepower(e, c) * rounds : 0;
+  if (rounds <= 0) return 0;
+  // (A launcher's best attack may be its Projectiles: `launchThreat`.)
+  const launched = c.w.launchThreat > 0 ? c.w.launchThreat * launchFire(e, c) : 0;
+  return c.w.threat * Math.max(firepower(e, c), launched) * rounds;
+}
+
+// WHAT AN ENEMY'S LAUNCHES COULD DO TO THIS SQUAD (`launchThreat`, M24, 2026-10-13). `firepower` reads an enemy's
+// Firing Actions alone, so a missile rack, or a Drone whose every attack is a Missile, was no threat at all, and the
+// Ace never hurried to destroy what the missile squads strike with (with the Ace on both sides they won 73 of 100
+// against the community squads). Of the units of this squad, the worst the enemy's Projectiles could do to one from
+// the Landing Point nearest it (`salvoOn`; a Drone's Command Missiles as a Command would open its turn). Not
+// `firepower` itself: jamming (Fire Control Interference) stops Firing Actions, not launches. Asked once a table.
+function launchFire(e: UnitView, c: Ctx): number {
+  const known = c.launchFires.get(e.uid);
+  if (known !== undefined) return known;
+  let worst = 0;
+  const out = c.d.here?.();
+  if (out && e.kind !== 'projectile' && e.weapons.some((x) => ready(x) && x.type === 'Projectile')) {
+    for (const u of c.view.units) {
+      if (u.side !== c.view.seat || !u.alive || !u.deployed || u.kind === 'projectile') continue;
+      worst = Math.max(worst, salvoOn(e, out, u.grid, { ...c, me: u }).value);
+    }
+  }
+  c.launchFires.set(e.uid, worst);
+  return worst;
 }
 
 // WHAT AN ENEMY PROJECTILE'S STRIKE WOULD DO TO THIS SQUAD (`shootDown`): its own turn as the engine would ask it
@@ -1827,7 +1853,10 @@ function packOf(c: Ctx, threats: UnitView[]): { able: number; engaged: number } 
 // the unit inside that card's strike, and what the Projectile could do to the
 // unit from there when its own turn comes (`later`): the worst of them.
 function salvoOn(e: UnitView, out: Outlook, at: Grid, c: Ctx): Barrage {
-  const turn = out.turnOf(e.uid, ['launch'], 'projectile');
+  // (A Drone's Command Missiles are launched in a turn a Command opens, `launchThreat`; a Mech's on its Projectile
+  // Timing.)
+  const commanded = e.kind === 'drone' && e.weapons.some((x) => ready(x) && x.type === 'Projectile' && x.mode === 'command');
+  const turn = out.turnOf(e.uid, ['launch'], e.kind === 'mech' ? 'projectile' : commanded ? 'command' : undefined);
   const nearest = new Map<string, { o: Option; gap: number }>();
   for (const o of turn?.options ?? []) {
     const land = kindOf(o) === 'launch' && o.later ? endOf(o) : null;
@@ -2938,7 +2967,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     const faces = d.options.filter((o) => handed(o, c) && !c.handed.has(handKey(c, o)));
     if (faces.length) {
       // What this table has been asked already is this decision's own to keep.
-      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, downs: c.downs, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens, clears: c.clears };
+      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, downs: c.downs, launchFires: c.launchFires, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens, clears: c.clears };
       for (const o of faces) {
         c.handed.set(handKey(c, o), yield* commandGain(o, view, w, c.skills, kept));
         yield;
@@ -3596,6 +3625,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     memo.nexts.clear();
     memo.firepower.clear();
     memo.downs.clear();
+    memo.launchFires.clear();
     memo.clears.clear();
     memo.walks.clear();
     memo.targets.clear();
@@ -3619,6 +3649,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     soon: d.kind === 'setup.deploy',
     firepower: memo.firepower,
     downs: memo.downs,
+    launchFires: memo.launchFires,
     clears: memo.clears,
     harms: memo.harms,
     nexts: memo.nexts,

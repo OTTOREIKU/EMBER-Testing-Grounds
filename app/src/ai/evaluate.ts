@@ -182,6 +182,10 @@ export interface Weights {
   // of up to `threatRounds` rounds it has left to make one in.
   threat: number;
   threatRounds: number;
+  // A LAUNCHER'S THREAT (`launchThreat`, M24, 2026-10-13): what an enemy's Projectiles could do to this squad, at
+  // this share of a shot's worth, where it is more than its Firing Actions could (tactician.ts `launchFire`). At 0,
+  // its Firing Actions alone, as before.
+  launchThreat: number;
   // What a plan must be better by before a unit leaves where it stands.
   better: number;
   // A zone entered by a Maneuver and the Movement Action after it is planned
@@ -673,6 +677,7 @@ export const TACTICIAN: Weights = {
   tempo: 0.01,
   threat: 0.5,
   threatRounds: 2,
+  launchThreat: 0,
   better: 0.01,
   entry: 1,
   card: 0.3,

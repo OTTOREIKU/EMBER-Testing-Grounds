@@ -21,7 +21,7 @@ learned ledger linkaudit linksupport linktick loads lockon loops lowprofile mane
 mechanics1 mechanics2 mechanics3 mechanics4 mechanics5 mechanics6 mechbuilder mechlayers meleelock mines movepath
 movespot multitarget net noboard nonhumanoid noticepages notices offset onhit padew padreference padstrip padticks
 partfaces pilottraits playerodds projflight protection reaction refglossary reftone rejoin report riposte rollback
-rulings rws safetext scanattack script season seasonplay seat seataccessfirst seatboxplace seatcommandnext seathorizon seatlines seatnohold seatrws seatlaunchbias
+rulings rws safetext scanattack script season seasonplay seat seataccessfirst seatboxplace seatcommandnext seathorizon seatlines seatnohold seatrws seatlaunchbias seatlaunchthreat
 seatreach seatseconds seatsighted seattow selfgrant setup shockattack sidecolours sightview signout simgame singleshot smoke
 smokesquad solosetup squadpanel squadtactics stacked stakes standing stealth stock straightline supplement104
 suppression surplus surplusdefense tabletokens tactichand tactics targettrace tasks tether ticks tiebreak
