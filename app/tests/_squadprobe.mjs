@@ -146,7 +146,7 @@ const blindKind = (u) => {
 const blindStrike = (o) => !!o && (o.tags.includes('attack') || (o.tags.includes('electronic') && !o.tags.includes('terminal')));
 const blindActed = (o) => blindStrike(o) || (!!o && o.tags[0] === 'launch' && !o.tags.includes('smoke'));
 const blindArmed = (u) => u.weapons.some((w) => ['Firing', 'Melee', 'Projectile'].includes(w.type));
-const blindFresh = () => ({ acts: new Map(), struckBy: new Set(), units: new Map(), droneSeen: new Set(), commanded: new Set(), cmdPass: 0, chargesMade: 0, boxAway: 0, rwsAsked: 0, rwsAim: 0, rwsGiven: 0, rwsAimPassed: 0, rwsShots: 0 });
+const blindFresh = () => ({ acts: new Map(), struckBy: new Set(), units: new Map(), droneSeen: new Set(), commanded: new Set(), cmdPass: 0, chargesMade: 0, boxAway: 0, rwsAsked: 0, rwsAim: 0, rwsGiven: 0, rwsAimPassed: 0, rwsShots: 0, rwsRounds: new Map() });
 const blindWho = (seat) => (blindGame && seat === blindGame.subjectSeat ? 'subject' : 'foe');
 function blindLog(seat, round, u, what) {
   if (!process.env.BLINDLOG || !blindGame) return;
@@ -201,6 +201,13 @@ function blindSee(d, view, c) {
       const aimed = mechs.some((o) => (o.then?.()?.options ?? []).some(blindStrike));
       if (aimed) g.rwsAim += 1;
       if (mechs.includes(chosen)) g.rwsGiven += 1;
+      // Each round's first such question: a shot, or the nearest enemy's distance from the RWS Mech (Grids).
+      if (!g.rwsRounds.has(view.round)) {
+        const me = view.units.find((u) => u.uid === mechs[0].facts.uid);
+        const foes = view.units.filter((u) => u.side !== view.seat && u.alive && u.deployed && u.kind !== 'projectile');
+        const near = me && foes.length ? Math.min(...foes.map((u) => Math.abs(u.grid.col - me.grid.col) + Math.abs(u.grid.row - me.grid.row))) : 99;
+        g.rwsRounds.set(view.round, aimed ? 'shot' : near <= 6 ? 'inRange' : near <= 9 ? 'near' : 'far');
+      }
       if (aimed && chosen?.tags.includes('pass')) { g.rwsAimPassed += 1; blindLog(view.seat, view.round, view.units.find((u) => u.uid === mechs[0].facts.uid), 'passed the Command Phase with an RWS shot on offer'); }
     }
   }
@@ -244,7 +251,8 @@ function blindEnd(state) {
     line[seat] = {
       acts: acts.length, offered: acts.filter((a) => a.offered).length, struck: acts.filter((a) => a.struck).length, passed: acts.filter((a) => a.passed).length,
       still, silent, neverCommanded: never, cmdPass: g.cmdPass, chargesMade: g.chargesMade, chargesLeft, boxAway: g.boxAway,
-      ...(g.rwsAsked ? { rwsAsked: g.rwsAsked, rwsAim: g.rwsAim, rwsGiven: g.rwsGiven, rwsAimPassed: g.rwsAimPassed, rwsShots: g.rwsShots } : {}),
+      ...(g.rwsAsked ? { rwsAsked: g.rwsAsked, rwsAim: g.rwsAim, rwsGiven: g.rwsGiven, rwsAimPassed: g.rwsAimPassed, rwsShots: g.rwsShots,
+        rwsRounds: [...g.rwsRounds.entries()].sort((a, b) => a[0] - b[0]).map(([r, k]) => `${r}:${k}`).join(' ') } : {}),
     };
     for (const a of acts) {
       const r = row(a.kind);
@@ -253,7 +261,7 @@ function blindEnd(state) {
     const sums = (tally.blindSums ??= {});
     const s = (sums[who] ??= { games: 0 });
     s.games += 1;
-    for (const [k, v] of Object.entries(line[seat])) s[k] = (s[k] ?? 0) + v;
+    for (const [k, v] of Object.entries(line[seat])) if (typeof v === 'number') s[k] = (s[k] ?? 0) + v;
   }
   console.log(`  blind s1 ${JSON.stringify(line.s1)} s2 ${JSON.stringify(line.s2)}`);
 }
