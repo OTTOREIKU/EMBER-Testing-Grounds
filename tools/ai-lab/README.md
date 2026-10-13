@@ -40,9 +40,12 @@ Run from the folder that holds the `rs-<tag>-*.out` files:
 | Tool | What it does |
 |---|---|
 | `rs_pair.py <base> <arm>` | An arm against a baseline on the same seeds: wins, games turned each way, a sign test. |
+| `rs_margin.py <base> <arm>` | The same pairing by margin: the Victory Point margin and the points destroyed less lost, each game's difference, a randomization test and a bootstrap interval. Sees smaller effects than the sign test. |
+| `blindspots.py <tag> ...` | The blind-spot census (`BLINDSPOTS=1`, with `BLINDLOG=<file>` its cases): by kind of unit, attacks on offer, shots passed up, units that never moved or struck. |
 | `rs_time.py <tag>` | Thinking time a game. |
 | `duelsum.py <tag> ...` | The subject's wins against its foe, from the runs' closing tallies. |
 | `bymission.py <a> <b>` | Two arms by Main Task. |
 | `throughown.py`, `throughpair.py` | Shots through one's own Mechs (the `LINES=1` census). |
+| `dshotpair.py <off> <on>` | Drones' Automatic activations with an attack, on the games two arms played differently (the `DRONESHOTS=1` census). |
 | `thinkstats.py` | Each answer's thinking time, from a `THINKLOG` file. |
 | `cpuprof.py` | A V8 profile (`node --cpu-prof`) by function and module. |

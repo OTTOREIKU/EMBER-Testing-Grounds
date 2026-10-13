@@ -125,6 +125,119 @@ const dodgeWatch = (p) => ({
     return c;
   },
 });
+// BLINDSPOTS=1 (M22, 2026-10-12; OTTO: "lets mark all of these down for our next current plan and you can begin on 1
+// and 2"): behaviour that may be a blind spot, counted, the choices untouched. Each unit's activation (a Mech's
+// Opportunity, a Drone's activation in the Command or the Automatic Phase): whether an attack was on offer (an answer
+// tagged attack, or electronic and not a Terminal's), whether one was made (a launch counts as one), and whether it
+// ended with one still on offer (passed up). Over the game, for each seat: units alive three rounds or more that never moved, and, of those carrying
+// something to strike with, that never struck; Drones that could have been given a Command and never were; Command
+// Phases passed with a Drone to give one to; Charges made, and those still unspent as the game ends; Movements of a
+// Box's bearer that end further from where Boxes pay. Under the game's line `  blind s1 <json> s2 <json>`; in the
+// run's JSON line, by kind of unit (a Drone by its card, a Mech by its longest gun) and by subject and foe
+// (`blindCards`); with BLINDLOG=<file> one JSON line a case (seed, who, round, unit, kind, what).
+let blindGame = null;
+const blindKind = (u) => {
+  if (u.kind !== 'mech') return `drone:${u.cardId}`;
+  const guns = u.weapons.filter((w) => w.type === 'Firing').map((w) => w.range);
+  const far = guns.length ? Math.max(...guns) : 0;
+  return `mech:${far === 0 ? 'melee' : far <= 4 ? 'short' : far <= 8 ? 'mid' : 'long'}`;
+};
+const blindStrike = (o) => !!o && (o.tags.includes('attack') || (o.tags.includes('electronic') && !o.tags.includes('terminal')));
+const blindActed = (o) => blindStrike(o) || (!!o && o.tags[0] === 'launch' && !o.tags.includes('smoke'));
+const blindArmed = (u) => u.weapons.some((w) => ['Firing', 'Melee', 'Projectile', 'Tactic'].includes(w.type));
+const blindFresh = () => ({ acts: new Map(), struckBy: new Set(), units: new Map(), droneSeen: new Set(), commanded: new Set(), cmdPass: 0, chargesMade: 0, boxAway: 0 });
+const blindWho = (seat) => (blindGame && seat === blindGame.subjectSeat ? 'subject' : 'foe');
+function blindLog(seat, round, u, what) {
+  if (!process.env.BLINDLOG || !blindGame) return;
+  appendFileSync(process.env.BLINDLOG, `${JSON.stringify({ seed: blindGame.seed, who: blindWho(seat), seat, round, uid: u.uid, label: u.label, kind: blindKind(u), what })}\n`);
+}
+function blindPayCells(view) {
+  const task = view.task;
+  const zones = task?.family === 'blackbox'
+    ? view.zones.filter((z) => !!task.scoringZone && (z.name === task.scoringZone || z.id === task.scoringZone))
+    : view.zones.filter((z) => z.scoring);
+  return zones.flatMap((z) => z.cells).map((ref) => { const [col, row] = String(ref).split(',').map(Number); return { col, row }; });
+}
+function blindSee(d, view, c) {
+  const g = blindGame[view.seat];
+  for (const u of view.units) {
+    if (u.side !== view.seat || u.kind === 'projectile' || !u.alive || !u.deployed) continue;
+    const seen = g.units.get(u.uid);
+    if (!seen) g.units.set(u.uid, { u, first: u.grid, from: view.round, to: view.round, moved: false });
+    else { seen.u = u; seen.to = view.round; if (seen.first.col !== u.grid.col || seen.first.row !== u.grid.row) seen.moved = true; }
+  }
+  const chosen = d.options.find((x) => x.id === c.option);
+  if ((d.kind === 'opp.act' || d.kind === 'activation.act') && typeof d.unit === 'number') {
+    const u = view.units.find((x) => x.uid === d.unit);
+    if (!u || u.kind === 'projectile') return;
+    const key = `${view.round}:${view.phaseName ?? ''}:${d.unit}`;
+    let a = g.acts.get(key);
+    if (!a) { a = { kind: blindKind(u), u, round: view.round, offered: false, struck: false, passed: false }; g.acts.set(key, a); }
+    const offered = d.options.some(blindStrike);
+    if (offered) a.offered = true;
+    if (blindActed(chosen)) { a.struck = true; g.struckBy.add(u.uid); }
+    if (offered && !a.passed && chosen?.tags.includes('end')) { a.passed = true; blindLog(view.seat, view.round, u, `ended its ${view.phaseName ?? ''} activation with ${d.options.filter(blindStrike).map((o) => o.label).slice(0, 3).join(' / ')} on offer`); }
+    if (chosen?.tags.includes('charge')) g.chargesMade += 1;
+    const to = chosen?.tags[0] === 'move' ? chosen.facts?.to : null;
+    if (to && view.boxes?.some((b) => b.bearer === u.uid)) {
+      const pay = blindPayCells(view);
+      const far = (gr) => Math.min(...pay.map((q) => Math.abs(q.col - gr.col) + Math.abs(q.row - gr.row)));
+      if (pay.length && far({ col: to.c, row: to.r }) > far(u.grid)) { g.boxAway += 1; blindLog(view.seat, view.round, u, `carried a Box from ${far(u.grid)} Grids of where it pays to ${far({ col: to.c, row: to.r })}`); }
+    }
+  }
+  if (d.kind === 'loop.designate.command') {
+    const designates = d.options.filter((o) => o.tags.includes('designate'));
+    for (const o of designates) if (typeof o.facts?.uid === 'number') g.droneSeen.add(o.facts.uid);
+    if (chosen?.tags.includes('designate') && typeof chosen.facts?.uid === 'number') g.commanded.add(chosen.facts.uid);
+    if (chosen?.tags.includes('pass') && designates.length) g.cmdPass += 1;
+  }
+}
+const blindWatch = (p) => ({
+  ...p,
+  ponder: undefined,
+  choose(d, view, rng) {
+    const c = p.choose(d, view, rng);
+    if (blindGame) blindSee(d, view, c);
+    return c;
+  },
+});
+// The game's line of counts, and the run's tally by kind of unit.
+function blindEnd(state) {
+  const line = {};
+  for (const seat of ['s1', 's2']) {
+    const g = blindGame[seat];
+    const acts = [...g.acts.values()];
+    let still = 0, silent = 0;
+    const who = blindWho(seat);
+    const cards = (tally.blindCards ??= {});
+    const row = (kind) => (cards[`${who}|${kind}`] ??= { acts: 0, offered: 0, struck: 0, passed: 0, units: 0, armed: 0, still: 0, silent: 0 });
+    for (const x of g.units.values()) {
+      if (x.to - x.from + 1 < 3) continue;
+      const r = row(blindKind(x.u));
+      r.units += 1;
+      if (!x.moved) { still += 1; r.still += 1; blindLog(seat, x.to, x.u, `stood where it deployed for ${x.to - x.from + 1} rounds`); }
+      if (blindArmed(x.u)) {
+        r.armed += 1;
+        if (!g.struckBy.has(x.u.uid)) { silent += 1; r.silent += 1; blindLog(seat, x.to, x.u, `struck nothing in ${x.to - x.from + 1} rounds`); }
+      }
+    }
+    const never = [...g.droneSeen].filter((uid) => !g.commanded.has(uid)).length;
+    const chargesLeft = state ? state.tokens.filter((x) => x.side === seat && (x.charge ?? []).length).reduce((n, x) => n + x.charge.length, 0) : 0;
+    line[seat] = {
+      acts: acts.length, offered: acts.filter((a) => a.offered).length, struck: acts.filter((a) => a.struck).length, passed: acts.filter((a) => a.passed).length,
+      still, silent, neverCommanded: never, cmdPass: g.cmdPass, chargesMade: g.chargesMade, chargesLeft, boxAway: g.boxAway,
+    };
+    for (const a of acts) {
+      const r = row(a.kind);
+      r.acts += 1; r.offered += a.offered ? 1 : 0; r.struck += a.struck ? 1 : 0; r.passed += a.passed ? 1 : 0;
+    }
+    const sums = (tally.blindSums ??= {});
+    const s = (sums[who] ??= { games: 0 });
+    s.games += 1;
+    for (const [k, v] of Object.entries(line[seat])) s[k] = (s[k] ?? 0) + v;
+  }
+  console.log(`  blind s1 ${JSON.stringify(line.s1)} s2 ${JSON.stringify(line.s2)}`);
+}
 // FOE=<policy>: a match, the policy named in the arguments (the subject) against this one, the seats
 // swapped from one seed to the next; the tally counts the subject's wins and Victory Points.
 const foe = process.env.FOE ? policyOf(M.AI, process.env.FOE) : null;
@@ -736,6 +849,11 @@ for (let seed = from; seed <= to; seed++) {
     policyNow = linesWatch(policyNow);
     if (foeNow) foeNow = linesWatch(foeNow);
   }
+  if (process.env.BLINDSPOTS) {
+    blindGame = { seed, subjectSeat, s1: blindFresh(), s2: blindFresh() };
+    policyNow = blindWatch(policyNow);
+    if (foeNow) foeNow = blindWatch(foeNow);
+  }
   if (process.env.DODGES) {
     dodgeGame = { s1: 0, s2: 0 };
     policyNow = dodgeWatch(policyNow);
@@ -1169,6 +1287,7 @@ for (let seed = from; seed <= to; seed++) {
     if (!x || (x.kind === 'mech' ? x.partStates.torso === 'destroyed' : x.partStates.main === 'destroyed')) lost[w.side] += w.pts;
   }
   console.log(`${String(seed).padStart(4)} ${foeNow ? `[subject ${subjectSeat}] ` : ''}${fx ? `[fx ${fx}] ` : ''}${scenario.map}/${scenario.mission} | ${sq('probe-s1')} v ${sq('probe-s2')} | ${kind}${end.kind === 'over' ? ` ${end.result.winner ?? 'level'} ${vpNow.s1}-${vpNow.s2} lost ${lost.s1}/${lost.s2}` : ` (${last}) ${(end.decision ? `[${end.decision}${end.option ? ` -> ${end.option}` : ''}] ` : '') + (end.why ?? '')}`}`.slice(0, 400) + openNote + secNote);
+  if (blindGame) blindEnd(t?.state);
   if (dodgeGame) console.log(`  dodges s1 ${dodgeGame.s1} s2 ${dodgeGame.s2}`);
   if (dshotGame) console.log(`  droneshots s1 ${dshotGame.s1.shots.size}/${dshotGame.s1.acts.size} s2 ${dshotGame.s2.shots.size}/${dshotGame.s2.acts.size}`);
   if (linesGame) console.log(`  lines s1 ${linesGame.s1[0]}/${linesGame.s1[1]} s2 ${linesGame.s2[0]}/${linesGame.s2[1]} drones s1 ${linesGame.s1[2]}/${linesGame.s1[3]} s2 ${linesGame.s2[2]}/${linesGame.s2[3]}`);
