@@ -321,7 +321,7 @@ export class Driver {
             const table = after();
             const uid = launched ? table?.born[0] : actor;
             const turn = table && uid !== undefined
-              ? owedIfActivated(data, table.table, uid, launched ? undefined : timing as Timing | undefined, only ? { only } : undefined)
+              ? owedIfActivated(data, table.table, uid, launched ? undefined : timing as Timing | 'command' | undefined, only ? { only } : undefined)
               : null;
             return turn?.decision ? this.withOdds(turn.decision, turn.table) : null;
           });

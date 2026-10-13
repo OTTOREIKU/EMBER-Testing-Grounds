@@ -2870,7 +2870,7 @@ function turnBehind(state: GameState, t: Token): boolean {
 // when its turn comes, and one that will not be there is asked nothing. After
 // the last round there is no later turn at all.
 export function owedIfActivated(
-  data: GameData, state: GameState, uid: number, timing?: Timing, want?: Want,
+  data: GameData, state: GameState, uid: number, timing?: Timing | 'command', want?: Want,
 ): { table: GameState; decision: Decision | null } | null {
   const table = copyAsJson(state);
   let t = table.tokens.find((x) => x.uid === uid);
@@ -2896,6 +2896,8 @@ export function owedIfActivated(
     sc.reactions = (sc.reactions ?? []).filter((r) => r.kind !== 'manifest');
   }
   if (t.kind === 'mech') {
+    // ('command' is a Drone's turn opened as a Command would open it; a Mech has none.)
+    if (timing === 'command') return null;
     if (!timing) return null;
     t.timing = timing;
     table.round.phase = PHASES.indexOf('Action');
@@ -2909,6 +2911,10 @@ export function owedIfActivated(
     table.round.phase = PHASES.indexOf(t.kind === 'projectile' ? 'Delay' : 'Automatic');
     sc.acted = sc.acted.filter((x) => x !== uid);
     sc.opp = newOpportunity(uid, undefined);
+    // A Drone asked about with 'command': the activation a Command would open, its Command Actions alone (a Command
+    // buys one or a Move, 3.2.2), as Command Coordination's opens one (4.15.3): what a Drone that acts only when
+    // Commanded could strike from where it stands (the computer's `commandNext`).
+    if (timing === 'command' && t.kind === 'drone') sc.opp = { ...sc.opp, commanded: true, commandOnly: true };
     sc.oppStack = [];
   }
   sc.stage = `${table.round.n}:${table.round.phase}`;

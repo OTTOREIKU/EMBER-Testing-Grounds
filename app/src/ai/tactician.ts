@@ -486,6 +486,8 @@ interface Ctx {
   // each a turn later, how long each walk to a zone is, and which zones are
   // whose to walk to.
   firepower: Map<number, number>;
+  // What each enemy Projectile's strike would do to this squad (`strikeOf`, `shootDown`).
+  downs: Map<number, number>;
   harms: Map<string, Harm>;
   nexts: Map<string, number>;
   walks: Map<string, Stroll | null>;
@@ -559,12 +561,12 @@ interface Target {
 // given to is then asked the very question that was planned. The answers the
 // engine gave are the same answers, so they are not asked for twice.
 export interface Memo {
-  table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>;
+  table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>; downs: Map<number, number>;
   walks: Map<string, Stroll | null>; targets: Map<string, Target[]>; holdings: Map<number, number>;
   handed: Map<string, number | null>; aims: Map<number, Map<number, number>>; races: { map: Map<string, Race> | null };
   backs: { map: Map<number, Back> | null }; calls: Map<number, number>; screens: Map<string, number>; clears: Map<string, number>;
 }
-export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map(), clears: new Map() });
+export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), downs: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map(), clears: new Map() });
 
 // The table as far as those answers depend on it: every unit, where it stands
 // and in what state. Whose activation is open is left out, and so is a Command
@@ -639,7 +641,9 @@ function shotValue(o: Option, c: Ctx): { value: number; f: Forecast | null; targ
   const jammed = f && target && c.w.suppress > 0 && target.side !== c.view.seat && jamsOnHit(o, c) ? c.w.suppress * 2 * c.w.jam * f.hit * firepower(target, c) : 0;
   // An attack by the Mech this squad's Weapons Test names pays for each Part and Drone it destroys (`secondary`).
   const tested = f && target ? testWorth(unitOf(c.view, o.facts?.uid), target, f, c.view, c.w) : 0;
-  const value = f && target ? gainOf(f, target, c.view, c.w, threatOf(target, c)) + f.kill * holding(target, c) + loose + denied + backed + jammed + tested : UNKNOWN_SHOT;
+  // An enemy Projectile destroyed strikes nobody (`shootDown`).
+  const downed = f && target && c.w.shootDown > 0 && target.kind === 'projectile' && target.side !== c.view.seat ? f.kill * c.w.shootDown * strikeOf(target, c) : 0;
+  const value = f && target ? gainOf(f, target, c.view, c.w, threatOf(target, c)) + f.kill * holding(target, c) + loose + denied + backed + jammed + tested + downed : UNKNOWN_SHOT;
   return { value: value - spent, f, target };
 }
 
@@ -671,6 +675,27 @@ function threatOf(e: UnitView, c: Ctx): number {
   if (e.side === c.view.seat) return 0;
   const rounds = Math.min(c.w.threatRounds, c.view.roundLimit - c.view.round + (e.done ? 0 : 1));
   return rounds > 0 ? c.w.threat * firepower(e, c) * rounds : 0;
+}
+
+// WHAT AN ENEMY PROJECTILE'S STRIKE WOULD DO TO THIS SQUAD (`shootDown`): its own turn as the engine would ask it
+// (a Missile's attack in the Delay Phase, a blast's Explosions), each attack on a unit of this squad worth what it is
+// to the enemy: of single attacks the one worth most, a blast whole. Asked once a table.
+function strikeOf(e: UnitView, c: Ctx): number {
+  const known = c.downs.get(e.uid);
+  if (known !== undefined) return known;
+  let one = 0;
+  let blast = 0;
+  for (const o of c.d.here?.().turnOf(e.uid, ['attack'])?.options ?? []) {
+    const target = isShot(o) ? unitOf(c.view, o.facts?.targetUid) : undefined;
+    const f = target && target.side === c.view.seat ? o.chance?.() : null;
+    if (!f || !target) continue;
+    const loss = gainOf(f, target, c.view, c.w);
+    if (o.tags.includes('blast')) blast += loss;
+    else one = Math.max(one, loss);
+  }
+  const worth = Math.max(one, blast);
+  c.downs.set(e.uid, worth);
+  return worth;
 }
 
 // FOCUS FIRE (M13, `gang`). A unit's vital Part: a Mech's Torso, whose loss
@@ -2417,7 +2442,12 @@ function nextTurnAsked(o: Option, at: Grid, c: Ctx): number {
   // Nothing from the Grid itself: a blade carried to its target (`charge`).
   if (best <= 0 && c.w.charge > 0 && c.me.kind === 'mech') best = c.w.charge * chargeNext(o, at, c);
   // A Drone moved by a Command acts again in the same round.
-  return best * (c.me.kind !== 'mech' && c.view.phaseName === 'Command' ? c.w.futureSoon : c.w.future);
+  const soon = best * (c.me.kind !== 'mech' && c.view.phaseName === 'Command' ? c.w.futureSoon : c.w.future);
+  // A DRONE THAT ACTS ONLY WHEN COMMANDED (`commandNext`): what a Command a round on could strike from there.
+  if (c.w.commandNext <= 0 || c.me.kind !== 'drone'
+    || !c.me.weapons.some((x) => ready(x) && x.mode === 'command' && (x.type === 'Firing' || x.type === 'Melee' || x.type === 'Projectile'))) return soon;
+  const commanded = deedAt(o.later(DEEDS, 'command')?.options ?? [], c, false);
+  return Math.max(soon, commanded ? c.w.commandNext * c.w.future * commanded.value : 0);
 }
 
 // THE BLOW A STEP AWAY (`charge`; OTTO, 2026-10-05: "melee squads still hang
@@ -2876,7 +2906,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     const faces = d.options.filter((o) => handed(o, c) && !c.handed.has(handKey(c, o)));
     if (faces.length) {
       // What this table has been asked already is this decision's own to keep.
-      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens, clears: c.clears };
+      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, downs: c.downs, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens, clears: c.clears };
       for (const o of faces) {
         c.handed.set(handKey(c, o), yield* commandGain(o, view, w, c.skills, kept));
         yield;
@@ -3526,6 +3556,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     memo.harms.clear();
     memo.nexts.clear();
     memo.firepower.clear();
+    memo.downs.clear();
     memo.clears.clear();
     memo.walks.clear();
     memo.targets.clear();
@@ -3548,6 +3579,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     behind: skills.mission && w.press > 0 ? behindNow(view, w, w.erode > 0 ? drift(view, w, skills.aimed) : 0) : false,
     soon: d.kind === 'setup.deploy',
     firepower: memo.firepower,
+    downs: memo.downs,
     clears: memo.clears,
     harms: memo.harms,
     nexts: memo.nexts,

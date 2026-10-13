@@ -364,6 +364,24 @@ export interface Weights {
   // has Tokens left), to the power `interceptOdds`. At 0 any Interception
   // owed is the flat `launch` discount, and for a Missile none at all.
   interceptOdds: number;
+  // AN ENEMY PROJECTILE SHOT DOWN (M22, 2026-10-12: the blind-spot census found Mechs ending their turns with an enemy
+  // Missile in their sights and nothing better to do; a Projectile carries no points and no gun, so destroying it was
+  // worth nothing): an attack on one is worth, besides, `shootDown` of what its strike would do to this squad when
+  // its turn comes, for the chance the attack destroys it (tactician.ts `strikeOf`). At 0 nothing is added.
+  shootDown: number;
+  // A DRONE THAT ACTS ONLY WHEN COMMANDED, A TURN ON (M22, 2026-10-12: the blind-spot census found the Hyena Missile
+  // Type and the Porcupine Microwave Type idle in half the games; traced, a Drone's turn a round later was read as its
+  // Automatic Phase alone, where an Action bearing the Command icon is never made, so no Grid it could walk to was
+  // worth a Command). Its turn a round on is also read as a Command would open it (the engine's `later` with
+  // 'command'), at `commandNext` of what that Command could strike (a Token is not always there for it). At 0, the
+  // Automatic Phase alone. MEASURED AT 1 (measure_cmdnext.sh, measure_cmdnext2.sh, against the Ace, the census's
+  // games as the off arms): the Ace on random squads 107 of 200 against 97.5 (15 turned to a win, 5 from one, p 0.04),
+  // on community squads 52 of 100 against 47 (7, 2; Victory Point margin +0.61 a game, p 0.08); the Veteran 78 of 200
+  // against 75 (8, 5); the Brawler 84.5 against 87 (8, 10; its margins a little worse, VP -0.43 a game, p 0.15).
+  // Commands withheld with a Drone to take one fell (0.91 to 0.77 a game); the thinking the same (24.2 s a game
+  // against 24.0, forty games paired). ON AT 1 FOR THE ACE AND THE VETERAN (OTTO, 2026-10-12: "yes prove and push it
+  // for the Ace and Veteran"); the Brawler (and the Recruit made of it) keeps 0 until measured on community squads.
+  commandNext: number;
   // BEHIND AS THE BOARD STANDS (`behindNow`): a squad that would lose the game
   // if it ended now gains nothing by holding back, and each of its units with
   // nothing to walk to for the Main Task counts its step toward contact
@@ -655,6 +673,8 @@ export const TACTICIAN: Weights = {
   launchMove: 0,
   closeIn: 0,
   interceptOdds: 0,
+  shootDown: 0,
+  commandNext: 1,
   press: 10,
   pressLate: 0,
   erode: 0,
