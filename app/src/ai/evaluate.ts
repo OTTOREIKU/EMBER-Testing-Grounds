@@ -590,6 +590,12 @@ export interface Weights {
   // beside it more than it did); ADOPTED AT 0.05, A TIE-BREAK (random squads 91 against 90, 199 of 200 the very same
   // games; the melee bed 94 against 94, 164 of 168 the same; the Rack fired at 28 of 109 offers, against 0 of 67).
   volleyLaunch: number;
+  // THE MISSILE BARRAGE (M24 and M19, 2026-10-13; OTTO: "Lets bake in a missile strategy, mechs and drones that try to
+  // fire as many missiles as possible to disrupt the opponents"): a flat amount for every Projectile launched with an
+  // enemy inside its strike, over and above what its blast is worth, so a launch outweighs the gun beside it, a
+  // launcher walks to where it can launch next turn, and a Drone that launches gets the Command. At 0 nothing: a
+  // style's lever (styles.ts MISSILE_WEIGHTS), not the Ace's.
+  launchBias: number;
   // THE SQUAD'S DIALS CHOSEN TOGETHER (the skill `squadDials`, M18 S3): how much the round projected must gain before
   // a Mech's dial is changed from the one it would set alone. Read only with the skill.
   squadMargin: number;
@@ -725,6 +731,7 @@ export const TACTICIAN: Weights = {
   targetTag: 0,
   bladeIn: 0,
   volleyLaunch: 0.05,
+  launchBias: 0,
   squadMargin: 0.5,
   // ADOPTED 2026-10-10 (OTTO: "if it holds up then we should add it"): the third data night's judge (v4, 144 numbers,
   // data/ai/judge-v4.json) at 10 won 161 of 308 against the Ace's 138 on the same seeds, random squads with Secondary

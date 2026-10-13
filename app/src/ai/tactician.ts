@@ -916,7 +916,9 @@ function launch(options: Option[], c: Ctx, whole = false): Deed | null {
     // through every attempt it draws there (`Option.survive`), so a Landing
     // Point outside an interceptor's Range is worth more than one inside it.
     const through = c.w.interceptOdds > 0 && o.survive ? o.survive() : null;
-    const value = blast.value * (blast.soon && !o.facts?.intercepts ? 1 : c.w.launch) * (1 - c.w.launchMove * (1 - stays)) * (through === null ? 1 : through ** c.w.interceptOdds);
+    const struck = blast.value * (blast.soon && !o.facts?.intercepts ? 1 : c.w.launch) * (1 - c.w.launchMove * (1 - stays)) * (through === null ? 1 : through ** c.w.interceptOdds);
+    // THE MISSILE BARRAGE (`launchBias`): a flat amount more for a launch whose blast has something to strike.
+    const value = struck > EXACT ? struck + c.w.launchBias : struck;
     if (value > EXACT && (!best || value > best.value + EXACT)) best = { option: o, value, why: `a Projectile for ${blast.why}`, reason: 'launch_value' };
     const key = String(o.facts?.actionId ?? o.facts?.cardId ?? '');
     const held = byAction.get(key);

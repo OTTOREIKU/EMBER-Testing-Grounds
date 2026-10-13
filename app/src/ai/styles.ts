@@ -21,3 +21,12 @@ export const BRAWLER_SKILLS: Partial<Skills> = { hunter: true, noHold: false };
 // on (`rwsNext`, 2026-10-13): measured on the Ace and the Veteran alone.
 export const BRAWLER_WEIGHTS: Partial<Weights> = { exposure: 0.4, exposureLater: 0.2, hunt: 1, closeIn: 1, learned: 0, commandNext: 0, rwsNext: 0 };
 export const brawlerPolicy: Policy = { ...makeTactician(BRAWLER_SKILLS, BRAWLER_WEIGHTS), name: 'brawler' };
+
+// THE MISSILE BARRAGE (M24 and M19, 2026-10-13; OTTO: "Lets bake in a missile strategy, mechs and drones that try to
+// fire as many missiles as possible to disrupt the opponents, maybe even build some custom squads that focus on as
+// many missiles as possible"): the Ace, with a flat amount more for every Projectile launched at something
+// (`launchBias`) and a Volley counted whole (`volleyLaunch`). A practice style, judged first by how many Projectiles
+// it launches (M19); best with a squad built for it (the missile squads of M24).
+export const MISSILE_SKILLS: Partial<Skills> = {};
+export const MISSILE_WEIGHTS: Partial<Weights> = { launchBias: 1, volleyLaunch: 1 };
+export const missilePolicy: Policy = { ...makeTactician(MISSILE_SKILLS, MISSILE_WEIGHTS), name: 'missile' };
