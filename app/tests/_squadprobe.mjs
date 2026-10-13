@@ -137,6 +137,29 @@ const dodgeWatch = (p) => ({
 // run's JSON line, by kind of unit (a Drone by its card, a Mech by its longest gun) and by subject and foe
 // (`blindCards`); with BLINDLOG=<file> one JSON line a case (seed, who, round, unit, kind, what).
 let blindGame = null;
+// LOSSLOG=1 (M24, 2026-10-13, the missile defence; OTTO: "analyze why the community squads lost"): each unit a side
+// loses, put down to the last attack begun before it fell (a Projectile's strike or blast, a Mech's or a Drone's own
+// attack), or to anything else (Integrity Loss in the End Phase, a Mine, a crush), with its points:
+// "  losses s1 {...} s2 {...}" after each game, and the run's tally (`lossSums`).
+let lossGame = null;
+function lossStep(t, r) {
+  const up = (x) => x.kind !== 'projectile' && x.deployed !== false && (x.kind === 'mech' ? x.partStates.torso !== 'destroyed' : x.partStates.main !== 'destroyed');
+  const tags = r?.option?.tags ?? [];
+  const actor = typeof r?.decision?.unit === 'number' ? t.state.tokens.find((x) => x.uid === r.decision.unit) : undefined;
+  if (r?.decision?.kind === 'blast.resolve' || tags.includes('detonate') || (actor?.kind === 'projectile' && tags.includes('attack'))) lossGame.by = 'projectile';
+  else if (tags.includes('attack') && actor) lossGame.by = actor.kind === 'drone' ? 'drone attack' : 'mech attack';
+  const now = new Map(t.state.tokens.filter(up).map((x) => [x.uid, x]));
+  if (lossGame.standing) {
+    for (const [uid, x] of lossGame.standing) {
+      if (now.has(uid)) continue;
+      const by = /^(phase|end)/.test(String(r?.decision?.kind ?? '')) ? 'end phase' : lossGame.by ?? 'other';
+      const g = (lossGame[x.side][by] ??= { n: 0, pts: 0 });
+      g.n += 1;
+      g.pts += lossGame.pts.get(uid)?.pts ?? 0;
+    }
+  }
+  lossGame.standing = now;
+}
 const blindKind = (u) => {
   if (u.kind !== 'mech') return `drone:${u.cardId}`;
   const guns = u.weapons.filter((w) => w.type === 'Firing').map((w) => w.range);
@@ -910,6 +933,7 @@ for (let seed = from; seed <= to; seed++) {
     policyNow = linesWatch(policyNow);
     if (foeNow) foeNow = linesWatch(foeNow);
   }
+  if (process.env.LOSSLOG) lossGame = { s1: {}, s2: {}, standing: null, by: null, pts: new Map() };
   if (process.env.BLINDSPOTS) {
     blindGame = { seed, subjectSeat, s1: blindFresh(), s2: blindFresh() };
     policyNow = blindWatch(policyNow);
@@ -951,6 +975,7 @@ for (let seed = from; seed <= to; seed++) {
     globalThis.__t = t;
     // Each unit's points as the table is set, so the game's line can say what each side lost (` lost <s1>/<s2>`).
     worthAtStart = new Map(t.state.tokens.filter((x) => x.kind !== 'projectile').map((x) => [x.uid, { side: x.side, pts: M.U.squadPoints(data, [x], x.side) }]));
+    if (lossGame) lossGame.pts = worthAtStart;
     // TACTICS=1: both squads hold all six Tactics Cards (M8.2q).
     if (process.env.TACTICS) {
       t.state.tactics = { s1: ['274', '275', '276', '277', '278', '279'], s2: ['274', '275', '276', '277', '278', '279'] };
@@ -1012,7 +1037,8 @@ for (let seed = from; seed <= to; seed++) {
           }
         } else stopped = pre;
       }
-      end = stopped ?? await t.run({ maxSteps: 12000, onStep: (process.env.CARDLOG || process.env.TRACE || process.env.BOXLOG || process.env.CARDOFFERS || process.env.ABILITIES || process.env.TAGS || process.env.COVERLOG || process.env.DECISIONS || process.env.DIALCHECK || process.env.ENDSHOT || process.env.MODEFLAP || process.env.PARTS || process.env.DITHER || process.env.SHUTDOWN || process.env.MELEELOG || process.env.SQUADLOG || process.env.POSITIONS || process.env.CAMOLOG || process.env.LANELOG || process.env.SUPPORTLOG) ? (seat, r) => {
+      end = stopped ?? await t.run({ maxSteps: 12000, onStep: (process.env.CARDLOG || process.env.TRACE || process.env.BOXLOG || process.env.CARDOFFERS || process.env.ABILITIES || process.env.TAGS || process.env.COVERLOG || process.env.DECISIONS || process.env.DIALCHECK || process.env.ENDSHOT || process.env.MODEFLAP || process.env.PARTS || process.env.DITHER || process.env.SHUTDOWN || process.env.MELEELOG || process.env.SQUADLOG || process.env.POSITIONS || process.env.CAMOLOG || process.env.LANELOG || process.env.SUPPORTLOG || process.env.LOSSLOG) ? (seat, r) => {
+        if (lossGame) lossStep(t, r);
         if (squad && sqGame) squadStep(t, r);
         if (process.env.CAMOLOG && camoGame) camoStep(t, seat, r, subjectSeat);
         if (process.env.LANELOG && laneGame) laneStep(t, subjectSeat);
@@ -1349,6 +1375,10 @@ for (let seed = from; seed <= to; seed++) {
   }
   console.log(`${String(seed).padStart(4)} ${foeNow ? `[subject ${subjectSeat}] ` : ''}${fx ? `[fx ${fx}] ` : ''}${scenario.map}/${scenario.mission} | ${sq('probe-s1')} v ${sq('probe-s2')} | ${kind}${end.kind === 'over' ? ` ${end.result.winner ?? 'level'} ${vpNow.s1}-${vpNow.s2} lost ${lost.s1}/${lost.s2}` : ` (${last}) ${(end.decision ? `[${end.decision}${end.option ? ` -> ${end.option}` : ''}] ` : '') + (end.why ?? '')}`}`.slice(0, 400) + openNote + secNote);
   if (blindGame) blindEnd(t?.state);
+  if (lossGame) {
+    if (t) lossStep(t, null);
+    console.log(`  losses s1 ${JSON.stringify(lossGame.s1)} s2 ${JSON.stringify(lossGame.s2)}`);
+  }
   if (dodgeGame) console.log(`  dodges s1 ${dodgeGame.s1} s2 ${dodgeGame.s2}`);
   if (dshotGame) console.log(`  droneshots s1 ${dshotGame.s1.shots.size}/${dshotGame.s1.acts.size} s2 ${dshotGame.s2.shots.size}/${dshotGame.s2.acts.size}`);
   if (linesGame) console.log(`  lines s1 ${linesGame.s1[0]}/${linesGame.s1[1]} s2 ${linesGame.s2[0]}/${linesGame.s2[1]} drones s1 ${linesGame.s1[2]}/${linesGame.s1[3]} s2 ${linesGame.s2[2]}/${linesGame.s2[3]}`);
