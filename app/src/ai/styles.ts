@@ -13,8 +13,11 @@ import type { Weights } from './evaluate';
 import type { Policy } from './policy';
 import { makeTactician, type Skills } from './tactician';
 
-// Not a Command spent so none goes unspent (`noHold`, 2026-10-13): measured on the Ace and the Veteran alone.
-export const BRAWLER_SKILLS: Partial<Skills> = { hunter: true, noHold: false };
+// A Command spent so none goes unspent (`noHold`) as the Ace and the Veteran do: MEASURED ON THE BRAWLER 2026-10-13
+// (measure_brn.sh, the Ace its foe): random squads 32 of 100 against 31 (2 turned to a win, 1 from one), community
+// squads 28.5 of 50 against 26 (3, 0; VP margin +0.84 a game, p 0.05); the Commands passed 0.6 to 0.2 and 0.8 to 0.0 a
+// game. Level and closer to how people play (OTTO's rule): the Brawler, and the Recruit made of it, play it too.
+export const BRAWLER_SKILLS: Partial<Skills> = { hunter: true };
 // Not the learned judge (`learned`): it was measured on the Ace alone, and the Brawler (and the Recruit made of it)
 // was measured without it. Nor a Command-only Drone's Command a round on (`commandNext`, 2026-10-12): level on random
 // squads, its margins a little worse, kept off until measured on community squads. Nor an RWS Mech's Commands a round

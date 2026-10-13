@@ -63,7 +63,7 @@ const OFF = AI.makeTactician({ noHold: false });
   const vet = choose(AI.veteranPolicy, d);
   check('WITH IT the Raven is given the Command all the same, by the Ace and by the Veteran',
     [on.reason, on.o?.facts?.uid === U.Raven.uid, vet.reason, vet.o?.facts?.uid === U.Raven.uid], ['command_opportunity', true, 'command_opportunity', true]);
-  check('and not by the Brawler', choose(AI.brawlerPolicy, d).reason, 'command_withheld');
+  check('and by the Brawler (on for it since its own measurement)', choose(AI.brawlerPolicy, d).reason, 'command_opportunity');
 }
 {
   const turn = d.options.find((o) => o.tags.includes('designate') && o.facts?.uid === U.Raven.uid)?.then?.();
@@ -79,8 +79,8 @@ const OFF = AI.makeTactician({ noHold: false });
   const keeps = { ...view, units: view.units.map((u) => (u.side === 's1' && u.kind === 'mech' ? { ...u, keepsCommand: true } : u)) };
   check('A SQUAD WITH A MECH THAT KEEPS A TOKEN withholds it as before', choose(AI.tacticianPolicy, d, keeps).reason, 'command_withheld');
 }
-check('as it ships (2026-10-13): on for the Ace and the Veteran, off for the Brawler and the Recruit made of it',
-  [AI.SKILLS.noHold, AI.VETERAN_SKILLS.noHold ?? AI.SKILLS.noHold, AI.BRAWLER_SKILLS.noHold, AI.TACTICIAN.holdSlack], [true, true, false, 0.25]);
+check('as it ships (2026-10-13): on for every level (the Brawler and the Recruit made of it since their own measurement)',
+  [AI.SKILLS.noHold, AI.VETERAN_SKILLS.noHold ?? AI.SKILLS.noHold, AI.BRAWLER_SKILLS.noHold ?? AI.SKILLS.noHold, AI.TACTICIAN.holdSlack], [true, true, true, 0.25]);
 t.close();
 
 console.log(`\n${pass} passed, ${fail} failed`);
