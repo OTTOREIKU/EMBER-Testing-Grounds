@@ -146,7 +146,7 @@ const blindKind = (u) => {
 const blindStrike = (o) => !!o && (o.tags.includes('attack') || (o.tags.includes('electronic') && !o.tags.includes('terminal')));
 const blindActed = (o) => blindStrike(o) || (!!o && o.tags[0] === 'launch' && !o.tags.includes('smoke'));
 const blindArmed = (u) => u.weapons.some((w) => ['Firing', 'Melee', 'Projectile'].includes(w.type));
-const blindFresh = () => ({ acts: new Map(), struckBy: new Set(), units: new Map(), droneSeen: new Set(), commanded: new Set(), cmdPass: 0, chargesMade: 0, boxAway: 0, rwsAsked: 0, rwsAim: 0, rwsGiven: 0, rwsAimPassed: 0, rwsShots: 0, rwsRounds: new Map() });
+const blindFresh = () => ({ acts: new Map(), struckBy: new Set(), units: new Map(), droneSeen: new Set(), commanded: new Set(), cmdPass: 0, chargesMade: 0, boxAway: 0, rwsAsked: 0, rwsAim: 0, rwsGiven: 0, rwsAimPassed: 0, rwsShots: 0, rwsRounds: new Map(), launches: 0 });
 const blindWho = (seat) => (blindGame && seat === blindGame.subjectSeat ? 'subject' : 'foe');
 function blindLog(seat, round, u, what) {
   if (!process.env.BLINDLOG || !blindGame) return;
@@ -188,6 +188,8 @@ function blindSee(d, view, c) {
       if (pay.length && far({ col: to.c, row: to.r }) > far(u.grid)) { g.boxAway += 1; blindLog(view.seat, view.round, u, `carried a Box from ${far(u.grid)} Grids of where it pays to ${far({ col: to.c, row: to.r })}`); }
     }
   }
+  // Every Projectile the squad launches (a Smoke Grenade aside), each launch of a Volley one (M24, the missile barrage).
+  if (chosen?.tags[0] === 'launch' && !chosen.tags.includes('smoke')) g.launches += 1;
   if (d.kind === 'loop.designate.command') {
     const designates = d.options.filter((o) => o.tags.includes('designate'));
     for (const o of designates) if (typeof o.facts?.uid === 'number') g.droneSeen.add(o.facts.uid);
@@ -250,7 +252,7 @@ function blindEnd(state) {
     for (const x of held) { const seen = g.units.get(x.uid); if (seen) blindLog(seat, seen.to, seen.u, `held ${x.charge.length} Charge${x.charge.length === 1 ? '' : 's'} unspent as the game ended`); }
     line[seat] = {
       acts: acts.length, offered: acts.filter((a) => a.offered).length, struck: acts.filter((a) => a.struck).length, passed: acts.filter((a) => a.passed).length,
-      still, silent, neverCommanded: never, cmdPass: g.cmdPass, chargesMade: g.chargesMade, chargesLeft, boxAway: g.boxAway,
+      still, silent, neverCommanded: never, cmdPass: g.cmdPass, chargesMade: g.chargesMade, chargesLeft, boxAway: g.boxAway, launches: g.launches,
       ...(g.rwsAsked ? { rwsAsked: g.rwsAsked, rwsAim: g.rwsAim, rwsGiven: g.rwsGiven, rwsAimPassed: g.rwsAimPassed, rwsShots: g.rwsShots,
         rwsRounds: [...g.rwsRounds.entries()].sort((a, b) => a[0] - b[0]).map(([r, k]) => `${r}:${k}`).join(' ') } : {}),
     };

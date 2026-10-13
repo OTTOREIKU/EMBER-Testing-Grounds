@@ -43,6 +43,8 @@ function named(AI, name) {
   // The Brawler is our own style of the Tactician since 2026-10-09 (styles.ts, M21): the copy of the other app's AI
   // and its habits are gone. Its skills and weights are the Tactician's: tactician:<skills>:<weights>.
   if (name.startsWith('brawler:')) throw new Error(`${name}: the Brawler's habits went with the copy (M21); name a tactician style`);
+  // THE MISSILE BARRAGE (styles.ts, M24): the Ace that launches whatever it can.
+  if (name === 'missile') return AI.missilePolicy;
   if (name === 'eager') return AI.eagerPolicy;
   if (name === 'legal') return AI.legalPolicy;
   // The levels (M9.1): recruit[:rate] is the Brawler making mistakes at that rate; veteran the Tactician without its look ahead.
