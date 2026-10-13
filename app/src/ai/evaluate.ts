@@ -400,7 +400,13 @@ export interface Weights {
   // (eight games as the code shipped): of 98 Command Phase questions with such a Mech on offer, 28 had a shot for it,
   // and 18 shots were fired on a Command in the eight games, where a Crisis's two Parts could fire up to ten a game.
   // Where the plan leaves it, `rwsNext` of what each RWS Part could fire there on a Command (the engine's `later` with
-  // 'command'). At 0, nothing.
+  // 'command'). At 0, nothing. MEASURED (the four RWS squads, one a seed, against the community squads, seeds
+  // 3210001-100): AT 1 too weak to see (the Ace's RWS shots 1.96 to 2.22 a game, the Veteran's the same); the rounds
+  // after the first found the nearest enemy 7 to 9 Grids off in 38% (the Crisis's Maneuver is 1). AT 3: the Ace 54.5 of
+  // 100 against 56 (11 turned to a win, 13 from one, p 0.84; VP margin +0.67), its RWS shots 1.96 to 2.58 a game; the
+  // Veteran 55 against 54 (7, 6; VP +0.20), 2.30 to 2.46. LEVEL ON WINS, the Crisis firing more on Commands as its
+  // players build it to: ON AT 3 FOR THE ACE AND THE VETERAN (OTTO, 2026-10-13: "We want these to feel closer to
+  // human players rather than just beating players outright"; "push both together"). The Brawler keeps 0.
   rwsNext: number;
   // BEHIND AS THE BOARD STANDS (`behindNow`): a squad that would lose the game
   // if it ended now gains nothing by holding back, and each of its units with
@@ -697,7 +703,7 @@ export const TACTICIAN: Weights = {
   interceptOdds: 0,
   shootDown: 0,
   commandNext: 1,
-  rwsNext: 0,
+  rwsNext: 3,
   press: 10,
   pressLate: 0,
   erode: 0,

@@ -78,7 +78,8 @@ const nexts = (rwsNext) => {
   check('WITH IT a Grid in Range of the Rifle is worth more a turn on (what the two Commands could fire there); a Grid out of Range the same',
     [ins.length > 0 && ins.every((x) => x.gain > 0), outs.length > 0 && outs.every((x) => Math.abs(x.gain) < 1e-9)], [true, true]);
 }
-check('as it ships (2026-10-13): 0 until measured', AI.TACTICIAN.rwsNext, 0);
+check('as it ships (2026-10-13): at 3 for the Ace and the Veteran, 0 for the Brawler and the Recruit made of it',
+  [AI.TACTICIAN.rwsNext, AI.VETERAN_WEIGHTS.rwsNext ?? AI.TACTICIAN.rwsNext, AI.BRAWLER_WEIGHTS.rwsNext], [3, 3, 0]);
 t.close();
 
 console.log(`\n${pass} passed, ${fail} failed`);
