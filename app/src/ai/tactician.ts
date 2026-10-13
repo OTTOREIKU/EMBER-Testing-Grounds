@@ -395,6 +395,12 @@ export interface Skills {
   // (OTTO, 2026-10-13: "We want these to feel closer to human players rather than just beating players outright so I
   // would rather it's on"); the Brawler (and the Recruit made of it) keeps it off until measured.
   noHold: boolean;
+  // THE SHOTS AN ENEMY HAS LEFT (M24, 2026-10-13; OTTO: "Does the computer track how much ammo an enemy has? So if it's
+  // against a missile squad one team might try to get the enemies to waste all of their missiles"). The engine offers
+  // no launch to a unit out of Ammo, so a spent launcher was never a threat; but one with a single Projectile left
+  // read as one with four. With the skill, a launcher's threat (`launchThreat`) counts as many rounds as it has
+  // Projectiles left for (`shotsLeft`). OFF until measured.
+  ammoCount: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -404,7 +410,7 @@ export const SKILLS: Skills = {
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
   squadDials: false, secName: true, hunter: false, cardPick: true, clearLines: true, leash: true, lanes: false, trueRange: false,
-  accessFirst: false, sighted: true, noHold: true,
+  accessFirst: false, sighted: true, noHold: true, ammoCount: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -504,6 +510,8 @@ interface Ctx {
   downs: Map<number, number>;
   // What each enemy's launches could do to a unit of this squad (`launchFire`, `launchThreat`).
   launchFires: Map<number, number>;
+  // What each enemy's Projectiles could do to the rest of the squad, for each unit asking (`rivalShot`, `bait`).
+  baits: Map<string, number>;
   harms: Map<string, Harm>;
   nexts: Map<string, number>;
   walks: Map<string, Stroll | null>;
@@ -577,12 +585,12 @@ interface Target {
 // given to is then asked the very question that was planned. The answers the
 // engine gave are the same answers, so they are not asked for twice.
 export interface Memo {
-  table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>; downs: Map<number, number>; launchFires: Map<number, number>;
+  table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>; downs: Map<number, number>; launchFires: Map<number, number>; baits: Map<string, number>;
   walks: Map<string, Stroll | null>; targets: Map<string, Target[]>; holdings: Map<number, number>;
   handed: Map<string, number | null>; aims: Map<number, Map<number, number>>; races: { map: Map<string, Race> | null };
   backs: { map: Map<number, Back> | null }; calls: Map<number, number>; screens: Map<string, number>; clears: Map<string, number>;
 }
-export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), downs: new Map(), launchFires: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map(), clears: new Map() });
+export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), downs: new Map(), launchFires: new Map(), baits: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map(), clears: new Map() });
 
 // The table as far as those answers depend on it: every unit, where it stands
 // and in what state. Whose activation is open is left out, and so is a Command
@@ -691,9 +699,66 @@ function threatOf(e: UnitView, c: Ctx): number {
   if (e.side === c.view.seat) return 0;
   const rounds = Math.min(c.w.threatRounds, c.view.roundLimit - c.view.round + (e.done ? 0 : 1));
   if (rounds <= 0) return 0;
-  // (A launcher's best attack may be its Projectiles: `launchThreat`.)
-  const launched = c.w.launchThreat > 0 ? c.w.launchThreat * launchFire(e, c) : 0;
-  return c.w.threat * Math.max(firepower(e, c), launched) * rounds;
+  // (A launcher's best attack may be its Projectiles, `launchThreat`; for as many rounds as it has them, `ammoCount`.)
+  const volleys = c.skills.ammoCount ? Math.min(rounds, shotsLeft(e)) : rounds;
+  const launched = c.w.launchThreat > 0 ? c.w.launchThreat * launchFire(e, c) * volleys : 0;
+  return c.w.threat * Math.max(firepower(e, c) * rounds, launched);
+}
+
+// THE PROJECTILES A UNIT HAS LEFT TO LAUNCH (`ammoCount`, `bait`): the Ammo Tokens still face up on its ready
+// Projectile Actions (missiles, grenades, mines, whatever else it puts down); none where it has none, and without end
+// where one of them keeps no count.
+function shotsLeft(e: UnitView): number {
+  let n = 0;
+  for (const x of e.weapons) {
+    if (!ready(x) || x.type !== 'Projectile') continue;
+    if (x.ammo === undefined) return Infinity;
+    n += x.ammo;
+  }
+  return n;
+}
+
+// A BAIT (`bait`, M24, 2026-10-13; OTTO: "get the enemies to waste all of their missiles and then when they are out
+// deal with them in some way ... baiting may be a behavior that covers multiple projectiles or other deployables so we
+// can first test with missiles but keep it open to expand"). A Projectile launched is one fewer the enemy has; where
+// it will run out before the game does, a shot it spends on a cheap unit is one the rest of the squad never takes. For
+// each such enemy (any Projectile Action that keeps a count: Missiles, Grenades, Mines and the rest alike) whose
+// Projectile could strike this unit where the plan leaves it, the shot it would draw: as often as the unit is worth
+// shooting against the best shot the enemy has on the rest of the squad as the board stands (the `decoy` reading),
+// at what that shot would have done to the rest (at least this unit's own harm, at the worth of the squad's most
+// valuable unit against its own, three times at most). Its own harm stays in what standing there costs. Not for the
+// squad's most valuable unit: nothing is spared by drawing fire onto it.
+function baitAt(left: Outlook, at: Grid, c: Ctx): number {
+  const mates = c.view.units.filter((u) => u.side === c.view.seat && u.uid !== c.me.uid && u.alive && u.deployed && u.kind !== 'projectile');
+  if (!mates.length) return 0;
+  const mine = unitWorth(c.me, c.view, c.w);
+  const best = Math.max(...mates.map((u) => unitWorth(u, c.view, c.w)));
+  if (mine >= best || mine <= 0) return 0;
+  const here = c.d.here?.();
+  let gain = 0;
+  for (const e of c.foes) {
+    if (e.kind === 'projectile' || !e.weapons.some((x) => ready(x) && x.type === 'Projectile')) continue;
+    const shots = shotsLeft(e);
+    const rounds = c.view.roundLimit - c.view.round + (e.done ? 0 : 1);
+    if (!Number.isFinite(shots) || shots <= 0 || shots > rounds) continue;
+    const drawn = salvoOn(e, left, at, c).value;
+    if (drawn <= 0) continue;
+    const rival = here ? rivalShot(e, here, mates, c) : 0;
+    const take = rival > drawn ? (drawn / rival) ** Math.max(1, c.w.decoy) : 1;
+    gain += c.w.bait * take * Math.max(rival, drawn * Math.min(3, best / mine));
+  }
+  return gain;
+}
+
+// The best an enemy's Projectiles could do to one of these units where it stands (`bait`). Asked once a table.
+function rivalShot(e: UnitView, here: Outlook, mates: UnitView[], c: Ctx): number {
+  const key = `${e.uid}|${c.me.uid}`;
+  const known = c.baits.get(key);
+  if (known !== undefined) return known;
+  let best = 0;
+  for (const u of mates) best = Math.max(best, salvoOn(e, here, u.grid, { ...c, me: u }).value);
+  c.baits.set(key, best);
+  return best;
 }
 
 // WHAT AN ENEMY'S LAUNCHES COULD DO TO THIS SQUAD (`launchThreat`, M24, 2026-10-13). `firepower` reads an enemy's
@@ -2440,6 +2505,8 @@ interface Plan {
   hid?: number;
   // What the squadmates' shots lose to its standing in their lines (`clearLines`; asked with the cost): only a loss.
   lines?: number;
+  // The enemy's last Projectiles it draws away from the rest of the squad (`bait`; asked with the cost).
+  bait?: number;
 }
 
 // The most a plan could be worth: every term, with nothing taken off for what
@@ -2449,7 +2516,7 @@ const sumOf = (p: Plan): number => p.now + p.next + p.mission + p.shape;
 // and the zone it would take, come only if it is still there when the round
 // ends.
 const worthOf = (p: Plan): number =>
-  p.now + (p.next + Math.max(0, p.mission)) * (1 - p.risk) + Math.min(0, p.mission) + p.shape - p.cost + (p.judged ?? 0) + (p.hid ?? 0) - (p.lines ?? 0);
+  p.now + (p.next + Math.max(0, p.mission)) * (1 - p.risk) + Math.min(0, p.mission) + p.shape - p.cost + (p.judged ?? 0) + (p.hid ?? 0) - (p.lines ?? 0) + (p.bait ?? 0);
 
 // The Grids the Main Task scores: its zones, or for Black Boxes the one zone a
 // Box must be carried into, where the card names one.
@@ -2967,7 +3034,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     const faces = d.options.filter((o) => handed(o, c) && !c.handed.has(handKey(c, o)));
     if (faces.length) {
       // What this table has been asked already is this decision's own to keep.
-      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, downs: c.downs, launchFires: c.launchFires, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens, clears: c.clears };
+      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, downs: c.downs, launchFires: c.launchFires, baits: c.baits, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens, clears: c.clears };
       for (const o of faces) {
         c.handed.set(handKey(c, o), yield* commandGain(o, view, w, c.skills, kept));
         yield;
@@ -3443,6 +3510,11 @@ function* bestSteps(c: Ctx, slack = 0): Steps<{ best: Plan; stay: Plan; plans: P
       const then = u ? u.camouflaged && !u.revealing : hiddenNow;
       p.hid = then === hiddenNow ? 0 : c.w.hiddenWorth * hiddenAfter * (then ? 1 : -1);
     }
+    // A BAIT (`bait`): read off the table the plan leaves, the unit standing where it ends.
+    if (c.w.bait > 0 && c.me.kind !== 'projectile') {
+      const left = p.via ? p.via.after?.() : p.option ? p.option.after?.() : c.d.here?.();
+      p.bait = left ? baitAt(left, p.at, c) : 0;
+    }
     if (!c.skills.exposure) return;
     const mark = hiding ? (p.option ? '|acts' : p.deed ? '|deed' : '') : '';
     // A Bit's face changes what a hit costs it, wherever it ends.
@@ -3626,6 +3698,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     memo.firepower.clear();
     memo.downs.clear();
     memo.launchFires.clear();
+    memo.baits.clear();
     memo.clears.clear();
     memo.walks.clear();
     memo.targets.clear();
@@ -3650,6 +3723,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     firepower: memo.firepower,
     downs: memo.downs,
     launchFires: memo.launchFires,
+    baits: memo.baits,
     clears: memo.clears,
     harms: memo.harms,
     nexts: memo.nexts,

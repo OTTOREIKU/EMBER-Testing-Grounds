@@ -186,6 +186,10 @@ export interface Weights {
   // this share of a shot's worth, where it is more than its Firing Actions could (tactician.ts `launchFire`). At 0,
   // its Firing Actions alone, as before.
   launchThreat: number;
+  // A BAIT (`bait`, M24, 2026-10-13): for a unit worth less than the squad's best, the enemy's last Projectiles it
+  // would draw from the rest of the squad by standing in their strike, at this share of what they would have done
+  // (tactician.ts `baitAt`). Missiles first; any Projectile Action that keeps a count alike. At 0 nothing.
+  bait: number;
   // What a plan must be better by before a unit leaves where it stands.
   better: number;
   // A zone entered by a Maneuver and the Movement Action after it is planned
@@ -678,6 +682,7 @@ export const TACTICIAN: Weights = {
   threat: 0.5,
   threatRounds: 2,
   launchThreat: 0,
+  bait: 0,
   better: 0.01,
   entry: 1,
   card: 0.3,
