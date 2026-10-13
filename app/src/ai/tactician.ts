@@ -401,6 +401,12 @@ export interface Skills {
   // read as one with four. With the skill, a launcher's threat (`launchThreat`) counts as many rounds as it has
   // Projectiles left for (`shotsLeft`). OFF until measured.
   ammoCount: boolean;
+  // A MECH LEAVING AT THIS ROUND'S END CHARGES (M24, 2026-10-13; OTTO: "if there a no options to save it and it isnt a
+  // VIP or commander does it just charge in?"). A Mech down to two Parts leaves in the End Phase whatever it does
+  // (Integrity Loss), so what a hit would cost it there costs nothing: it spends its last round where it does most
+  // (a Kick, a Melee Lock, a zone, a body in a line of fire). Its turn a round on was already nothing (the engine's
+  // look ahead takes it off in the End Phase). OFF until measured.
+  doomedCharge: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -410,7 +416,7 @@ export const SKILLS: Skills = {
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
   squadDials: false, secName: true, hunter: false, cardPick: true, clearLines: true, leash: true, lanes: false, trueRange: false,
-  accessFirst: false, sighted: true, noHold: true, ammoCount: false,
+  accessFirst: false, sighted: true, noHold: true, ammoCount: false, doomedCharge: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -2036,7 +2042,8 @@ interface Quarry { foe: UnitView; road: Road | null }
 
 function quarryOf(c: Ctx): Quarry | null {
   const arm = fightArm(c.me, c.skills.aimed, c.w.blade);
-  if (arm <= 0) return null;
+  // (A unit with its last shot spent goes in to Melee Lock: `spentClose`.)
+  if (arm <= 0 && !closesIn(c)) return null;
   const roads = c.d.facts.roads as Record<string, Road> | undefined;
   let best: (Quarry & { score: number }) | null = null;
   for (const foe of c.foes) {
@@ -2358,9 +2365,11 @@ function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took:
     // `pressLate`).
     const press = c.behind && walk <= EXACT ? c.w.press * (1 - c.w.pressLate * (1 - c.view.round / Math.max(1, c.view.roundLimit))) : 0;
     const step = c.w.contactStep * (out || press ? 1 + out + press : 1);
-    // (A Drone that strikes only when Commanded walks in at `commandWalk`.)
-    const walkIn = c.w.commandWalk > step && commandOnly(c.me) ? c.w.commandWalk : step;
-    pull -= walkIn * Math.max(0, far - fightArm(c.me, c.skills.aimed, c.w.blade));
+    // (A Drone that strikes only when Commanded walks in at `commandWalk`; a unit with its last shot spent, to stand
+    // beside the enemy, at `spentClose`.)
+    const spentIn = closesIn(c);
+    const walkIn = spentIn ? Math.max(step, c.w.spentClose) : c.w.commandWalk > step && commandOnly(c.me) ? c.w.commandWalk : step;
+    pull -= walkIn * Math.max(0, far - (spentIn ? 1 : fightArm(c.me, c.skills.aimed, c.w.blade)));
     // AN OUTRANGED BLADE GOES IN (`bladeIn`): zone or no zone, each Grid of the road beyond its blades' reach.
     if (c.w.bladeIn > 0 && bladed(c.me) && outranged(c)) {
       const reach = Math.max(1, ...c.me.weapons.filter((x) => ready(x) && x.type === 'Melee').map((x) => x.range));
@@ -2386,7 +2395,9 @@ const commandOnly = (u: UnitView): boolean => {
 // away where this unit's lock is the one that holds it: held with this unit beside it, and not held without (OTTO,
 // 2026-10-06: "position themselves to have their melee locked opponent between them and at least one ally").
 function lockOf(at: Grid, c: Ctx): number {
-  if (c.w.lockDeny <= 0 || !c.me.locks || c.me.camouflaged) return 0;
+  // (A unit with its last shot spent counts the fire its lock holds whole: `spentClose`.)
+  const deny = closesIn(c) ? Math.max(1, c.w.lockDeny) : c.w.lockDeny;
+  if (deny <= 0 || !c.me.locks || c.me.camouflaged) return 0;
   const others = c.view.units.filter((u) => u.side === c.view.seat && u.uid !== c.me.uid && u.alive && u.deployed && u.locks && !u.camouflaged);
   // Its turn this round, while still to come, and the next round's (at `future`): a blade that Sprints beside a
   // gunner on a Movement dial, after the gunner has fired, holds it for the round after, and strikes first there.
@@ -2399,8 +2410,28 @@ function lockOf(at: Grid, c: Ctx): number {
     const held = (n: number): boolean => n > 0 && legs < 1 + n;
     if (held(lockers + 1) && !held(lockers)) sum += ((e.done ? 0 : 1) + next) * screenedFire(e, c);
   }
-  return c.w.lockDeny * sum;
+  return deny * sum;
 }
+
+// A UNIT WITH NOTHING LEFT TO STRIKE WITH GOES IN (`spentClose`, M24, 2026-10-13; OTTO: "when a unit runs out of ammo
+// and doesn't have any other way to attack, they could focus on getting up in melee range of an enemy to help the rest
+// of the team"; and "what happens when a mech loses both of its arms ... If a unit gets both arms blasted off and
+// doesnt have a damaging pack what does it do? Does it run up and try to kick an enemy?"). A unit that carried a gun, a
+// blade or a launcher and has none left to use (its Ammo spent or its Parts destroyed), and can still Melee Lock
+// (`locks`: a Mech's Punch or Kick, the Chassis enough), walks to the nearest enemy at `spentClose` a Grid to stand
+// beside it, and where its lock would hold an enemy's fire off the rest of the squad, counts that fire whole
+// (`lockOf`'s reading; the Kick itself is a deed like any other once it stands there). A unit that never carried a
+// weapon (a Raven, a Carrier) has work of its own and is left to it. At 0 nothing.
+function closesIn(c: Ctx): boolean {
+  if (c.w.spentClose <= 0 || !c.me.locks || c.me.kind === 'projectile') return false;
+  return c.me.weapons.some((x) => ARMS.has(x.type)) && !c.me.weapons.some((x) => ready(x) && ARMS.has(x.type));
+}
+
+// A MECH LEAVING AT THIS ROUND'S END (`doomedCharge`): down to two Parts, its Torso standing, Integrity Loss takes it
+// in the End Phase (4.4.4, 3.7.1), the kill to whoever cost it a Part last.
+const doomed = (u: UnitView): boolean => u.kind === 'mech'
+  && u.parts.some((p) => p.slot === 'torso' && p.state !== 'destroyed')
+  && u.parts.filter((p) => p.state !== 'destroyed').length <= 2;
 
 // The best Firing attack an enemy could make at a unit of this squad other than the one asked about, with a weapon
 // a Melee Lock bars (none printing Melee Firing): read as if no unit of this squad stood beside it now. The engine
@@ -3547,6 +3578,8 @@ function* bestSteps(c: Ctx, slack = 0): Steps<{ best: Plan; stay: Plan; plans: P
     // The Ally a tow sets down pays for where it is set down (`towHarm`).
     p.cost = harm.cost + (tow && p.option ? towHarm(p.option, c) : 0);
     p.risk = harm.risk;
+    // A MECH LEAVING AT THIS ROUND'S END (`doomedCharge`): what a hit would cost it is lost either way.
+    if (c.skills.doomedCharge && doomed(c.me)) { p.cost = 0; p.risk = 0; }
   };
   const reachable = (p: Plan): boolean => c.hostile.some((e) => threatens(e, p.at, c));
   let best: Plan | null = null;

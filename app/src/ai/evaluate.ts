@@ -190,6 +190,10 @@ export interface Weights {
   // would draw from the rest of the squad by standing in their strike, at this share of what they would have done
   // (tactician.ts `baitAt`). Missiles first; any Projectile Action that keeps a count alike. At 0 nothing.
   bait: number;
+  // A UNIT WITH NOTHING LEFT TO STRIKE WITH GOES IN (`spentClose`, M24, 2026-10-13): for a unit that carried a gun, a
+  // blade or a launcher and has none left (its Ammo spent, its Parts destroyed), each Grid still to go to stand beside
+  // the nearest enemy (tactician.ts `closesIn`); the Melee Lock it makes there counted whole. At 0 nothing.
+  spentClose: number;
   // What a plan must be better by before a unit leaves where it stands.
   better: number;
   // A zone entered by a Maneuver and the Movement Action after it is planned
@@ -683,6 +687,7 @@ export const TACTICIAN: Weights = {
   threatRounds: 2,
   launchThreat: 0,
   bait: 0,
+  spentClose: 0,
   better: 0.01,
   entry: 1,
   card: 0.3,
