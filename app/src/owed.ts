@@ -33,7 +33,7 @@ import {
   detonationToken, discardSlots, envCardAt, explosionCamo, extraActivationOf, fliesToTarget, formSwitch, immediateDetonation, immediatesOwed, isGroundUnit, linkSupportOf, linkSupportTargets, manifestTargets, martyrdomOwed, maxLink, minesLayable, repairSpec,
   resupplyHolders, resupplyOf, riposteMelees, selfGrantWhy, selfStanceShift, selfRepairOptions, selfStatusGrant, smokePlacement, stabiliseAsk, STABILISE_KEEP_LABEL, stabiliseRowLabel, stanceFeedbackTargets,
   targetStatusGrant, targetStatusTargets, tokenCards, tokenCleanupOf, tokenCleanupTargets, transformOffer, controlledMoveActions, knockbackOf,
-  interceptPayer, overwatchOf, containerTargets, lowProfileAuraOf,
+  interceptPayer, overwatchOf, containerTargets, lowProfileAuraOf, rwsCommandsLeft,
 } from './units';
 
 // ---------- what a seat keeps to itself ----------
@@ -2876,7 +2876,10 @@ export function owedIfActivated(
   let t = table.tokens.find((x) => x.uid === uid);
   const sc = table.script;
   if (!t || !sc || t.deployed === false || !alive(t)) return null;
-  if (turnBehind(table, t)) {
+  // (A Mech's RWS Command comes in the Command Phase, which begins the round: past it, or in the one it is taking, a
+  // round on.)
+  const rws = t.kind === 'mech' && timing === 'command';
+  if (turnBehind(table, t) || (rws && (table.round.phase > PHASES.indexOf('Command') || sc.opp?.uid === uid))) {
     if (table.round.n >= (table.roundLimit ?? 5)) return null;
     for (const step of ['remove', 'tokens'] as const) apply(data, table, { kind: 'markEndStep', seat: t.side, step });
     table.round.n += 1;
@@ -2895,9 +2898,17 @@ export function owedIfActivated(
     sc.revealDue = [];
     sc.reactions = (sc.reactions ?? []).filter((r) => r.kind !== 'manifest');
   }
-  if (t.kind === 'mech') {
-    // ('command' is a Drone's turn opened as a Command would open it; a Mech has none.)
-    if (timing === 'command') return null;
+  if (rws) {
+    // A MECH asked about with 'command': the activation a Command sent to it in the Command Phase opens, its RWS
+    // Actions alone (遥控武器, the Ls197R Autocannon; FAQ A20/A22): what such a Mech could fire from where it stands
+    // before anything moves (the computer's `rwsNext`). A Mech with no RWS Part to take one has no such turn.
+    if (t.stance === 'shutdown' || rwsCommandsLeft(data, table, t) <= 0) return null;
+    table.round.phase = PHASES.indexOf('Command');
+    sc.acted = [];
+    sc.commanded = [];
+    sc.opp = newOpportunity(uid, undefined);
+    sc.oppStack = [];
+  } else if (t.kind === 'mech' && timing !== 'command') {
     if (!timing) return null;
     t.timing = timing;
     table.round.phase = PHASES.indexOf('Action');

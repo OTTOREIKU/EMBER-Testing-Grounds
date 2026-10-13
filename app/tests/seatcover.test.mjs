@@ -22,10 +22,12 @@ const vip = { ...data.solo.scenarios.find((s) => s.id === 'intersection-vip-assa
 // Both with `holdLate` off (adopted 2026-10-05, night): that skill answers the
 // same report another way (holdlate.test.mjs), and with it on this game goes
 // otherwise and Dune is not holding in round 3. Here the weight is read alone.
-const ace = AI.makeTactician({ holdLate: false }, {});
+// The same for `noHold` (on since 2026-10-13): with its Commands spent the game
+// goes otherwise too.
+const ace = AI.makeTactician({ holdLate: false, noHold: false }, {});
 // A weight far beyond any measured: however much it is, a plan that acts is
 // never outweighed by it.
-const covering = AI.makeTactician({ holdLate: false }, { cover: 5 });
+const covering = AI.makeTactician({ holdLate: false, noHold: false }, { cover: 5 });
 const timingOf = (d, id) => d.options.find((o) => o.id === id)?.tags.find((t) => t.startsWith('timing:'))?.slice(7);
 
 // The game played by the Ace on both sides; each dial is read where it is set.

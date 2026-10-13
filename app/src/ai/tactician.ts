@@ -381,6 +381,20 @@ export interface Skills {
   // p 0.23, no thinking lost). Where it changes the Veteran's play its Drones attack in more of their Automatic
   // activations (17.8% to 21.0%, random squads); the Ace too left its Porcupine in the VIP corner without it.
   sighted: boolean;
+  // NO COMMAND HELD BACK (2026-10-13; OTTO: "In every in person game a player would never keep back a command token
+  // unless it could be used for an ability ... a UN and RDL squad will always use the token even if it's just to move
+  // the unit"). A Mech's unissued tokens are reserved for Coordination and consuming later in the round and swept at
+  // its end, so a squad with no Mech that could use one (`keepsCommand`) loses every token it holds; the census found
+  // 0.7 to 0.9 a game withheld with a Drone to take it, mostly unarmed Drones whose every Grid looks the same to the
+  // walk. Where `command` would pass, the Command goes to the Drone whose best move loses least against staying, and
+  // a Drone in the Command Phase with nothing to do where it stands takes its best move where staying is worth no more
+  // than `holdSlack` above it. MEASURED (measure_nohold.sh, against the night's games): LEVEL ON WINS at 0.25 and at
+  // 0.05, the Ace 110 of 200 random squads against 108 and 50 of 100 community squads against 48.5 (its margins a little
+  // better), the Veteran 77 against 78 and 40 against 40 (its points margin on random squads 9 a game worse, p 0.04);
+  // the Commands passed with a Drone to take one fell from 0.8-0.9 a game to 0.1-0.5. ON FOR THE ACE AND THE VETERAN
+  // (OTTO, 2026-10-13: "We want these to feel closer to human players rather than just beating players outright so I
+  // would rather it's on"); the Brawler (and the Recruit made of it) keeps it off until measured.
+  noHold: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -390,7 +404,7 @@ export const SKILLS: Skills = {
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
   squadDials: false, secName: true, hunter: false, cardPick: true, clearLines: true, leash: true, lanes: false, trueRange: false,
-  accessFirst: false, sighted: true,
+  accessFirst: false, sighted: true, noHold: true,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -2248,7 +2262,9 @@ function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took:
     // `pressLate`).
     const press = c.behind && walk <= EXACT ? c.w.press * (1 - c.w.pressLate * (1 - c.view.round / Math.max(1, c.view.roundLimit))) : 0;
     const step = c.w.contactStep * (out || press ? 1 + out + press : 1);
-    pull -= step * Math.max(0, far - fightArm(c.me, c.skills.aimed, c.w.blade));
+    // (A Drone that strikes only when Commanded walks in at `commandWalk`.)
+    const walkIn = c.w.commandWalk > step && commandOnly(c.me) ? c.w.commandWalk : step;
+    pull -= walkIn * Math.max(0, far - fightArm(c.me, c.skills.aimed, c.w.blade));
     // AN OUTRANGED BLADE GOES IN (`bladeIn`): zone or no zone, each Grid of the road beyond its blades' reach.
     if (c.w.bladeIn > 0 && bladed(c.me) && outranged(c)) {
       const reach = Math.max(1, ...c.me.weapons.filter((x) => ready(x) && x.type === 'Melee').map((x) => x.range));
@@ -2257,6 +2273,14 @@ function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took:
   }
   return pull + lockOf(at, c);
 }
+
+// A Drone whose every way of striking (a gun, a blade, a launcher) is an Action bearing the Command icon: it strikes
+// only when Commanded (`commandNext`, `commandWalk`).
+const commandOnly = (u: UnitView): boolean => {
+  if (u.kind !== 'drone') return false;
+  const arms = u.weapons.filter((x) => ready(x) && (x.type === 'Firing' || x.type === 'Melee' || x.type === 'Projectile'));
+  return arms.length > 0 && arms.every((x) => x.mode === 'command');
+};
 
 // MELEE LOCK AS A SCREEN (`lockDeny`): a Ground enemy beside the Grid, its turn still to come this round, is Melee
 // Locked there and makes no Firing attack but with a weapon printing Melee Firing (4.3.5): unless it Breaks Away.
@@ -2443,6 +2467,12 @@ function nextTurnAsked(o: Option, at: Grid, c: Ctx): number {
   if (best <= 0 && c.w.charge > 0 && c.me.kind === 'mech') best = c.w.charge * chargeNext(o, at, c);
   // A Drone moved by a Command acts again in the same round.
   const soon = best * (c.me.kind !== 'mech' && c.view.phaseName === 'Command' ? c.w.futureSoon : c.w.future);
+  // A MECH WITH AN RWS PART (`rwsNext`): what each could fire from there on a Command at the next Command Phase.
+  if (c.me.kind === 'mech') {
+    const parts = c.w.rwsNext > 0 ? c.me.weapons.filter((x) => ready(x) && x.rws).length : 0;
+    const sent = parts ? deedAt(o.later(DEEDS, 'command')?.options ?? [], c, false) : null;
+    return soon + (sent ? c.w.rwsNext * c.w.future * parts * sent.value : 0);
+  }
   // A DRONE THAT ACTS ONLY WHEN COMMANDED (`commandNext`): what a Command a round on could strike from there.
   if (c.w.commandNext <= 0 || c.me.kind !== 'drone'
     || !c.me.weapons.some((x) => ready(x) && x.mode === 'command' && (x.type === 'Firing' || x.type === 'Melee' || x.type === 'Projectile'))) return soon;
@@ -3322,7 +3352,8 @@ function harmKey(c: Ctx, at: Grid, tail: string, o?: Option | null): string {
 // THE PLAN WORTH MOST, what standing there would cost taken off. The cost is
 // only ever a loss, so the plans are asked in order of everything else, and
 // the asking stops at the first plan that could not beat the best so far.
-function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | null> {
+// (`slack`: the plans worth up to that much below the best are priced too, for a caller that may take one of them.)
+function* bestSteps(c: Ctx, slack = 0): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | null> {
   const plans = (yield* plansSteps(c)).sort((a, b) => sumOf(b) - sumOf(a));
   const stay = plans.find((p) => !p.option);
   if (!stay) return null;
@@ -3417,15 +3448,21 @@ function* bestSteps(c: Ctx): Steps<{ best: Plan; stay: Plan; plans: Plan[] } | n
   const reachable = (p: Plan): boolean => c.hostile.some((e) => threatens(e, p.at, c));
   let best: Plan | null = null;
   let asked = 0;
+  // Past the plans that could beat the best, those within `slack` of it are priced and never taken: the best is the
+  // same with any slack.
+  let past = false;
   for (const p of plans) {
-    if (best && sumOf(p) <= worthOf(best) + EXACT) break;
+    if (best && sumOf(p) <= worthOf(best) + EXACT) {
+      if (sumOf(p) <= worthOf(best) - slack + EXACT) break;
+      past = true;
+    }
     if (c.skills.exposure && reachable(p)) {
       if (asked >= LIMITS.PRICED) continue;
       asked += 1;
     }
-    price(p, best ? sumOf(p) - worthOf(best) : Infinity);
+    price(p, best ? sumOf(p) - worthOf(best) + (past ? slack : 0) : Infinity);
     p.priced = true;
-    if (!best || worthOf(p) > worthOf(best) + EXACT) best = p;
+    if (!past && (!best || worthOf(p) > worthOf(best) + EXACT)) best = p;
     yield;
   }
   // Staying is what every other plan is measured against: priced in full, and
@@ -3632,7 +3669,9 @@ function* activation(d: Decision, view: SeatView, w: Weights, skills: Skills, me
   }
   const c = context(d, view, w, skills, memo);
   if (!c) return null;
-  const found = yield* bestSteps(c);
+  // NO COMMAND HELD BACK (`noHold`): a Drone sent a Command.
+  const slack = skills.noHold && c.me.kind === 'drone' && view.phaseName === 'Command' ? w.holdSlack : 0;
+  const found = yield* bestSteps(c, slack);
   if (!found) return null;
   if (skills.ticks) {
     const bought = yield* buyTick(d, view, w, skills, memo, found);
@@ -3644,6 +3683,11 @@ function* activation(d: Decision, view: SeatView, w: Weights, skills: Skills, me
     return { option: best.option.id, reason: reasonOf(best, stay), score: worthOf(best), why: `${then}${best.deed ? `from there, ${best.deed.why}; ` : ''}${told(best)}` };
   }
   if (best.deed) return { option: best.deed.option.id, reason: best.deed.reason, score: best.deed.value, why: `${best.deed.why}; ${told(best)}` };
+  // With nothing to do where it stands, its best move where staying is worth no more than `holdSlack` above it.
+  if (slack > 0) {
+    const move = found.plans.filter((p) => p.how === 'move' && p.option && p.priced).sort((a, b) => worthOf(b) - worthOf(a))[0];
+    if (move?.option && worthOf(move) >= worthOf(stay) - slack - EXACT) return { option: move.option.id, reason: 'command_opportunity', score: worthOf(move), why: told(move) };
+  }
   // Nothing to do and nowhere better to be. A Projectile's own Delayed Action
   // with nothing to take is resolved; Link is restored; the activation ends.
   const spent = d.options.find((o) => kindOf(o) === 'detonate' && !o.run);
@@ -3827,11 +3871,13 @@ function thin(d: Decision, view: SeatView): Choice | null {
 // its staying put by most. Where no Drone would gain by it, none is given.
 function* command(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: Memo): Steps<Choice | null> {
   let best: { o: Option; gain: number } | null = null;
+  let spare: { o: Option; gain: number } | null = null;
   for (const o of d.options) {
     if (!o.tags.includes('designate') || !o.then) continue;
     const turn = o.then();
     const c = turn ? context(turn, view, w, skills, memo) : null;
-    const found = c ? yield* bestSteps(c) : null;
+    const slack = skills.noHold && c?.me.kind === 'drone' ? w.holdSlack : 0;
+    const found = c ? yield* bestSteps(c, slack) : null;
     yield;
     if (!found) continue;
     // What the Command adds: its best plan over what the unit does with no
@@ -3841,11 +3887,21 @@ function* command(d: Decision, view: SeatView, w: Weights, skills: Skills, memo:
     // Until 2026-10-02 the plan of staying was taken whole for what it does
     // unbidden, deed and all, and no Command was ever given to fire from
     // where a Drone stood.
+    // (`noHold`: of the Drones, the one whose best move loses least against staying.)
+    if (slack > 0) {
+      const moved = found.plans.filter((p) => p.how === 'move' && p.option && p.priced).reduce((m, p) => Math.max(m, worthOf(p)), -Infinity);
+      const loss = moved - worthOf(found.stay);
+      if (loss >= -slack - EXACT && (!spare || loss > spare.gain + EXACT)) spare = { o, gain: loss };
+    }
     if (!skills.orders && !found.best.option) continue;
     const gain = worthOf(found.best) - worthOf(found.stay) + (skills.orders ? found.stay.now : 0);
     if (gain > EXACT && (!best || gain > best.gain + EXACT)) best = { o, gain };
   }
   if (best) return { option: best.o.id, reason: 'command_by_value', score: best.gain, why: `the Command that does most (${best.gain.toFixed(2)})` };
+  // NO COMMAND HELD BACK (`noHold`): a squad that could not use a held token later this round spends it.
+  if (spare && !view.units.some((u) => u.side === view.seat && u.alive && u.deployed && u.keepsCommand)) {
+    return { option: spare.o.id, reason: 'command_opportunity', score: spare.gain, why: 'so no Command goes unspent' };
+  }
   const pass = d.options.find((o) => o.tags.includes('pass'));
   return pass ? { option: pass.id, reason: 'command_withheld', why: 'no Drone gains by a Command' } : null;
 }
@@ -4745,7 +4801,8 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
         if (card) return card;
         const given = s.command ? yield* command(d, view, w, s, memo) : null;
         // Where no Drone gains by a Command, Aster may turn a Token into Link.
-        if (s.aster && (!given || given.reason === 'command_withheld')) {
+        // (Before a Command spent only so none goes unspent, `noHold`.)
+        if (s.aster && (!given || given.reason === 'command_withheld' || given.reason === 'command_opportunity')) {
           const link = aster(d, view, w);
           if (link) return link;
         }

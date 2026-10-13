@@ -83,7 +83,8 @@ const bestPen = (out, cat) => Math.max(0, ...(out?.turnOf(cat.uid, ['attack'], '
     [!!e9, e9 ? bestPen(e9.after?.(), cat) > bestPen(twin(e9)?.after?.(), cat) : null], [true, true]);
   // THE TACTICIAN. With both weights at 0 the Load is no reason to stand anywhere.
   const OFF = { lend: 0, decoy: 0 };
-  const off = AI.makeTactician({}, OFF).choose(d, view, new AI.Rng('x'));
+  // (`noHold` off: a Drone sent a Command with nothing to do moves all the same, which is not this question.)
+  const off = AI.makeTactician({ noHold: false }, OFF).choose(d, view, new AI.Rng('x'));
   check('with `lend` 0 and `decoy` 0 the Carrier stays where it is: a move into Contact is weighed as before, and the answers set down against a Mech not at all',
     [d.options.find((o) => o.id === off.option)?.tags.includes('lend') ?? false, off.reason], [false, 'end_activation']);
   const rows = (tune) => M.SEAT.pondering(() => AI.weighed(d, view, undefined, tune));

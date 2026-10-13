@@ -52,7 +52,8 @@ const designate = d.options.find((o) => o.tags.includes('designate') && o.facts?
 const turn = designate?.then?.();
 const asked = (rows) => rows.filter((r) => r.priced && r.how === 'move');
 {
-  const SK = { ...AI.VETERAN_SKILLS, sighted: false };
+  // (And no Command spent only so none goes unspent, `noHold`, on since 2026-10-13: the Veteran OTTO watched.)
+  const SK = { ...AI.VETERAN_SKILLS, sighted: false, noHold: false };
   const rows = AI.weighed(turn, view, SK, AI.VETERAN_WEIGHTS);
   const choice = AI.makeTactician(SK, AI.VETERAN_WEIGHTS).choose(d, view, new AI.Rng('pick'));
   check('WITHOUT THE SKILL the Grids asked about a turn on have no shot, and no Command is given (as OTTO watched)',

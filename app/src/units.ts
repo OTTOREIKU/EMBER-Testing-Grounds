@@ -1482,6 +1482,21 @@ export function textConsumesCommand(zh: string | undefined, en: string | undefin
 export function consumesCommand(a: CardAction): boolean {
   return textConsumesCommand(a.description?.zh, a.description?.en);
 }
+// Whether a Mech could use a Command Token held back past the Command Phase this
+// round: a Mech's unissued tokens are reserved for Coordination and consuming
+// later in the round (4.15.2), and the End Phase sweeps them (3.7.2). So an
+// ability that spends one, or Command Coordination it could hand on; a squad
+// with neither loses a token it holds (the computer's `noHold`).
+export function keepsCommand(data: GameData, t: Token): boolean {
+  if (t.kind !== 'mech') return false;
+  if (canSpendCommand(data, t) || coordinationOnOpportunityEnd(data, t) > 0) return true;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    if ((card.actions ?? []).some((a) => coordinationFor(data, t, a) > 0)) return true;
+  }
+  return false;
+}
+
 // Whether anything this Mech is wearing can spend a Command Token, pilot trait
 // included. That is what decides whether holding one back is worth anything.
 export function canSpendCommand(data: GameData, t: Token): boolean {

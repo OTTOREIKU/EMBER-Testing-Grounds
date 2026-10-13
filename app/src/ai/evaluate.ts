@@ -99,6 +99,17 @@ export interface Weights {
   // The walk to a fight: a flat amount for each Grid still to go to its own
   // Range of the nearest enemy.
   contactStep: number;
+  // THE WALK IN FOR A DRONE THAT STRIKES ONLY WHEN COMMANDED (M22, 2026-10-13: `commandNext` values the Grid in reach a
+  // Command could strike from a round on, but from further off only `contactStep` pulled such a Drone in, 0.04 a
+  // Grid, and the Command went to a Drone that gained more now, so the Hyena Missile Types never came near): for each
+  // Grid it still has to go, `commandWalk` in place of `contactStep` where it is the more. At 0, `contactStep`.
+  // MEASURED 2026-10-13 at 0.3, against the night's games: the Ace 108 of 200 random squads against 107 (3 turned to
+  // a win, 4 from one) and 48.5 of 100 community squads against 47.5 (1, 2); the Veteran 78 against 80 (3, 1) and 40
+  // against 40; the Command-only Drones struck no more often. LEVEL: it STAYS 0.
+  commandWalk: number;
+  // A COMMAND SPENT SO NONE GOES UNSPENT (`noHold`): how much more staying may be worth than the best move for a
+  // Drone sent such a Command to move all the same.
+  holdSlack: number;
   // THE RANGE A UNIT FIGHTS AT (`blade`; OTTO, 2026-10-05: "melee squads still
   // hang back"): the walk to a fight ends at the reach of the unit's strongest
   // attacks, not its longest. Where its blades weigh `blade` times what its
@@ -382,6 +393,15 @@ export interface Weights {
   // against 24.0, forty games paired). ON AT 1 FOR THE ACE AND THE VETERAN (OTTO, 2026-10-12: "yes prove and push it
   // for the Ace and Veteran"); the Brawler (and the Recruit made of it) keeps 0 until measured on community squads.
   commandNext: number;
+  // A MECH WITH AN RWS PART, A ROUND ON (2026-10-13, OTTO: the community builds around the Ls197R Autocannon, "trying
+  // to have this unit shoot as many times in a round as possible"). An Ally may send such a Mech a Command in the
+  // Command Phase to fire it, once for each such Part a round, and the Command Phase begins the round, so nothing
+  // moves first: a Crisis that ends its turn out of Range fires nothing on a Command. The census of four RWS squads
+  // (eight games as the code shipped): of 98 Command Phase questions with such a Mech on offer, 28 had a shot for it,
+  // and 18 shots were fired on a Command in the eight games, where a Crisis's two Parts could fire up to ten a game.
+  // Where the plan leaves it, `rwsNext` of what each RWS Part could fire there on a Command (the engine's `later` with
+  // 'command'). At 0, nothing.
+  rwsNext: number;
   // BEHIND AS THE BOARD STANDS (`behindNow`): a squad that would lose the game
   // if it ended now gains nothing by holding back, and each of its units with
   // nothing to walk to for the Main Task counts its step toward contact
@@ -626,6 +646,8 @@ export const TACTICIAN: Weights = {
   zoneHeld: 0.5,
   holder: 0.75,
   contactStep: 0.04,
+  commandWalk: 0,
+  holdSlack: 0.25,
   blade: 0,
   charge: 1,
   access: 1,
@@ -675,6 +697,7 @@ export const TACTICIAN: Weights = {
   interceptOdds: 0,
   shootDown: 0,
   commandNext: 1,
+  rwsNext: 0,
   press: 10,
   pressLate: 0,
   erode: 0,

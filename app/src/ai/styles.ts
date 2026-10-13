@@ -13,7 +13,8 @@ import type { Weights } from './evaluate';
 import type { Policy } from './policy';
 import { makeTactician, type Skills } from './tactician';
 
-export const BRAWLER_SKILLS: Partial<Skills> = { hunter: true };
+// Not a Command spent so none goes unspent (`noHold`, 2026-10-13): measured on the Ace and the Veteran alone.
+export const BRAWLER_SKILLS: Partial<Skills> = { hunter: true, noHold: false };
 // Not the learned judge (`learned`): it was measured on the Ace alone, and the Brawler (and the Recruit made of it)
 // was measured without it. Nor a Command-only Drone's Command a round on (`commandNext`, 2026-10-12): level on random
 // squads, its margins a little worse, kept off until measured on community squads.

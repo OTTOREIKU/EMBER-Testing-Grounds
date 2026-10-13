@@ -31,7 +31,7 @@ import { actionRoute, shockWalk, type ActionRoute } from './turn';
 import { inContact } from './rules';
 import { PHASES, statusCount, TIMINGS, zonesOf } from './types';
 import type { CardAction, Facing, GameState, PartState, Side, Stance, Timing, Token } from './types';
-import { actionRange, extraActivationOf, freehandSlots, isGroundUnit, maneuverRange, maxLink, onHitRiders, stationaryBonus, structureOf, tokenCards, twoHandedRider, twoHandedUse } from './units';
+import { actionRange, extraActivationOf, freehandSlots, isGroundUnit, isRwsAction, keepsCommand, maneuverRange, maxLink, onHitRiders, stationaryBonus, structureOf, tokenCards, twoHandedRider, twoHandedUse } from './units';
 import { sightedIn, walkIn, type WalkMemo } from './owed';
 
 // ---------- the view ----------
@@ -100,6 +100,9 @@ export interface WeaponView {
   // A Firing Action printing Melee Firing (近战射击): it may still be fired while
   // Melee Locked, which bars every other Firing Action (4.3.5).
   meleeFiring?: boolean;
+  // An RWS Action (遥控武器, the Ls197R Autocannon): in the Command Phase an Ally may send this Mech a Command to
+  // perform it, once for each such Part a round (units.ts rwsActionsOf).
+  rws?: boolean;
   // A Melee Action's Shock Attack X as the unit stands (turn.ts shockWalk): how
   // far it may walk before the attack. Absent for none.
   shock?: number;
@@ -167,6 +170,9 @@ export interface UnitView {
   move: number;
   // This squad's Commander on a VIP mission.
   commander: boolean;
+  // A Mech that could use a Command Token held back past the Command Phase: an ability that spends one, or Command
+  // Coordination it could hand on (units.ts keepsCommand). A squad with none loses a token it holds.
+  keepsCommand: boolean;
   // The slots holding a Charge Token that is face up.
   charged: string[];
   // Low Value: it neither holds a Tactical Zone nor keeps the other squad
@@ -435,6 +441,7 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
         ...(a.type === 'Tactic' && (a.range ?? 0) > 0 && OWN_ROUTES.has(actionRoute(data, t, a)) ? { own: true } : {}),
         ...(a.type === 'Tactic' && extraActivationOf(a) ? { grants: true } : {}),
         ...(a.type === 'Firing' && isMeleeFiring(a) ? { meleeFiring: true } : {}),
+        ...(t.kind === 'mech' && isRwsAction(a) ? { rws: true } : {}),
         ...shockOf(state, t, a),
         usable: !part || part.state !== 'destroyed' || part.repaired,
       });
@@ -474,6 +481,7 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
     maneuver: t.kind === 'mech' ? maneuverRange(data, t) : 0,
     move: t.kind === 'projectile' ? 0 : maneuverRange(data, t),
     commander,
+    keepsCommand: keepsCommand(data, t),
     charged: [...(t.charge ?? [])],
     lowValue,
     done: turnDone(state, t),
