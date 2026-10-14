@@ -284,16 +284,17 @@ M.L.setLocalSeat('s1');
   check('the attempt made and its Tokens spent, nothing more is owed', [q.kind, s.script.intercepts, T.interceptAgain(data, s, { uid: U.CIWS.uid, actionId: '160_A', targetUid: missile.uid }).why], ['intercept.attempt', [], 'spent']);
   const after = owed(data, s, 's1', newMind());
   const blast = after.options.find((o) => o.tags.includes('detonate'));
+  // (Not its activation ended instead: a Missile's Delayed Action is not put off, 3.6.1 and 4.7.5, 2026-10-14.)
   check('THE MISSILE THAT CAME THROUGH is asked again, its Action already paid: the Explosion on the unit it flew at, with nothing more to send before it',
-    [after.kind, ids(after), blast.run.args.before, blast.run.args.waits, blast.run.args.mode, blast.facts.targetUid], ['activation.act', [`detonate:${blast.id.split(':')[1]}:${U['Wild Cat'].uid}`, 'end'], [], undefined, 'explosion', U['Wild Cat'].uid]);
+    [after.kind, ids(after), blast.run.args.before, blast.run.args.waits, blast.run.args.mode, blast.facts.targetUid], ['activation.act', [`detonate:${blast.id.split(':')[1]}:${U['Wild Cat'].uid}`], [], undefined, 'explosion', U['Wild Cat'].uid]);
   check('an asker that wants the attacks alone is given it', ids(owed(data, s, 's1', newMind(), { only: ['attack'] })), [blast.id]);
   // The unit it flew at has left that Grid.
   const left = clone(s);
   const cat = left.tokens.find((t) => t.uid === U['Wild Cat'].uid);
   cat.col = 0; cat.row = 0;
   const lost = owed(data, left, 's1', newMind());
-  check('with the unit it flew at gone from that Grid it has nothing left to take: it is destroyed, or its activation ended',
-    [ids(lost), lost.options[0].commands], [[`detonate:${blast.id.split(':')[1]}:none`, 'end'], [{ kind: 'despawn', seat: 's1', uid: missile.uid, targetUid: missile.uid }]]);
+  check('with the unit it flew at gone from that Grid it has nothing left to take: it is destroyed, its activation not to be ended with it on the board',
+    [ids(lost), lost.options[0].commands], [[`detonate:${blast.id.split(':')[1]}:none`], [{ kind: 'despawn', seat: 's1', uid: missile.uid, targetUid: missile.uid }]]);
   // A Missile destroyed on the way asks nothing.
   const shotDown = clone(s);
   shotDown.tokens = shotDown.tokens.filter((t) => t.uid !== missile.uid);
