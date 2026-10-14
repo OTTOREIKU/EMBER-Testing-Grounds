@@ -61,6 +61,16 @@ check('and its Automatic Phase there offers it nothing to launch', (walk?.later?
   check('WITH IT a Grid in reach carries what the Command a round on could launch, and the plan walks there',
     [rows.filter(near).some((r) => r.next > 0), best?.how, best ? near(best) : false], [true, 'move', true]);
 }
+{
+  // IN THE LAST ROUND there is no round on (2026-10-14, a Reaper Drone walked in round 5 for a Missile it could never
+  // launch): the same Grids carry nothing, and the Command's turn here is the one that counts.
+  const round = t.state.round.n;
+  t.state.round.n = view.roundLimit;
+  const last = M.SEAT.viewOf(data, t.state, 's1');
+  const rows = AI.weighed(t.drivers.s1.pending()?.options.find((o) => o.tags.includes('designate') && o.facts?.uid === U.Hyena.uid)?.then?.(), last, {}, { commandNext: 1 });
+  check('IN THE LAST ROUND no Grid in reach is worth a Command a round on: there is none', [last.round, rows.length > 0, rows.filter(near).every((r) => r.next === 0)], [view.roundLimit, true, true]);
+  t.state.round.n = round;
+}
 check('as it ships (2026-10-12): on for the Ace and the Veteran, off for the Brawler and the Recruit made of it',
   [AI.TACTICIAN.commandNext, AI.VETERAN_WEIGHTS.commandNext ?? AI.TACTICIAN.commandNext, AI.BRAWLER_WEIGHTS.commandNext], [1, 1, 0]);
 t.close();

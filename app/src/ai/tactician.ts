@@ -2790,8 +2790,10 @@ function nextTurnAsked(o: Option, at: Grid, c: Ctx): number {
     const sent = parts ? deedAt(o.later(DEEDS, 'command')?.options ?? [], c, false) : null;
     return soon + (sent ? c.w.rwsNext * c.w.future * parts * sent.value : 0);
   }
-  // A DRONE THAT ACTS ONLY WHEN COMMANDED (`commandNext`): what a Command a round on could strike from there.
-  if (c.w.commandNext <= 0 || c.me.kind !== 'drone'
+  // A DRONE THAT ACTS ONLY WHEN COMMANDED (`commandNext`): what a Command a round on could strike from there. In the
+  // last round there is no round on (2026-10-14: a Reaper Drone walked in round 5 for a Missile "next 2.35", and the
+  // Command went to it, not to a Drone that could launch).
+  if (c.w.commandNext <= 0 || c.me.kind !== 'drone' || lastRoundOf(c)
     || !c.me.weapons.some((x) => ready(x) && x.mode === 'command' && (x.type === 'Firing' || x.type === 'Melee' || x.type === 'Projectile'))) return soon;
   const commanded = deedAt(o.later(DEEDS, 'command')?.options ?? [], c, false);
   return Math.max(soon, commanded ? c.w.commandNext * c.w.future * commanded.value : 0);
