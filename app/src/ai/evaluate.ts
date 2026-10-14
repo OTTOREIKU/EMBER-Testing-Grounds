@@ -202,23 +202,36 @@ export interface Weights {
   // where the unit stands, at this share. `coverMates`: an interceptor's Grid is worth what it would stop of the
   // Projectile fire the squadmates in its Range stand to take this round. `coverLaunch`: and what the enemy's launchers
   // in its Range stand to do to the squad, since a launch owes an Interception to each interceptor in Range of the
-  // launcher's Grid too, whatever it is launched at (units.ts interceptsOwed).
+  // launcher's Grid too, whatever it is launched at (units.ts interceptsOwed). MEASURED 2026-10-14 (the interceptor
+  // variants against the missile squads, 200 a lever): one try stops about 15% (coverStop 0.15); coverMates up about
+  // eight wins twice (83 against 74, 81.5 against 73), level against the community squads: ON for the Ace and the
+  // Veteran (closer to how people play, OTTO's rule); coverFire costs 56 points a game (p 0.001): off; coverLaunch
+  // level (78 against 73): off.
   // MISSILES ALREADY ON THE WAY (`overkill`, M24, 2026-10-13): a launch at an enemy counts as often as that enemy
   // would still be standing once the squad's Projectiles already on the table have struck it, to this power (each
   // counted at its own best attack as the board stands), so a squad does not empty its launchers into what the
-  // Missiles in the air will destroy anyway, and keeps them for the units still to come.
+  // Missiles in the air will destroy anyway, and keeps them for the units still to come. MEASURED 2026-10-14 (the
+  // missile squads against the community squads, 200 a lever): 152 against 146, the Missile style 163 against 159.5,
+  // the community squads level (109 against 108). It spreads the targets; the launches stay as many (19.3 a game to
+  // 19.2). OFF: with flightOdds and coverMates the missile squads lost ground (115 against 123, points -33 a game,
+  // p 0.03) where overkill, flightOdds and icptBurn together were level (124 against 123); read again on fresh seeds.
   overkill: number;
   // A MISSILE'S FLIGHT THROUGH INTERCEPTION (M24, 2026-10-14). `flightOdds`: a Missile's strike on a target counts at
   // the chance it comes through the Interception attempts its flight draws (each enemy interceptor in Range of where
   // it flies from and where it flies to, trying while it has Tokens), to this power, so it takes a target nobody guards
   // where one is in reach. `icptBurn`: the Interception Tokens a flight would cost the enemy count, while the squad
-  // has more Missiles to come, at this share of what each Token would have stopped of one of them.
+  // has more Missiles to come, at this share of what each Token would have stopped of one of them. MEASURED 2026-10-14
+  // (the missile squads against the interceptor variants, 200 a lever): flightOdds 125 against 123, the Missiles going
+  // round the interceptors (a strike on a guarded unit 3.37 a game to 2.96, on an unguarded one 2.52 to 3.14); icptBurn
+  // 124 and halves that. Both OFF for now: see `overkill` for the set that lost ground.
   flightOdds: number;
   icptBurn: number;
   // WHAT A PART STILL DOES (`partUse`, 2026-10-14): where the attacker says which Part a hit lands on, a Part counts
   // beyond its step toward the Mech's Integrity Loss what it still does: its ready weapons' dice (a red die two yellow),
   // a launcher with Projectiles left as three, each Interception Token on it one; its share of the Mech's, times the
   // Mech's worth, times the chance it is destroyed, at this weight. A Part with nothing left to do adds nothing.
+  // MEASURED 2026-10-14: the community squads 100.5 against 104.5 alone, and with overkill, flightOdds and coverMates
+  // the set lost ground (95.5 against 104.5; the missile squads 110 against 123): off.
   partUse: number;
   coverFire: number;
   coverMates: number;
@@ -723,9 +736,9 @@ export const TACTICIAN: Weights = {
   icptBurn: 0,
   partUse: 0,
   coverFire: 0,
-  coverMates: 0,
+  coverMates: 1,
   coverLaunch: 0,
-  coverStop: 0.3,
+  coverStop: 0.15,
   better: 0.01,
   entry: 1,
   card: 0.3,
