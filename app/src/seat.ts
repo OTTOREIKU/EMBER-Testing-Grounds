@@ -740,6 +740,10 @@ export interface Option {
   // (FAQ M5), each try at the window's own odds of destroying it. Null where
   // no reading can be made. Added, as `chance` is, by whoever puts the question.
   survive?: () => number | null;
+  // And what those attempts would cost the interceptors' squad: the Interception Tokens it is likely to spend on this
+  // Projectile (each try one Token, made while the Projectile still stands), and the chance one try destroys it, on
+  // average over the interceptors. Added beside `survive`.
+  drain?: () => { spent: number; stop: number } | null;
   // An answer that splits an attack's dice between targets (a Multi-Target's
   // split, FAQ B7): each target's share and what it is likely to do there,
   // the unit named being the one the dice land on. Added, as `chance` is, by

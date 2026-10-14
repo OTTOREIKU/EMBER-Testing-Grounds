@@ -271,21 +271,36 @@ export class Driver {
       // through it. Each interceptor must try again while the Projectile
       // stands and it has Interception Tokens left (FAQ M5; the seam says how
       // often, `interceptTries`), each try at the window's own odds of
-      // destroying it, on the table the launch leaves.
-      const queued = o.commands?.find((x) => x.kind === 'queueIntercepts') as { items: { uid: number; actionId: string; targetUid: number }[] } | undefined;
-      if (queued?.items.length && !o.survive) {
-        const before = o.commands!.filter((x) => x.kind !== 'queueIntercepts');
+      // destroying it, on the table the launch leaves. A Missile's flight at
+      // its target owes the same, its commands the attack's `before` (A2).
+      // And the Tokens those tries would cost the interceptors (`drain`).
+      const flown = o.run?.routine === 'attack' ? (o.run.args as { before?: Command[] }).before : undefined;
+      const source = o.commands?.some((x) => x.kind === 'queueIntercepts') ? o.commands : flown?.some((x) => x.kind === 'queueIntercepts') ? flown : undefined;
+      const queued = source?.find((x) => x.kind === 'queueIntercepts') as { items: { uid: number; actionId: string; targetUid: number }[] } | undefined;
+      if (source && queued?.items.length && !o.survive) {
+        const before = source.filter((x) => x.kind !== 'queueIntercepts');
         const tries = (o.facts?.interceptTries as number[] | undefined) ?? [];
-        let known: number | null | undefined;
-        o.survive = () => {
+        let known: { through: number; spent: number; stop: number } | undefined;
+        const read = (): { through: number; spent: number; stop: number } => {
           if (known !== undefined) return known;
           let through = 1;
+          let spent = 0;
+          let stops = 0;
+          let n = 0;
           queued.items.forEach((it, i) => {
             const f = this.odds.forecast(state, { uid: it.uid, actionId: it.actionId, targetUid: it.targetUid, mode: 'intercept', before });
-            if (f) through *= (1 - f.kill) ** Math.max(1, tries[i] ?? 1);
+            if (!f) return;
+            const t = Math.max(1, tries[i] ?? 1);
+            let standing = through;
+            for (let k = 0; k < t; k++) { spent += standing; standing *= 1 - f.kill; }
+            through *= (1 - f.kill) ** t;
+            stops += f.kill;
+            n += 1;
           });
-          return (known = through);
+          return (known = { through, spent, stop: n ? stops / n : 0 });
         };
+        o.survive = () => read().through;
+        o.drain = () => { const r = read(); return { spent: r.spent, stop: r.stop }; };
       }
       // An answer that opens an Electronic Counter-roll: the chance it is won.
       const opens = o.commands?.length ? o.commands[o.commands.length - 1] : undefined;

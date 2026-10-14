@@ -208,6 +208,13 @@ export interface Weights {
   // counted at its own best attack as the board stands), so a squad does not empty its launchers into what the
   // Missiles in the air will destroy anyway, and keeps them for the units still to come.
   overkill: number;
+  // A MISSILE'S FLIGHT THROUGH INTERCEPTION (M24, 2026-10-14). `flightOdds`: a Missile's strike on a target counts at
+  // the chance it comes through the Interception attempts its flight draws (each enemy interceptor in Range of where
+  // it flies from and where it flies to, trying while it has Tokens), to this power, so it takes a target nobody guards
+  // where one is in reach. `icptBurn`: the Interception Tokens a flight would cost the enemy count, while the squad
+  // has more Missiles to come, at this share of what each Token would have stopped of one of them.
+  flightOdds: number;
+  icptBurn: number;
   coverFire: number;
   coverMates: number;
   coverLaunch: number;
@@ -707,6 +714,8 @@ export const TACTICIAN: Weights = {
   bait: 0,
   spentClose: 0,
   overkill: 0,
+  flightOdds: 0,
+  icptBurn: 0,
   coverFire: 0,
   coverMates: 0,
   coverLaunch: 0,

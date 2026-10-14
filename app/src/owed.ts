@@ -1877,6 +1877,13 @@ function detonationOptions(data: GameData, state: GameState, proj: Token, row: t
     if (explosionCamo(data, proj, a, target)) { held = true; continue; }
     const flight = flown ? null : turn.detonationFlight(data, state, proj, a, target);
     const drawn = flight?.owed.length ?? 0;
+    // How often each interceptor may try (FAQ M5), in the order of the queue, as for a launch: for a seat that weighs
+    // the flight by its odds.
+    const tries = (flight?.owed ?? []).map((it) => {
+      const by = state.tokens.find((x) => x.uid === it.uid);
+      const payer = by ? interceptPayer(data, state.tokens, by, it.actionId) : null;
+      return Math.max(1, payer?.intercept?.[it.actionId] ?? 1);
+    });
     const jump = flight || flown ? null : turn.detonationJump(proj, a, target);
     const before: Command[] = [
       ...paid, ...(flight ? [flight.fly] : []),
@@ -1890,7 +1897,7 @@ function detonationOptions(data: GameData, state: GameState, proj: Token, row: t
         : `${proj.label}: ${name} on ${target.label}`,
       tags: ['detonate', 'attack', 'explosion', ...(drawn ? ['intercepted'] : [])],
       run: { routine: 'attack', args: { uid: proj.uid, actionId: a.id, targetUid: target.uid, mode: 'explosion', before, ...(drawn ? { waits: true } : {}) } },
-      facts: { uid: proj.uid, targetUid: target.uid, actionId: a.id, ...(drawn ? { intercepts: drawn } : {}) },
+      facts: { uid: proj.uid, targetUid: target.uid, actionId: a.id, ...(drawn ? { intercepts: drawn, interceptTries: tries } : {}) },
     });
   }
   // (A Missile whose only target in Range is in Optical Camouflage has no Scan to make here, and is not kept on the

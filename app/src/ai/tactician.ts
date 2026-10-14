@@ -678,7 +678,33 @@ function shotValue(o: Option, c: Ctx): { value: number; f: Forecast | null; targ
   // An enemy Projectile destroyed strikes nobody (`shootDown`).
   const downed = f && target && c.w.shootDown > 0 && target.kind === 'projectile' && target.side !== c.view.seat ? f.kill * c.w.shootDown * strikeOf(target, c) : 0;
   const value = f && target ? gainOf(f, target, c.view, c.w, threatOf(target, c)) + f.kill * holding(target, c) + loose + denied + backed + jammed + tested + downed : UNKNOWN_SHOT;
-  return { value: value - spent, f, target };
+  return { value: (f && target ? flightOf(o, value, c) : value) - spent, f, target };
+}
+
+// A MISSILE'S FLIGHT THROUGH INTERCEPTION (`flightOdds`, `icptBurn`, M24, 2026-10-14). OTTO, watching the missile squads
+// against RDL_Melee2: "the missiles kept attacking the same unit and the Melee2 squad was able to intercept most of them
+// but used up all its tokens. Then on the next turn the missile chose to attack a unit that was in range of another enemy
+// with interception however if it would have attacked a nearby unit the enemy interception would have been out of range
+// ... should the attacking missiles try to calculate that and see if it's worth burning the interception or if it would
+// rather go for a direct hit". A Missile flies into its target's Grid, and the flight owes an Interception to each enemy
+// interceptor in Range of either end (A2); the driver reads each flight's odds as a launch's (`survive`, `drain`). The
+// strike counts as often as it comes through, to the power `flightOdds`; and the Tokens the flight would cost the enemy
+// count, as many of them as the squad has Missiles still to come (its others on the table, and three at most from each
+// launcher with Ammo), each at what it would have stopped of one like this (its chance to stop one, times this strike
+// as if unguarded), at `icptBurn`.
+function flightOf(o: Option, value: number, c: Ctx): number {
+  if (!o.survive || !o.tags.includes('detonate') || (c.w.flightOdds <= 0 && c.w.icptBurn <= 0)) return value;
+  const through = c.w.flightOdds > 0 ? o.survive() : null;
+  const kept = through === null ? value : value * through ** c.w.flightOdds;
+  if (c.w.icptBurn <= 0) return kept;
+  let more = 0;
+  for (const u of c.view.units) {
+    if (u.side !== c.view.seat || !u.alive || !u.deployed) continue;
+    if (u.kind === 'projectile') more += u.uid === o.facts?.uid ? 0 : 1;
+    else if (u.weapons.some((x) => ready(x) && x.type === 'Projectile')) more += Math.min(3, shotsLeft(u));
+  }
+  const drain = more > 0 ? o.drain?.() ?? null : null;
+  return drain ? kept + c.w.icptBurn * Math.min(drain.spent, more) * drain.stop * value : kept;
 }
 
 // WHAT AN ENEMY IS WORTH FOR WHERE IT STANDS. In a zone the Main Task scores it
