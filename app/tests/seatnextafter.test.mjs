@@ -31,9 +31,10 @@ const scenario = { id: 'probe-48056', map: 'steelworks', mission: 'blackbox-asse
 // (The game as it was dealt and played, `press` 0, `nextAfter` 0 and no learned judge (`learned` 0): all three
 // adopted since, at 10, 1 and 10; the first changes how the squad behind deploys, the third which shot is taken, and
 // the second is the thing held here. And `commandNext` 0, adopted at 1 on 2026-10-12: the game's Drones are
-// Commanded otherwise before this Opportunity comes.)
-const ace = AI.makeTactician({}, { press: 0, nextAfter: 0, learned: 0, commandNext: 0 });
-const after = AI.makeTactician({}, { nextAfter: 1, press: 0, learned: 0, commandNext: 0 });
+// Commanded otherwise before this Opportunity comes. And `coverMates` 0, adopted at 1 on 2026-10-14: the RDL squad's
+// interceptors stand otherwise before it comes.)
+const ace = AI.makeTactician({}, { press: 0, nextAfter: 0, learned: 0, commandNext: 0, coverMates: 0 });
+const after = AI.makeTactician({}, { nextAfter: 1, press: 0, learned: 0, commandNext: 0, coverMates: 0 });
 
 let seen = null;
 let t = null;

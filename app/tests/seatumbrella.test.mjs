@@ -63,9 +63,9 @@ check('THE STAGE: the Guard\'s Opportunity is open; the view gives its Intercept
   ['opp.act', true, { reach: 3, left: 3, slots: { backpack: 3 } }, null, null, 4]);
 
 const best = (weights) => AI.weighed(d, view, {}, weights)[0];
-const off = best({});
+const off = best({ coverMates: 0 });
 const on = best({ coverMates: 1 });
-check('AS IT SHIPS (`coverMates` 0) the Guard\'s best plan leaves Dune out of its Range', apart(off.at, V.Dune.grid) > 3, true);
+check('WITHOUT `coverMates` (0) the Guard\'s best plan leaves Dune out of its Range', apart(off.at, V.Dune.grid) > 3, true);
 check('WITH `coverMates` 1 its best plan walks it to where its Interception covers Dune', [on.how, apart(on.at, V.Dune.grid) <= 3], ['move', true]);
 
 // `coverFire`: Dune's own question (its Opportunity open on a Melee dial, the Guard's turn behind it), the Guard three
@@ -103,7 +103,7 @@ const rose = [...on3].filter(([k, x]) => x.r.shape > (bare3.get(k)?.r.shape ?? I
 const still = [...on3].filter(([k, x]) => x.gap > 3 && x.r.shape !== bare3.get(k)?.r.shape);
 check('WITH `coverLaunch` 1 a Grid in Intercept Range of the Pod is worth more to the Guard, and a Grid out of it no more',
   [d3?.unit === U.Guard.uid, rose.length > 0 && rose.every(([, x]) => x.gap <= 3), still.length], [true, true, 0]);
-check('as it ships (2026-10-13): 0 until measured', [AI.TACTICIAN.coverFire, AI.TACTICIAN.coverMates, AI.TACTICIAN.coverLaunch, AI.TACTICIAN.coverStop], [0, 0, 0, 0.3]);
+check('AS IT SHIPS (2026-10-14): coverMates on at the measured stop chance, coverFire and coverLaunch off', [AI.TACTICIAN.coverFire, AI.TACTICIAN.coverMates, AI.TACTICIAN.coverLaunch, AI.TACTICIAN.coverStop], [0, 1, 0, 0.15]);
 t.close();
 
 console.log(`\n${pass} passed, ${fail} failed`);
