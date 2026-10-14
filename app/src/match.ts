@@ -2512,7 +2512,7 @@ function hudCtx(): HudCtx {
     refresh: () => render(),
     // A game against the computer: nothing to record, no second player to
     // agree an Undo with, and the table is this page's own to start again.
-    ...(solo ? { solo: { again: () => void soloRestart(false), leave: () => { location.href = '../'; }, watching: solo.spec.watch, thinking: () => solo?.table.thinking() ?? [] } } : {}),
+    ...(solo ? { solo: { again: () => void soloRestart(false), leave: () => { location.href = '../'; }, watching: solo.spec.watch, thinking: thinkingShown } } : {}),
   };
 }
 
@@ -3036,6 +3036,16 @@ function replayBarHtml(): string {
     ? `<button class="mc-speed" id="mc-replayfwd" title="The move after">Forward</button><button class="mc-speed on" id="mc-replaylive" title="The table as it stands now">Live</button>`
     : '';
   return `<span class="mc-speeds" role="group" aria-label="Look back at the moves">${back}${more}</span>`;
+}
+// The Thinking tab's lines: while looking back, those of the moves up to the one shown and no later (OTTO, 2026-10-14:
+// "it's confusing because their decisions in thinking are still visible ... remove the thinking line from showing if I
+// undo the action and then reapply if i hit forward again").
+function thinkingShown(): ReturnType<SoloTable['thinking']> {
+  const t = solo?.table;
+  if (!t) return [];
+  const lines = t.thinking();
+  const shown = replay ? t.replay[replay.at] : undefined;
+  return shown ? lines.filter((x) => x.n <= shown.n) : lines;
 }
 function lookBack(step: -1 | 1 | 'live'): void {
   const t = solo?.table;
