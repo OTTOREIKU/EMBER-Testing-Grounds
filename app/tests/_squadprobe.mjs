@@ -162,7 +162,15 @@ function lossStep(t, r) {
   // (And each side's Projectiles: every one that came onto the table, and every one that struck: its own attack, or
   // its blast. One that never struck was Intercepted, found nothing in reach, or put down no blast: a Smoke Grenade,
   // a Mine still waiting, a Beacon.)
-  for (const x of t.state.tokens) if (x.kind === 'projectile' && !lossGame.projSeen.has(x.uid)) lossGame.projSeen.set(x.uid, x.side);
+  for (const x of t.state.tokens) {
+    if (x.kind !== 'projectile' || lossGame.projSeen.has(x.uid)) continue;
+    lossGame.projSeen.set(x.uid, x.side);
+    // (THE AMMO CENSUS, 2026-10-14, for OTTO's "fire off 4 to see how they do and save my ammo for the mechs that are
+    // in the back": each side's Projectiles put down, by round.)
+    const r = lossGame.ammo[x.side].r;
+    r[t.state.round.n] = (r[t.state.round.n] ?? 0) + 1;
+  }
+  if (lossGame.ammo.s1.start === undefined) for (const side of ['s1', 's2']) lossGame.ammo[side].start = ammoOf(t.state, side).left;
   if (actor?.kind === 'projectile' && (tags.includes('attack') || tags.includes('detonate') || r?.decision?.kind === 'blast.resolve')) lossGame.projHit.add(actor.uid);
   // (INTERCEPTOR COVER, 2026-10-13: each Projectile's strike on a unit, by where the struck side's interceptors with
   // Interception Tokens left stood: one within its Intercept Range of the unit (`in`), the nearest 1 or 2 Grids
@@ -174,6 +182,9 @@ function lossStep(t, r) {
     for (const x of interceptors(t.state, target.side)) short = Math.min(short, M.R.rangeBetween(x.t, target).range - x.reach);
     const k = short === Infinity ? 'none' : short <= 0 ? 'in' : short === 1 ? 'short1' : short === 2 ? 'short2' : 'far';
     lossGame.cover[target.side][k] = (lossGame.cover[target.side][k] ?? 0) + 1;
+    // (The ammo census: each strike on a Drone or a Mech, by the side that launched it.)
+    const on = target.kind === 'drone' ? 'onDrone' : 'onMech';
+    lossGame.ammo[actor.side][on] = (lossGame.ammo[actor.side][on] ?? 0) + 1;
     // (COVERTRACE=1: each strike with an interceptor in Range, whole: the Projectile, the unit, each interceptor in
     // Range with its Tokens, the Interceptions made at this Projectile, and the Smoke on the table.)
     if (process.env.COVERTRACE && k === 'in') {
@@ -200,11 +211,25 @@ function lossStep(t, r) {
   lossGame.phase = phase;
   if (!r) {
     for (const side of ['s1', 's2']) {
+      Object.assign(lossGame.ammo[side], ammoOf(t.state, side));
       lossGame.cover[side].left = interceptors(t.state, side).reduce((n, x) => n + x.left, 0);
       const mine = [...lossGame.icpt].filter(([, v]) => v.side === side);
       if (mine.length) Object.assign(lossGame.cover[side], { tries: mine.reduce((n, [, v]) => n + v.n, 0), aimed: mine.length, stopped: mine.filter(([uid]) => !lossGame.projHit.has(uid)).length });
     }
   }
+}
+// The Ammo Tokens a side's units hold on their Projectile Actions: `left` on the units still standing, `lost` on those
+// destroyed with them unspent.
+function ammoOf(s, side) {
+  const out = { left: 0, lost: 0 };
+  for (const x of s.tokens) {
+    if (x.side !== side || x.kind === 'projectile') continue;
+    const gone = x.kind === 'mech' ? x.partStates.torso === 'destroyed' : x.partStates.main === 'destroyed';
+    for (const { card } of M.U.ownCards(data, x)) {
+      for (const a of card.actions ?? []) if (a.type === 'Projectile' && typeof x.ammo?.[a.id] === 'number') out[gone ? 'lost' : 'left'] += x.ammo[a.id];
+    }
+  }
+  return out;
 }
 function interceptors(s, side) {
   const out = [];
@@ -993,7 +1018,7 @@ for (let seed = from; seed <= to; seed++) {
     policyNow = linesWatch(policyNow);
     if (foeNow) foeNow = linesWatch(foeNow);
   }
-  if (process.env.LOSSLOG) lossGame = { s1: {}, s2: {}, standing: null, by: null, pts: new Map(), projSeen: new Map(), projHit: new Set(), cover: { s1: {}, s2: {} }, icpt: new Map(), linger: {}, phase: null };
+  if (process.env.LOSSLOG) lossGame = { s1: {}, s2: {}, standing: null, by: null, pts: new Map(), projSeen: new Map(), projHit: new Set(), cover: { s1: {}, s2: {} }, icpt: new Map(), linger: {}, phase: null, ammo: { s1: { r: {} }, s2: { r: {} } } };
   if (process.env.BLINDSPOTS) {
     blindGame = { seed, subjectSeat, s1: blindFresh(), s2: blindFresh() };
     policyNow = blindWatch(policyNow);
@@ -1442,6 +1467,7 @@ for (let seed = from; seed <= to; seed++) {
     console.log(`  projectiles struck/launched s1 ${proj('s1')} s2 ${proj('s2')}`);
     console.log(`  cover s1 ${JSON.stringify(lossGame.cover.s1)} s2 ${JSON.stringify(lossGame.cover.s2)}`);
     console.log(`  linger s1 ${lossGame.linger.s1 ?? 0} s2 ${lossGame.linger.s2 ?? 0}`);
+    console.log(`  ammo s1 ${JSON.stringify(lossGame.ammo.s1)} s2 ${JSON.stringify(lossGame.ammo.s2)}`);
   }
   if (dodgeGame) console.log(`  dodges s1 ${dodgeGame.s1} s2 ${dodgeGame.s2}`);
   if (dshotGame) console.log(`  droneshots s1 ${dshotGame.s1.shots.size}/${dshotGame.s1.acts.size} s2 ${dshotGame.s2.shots.size}/${dshotGame.s2.acts.size}`);
