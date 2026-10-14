@@ -58,20 +58,29 @@ check('THE STAGE: the first Mech has launched at the Raven (its Missiles on the 
   [mine(s).length > 0, d?.kind, d?.unit === second, d?.options.some((o) => o.tags[0] === 'launch')], [true, 'opp.act', true, true]);
 
 const launching = (r) => String(r.does).startsWith('a Projectile');
-const bestLaunch = (skills, tune) => AI.weighed(d, view, skills, tune).filter(launching).reduce((a, b) => (!a || b.now > a.now ? b : a), null);
-{
-  const off = bestLaunch({}, {});
-  const on = bestLaunch({}, { overkill: 1 });
-  check('AS IT SHIPS (`overkill` 0) a launch at the Raven is worth as much as though nothing were on the way',
-    [!!off, off ? off.now > 0 : null], [true, true]);
-  check('WITH `overkill` 1 it is worth less: the squadmate\'s Missiles on the table will likely have destroyed the Raven',
-    [!!on, on && off ? on.now < off.now : null], [true, true]);
-}
+const bestLaunch = (skills, tune, dd = d, vv = view) => AI.weighed(dd, vv, skills, tune).filter(launching).reduce((a, b) => (!a || b.now > a.now ? b : a), null);
+const off = bestLaunch({}, {});
+const on = bestLaunch({}, { overkill: 1 });
+check('AS IT SHIPS (`overkill` 0) a launch at the Raven is worth as much as though nothing were on the way',
+  [!!off, off ? off.now > 0 : null], [true, true]);
+check('WITH `overkill` 1 it is worth less: the squadmate\'s Missiles on the table will likely have destroyed the Raven',
+  [!!on, on && off ? on.now < off.now : null], [true, true]);
 {
   // The Missile style's flat amount for each launch counts only what the launch could still strike.
   const style = bestLaunch(AI.MISSILE_SKILLS, AI.MISSILE_WEIGHTS);
   const styled = bestLaunch(AI.MISSILE_SKILLS, { ...AI.MISSILE_WEIGHTS, overkill: 1 });
   check('and the Missile style\'s barrage counts only what is still standing', [!!style, !!styled && styled.now < style.now], [true, true]);
+}
+{
+  // REACH (OTTO: "This mostly applies to missiles that might not be able to reach any other targets should those
+  // enemies fall"). The Rifle brought within the strike of Sleet's Landing Points and out of the Razors' on the table:
+  // with `overkill` 1 Sleet's Missile goes to the Rifle, and the launch keeps its worth.
+  at(U.Rifle, 6, 7, 0);
+  const d2 = t.drivers.s1.pending();
+  const v2 = M.SEAT.viewOf(data, s, 's1');
+  const near = bestLaunch({}, { overkill: 1 }, d2, v2);
+  check('A LAUNCH WITH ANOTHER ENEMY IN REACH keeps its worth: its Missile goes to the Rifle, which nothing in the air can reach',
+    [d2?.unit === second, !!near && String(near.does).includes('Rifle'), !!near && near.now > 10 * on.now], [true, true, true]);
 }
 check('as it ships (2026-10-13): 0 until measured', AI.TACTICIAN.overkill, 0);
 t.close();

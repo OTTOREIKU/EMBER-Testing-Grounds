@@ -1048,20 +1048,26 @@ function landed(o: Option, c: Ctx): { value: number; why: string; soon: boolean;
 // MISSILES ALREADY ON THE WAY (`overkill`, M24, 2026-10-13). OTTO, watching the GOF missile squad empty every launcher
 // at two Drones: "If 1 missile each hits and kills the enemy drones then there will be 5 missiles that have no target
 // ... If I was playing I would maybe fire off 4 to see how they do and save my ammo for the mechs that are in the back";
-// and "it would be good to have the computer also consider the missiles fired by its squad mates". Each of this
-// squad's Projectiles on the table, whoever launched it, strikes when its turn comes the target its best attack names
-// as the board stands: the chance each enemy is still standing once they all have. Asked once a table.
+// "it would be good to have the computer also consider the missiles fired by its squad mates"; and "This mostly applies
+// to missiles that might not be able to reach any other targets should those enemies fall ... so a squad as a whole
+// can designate targets and make sure they aren't wasting any missiles". THE SQUAD'S TARGETS, HANDED OUT IN TURN: each
+// of this squad's Projectiles on the table, whoever launched it, in the order they were put down, takes the target its
+// attacks are worth most against once those before it have had their share (its value on each at the chance that
+// target still stands), and that target's chance falls by its chance to destroy it. A Missile with another enemy in
+// its reach goes to that one when the first is taken care of, as it would fly at whatever still stands; one with
+// nothing else in reach is the one wasted. The chance each enemy still stands once they all have. Asked once a table.
 function pendingOf(c: Ctx): Map<number, number> {
   if (c.pending.map) return c.pending.map;
   const alive = new Map<number, number>();
   const here = c.d.here?.();
   if (here) {
-    for (const p of c.view.units) {
-      if (p.side !== c.view.seat || p.kind !== 'projectile' || !p.alive || !p.deployed) continue;
-      const best = volley(here.turnOf(p.uid, ['attack'])?.options ?? [], { ...c, me: p }, false);
+    const chance = (uid: unknown): number => (typeof uid === 'number' ? alive.get(uid) ?? 1 : 1);
+    const mine = c.view.units.filter((p) => p.side === c.view.seat && p.kind === 'projectile' && p.alive && p.deployed).sort((a, b) => a.uid - b.uid);
+    for (const p of mine) {
+      const best = volley(here.turnOf(p.uid, ['attack'])?.options ?? [], { ...c, me: p }, false, false, chance);
       const f = best?.option.chance?.() ?? null;
       const target = best?.option.facts?.targetUid;
-      if (f && typeof target === 'number') alive.set(target, (alive.get(target) ?? 1) * (1 - f.kill));
+      if (f && typeof target === 'number') alive.set(target, chance(target) * (1 - f.kill));
     }
   }
   c.pending.map = alive;
