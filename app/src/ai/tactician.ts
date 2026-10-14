@@ -1081,7 +1081,7 @@ function blastDeed(options: Option[], c: Ctx): Deed | null {
 // the Delay Phase; a folded Pholcus's is its Unfold, and what follows it: the
 // blast it owes at once where it comes up among units, or failing that the
 // jump it would make at its next Automatic Phase, a round on.
-function landed(o: Option, c: Ctx): { value: number; why: string; soon: boolean; alive: number; target?: unknown } | null {
+function landed(o: Option, c: Ctx): { value: number; why: string; soon: boolean; alive: number } | null {
   const turn = o.later?.(['attack', 'unfold']);
   if (!turn) return null;
   const blast = blastWorth(turn.options, c);
@@ -1097,31 +1097,28 @@ function landed(o: Option, c: Ctx): { value: number; why: string; soon: boolean;
   const standing = c.w.overkill > 0 ? pendingOf(c) : null;
   const alive = standing ? (uid: unknown): number => (typeof uid === 'number' ? (standing.get(uid) ?? 1) ** c.w.overkill : 1) : undefined;
   const shot = volley(turn.options, c, false, false, alive);
-  return shot ? { value: shot.value, why: shot.why, soon: turn.kind === 'blast.resolve', alive: alive ? alive(shot.option.facts?.targetUid) : 1, target: shot.option.facts?.targetUid } : null;
+  return shot ? { value: shot.value, why: shot.why, soon: turn.kind === 'blast.resolve', alive: alive ? alive(shot.option.facts?.targetUid) : 1 } : null;
 }
 
-// KEEPING A MISSILE FOR A BIGGER TARGET (`keepAmmo`, M24, 2026-10-14). OTTO, watching the GOF missile squad empty its
-// launchers at two Drones: "I would maybe fire off 4 to see how they do and save my ammo for the mechs that are in the
-// back". The Ammo Token goes with the Action (4.13), so a launch now is one the launcher cannot make later. Where it has
-// fewer Tokens than the rounds still to come would use (`scarce`: none short in the last round, or with a Token for
-// each of its launchers every round to come), a launch costs what the same Missile would be worth on the enemy's best
-// target (its worth and its threat, `prize`): this launch's worth, scaled by that target's prize against this one's,
-// at `keepAmmo` the chance it gets that shot. So a Missile at a Drone while the Mechs stand costs more than it is worth,
-// and one at the best target costs that share of itself. Not a Volley's later launch: its Token went with the first.
-function keepOf(o: Option, value: number, target: unknown, c: Ctx): number {
-  if (c.w.keepAmmo <= 0 || value <= EXACT || o.tags.includes('volley') || typeof target !== 'number') return 0;
-  const after = c.view.roundLimit - c.view.round;
+// MISSILE FIRE KEPT STEADY THROUGH THE GAME (`ammoPace`, M24, 2026-10-14). OTTO, of the GOF missile squad emptying
+// its launchers by round 2: "Missile saturation should be steady through all rounds, I simply wanted to avoid all
+// drones and mechs using their ammo by round 2. Shots on drones are important as well". The census of the live Ace
+// on the legal missile squads found both faults: the GOF squad launched 9.0, 3.4, 2.3, 1.2 and 0.5 a round; the RDL
+// squads ended the game with a quarter of their Ammo Tokens unspent (Mechs on other dials, Drones Commanded to walk),
+// and round 5 fell to a third of the rounds before it. A unit makes one launch a round (its Projectile Timing, or the
+// Command a Drone is given), and the Ammo Token goes with the Action (4.13). Against the rounds still to come, this
+// one counted, a unit with fewer Tokens runs dry before the end if it launches every round, and one with more ends
+// the game holding some: a launch counts `ammoPace` x (Tokens / rounds left - 1) of its own worth more, at most that
+// much either way: less while its Tokens are short, more while they would otherwise go unused (in the last round,
+// every Token left). Which enemy it goes at is the Ace's own reading, a Drone as much as a Mech. Not a Volley's later
+// launch: its Token went with the first.
+function paceOf(o: Option, value: number, c: Ctx): number {
+  if (c.w.ammoPace <= 0 || value <= EXACT || o.tags.includes('volley')) return 0;
   const launchers = c.me.weapons.filter((x) => ready(x) && x.type === 'Projectile');
-  if (after <= 0 || !launchers.length || launchers.some((x) => x.ammo === undefined)) return 0;
-  const shots = launchers.reduce((n, x) => n + (x.ammo ?? 0), 0);
-  const scarce = Math.min(1, 1 - (shots - 1) / (after * launchers.length));
-  const aimed = c.view.units.find((u) => u.uid === target);
-  if (scarce <= 0 || !aimed) return 0;
-  const prize = (e: UnitView): number => unitWorth(e, c.view, c.w) + threatOf(e, c);
-  let best = 0;
-  for (const e of c.view.units) if (e.side !== c.view.seat && e.alive && e.kind !== 'projectile') best = Math.max(best, prize(e));
-  const mine = prize(aimed);
-  return c.w.keepAmmo * scarce * value * (mine > EXACT ? Math.max(1, best / mine) : 1);
+  if (!launchers.length || launchers.some((x) => x.ammo === undefined)) return 0;
+  const tokens = launchers.reduce((n, x) => n + (x.ammo ?? 0), 0);
+  const left = Math.max(1, c.view.roundLimit - c.view.round + 1);
+  return c.w.ammoPace * Math.max(-1, Math.min(1, tokens / left - 1)) * value;
 }
 
 // MISSILES ALREADY ON THE WAY (`overkill`, M24, 2026-10-13). OTTO, watching the GOF missile squad empty every launcher
@@ -1201,8 +1198,8 @@ function launch(options: Option[], c: Ctx, whole = false): Deed | null {
     const struck = blast.value * (blast.soon && !o.facts?.intercepts ? 1 : c.w.launch) * (1 - c.w.launchMove * (1 - stays)) * (through === null ? 1 : through ** c.w.interceptOdds);
     // THE MISSILE BARRAGE (`launchBias`): a flat amount more for a launch whose blast has something to strike (as
     // often as that is still standing once the squad's Missiles already in the air have struck, `overkill`).
-    // (Less what the Missile would be worth kept for a bigger target, `keepAmmo`.)
-    const value = (struck > EXACT ? struck + c.w.launchBias * blast.alive : struck) - keepOf(o, struck, blast.target, c);
+    // (Less while the unit's Ammo Tokens are short of the rounds to come, more while they would go unspent: `ammoPace`.)
+    const value = (struck > EXACT ? struck + c.w.launchBias * blast.alive : struck) + paceOf(o, struck, c);
     if (value > EXACT && (!best || value > best.value + EXACT)) best = { option: o, value, why: `a Projectile for ${blast.why}`, reason: 'launch_value' };
     const key = String(o.facts?.actionId ?? o.facts?.cardId ?? '');
     const held = byAction.get(key);

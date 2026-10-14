@@ -219,11 +219,13 @@ export interface Weights {
   // p 0.005), the community squads level (97 against 94). ON with flightOdds for the Ace and the Veteran (OTTO's rule:
   // level on wins and closer to how people play); the Brawler and the Recruit keep 0.
   overkill: number;
-  // KEEPING A MISSILE FOR A BIGGER TARGET (`keepAmmo`, M24, 2026-10-14; OTTO: "I would maybe fire off 4 to see how they
-  // do and save my ammo for the mechs that are in the back"). An Ammo Token spent is one the launcher does not have
-  // later: where it has fewer than the rounds still to come, a launch costs what the same Missile would be worth on the
-  // enemy's best target (worth and threat), at this chance that it gets the shot. At 0 nothing.
-  keepAmmo: number;
+  // MISSILE FIRE KEPT STEADY (`ammoPace`, M24, 2026-10-14; OTTO: "Missile saturation should be steady through all
+  // rounds, I simply wanted to avoid all drones and mechs using their ammo by round 2"): a launch counts this x (the
+  // unit's Ammo Tokens / the rounds left, this one counted, - 1) of its own worth more, at most that much either way:
+  // less while the Tokens are short, more while they would go unspent. The target is untouched. At 0 nothing. (It
+  // replaced `keepAmmo`, built the same morning, which kept a Missile for a bigger target; OTTO: "Shots on drones are
+  // important as well".)
+  ammoPace: number;
   // A MISSILE'S FLIGHT THROUGH INTERCEPTION (M24, 2026-10-14). `flightOdds`: a Missile's strike on a target counts at
   // the chance it comes through the Interception attempts its flight draws (each enemy interceptor in Range of where
   // it flies from and where it flies to, trying while it has Tokens), to this power, so it takes a target nobody guards
@@ -740,7 +742,7 @@ export const TACTICIAN: Weights = {
   bait: 0,
   spentClose: 0,
   overkill: 1,
-  keepAmmo: 0,
+  ammoPace: 0,
   flightOdds: 1,
   icptBurn: 0,
   partUse: 0,
