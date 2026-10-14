@@ -12,7 +12,8 @@
 // side can bring to bear next round and on which unit most, the damaged units under fire, the race to each zone the
 // Main Task scores, the Commander's danger, the nearest loose Black Box; and each side's Secondary Task, what it has
 // paid and what it could still pay. A model trained on the first 81 alone reads them as it always did
-// (`featuresOf(look, 81)` reads no more than it needs).
+// (`featuresOf(look, 81)` reads no more than it needs). The fourth reading (M26, 2026-10-14) comes after the 144 the
+// judge v4 reads: how the squad stands toward the other, unit by unit, and the Ammo and Interception Tokens left.
 import type { Outlook, SeatView, UnitView } from '../seat';
 import { standingFor } from './evaluate';
 
@@ -91,6 +92,25 @@ const SIDE3 = [
 
 const DIFF3 = ['secPaid', 'secNow', 'secLive'] as const;
 
+// THE FOURTH READING, each side's (M26, 2026-10-14; OTTO: "more varied batches training the judge, maybe flipping some
+// of the styles to the extreme"): how the squad stands toward the other, unit by unit, which the totals above blur.
+//   eyesOn      the enemy units that see each of its units, on average (Look.seen, as `seen` is read)
+//   eyesMax     the most enemy units that see any one of them
+//   outnumbered its units with more enemy units than its own (itself counted) within LOCAL Grids
+//   superior    its units with an enemy within LOCAL Grids and more of its own than of them
+//   isolated    its units with no other unit of its own within LOCAL Grids
+//   hurtInReach the enemy units below full health that it could bring an attack on next round
+//   hurtWorth   what they are worth (points by health)
+//   shots       its Ammo Tokens left on Projectile Actions that keep a count
+//   icptLeft    its Interception Tokens left
+const SIDE4 = [
+  'eyesOn', 'eyesMax', 'outnumbered', 'superior', 'isolated', 'hurtInReach', 'hurtWorth', 'shots', 'icptLeft',
+] as const;
+
+const DIFF4 = ['eyesOn', 'superior', 'hurtInReach', 'shots'] as const;
+// How near counts as beside each other for the fourth reading, in Grids (a Mech's walk and a short gun).
+const LOCAL = 4;
+
 // How many numbers the first reading has: what a model trained on it is given.
 export const FIRST_READING = TABLE.length + 2 * SIDE.length + DIFF.length;
 
@@ -98,6 +118,7 @@ export const FEATURES: readonly string[] = [
   ...TABLE, ...SIDE.map((n) => `my_${n}`), ...SIDE.map((n) => `their_${n}`), ...DIFF.map((n) => `d_${n}`),
   ...SIDE2.map((n) => `my_${n}`), ...SIDE2.map((n) => `their_${n}`), ...DIFF2.map((n) => `d_${n}`),
   ...SIDE3.map((n) => `my_${n}`), ...SIDE3.map((n) => `their_${n}`), ...DIFF3.map((n) => `d_${n}`),
+  ...SIDE4.map((n) => `my_${n}`), ...SIDE4.map((n) => `their_${n}`), ...DIFF4.map((n) => `d_${n}`),
 ];
 
 const manhattan = (a: UnitView['grid'], b: UnitView['grid']): number => Math.abs(a.col - b.col) + Math.abs(a.row - b.row);
@@ -161,7 +182,7 @@ function sideOf(view: SeatView, side: Side, units: UnitView[]): Record<(typeof S
 // WHAT THE BOARD LETS EACH SIDE DO (the second reading). Sight is the engine's (Look.seen: who of the other squad has
 // a line to a unit where it stands, clear or obstructed), asked once for each unit that counts; the walks to the zones
 // are the engine's too (Look.walk, the road its own Movement is drawn with). Everything else is the view's.
-type Board = Record<(typeof SIDE2)[number] | (typeof SIDE3)[number], number>;
+type Board = Record<(typeof SIDE2)[number] | (typeof SIDE3)[number] | (typeof SIDE4)[number], number>;
 function boardOf(look: Look, view: SeatView, units: UnitView[]): Record<Side, Board> {
   const byUid = new Map(units.map((u) => [u.uid, u]));
   // The units a shot or a walk is worth counting for: Low Value ones neither hold a zone nor score.
@@ -279,9 +300,44 @@ function boardOf(look: Look, view: SeatView, units: UnitView[]): Record<Side, Bo
       secHealth: named ? (named.alive ? named.health : 0) : -1,
       secSeen: namedUp && seenBy.has(namedUp.uid) && underFire(namedUp) ? 1 : 0,
       secReach: namedUp ? dangerTo(namedUp) : 0,
+      ...squadOf(ours, theirs, mine, seenBy, (u) => mine.some((m) => attacks(m).some((w) => reaches(m, w, u)))),
     };
   }
   return out;
+}
+
+// THE FOURTH READING for one side: `ours` and `theirs` the units that count, `mine` all of its own standing, `seenBy`
+// who sees each unit, `hittable` whether it could bring an attack on an enemy unit next round.
+function squadOf(ours: UnitView[], theirs: UnitView[], mine: UnitView[], seenBy: Map<number, UnitView[]>, hittable: (u: UnitView) => boolean): Record<(typeof SIDE4)[number], number> {
+  const eyes = ours.map((u) => (seenBy.get(u.uid) ?? []).length);
+  let outnumbered = 0;
+  let superior = 0;
+  let isolated = 0;
+  for (const u of ours) {
+    const own = ours.filter((a) => chebyshev(a.grid, u.grid) <= LOCAL).length;
+    const foes = theirs.filter((e) => chebyshev(e.grid, u.grid) <= LOCAL).length;
+    if (foes > own) outnumbered += 1;
+    if (foes > 0 && own > foes) superior += 1;
+    if (own === 1) isolated += 1;
+  }
+  const hurt = theirs.filter((u) => u.health < 1 && hittable(u));
+  let shots = 0;
+  let icptLeft = 0;
+  for (const u of mine) {
+    for (const w of u.weapons) if (ready(w) && w.type === 'Projectile' && w.ammo !== undefined) shots += w.ammo;
+    icptLeft += u.intercept?.left ?? 0;
+  }
+  return {
+    eyesOn: eyes.length ? eyes.reduce((n, k) => n + k, 0) / eyes.length : 0,
+    eyesMax: eyes.length ? Math.max(...eyes) : 0,
+    outnumbered,
+    superior,
+    isolated,
+    hurtInReach: hurt.length,
+    hurtWorth: hurt.reduce((n, u) => n + worthOf(u), 0),
+    shots,
+    icptLeft,
+  };
 }
 
 // The numbers, by name, as many of FEATURES as `count` asks for (all of them unless told): for a test, a probe, a
@@ -310,8 +366,8 @@ export function featureMap(look: Look, count = FEATURES.length): Record<string, 
   for (const n of DIFF) out[`d_${n}`] = my[n] - their[n];
   if (count <= FIRST_READING) return out;
   const board = boardOf(look, view, units);
-  for (const n of [...SIDE2, ...SIDE3]) { out[`my_${n}`] = board[view.seat][n]; out[`their_${n}`] = board[view.other][n]; }
-  for (const n of [...DIFF2, ...DIFF3]) out[`d_${n}`] = board[view.seat][n] - board[view.other][n];
+  for (const n of [...SIDE2, ...SIDE3, ...SIDE4]) { out[`my_${n}`] = board[view.seat][n]; out[`their_${n}`] = board[view.other][n]; }
+  for (const n of [...DIFF2, ...DIFF3, ...DIFF4]) out[`d_${n}`] = board[view.seat][n] - board[view.other][n];
   return out;
 }
 

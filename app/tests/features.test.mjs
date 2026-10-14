@@ -186,6 +186,27 @@ const unitOf = (label) => M.SEAT.viewOf(data, t.state, 's1').units.find((u) => u
   check('and the same where the engine says the Rifle has no line to it: not under fire', hidden.my_cmdSeen, 0);
 }
 {
+  // THE FOURTH READING (M26, 2026-10-14): how the squad stands toward the other, unit by unit. Blade and Gun two Grids
+  // apart, the Drone two from Blade and four from Gun, the Rifle far off.
+  at(U.Blade, 4, 4, 2); at(U.Drone, 4, 6, 0); at(U.Gun, 2, 2, 2); at(U.Rifle, 10, 11, 0);
+  const four = ['eyesOn', 'eyesMax', 'outnumbered', 'superior', 'isolated', 'hurtInReach', 'hurtWorth', 'shots', 'icptLeft'];
+  const a = read('s1');
+  const b = read('s2');
+  check('THE FOURTH READING after the third, and mirrored: one seat\'s own is the other seat\'s other',
+    [AI.FEATURES.length, AI.FEATURES.indexOf('my_eyesOn') > AI.FEATURES.indexOf('d_secLive'), four.every((n) => a[`my_${n}`] === b[`their_${n}`] && a[`their_${n}`] === b[`my_${n}`])], [166, true, true]);
+  check('NEAR AND FAR: RDL\'s two Mechs each with the Drone within four Grids and two of their own (superior, none alone); the Drone outnumbered, the Rifle and the Drone each alone',
+    [a.my_superior, a.my_outnumbered, a.my_isolated, a.their_outnumbered, a.their_superior, a.their_isolated], [2, 0, 0, 1, 0, 2]);
+  check('on an open board every enemy sees each unit', [a.my_eyesOn, a.my_eyesMax, a.their_eyesOn], [2, 2, 2]);
+  at(U.Rifle, 6, 5, 0);
+  const whole = { ...U.Rifle.partStates };
+  U.Rifle.partStates.rightHand = 'damaged';
+  const hurt = read('s1');
+  check('A DAMAGED ENEMY IN REACH: the Rifle, its gun hand damaged, two Grids from Blade: RDL has one, worth something; UN none',
+    [hurt.my_hurtInReach, hurt.my_hurtWorth > 0, hurt.their_hurtInReach, hurt.d_hurtInReach], [1, true, 0, 1]);
+  U.Rifle.partStates = whole;
+  at(U.Rifle, 10, 11, 0);
+}
+{
   // PACE: the Ace reads it in play (L3) for each plan it prices. The first reading costs well under a millisecond;
   // the whole one asks the engine for the sight of every unit that counts, on a real map.
   at(U.Blade, 4, 4, 2); at(U.Drone, 4, 6, 0); at(U.Gun, 2, 2, 2); at(U.Rifle, 6, 5, 0);
