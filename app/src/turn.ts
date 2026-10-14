@@ -1901,7 +1901,9 @@ export function attackOpening(
     ? 'Interception: no Forward Arc is required, terrain never blocks a line to an Aerial Unit though a Smoke Screen does, and the target claims no Terrain or Unit Protection (4.9, 4.16, FAQ F3).'
     : mode === 'explosion'
       ? 'Explosion damage ignores line of sight and facing, and the defender claims no Terrain or Unit Protection (4.7.6).'
-      : losNote(attacker, defender, action, terrain, state.tokens, smoke);
+      // The EFFECTIVE Range, as the engine judged the shot: an aura's +1 Range read as "beyond action range" over a
+      // legal attack (2026-10-14: an R-35 under its own Oasis Core's aura, at Range 13). Freeplay's reading passes it.
+      : losNote(attacker, defender, { ...action, range: actionRange(data, state.tokens, attacker, action), anyDistance: linkShockOf(action) }, terrain, state.tokens, smoke);
   // Both card-data arguments, both once dropped by the Match Centre: it rolled
   // Protection with no knowledge of 095 Responsive Targetting at all.
   const protection = mode === 'attack'

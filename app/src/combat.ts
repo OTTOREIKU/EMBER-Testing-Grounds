@@ -1663,7 +1663,8 @@ export class AttackHelper {
       ignoresProtection(this.data, attacker, defender, this.opportunity?.() ?? null),
       (t) => providesUnitProtectionToAllies(this.data, t));
     return {
-      losNote: losNote(attacker, defender, action, terrain, board, smoke),
+      // The effective Range, as attackOpening reads it (an aura's +1 Range was "beyond action range" here).
+      losNote: losNote(attacker, defender, { ...action, range: actionRange(this.data, board, attacker, action), anyDistance: linkShockOf(action) }, terrain, board, smoke),
       protection: prot.white,
       protectionNote: prot.note,
     };
@@ -1906,7 +1907,7 @@ export class AttackHelper {
       defender,
       intercept: false,
       action: m.action,
-      losNote: read ? read.losNote : losNote(m.attacker, defender, m.action, terrain, board, smoke),
+      losNote: read ? read.losNote : losNote(m.attacker, defender, { ...m.action, range: actionRange(this.data, board, m.attacker, m.action), anyDistance: linkShockOf(m.action) }, terrain, board, smoke),
       protection: read ? read.protection : prot.white,
       protectionNote: read ? read.protectionNote : prot.note,
       step,
