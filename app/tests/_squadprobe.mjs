@@ -174,6 +174,12 @@ function lossStep(t, r) {
     for (const x of interceptors(t.state, target.side)) short = Math.min(short, M.R.rangeBetween(x.t, target).range - x.reach);
     const k = short === Infinity ? 'none' : short <= 0 ? 'in' : short === 1 ? 'short1' : short === 2 ? 'short2' : 'far';
     lossGame.cover[target.side][k] = (lossGame.cover[target.side][k] ?? 0) + 1;
+    // (COVERTRACE=1: each strike with an interceptor in Range, whole: the Projectile, the unit, each interceptor in
+    // Range with its Tokens, the Interceptions made at this Projectile, and the Smoke on the table.)
+    if (process.env.COVERTRACE && k === 'in') {
+      const near = interceptors(t.state, target.side).filter((x) => M.R.rangeBetween(x.t, target).range <= x.reach);
+      console.log(`       COVER r${t.state.round.n} ${actor.label} (${actor.cardId}) at ${Math.floor(actor.col / 3)},${Math.floor(actor.row / 3)} strikes ${target.label} at ${Math.floor(target.col / 3)},${Math.floor(target.row / 3)}; in Range: ${near.map((x) => `${x.t.label} reach ${x.reach} gap ${M.R.rangeBetween(x.t, target).range} left ${x.left}`).join('; ')}; tried at it ${lossGame.icpt.get(actor.uid)?.n ?? 0}; smoke ${(t.state.smoke ?? []).length}`);
+    }
   }
   // (And each Interception made, at which Projectile: `tries` made, `aimed` the Projectiles they were made at, `stopped`
   // those of them that never struck.)
@@ -193,7 +199,7 @@ function interceptors(s, side) {
   const out = [];
   for (const x of s.tokens) {
     if (x.side !== side || x.kind === 'projectile' || x.deployed === false || M.U.interceptLeft(x) <= 0) continue;
-    if ((x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed' || (x.kind === 'mech' && x.stance === 'shutdown')) continue;
+    if ((x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed' || (x.kind === 'mech' && x.stance === 'shutdown') || M.TY.statusCount(x.statuses, 'fci') > 0) continue;
     let reach = -1;
     for (const { slot, card } of M.U.ownCards(data, x)) {
       if (!M.U.partUsable(x, slot)) continue;

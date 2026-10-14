@@ -200,9 +200,12 @@ export interface Weights {
   // stops it, a guess to be measured. `coverFire`: an enemy Projectile's strike on a unit (one on the table, or one
   // still to be launched, `salvo`) counts as often as it would come through the squad's interceptors in reach of
   // where the unit stands, at this share. `coverMates`: an interceptor's Grid is worth what it would stop of the
-  // Projectile fire the squadmates in its Range stand to take this round.
+  // Projectile fire the squadmates in its Range stand to take this round. `coverLaunch`: and what the enemy's launchers
+  // in its Range stand to do to the squad, since a launch owes an Interception to each interceptor in Range of the
+  // launcher's Grid too, whatever it is launched at (units.ts interceptsOwed).
   coverFire: number;
   coverMates: number;
+  coverLaunch: number;
   coverStop: number;
   // What a plan must be better by before a unit leaves where it stands.
   better: number;
@@ -700,6 +703,7 @@ export const TACTICIAN: Weights = {
   spentClose: 0,
   coverFire: 0,
   coverMates: 0,
+  coverLaunch: 0,
   coverStop: 0.3,
   better: 0.01,
   entry: 1,

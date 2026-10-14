@@ -86,7 +86,24 @@ const covered = duneAsks(7);
 const open = duneAsks(8);
 check('WITH `coverFire` 1 Dune counts the Guard\'s Interception: the Pod\'s salvo costs it less with the Guard three Grids off, and the same with it four off',
   [covered.dune, covered.bare > 0, covered.shielded < covered.bare, open.dune, open.shielded === open.bare], [true, true, true, true, true]);
-check('as it ships (2026-10-13): 0 until measured', [AI.TACTICIAN.coverFire, AI.TACTICIAN.coverMates, AI.TACTICIAN.coverStop], [0, 0, 0.3]);
+// `coverLaunch`: the Guard's turn again, four Grids east of the Pod. A launch owes an Interception to each interceptor in
+// Range of the launcher's Grid too, so a Grid three off the Pod is worth what the Pod's Missiles stand to do to the
+// squad; a Grid further off, nothing more.
+U.Guard.timing = 'melee';
+at(U.Guard, 8, 5, 0);
+s.script.acted = [U.Dune.uid, U.Rifle.uid];
+s.script.opp = null;
+M.G.opportunity(data, s);
+const d3 = t.drivers.s1.pending();
+const v3 = M.SEAT.viewOf(data, s, 's1');
+const shapes = (weights) => new Map(AI.weighed(d3, v3, {}, weights).map((r) => [`${r.at.col},${r.at.row}|${r.label}`, { r, gap: apart(r.at, V.Pod.grid) }]));
+const bare3 = shapes({});
+const on3 = shapes({ coverLaunch: 1 });
+const rose = [...on3].filter(([k, x]) => x.r.shape > (bare3.get(k)?.r.shape ?? Infinity) + 1e-9);
+const still = [...on3].filter(([k, x]) => x.gap > 3 && x.r.shape !== bare3.get(k)?.r.shape);
+check('WITH `coverLaunch` 1 a Grid in Intercept Range of the Pod is worth more to the Guard, and a Grid out of it no more',
+  [d3?.unit === U.Guard.uid, rose.length > 0 && rose.every(([, x]) => x.gap <= 3), still.length], [true, true, 0]);
+check('as it ships (2026-10-13): 0 until measured', [AI.TACTICIAN.coverFire, AI.TACTICIAN.coverMates, AI.TACTICIAN.coverLaunch, AI.TACTICIAN.coverStop], [0, 0, 0, 0.3]);
 t.close();
 
 console.log(`\n${pass} passed, ${fail} failed`);

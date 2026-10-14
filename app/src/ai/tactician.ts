@@ -833,19 +833,31 @@ function missileOn(u: UnitView, c: Ctx): number {
 }
 
 // AN INTERCEPTOR'S GRID (`coverMates`): what it would stop there of the Projectile fire each squadmate in its
-// Intercept Range stands to take this round, beyond what the squad's other interceptors would stop of it.
+// Intercept Range stands to take this round, beyond what the squad's other interceptors would stop of it. AND THE
+// ENEMY'S LAUNCHERS IN ITS RANGE (`coverLaunch`): a launch owes an Interception to each interceptor in Range of the
+// launcher's Grid too, whatever it is launched at, so an interceptor beside a missile Mech tries at everything it
+// launches (as the board stands, at `launchFire`'s worst: its turn this round or the next Command Phase's).
 function umbrellaOf(at: Grid, c: Ctx): number {
   const mine = c.me.intercept;
-  if (c.w.coverMates <= 0 || !mine) return 0;
+  if ((c.w.coverMates <= 0 && c.w.coverLaunch <= 0) || !mine) return 0;
   const stop = 1 - (1 - c.w.coverStop) ** Math.min(3, mine.left);
-  let gain = 0;
-  for (const u of c.view.units) {
-    if (u.side !== c.view.seat || u.uid === c.me.uid || !u.alive || !u.deployed || u.kind === 'projectile') continue;
-    if (apart(at, u.grid) > mine.reach) continue;
-    const harm = missileOn(u, c);
-    if (harm > 0) gain += harm * coverAt(u.grid, c, c.me.uid) * stop;
+  let mates = 0;
+  if (c.w.coverMates > 0) {
+    for (const u of c.view.units) {
+      if (u.side !== c.view.seat || u.uid === c.me.uid || !u.alive || !u.deployed || u.kind === 'projectile') continue;
+      if (apart(at, u.grid) > mine.reach) continue;
+      const harm = missileOn(u, c);
+      if (harm > 0) mates += harm * coverAt(u.grid, c, c.me.uid) * stop;
+    }
   }
-  return c.w.coverMates * gain;
+  let launchers = 0;
+  if (c.w.coverLaunch > 0) {
+    for (const e of c.hostile) {
+      if (e.kind === 'projectile' || apart(at, e.grid) > mine.reach) continue;
+      launchers += c.w.exposure * c.w.launch * launchFire(e, c) * stop;
+    }
+  }
+  return c.w.coverMates * mates + c.w.coverLaunch * launchers;
 }
 
 // WHAT AN ENEMY PROJECTILE'S STRIKE WOULD DO TO THIS SQUAD (`shootDown`): its own turn as the engine would ask it
