@@ -539,6 +539,8 @@ interface Ctx {
   // The race for each loose Black Box, by its id (`racesOf`), worked out once
   // a table.
   races: { map: Map<string, Race> | null };
+  // The chance each enemy is still standing once this squad's Projectiles on the table have struck (`pendingOf`).
+  pending: { map: Map<number, number> | null };
   // What each unit of this squad whose turn is still to come this round could
   // do to each enemy it has in its sights (`backsOf`, focus fire), worked out
   // once a table.
@@ -595,10 +597,10 @@ interface Target {
 export interface Memo {
   table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>; downs: Map<number, number>; launchFires: Map<number, number>; baits: Map<string, number>; covers: Map<number, number>;
   walks: Map<string, Stroll | null>; targets: Map<string, Target[]>; holdings: Map<number, number>;
-  handed: Map<string, number | null>; aims: Map<number, Map<number, number>>; races: { map: Map<string, Race> | null };
+  handed: Map<string, number | null>; aims: Map<number, Map<number, number>>; races: { map: Map<string, Race> | null }; pending: { map: Map<number, number> | null };
   backs: { map: Map<number, Back> | null }; calls: Map<number, number>; screens: Map<string, number>; clears: Map<string, number>;
 }
-export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), downs: new Map(), launchFires: new Map(), baits: new Map(), covers: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map(), clears: new Map() });
+export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), downs: new Map(), launchFires: new Map(), baits: new Map(), covers: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, pending: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map(), clears: new Map() });
 
 // The table as far as those answers depend on it: every unit, where it stands
 // and in what state. Whose activation is open is left out, and so is a Command
@@ -938,12 +940,12 @@ function gangOf(f: Forecast, e: UnitView, c: Ctx): number {
 // one that leaves no Tick for a second. A Shock Attack's walk ends somewhere
 // else, so it is planned as a walk (plansSteps) and counted here only where
 // `shock` asks for it: what a Stance taken first would let the unit do.
-function volley(options: Option[], c: Ctx, whole: boolean, shock = false): Deed | null {
+function volley(options: Option[], c: Ctx, whole: boolean, shock = false, alive?: (uid: unknown) => number): Deed | null {
   const shots = options
     // One Explosion of a blast on every unit in Range is not an attack to be
     // weighed by itself: the blast is weighed whole (blastDeed).
     .filter((o) => isShot(o) && !o.tags.includes('blast') && (shock || !o.tags.includes('shock')) && (c.skills.charge || !o.tags.includes('spend-charge')) && (c.skills.stalk || !o.tags.includes('hidden')))
-    .map((o) => ({ o, ...shotValue(o, c) }))
+    .map((o) => { const s = shotValue(o, c); return alive ? { o, ...s, value: s.value * alive(o.facts?.targetUid) } : { o, ...s }; })
     .filter((s) => s.value > EXACT)
     .sort((a, b) => b.value - a.value);
   if (!shots.length) return null;
@@ -1024,20 +1026,46 @@ function blastDeed(options: Option[], c: Ctx): Deed | null {
 // the Delay Phase; a folded Pholcus's is its Unfold, and what follows it: the
 // blast it owes at once where it comes up among units, or failing that the
 // jump it would make at its next Automatic Phase, a round on.
-function landed(o: Option, c: Ctx): { value: number; why: string; soon: boolean } | null {
+function landed(o: Option, c: Ctx): { value: number; why: string; soon: boolean; alive: number } | null {
   const turn = o.later?.(['attack', 'unfold']);
   if (!turn) return null;
   const blast = blastWorth(turn.options, c);
-  if (blast) return { value: blast.value, why: blast.why, soon: turn.kind === 'blast.resolve' };
+  if (blast) return { value: blast.value, why: blast.why, soon: turn.kind === 'blast.resolve', alive: 1 };
   const unfold = turn.options.find((x) => kindOf(x) === 'unfold');
   if (unfold) {
     const among = volley(unfold.then?.(['attack'])?.options ?? [], c, false);
-    if (among) return { value: among.value, why: `${among.why}, as it Unfolds`, soon: false };
+    if (among) return { value: among.value, why: `${among.why}, as it Unfolds`, soon: false, alive: 1 };
     const jump = volley(unfold.later?.(['attack'])?.options ?? [], c, false);
-    return jump ? { value: jump.value * c.w.future, why: `${jump.why}, a round on`, soon: false } : null;
+    return jump ? { value: jump.value * c.w.future, why: `${jump.why}, a round on`, soon: false, alive: 1 } : null;
   }
-  const shot = volley(turn.options, c, false);
-  return shot ? { value: shot.value, why: shot.why, soon: turn.kind === 'blast.resolve' } : null;
+  // (`overkill`: each target at the chance it still stands once the squad's Missiles already in the air have struck.)
+  const standing = c.w.overkill > 0 ? pendingOf(c) : null;
+  const alive = standing ? (uid: unknown): number => (typeof uid === 'number' ? (standing.get(uid) ?? 1) ** c.w.overkill : 1) : undefined;
+  const shot = volley(turn.options, c, false, false, alive);
+  return shot ? { value: shot.value, why: shot.why, soon: turn.kind === 'blast.resolve', alive: alive ? alive(shot.option.facts?.targetUid) : 1 } : null;
+}
+
+// MISSILES ALREADY ON THE WAY (`overkill`, M24, 2026-10-13). OTTO, watching the GOF missile squad empty every launcher
+// at two Drones: "If 1 missile each hits and kills the enemy drones then there will be 5 missiles that have no target
+// ... If I was playing I would maybe fire off 4 to see how they do and save my ammo for the mechs that are in the back";
+// and "it would be good to have the computer also consider the missiles fired by its squad mates". Each of this
+// squad's Projectiles on the table, whoever launched it, strikes when its turn comes the target its best attack names
+// as the board stands: the chance each enemy is still standing once they all have. Asked once a table.
+function pendingOf(c: Ctx): Map<number, number> {
+  if (c.pending.map) return c.pending.map;
+  const alive = new Map<number, number>();
+  const here = c.d.here?.();
+  if (here) {
+    for (const p of c.view.units) {
+      if (p.side !== c.view.seat || p.kind !== 'projectile' || !p.alive || !p.deployed) continue;
+      const best = volley(here.turnOf(p.uid, ['attack'])?.options ?? [], { ...c, me: p }, false);
+      const f = best?.option.chance?.() ?? null;
+      const target = best?.option.facts?.targetUid;
+      if (f && typeof target === 'number') alive.set(target, (alive.get(target) ?? 1) * (1 - f.kill));
+    }
+  }
+  c.pending.map = alive;
+  return alive;
 }
 
 // A PROJECTILE TO LAUNCH, valued as the attack its blast would be: for each
@@ -1086,8 +1114,9 @@ function launch(options: Option[], c: Ctx, whole = false): Deed | null {
     // Point outside an interceptor's Range is worth more than one inside it.
     const through = c.w.interceptOdds > 0 && o.survive ? o.survive() : null;
     const struck = blast.value * (blast.soon && !o.facts?.intercepts ? 1 : c.w.launch) * (1 - c.w.launchMove * (1 - stays)) * (through === null ? 1 : through ** c.w.interceptOdds);
-    // THE MISSILE BARRAGE (`launchBias`): a flat amount more for a launch whose blast has something to strike.
-    const value = struck > EXACT ? struck + c.w.launchBias : struck;
+    // THE MISSILE BARRAGE (`launchBias`): a flat amount more for a launch whose blast has something to strike (as
+    // often as that is still standing once the squad's Missiles already in the air have struck, `overkill`).
+    const value = struck > EXACT ? struck + c.w.launchBias * blast.alive : struck;
     if (value > EXACT && (!best || value > best.value + EXACT)) best = { option: o, value, why: `a Projectile for ${blast.why}`, reason: 'launch_value' };
     const key = String(o.facts?.actionId ?? o.facts?.cardId ?? '');
     const held = byAction.get(key);
@@ -3141,7 +3170,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     const faces = d.options.filter((o) => handed(o, c) && !c.handed.has(handKey(c, o)));
     if (faces.length) {
       // What this table has been asked already is this decision's own to keep.
-      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, downs: c.downs, launchFires: c.launchFires, baits: c.baits, covers: c.covers, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens, clears: c.clears };
+      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, downs: c.downs, launchFires: c.launchFires, baits: c.baits, covers: c.covers, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, pending: c.pending, backs: c.backs, calls: c.calls, screens: c.screens, clears: c.clears };
       for (const o of faces) {
         c.handed.set(handKey(c, o), yield* commandGain(o, view, w, c.skills, kept));
         yield;
@@ -3816,6 +3845,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     memo.handed.clear();
     memo.aims.clear();
     memo.races.map = null;
+    memo.pending.map = null;
     memo.backs.map = null;
     memo.calls.clear();
     memo.screens.clear();
@@ -3844,6 +3874,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     handed: memo.handed,
     aims: memo.aims,
     races: memo.races,
+    pending: memo.pending,
     backs: memo.backs,
     calls: memo.calls,
     screens: memo.screens,

@@ -203,6 +203,11 @@ export interface Weights {
   // Projectile fire the squadmates in its Range stand to take this round. `coverLaunch`: and what the enemy's launchers
   // in its Range stand to do to the squad, since a launch owes an Interception to each interceptor in Range of the
   // launcher's Grid too, whatever it is launched at (units.ts interceptsOwed).
+  // MISSILES ALREADY ON THE WAY (`overkill`, M24, 2026-10-13): a launch at an enemy counts as often as that enemy
+  // would still be standing once the squad's Projectiles already on the table have struck it, to this power (each
+  // counted at its own best attack as the board stands), so a squad does not empty its launchers into what the
+  // Missiles in the air will destroy anyway, and keeps them for the units still to come.
+  overkill: number;
   coverFire: number;
   coverMates: number;
   coverLaunch: number;
@@ -701,6 +706,7 @@ export const TACTICIAN: Weights = {
   launchThreat: 0,
   bait: 0,
   spentClose: 0,
+  overkill: 0,
   coverFire: 0,
   coverMates: 0,
   coverLaunch: 0,
