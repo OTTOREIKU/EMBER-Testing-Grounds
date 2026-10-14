@@ -852,8 +852,12 @@ M.L.setLocalSeat('s1');
   hid.U.Raven.statuses = ['camouflage'];
   hid.at(hid.U['Wild Cat'], 11, 11, 0);
   hid.activate(m3);
-  check('a target in Optical Camouflage is Scanned first, which is not offered yet: the Missile is neither aimed at it nor destroyed',
-    owed(data, hid.s, 's1', newMind()).options.filter((o) => o.tags.includes('detonate')).length, 0);
+  // A Missile's Scan is not offered to a seat here, and a Missile is not kept on the board for a later round either
+  // (3.6.1, 4.7.5; 2026-10-14): it finds no target it can pick, and is destroyed, as a player's panel offers. It was
+  // neither aimed nor destroyed, and the computer ended its activation with the Missile left on the table.
+  const hidden = owed(data, hid.s, 's1', newMind()).options;
+  check('a target in Optical Camouflage is Scanned first, which a seat is not offered: the Missile is not aimed at it, and with nothing else to take it is destroyed, its activation not to be ended',
+    [hidden.filter((o) => o.tags.includes('detonate')).map((o) => o.id), hidden.some((o) => o.id === 'end')], [['detonate:071_A:none'], false]);
 }
 
 // ---------- a Shutdown Mech, and a tie ----------

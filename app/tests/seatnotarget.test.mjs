@@ -54,12 +54,29 @@ check('THE STAGE: the Delay Phase asks a Razor with no enemy within its Range',
   [M.TY.PHASES[s.round.phase], mine(s).length, mine(s).every((p) => p.col === 33 && p.row === 0)], ['Delay', 2, true]);
 check('ITS DELAYED ACTION IS NOT TO BE PUT OFF: "finds no target and is destroyed" is offered, and ending its activation is not',
   [ids.some((id) => id.startsWith('detonate:') && id.endsWith(':none')), ids.includes('end')], [true, false]);
+// The table holds a player to it too (OTTO: "No one should be able to end a turn and keep a missile on the board").
+const ending = M.C.check(data, s, { kind: 'endOpportunity', seat: 's1', uid: razor });
+const destroying = M.C.check(data, s, { kind: 'despawn', seat: 's1', uid: razor, targetUid: razor });
+check('A PLAYER may not end its activation either, and may destroy it',
+  [ending.ok, /Delayed Action in the Delay Phase \(3\.6\.1\)/.test(ending.why ?? ''), destroying.ok], [false, true, true]);
 const view = M.SEAT.viewOf(data, s, 's1');
 const said = (p) => d.options.find((o) => o.id === p.choose(d, view, new AI.Rng('nt')).option)?.label ?? '';
 check('and every computer gives it: the Ace, the Missile style and the eager answer',
   [/finds no target and is destroyed/.test(said(AI.tacticianPolicy)), /finds no target and is destroyed/.test(said(AI.missilePolicy)), /finds no target and is destroyed/.test(said(AI.eagerPolicy))], [true, true, true]);
 await t.run({ maxSteps: 400, until: (st) => !st.tokens.some((x) => x.uid === razor && x.deployed !== false) || st.round.phase !== s.round.phase });
 check('once it acts, the Razor is gone from the table', s.tokens.some((x) => x.uid === razor && x.deployed !== false), false);
+{
+  // THE OTHER RAZOR, its only target in Range a Raven in Optical Camouflage: the seam has no Scan for a Projectile to
+  // make, and it is not kept on the board either: it finds no target it can pick, and is destroyed.
+  const other = mine(s).find((p) => p.uid !== razor);
+  at(U.Raven, 10, 1, 0);
+  U.Raven.statuses = [...(U.Raven.statuses ?? []), 'camouflage'];
+  await t.run({ maxSteps: 400, until: () => t.drivers.s1.pending()?.unit === other?.uid });
+  const d2 = t.drivers.s1.pending();
+  const ids2 = (d2?.options ?? []).map((o) => o.id);
+  check('ITS ONLY TARGET IN OPTICAL CAMOUFLAGE: no end, and "finds no target and is destroyed"',
+    [!!other, d2?.unit === other?.uid, ids2.includes('end'), ids2.some((id) => id.startsWith('detonate:') && id.endsWith(':none'))], [true, true, false, true]);
+}
 t.close();
 
 console.log(`\n${pass} passed, ${fail} failed`);

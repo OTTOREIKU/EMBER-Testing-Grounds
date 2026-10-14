@@ -1765,6 +1765,14 @@ export function keptWithoutTarget(a: CardAction): boolean {
   return /no target within Range, this Unit will not be removed/i.test(a.description?.en ?? '');
 }
 
+// A MISSILE'S DELAYED ACTION IS OWED (3.6.1, 4.7.5): a Projectile whose Delayed Action flies it at a target, its card
+// not keeping it when it finds none (the PK3), performs that Action in the Delay Phase or, finding no target in Range,
+// is destroyed. No one ends its activation and keeps it on the board for a later round (OTTO, 2026-10-14: "No one
+// should be able to end a turn and keep a missile on the board").
+export function delayedFlightOwed(data: GameData, t: Token): boolean {
+  return t.kind === 'projectile' && ownCards(data, t).some(({ card }) => (card.actions ?? []).some((a) => a.type === 'Delay' && fliesToTarget(a) && !keptWithoutTarget(a)));
+}
+
 export function needsSightToLanding(a: CardAction): boolean {
   const hay = [
     a.description?.zh ?? '',

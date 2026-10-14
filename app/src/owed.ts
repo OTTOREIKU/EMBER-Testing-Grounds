@@ -30,7 +30,7 @@ import type { CardAction, Facing, GameState, Opportunity, Side, Stance, Timing, 
 import type { Decision, Option } from './seat';
 import {
   actionRange, allyRepairTargets, autoDetonationsOwed, bitPortOf, bitsToRecover, blastsReady, blastTurn, blinkTargets, cruising, pilotCard, canActivateCamo, chargeableSlots, chargeChoices, commandCoordination, coordinationAfterManeuver, coordinationFor,
-  detonationToken, discardSlots, envCardAt, explosionCamo, extraActivationOf, fliesToTarget, formSwitch, immediateDetonation, immediatesOwed, isGroundUnit, linkSupportOf, linkSupportTargets, manifestTargets, martyrdomOwed, maxLink, minesLayable, repairSpec,
+  delayedFlightOwed, detonationToken, discardSlots, envCardAt, explosionCamo, extraActivationOf, fliesToTarget, formSwitch, immediateDetonation, immediatesOwed, isGroundUnit, linkSupportOf, linkSupportTargets, manifestTargets, martyrdomOwed, maxLink, minesLayable, repairSpec,
   resupplyHolders, resupplyOf, riposteMelees, selfGrantWhy, selfStanceShift, selfRepairOptions, selfStatusGrant, smokePlacement, stabiliseAsk, STABILISE_KEEP_LABEL, stabiliseRowLabel, stanceFeedbackTargets,
   targetStatusGrant, targetStatusTargets, tokenCards, tokenCleanupOf, tokenCleanupTargets, transformOffer, controlledMoveActions, knockbackOf,
   interceptPayer, overwatchOf, containerTargets, lowProfileAuraOf, rwsCommandsLeft,
@@ -1168,7 +1168,7 @@ function activationOwed(data: GameData, state: GameState, seat: Side, t: Token, 
   // needs a target and finds none in Range is destroyed (4.7.5), unless its card keeps it (the PK3's own answer). Ending
   // instead left it on the table for the next round (OTTO, 2026-10-14: an M60 and an MC-3 with no target stayed on the
   // field after the Delay Phase, the computer having chosen to end rather than lose the Missile).
-  const delayed = t.kind === 'projectile' && options.some((x) => !!x && x.tags[0] === 'detonate');
+  const delayed = delayedFlightOwed(data, t) && options.some((x) => !!x && x.tags[0] === 'detonate');
   if (wants(want, 'end') && !folded && !delayed) {
     const end: Command = { kind: 'endOpportunity', seat, uid: t.uid };
     options.push(sends(data, state, 'end', state.round.phase === 2 ? 'End this Opportunity' : 'End this activation', ['end'], [end]));
@@ -1893,7 +1893,9 @@ function detonationOptions(data: GameData, state: GameState, proj: Token, row: t
       facts: { uid: proj.uid, targetUid: target.uid, actionId: a.id, ...(drawn ? { intercepts: drawn } : {}) },
     });
   }
-  if (out.length || held) return out;
+  // (A Missile whose only target in Range is in Optical Camouflage has no Scan to make here, and is not kept on the
+  // board for a later round either: it finds no target it can pick, and is destroyed, as a player's panel offers.)
+  if (out.length || (held && !delayedFlightOwed(data, proj))) return out;
   if (flown) {
     // It flew, and the unit it flew at is gone from that Grid: it has nothing
     // left to take, and its Action is spent.
