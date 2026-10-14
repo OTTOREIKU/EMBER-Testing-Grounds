@@ -1584,6 +1584,14 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
         && unfoldsOwed(data, state.tokens).some((u) => state.tokens.find((x) => x.uid === u.uid)?.side === cmd.seat)) {
         return no('A folded Pholcus must Unfold in the Delay Phase (FAQ M18.3).');
       }
+      // Nor while one of its Missiles still owes its Delayed Action (3.6.1, 4.7.5): passed, every Missile not yet
+      // activated stayed on the board for a later round, which the activation's own end already refuses (OTTO,
+      // 2026-10-14: "No one should be able to end a turn and keep a missile on the board").
+      if (strictNow(state) && PHASES[state.round.phase] === 'Delay') {
+        const owing = eligibleUnits(state, 'Delay', cmd.seat, data)
+          .find((t) => delayedFlightOwed(data, t) && check(data, state, { kind: 'designate', seat: cmd.seat, uid: t.uid }).ok);
+        if (owing) return no(`${owing.label} must perform its Delayed Action in the Delay Phase (3.6.1): fly it at a target, or destroy it when it has none in Range (4.7.5).`);
+      }
       return ok;
     }
     case 'markEndStep': {

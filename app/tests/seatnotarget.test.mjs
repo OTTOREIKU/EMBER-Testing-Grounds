@@ -59,6 +59,20 @@ const ending = M.C.check(data, s, { kind: 'endOpportunity', seat: 's1', uid: raz
 const destroying = M.C.check(data, s, { kind: 'despawn', seat: 's1', uid: razor, targetUid: razor });
 check('A PLAYER may not end its activation either, and may destroy it',
   [ending.ok, /Delayed Action in the Delay Phase \(3\.6\.1\)/.test(ending.why ?? ''), destroying.ok], [false, true, true]);
+{
+  // Nor pass the Delay Phase before the Missiles are activated (2026-10-14, played on the table: four M707s passed
+  // over stayed on the board, one with an enemy Drone three Grids away). With none of its Missiles left, it may.
+  const held = JSON.parse(JSON.stringify(s));
+  held.script.opp = null;
+  held.script.acted = held.script.acted.filter((u) => !mine(held).some((p) => p.uid === u));
+  held.script.passed = [];
+  held.script.turn = 's1';
+  const passing = M.C.check(data, held, { kind: 'passTurn', seat: 's1' });
+  held.tokens = held.tokens.filter((x) => !(x.kind === 'projectile' && x.side === 's1'));
+  const clear = M.C.check(data, held, { kind: 'passTurn', seat: 's1' });
+  check('NOR PASS THE PHASE with its Missiles not yet activated; with none left, the pass stands',
+    [passing.ok, /Delayed Action in the Delay Phase \(3\.6\.1\)/.test(passing.why ?? ''), clear.ok], [false, true, true]);
+}
 const view = M.SEAT.viewOf(data, s, 's1');
 const said = (p) => d.options.find((o) => o.id === p.choose(d, view, new AI.Rng('nt')).option)?.label ?? '';
 check('and every computer gives it: the Ace, the Missile style and the eager answer',
