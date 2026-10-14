@@ -216,6 +216,11 @@ export interface Weights {
   // 19.2). OFF: with flightOdds and coverMates the missile squads lost ground (115 against 123, points -33 a game,
   // p 0.03) where overkill, flightOdds and icptBurn together were level (124 against 123); read again on fresh seeds.
   overkill: number;
+  // KEEPING A MISSILE FOR A BIGGER TARGET (`keepAmmo`, M24, 2026-10-14; OTTO: "I would maybe fire off 4 to see how they
+  // do and save my ammo for the mechs that are in the back"). An Ammo Token spent is one the launcher does not have
+  // later: where it has fewer than the rounds still to come, a launch costs what the same Missile would be worth on the
+  // enemy's best target (worth and threat), at this chance that it gets the shot. At 0 nothing.
+  keepAmmo: number;
   // A MISSILE'S FLIGHT THROUGH INTERCEPTION (M24, 2026-10-14). `flightOdds`: a Missile's strike on a target counts at
   // the chance it comes through the Interception attempts its flight draws (each enemy interceptor in Range of where
   // it flies from and where it flies to, trying while it has Tokens), to this power, so it takes a target nobody guards
@@ -732,6 +737,7 @@ export const TACTICIAN: Weights = {
   bait: 0,
   spentClose: 0,
   overkill: 0,
+  keepAmmo: 0,
   flightOdds: 0,
   icptBurn: 0,
   partUse: 0,
