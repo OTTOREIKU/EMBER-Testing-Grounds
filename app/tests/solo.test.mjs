@@ -1039,6 +1039,13 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
     [th.length > 30, [...new Set(th.map((t) => t.seat))].sort(), th.every((t, i) => i === 0 || t.n > th[i - 1].n), th.every((t) => t.given === 'done'),
       th.filter((t) => t.kind === 'opp.act' || t.kind === 'activation.act' || t.kind === 'setup.deploy').every((t) => !!t.unit), th.some((t) => /^(attack|defence|contest)\./.test(t.kind))],
     [true, ['s1', 's2'], true, true, true, false]);
+  // LOOKING BACK (2026-10-14; OTTO: "pause the game and then undo/step back to rewatch a move"): a watched game keeps
+  // the table as each line's doing came to rest, in order, each a whole table of the round it names; a played game
+  // keeps none. The page draws one while the game is paused or over (match.ts `replay`).
+  const frames = p.table.replay;
+  check('LOOKING BACK, watched: the table kept after each move, in order, each a whole table of the round it names; a game not watched keeps none',
+    [frames.length > 30, frames.every((f, i) => i === 0 || f.n > frames[i - 1].n), frames.every((f) => { const s = JSON.parse(f.json); return Array.isArray(s.tokens) && (s.round?.n ?? 0) === f.round; }), games[0].p.table.replay.length],
+    [true, true, true, 0]);
   const hits = th.filter((t) => t.result?.length);
   check('and under a line, what it did to each unit, in a player\'s words, of both squads\' lines',
     [hits.length > 3, hits.every((t) => t.result.every((r) => typeof r.unit === 'string' && (r.side === 's1' || r.side === 's2') && r.said.length > 0

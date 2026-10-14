@@ -499,6 +499,22 @@ export function thoughtsFor(thoughts: readonly Thought[], state: GameState, o: {
 // How many thoughts the table keeps: a whole game's worth of turns.
 const THOUGHTS = 400;
 
+// THE TABLE AFTER EACH MOVE, in a game the player watches (2026-10-14; OTTO: "While watching computer vs computer
+// games, it might be good to allow me to pause the game and then undo/step back to rewatch a move ... The computers
+// should never ask for an undo however as the spectator it would be good to have this functionality"): the whole
+// table as each computer line's doing came to rest, with the line it closed, newest last. The page shows one while the
+// game is paused or over (match.ts `replay`); the game itself is never touched by it.
+export interface Frame {
+  n: number;
+  json: string;
+  round: number;
+  phase: number;
+  seat: Side;
+  label: string;
+}
+// How many the table keeps: a whole game's worth (a table is a few kilobytes as JSON).
+const FRAMES = 1000;
+
 // How long the computer may hold the page's thread before it hands it back in
 // the middle of a decision: under one drawn frame, so nothing on the page is
 // seen to stop.
@@ -548,6 +564,8 @@ export class SoloTable {
   private readonly thoughts: Thought[] = [];
   private thoughtN = 0;
   private readonly before = new Map<number, { marks: Marks; line: { self?: number; recovered?: number } }>();
+  // The table after each line's doing came to rest, in a game the player watches (`Frame`).
+  private readonly frames: Frame[] = [];
 
   // THE PAGE'S THREAD, handed back to it in the middle of a decision: at once
   // while the computer has held it for less than a frame, and by a timer's
@@ -722,16 +740,31 @@ export class SoloTable {
     if (script?.combatView || script?.counter) return;
     let now: Marks | null = null;
     let told = false;
+    let last: Thought | undefined;
     for (const [n, was] of this.before) {
       const t = this.thoughts.find((x) => x.n === n);
       if (t?.given === null) continue;
       this.before.delete(n);
       if (t?.given !== 'done') continue;
+      last = t;
       now ??= marksOf(this.h.state());
       const result = resultOf(was.marks, now, was.line);
       if (result.length) { t.result = result; told = true; }
     }
+    if (last && this.spec.watch) this.frame(last);
     if (told) this.h.thought?.();
+  }
+
+  // The table as a line's doing came to rest (`Frame`).
+  private frame(t: Thought): void {
+    const state = this.h.state();
+    this.frames.push({ n: t.n, json: JSON.stringify(state), round: state.round?.n ?? 0, phase: state.round?.phase ?? 0, seat: t.seat, label: t.label });
+    if (this.frames.length > FRAMES) this.frames.shift();
+  }
+
+  // The tables kept for looking back in a game the player watches, oldest first.
+  get replay(): readonly Frame[] {
+    return this.frames;
   }
 
   // And what became of it: given, refused by the table, or never given (the

@@ -134,6 +134,10 @@ let soloDoing: { seat: Side; doing: string } | null = null;
 // The player is sitting in the computer's seat for a moment, to get it past
 // something it could not do.
 let soloTaken = false;
+// LOOKING BACK in a game the player watches (solo.ts `Frame`): the move shown while the game is paused or over, and
+// the table as it stood after it. The board and the panels draw that table (`hudCtx`); the game goes on under it
+// untouched, and Live (or Resume) returns to it.
+let replay: { at: number; state: GameState } | null = null;
 // The game's log for the computer's tuning, kept only for a signed-in player
 // and never for a game the player only watches (botlog.ts), and how the page
 // is being left when it goes before the game's end.
@@ -2477,7 +2481,7 @@ function roomKey(): string | null {
 function hudCtx(): HudCtx {
   return {
     data: data!,
-    state,
+    state: replay?.state ?? state,
     // In the dev harness there is no room, so no seat: every control renders
     // as yours, which is exactly what walking both sides solo needs.
     seat: relay.state.seat,
@@ -2977,6 +2981,8 @@ function soloPillText(): string {
   const t = solo?.table;
   if (!t) return '';
   const who = squadLabel(t.spec.bot);
+  const shown = replay ? t.replay[replay.at] : undefined;
+  if (shown) return `● round ${shown.round}, after move ${replay!.at + 1} of ${t.replay.length}: ${shown.label}`;
   if (soloTaken) return `● you hold ${who}'s seat`;
   if (t.trouble) return `● ${who} has stopped`;
   if (t.over) return '● game over';
@@ -3006,6 +3012,7 @@ function soloBarHtml(): string {
     ${t ? `<span class="pill${tone}" id="mc-solopill">${esc(soloPillText())}</span>` : ''}
     <span class="spacer"></span>
     ${t && !t.over ? `<span class="mc-speeds" role="group" aria-label="How fast the computer plays">${speeds}</span>` : ''}
+    ${replayBarHtml()}
     ${t && !t.over && !t.trouble && !soloTaken ? `<button class="mc-backbtn ghostbtn" id="mc-solopause" title="${t.paused ? 'Let the computer play on' : 'Hold the computer where it is'}">${t.paused ? 'Resume' : 'Pause'}</button>` : ''}
     ${soloTaken ? '<button class="mc-backbtn" id="mc-sologive" title="Give the seat back to the computer">Hand the seat back</button>' : ''}
     ${canConcede() && !soloTaken && !t?.over && !t?.spec.watch ? '<button class="mc-backbtn ghostbtn" id="mc-concede" title="Give up this game: the computer wins, whatever the score">Concede</button>' : ''}
@@ -3015,6 +3022,41 @@ function soloBarHtml(): string {
     <a class="mc-backbtn" href="../">Back to Board</a>
   </div>`;
 }
+
+// LOOKING BACK (`replay`): in a game the player watches, paused or over, a move back, a move forward, and Live.
+function canLookBack(): boolean {
+  const t = solo?.table;
+  return !!t && t.spec.watch && !soloTaken && (t.paused || t.over) && t.replay.length > 1;
+}
+function replayBarHtml(): string {
+  if (!canLookBack()) return '';
+  const first = replay?.at === 0;
+  const back = `<button class="mc-speed" id="mc-replayback"${first ? ' aria-disabled="true" data-why="This is the earliest move kept."' : ''} title="The move before">Back</button>`;
+  const more = replay
+    ? `<button class="mc-speed" id="mc-replayfwd" title="The move after">Forward</button><button class="mc-speed on" id="mc-replaylive" title="The table as it stands now">Live</button>`
+    : '';
+  return `<span class="mc-speeds" role="group" aria-label="Look back at the moves">${back}${more}</span>`;
+}
+function lookBack(step: -1 | 1 | 'live'): void {
+  const t = solo?.table;
+  if (!t) return;
+  if (step === 'live' || !canLookBack()) { replay = null; render(); return; }
+  const frames = t.replay;
+  // From the table as it stands, a step back is the table before the last move.
+  const at = replay ? replay.at + step : step < 0 ? frames.length - 2 : frames.length - 1;
+  if (at < 0) return;
+  if (at >= frames.length) { replay = null; render(); return; }
+  replay = { at, state: JSON.parse(frames[at].json) as GameState };
+  render();
+}
+// The arrow keys step through the moves too, while looking back is open and no field has the keys.
+document.addEventListener('keydown', (ev) => {
+  if (ev.ctrlKey || ev.metaKey || ev.altKey || !canLookBack()) return;
+  const el = ev.target as HTMLElement | null;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+  if (ev.key === 'ArrowLeft' && replay?.at !== 0) { ev.preventDefault(); lookBack(-1); }
+  else if (ev.key === 'ArrowRight' && replay) { ev.preventDefault(); lookBack(1); }
+});
 
 // The phone's menu for the same bar (openBarMenu): each choice clicks the
 // desktop button it stands for, and the speeds, which the phone's bar has no
@@ -3028,6 +3070,7 @@ async function openSoloMenu(): Promise<void> {
     choices: [
       { id: 'board', label: 'Back to Board' },
       ...(document.getElementById('mc-solopause') ? [{ id: 'pause', label: t?.paused ? 'Resume' : 'Pause the computer' }] : []),
+      ...(canLookBack() ? [{ id: 'replay:back', label: 'Back a move' }, ...(replay ? [{ id: 'replay:fwd', label: 'Forward a move' }, { id: 'replay:live', label: 'Back to live' }] : [])] : []),
       ...(document.getElementById('mc-sologive') ? [{ id: 'give', label: 'Hand the seat back' }] : []),
       ...(t && !t.over ? SPEEDS.filter((s) => s.id !== t.speed).map((s) => ({ id: `speed:${s.id}`, label: `Speed: ${s.name}` })) : []),
       ...(document.getElementById('mc-concede') ? [{ id: 'concede', label: 'Concede the game' }] : []),
@@ -3037,6 +3080,9 @@ async function openSoloMenu(): Promise<void> {
   });
   if (pick === 'board') document.querySelector<HTMLAnchorElement>('.mc-bar a.mc-backbtn')?.click();
   else if (pick === 'pause') document.getElementById('mc-solopause')?.click();
+  else if (pick === 'replay:back') lookBack(-1);
+  else if (pick === 'replay:fwd') lookBack(1);
+  else if (pick === 'replay:live') lookBack('live');
   else if (pick === 'give') document.getElementById('mc-sologive')?.click();
   else if (pick === 'concede') document.getElementById('mc-concede')?.click();
   else if (pick === 'restart') document.getElementById('mc-solorestart')?.click();
@@ -3096,7 +3142,15 @@ function wireSolo($: (id: string) => HTMLElement | null): void {
   $('mc-soloback')?.addEventListener('click', () => { location.href = '../'; });
   if (!solo) return;
   const { table, spec } = solo;
-  $('mc-solopause')?.addEventListener('click', () => { if (table.paused) table.resume(); else table.pause(); });
+  $('mc-solopause')?.addEventListener('click', () => {
+    if (!table.paused) { table.pause(); return; }
+    // Play goes on from the table as it stands, never from one looked back at.
+    replay = null;
+    table.resume();
+  });
+  $('mc-replayback')?.addEventListener('click', (ev) => { if ((ev.currentTarget as HTMLElement).getAttribute('aria-disabled') !== 'true') lookBack(-1); });
+  $('mc-replayfwd')?.addEventListener('click', () => lookBack(1));
+  $('mc-replaylive')?.addEventListener('click', () => lookBack('live'));
   $('mc-solorestart')?.addEventListener('click', () => void soloRestart());
   $('mc-solorestart2')?.addEventListener('click', () => void soloRestart(false));
   $('mc-soloretry')?.addEventListener('click', () => table.retry());
