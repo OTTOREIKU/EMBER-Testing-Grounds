@@ -888,6 +888,32 @@ function umbrellaOf(at: Grid, c: Ctx): number {
   return c.w.coverMates * mates + c.w.coverLaunch * launchers;
 }
 
+// WHAT A PART STILL DOES (`partUse`, 2026-10-14). OTTO, watching a GoF Missile roll ANY on the Part Die against a
+// Mech whose AMS pack had spent every Interception Token: "The computer chose the pack as the target even though it
+// can no longer do anything ... A human would have chosen a more dangerous part to target". Every Part of a Mech was
+// worth the same to the hit (its step toward the Mech's Integrity Loss), so the easiest to destroy was taken, whatever
+// it still did. What each Part still does: its ready weapons' dice (a red die two yellow), a launcher with Projectiles
+// left as three, each Interception Token on it one; its share of the Mech's, times the Mech's worth, times the chance
+// the hit destroys it. The Torso's loss is the Mech's, counted whole already.
+function partUseIn(d: Decision, view: SeatView, w: Weights): ((slot: string, f: Forecast) => number) | undefined {
+  const target = unitOf(view, d.facts.targetUid);
+  if (!target || target.kind !== 'mech') return undefined;
+  const score = (slot: string): number => {
+    let n = target.intercept?.slots[slot] ?? 0;
+    for (const x of target.weapons) {
+      if (x.slot !== slot || !ready(x)) continue;
+      if (x.type === 'Firing' || x.type === 'Melee') n += 2 * x.red + x.yellow;
+      else if (x.type === 'Projectile') n += 3;
+    }
+    return n;
+  };
+  const live = target.parts.filter((p) => p.state !== 'destroyed' && p.slot !== 'torso');
+  const total = live.reduce((n, p) => n + score(p.slot), 0);
+  if (total <= 0) return undefined;
+  const whole = unitWorth(target, view, w);
+  return (slot, f) => (slot === 'torso' ? 0 : w.partUse * f.destroy * whole * (score(slot) / total));
+}
+
 // WHAT AN ENEMY PROJECTILE'S STRIKE WOULD DO TO THIS SQUAD (`shootDown`): its own turn as the engine would ask it
 // (a Missile's attack in the Delay Phase, a blast's Explosions), each attack on a unit of this squad worth what it is
 // to the enemy: of single attacks the one worth most, a blast whole. Asked once a table.
@@ -5117,7 +5143,7 @@ export function makeTactician(skills: Partial<Skills> = {}, weights: Partial<Wei
       case 'shove.make':
         return s.shove ? yield* shove(d, view, w, s, memo) : null;
       case 'attack.part':
-        return hitLocation(d, view, worthIn(d, view) ?? alone);
+        return hitLocation(d, view, worthIn(d, view) ?? alone, w.partUse > 0 ? partUseIn(d, view, w) : undefined);
       case 'defence.declare':
         return declare(d, view, worthIn(d, view) ?? alone);
       case 'attack.reroll':

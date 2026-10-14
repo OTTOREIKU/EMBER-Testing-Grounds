@@ -215,6 +215,11 @@ export interface Weights {
   // has more Missiles to come, at this share of what each Token would have stopped of one of them.
   flightOdds: number;
   icptBurn: number;
+  // WHAT A PART STILL DOES (`partUse`, 2026-10-14): where the attacker says which Part a hit lands on, a Part counts
+  // beyond its step toward the Mech's Integrity Loss what it still does: its ready weapons' dice (a red die two yellow),
+  // a launcher with Projectiles left as three, each Interception Token on it one; its share of the Mech's, times the
+  // Mech's worth, times the chance it is destroyed, at this weight. A Part with nothing left to do adds nothing.
+  partUse: number;
   coverFire: number;
   coverMates: number;
   coverLaunch: number;
@@ -716,6 +721,7 @@ export const TACTICIAN: Weights = {
   overkill: 0,
   flightOdds: 0,
   icptBurn: 0,
+  partUse: 0,
   coverFire: 0,
   coverMates: 0,
   coverLaunch: 0,

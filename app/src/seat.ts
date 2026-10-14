@@ -161,8 +161,9 @@ export interface UnitView {
   weapons: WeaponView[];
   // Its Interception (4.9): the furthest Range of its Intercept Actions with Interception Tokens left, on Parts that
   // still work, and the Tokens it holds. Absent where it cannot Intercept now: none left, Shutdown, Fire Control
-  // Interference (units.ts interceptsOwed). A Load lent by a Carrier in Contact is left out.
-  intercept?: { reach: number; left: number };
+  // Interference (units.ts interceptsOwed). A Load lent by a Carrier in Contact is left out. `slots`: the Tokens on
+  // each Part that holds an Intercept Action with some left.
+  intercept?: { reach: number; left: number; slots: Record<string, number> };
   // Its Initiative on each Timing, off its pilot's card (a Mech that has one): loop.ts activationOrder plays a
   // Timing's Mechs by it, the lowest first, ties alternating from the First Player. What a seat orders the round
   // it plans by (M18).
@@ -497,16 +498,22 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
 }
 
 // A unit's Interception as the view gives it (`intercept`).
-function interceptOf(t: Token, cards: { slot: string; card: { actions?: CardAction[] } }[], stateOf: Map<string, PartView>): { intercept?: { reach: number; left: number } } {
+function interceptOf(t: Token, cards: { slot: string; card: { actions?: CardAction[] } }[], stateOf: Map<string, PartView>): { intercept?: { reach: number; left: number; slots: Record<string, number> } } {
   if (t.kind === 'projectile' || (t.kind === 'mech' && t.stance === 'shutdown') || statusCount(t.statuses, 'fci') > 0) return {};
   let reach = -1;
+  const slots: Record<string, number> = {};
   for (const { slot, card } of cards) {
     if (t.kind !== 'mech' && slot !== 'main') continue;
     const part = stateOf.get(slot);
     if (part && part.state === 'destroyed' && !part.repaired) continue;
-    for (const a of card.actions ?? []) if (interceptCapacity(a) !== undefined && (t.intercept?.[a.id] ?? 0) > 0) reach = Math.max(reach, a.range ?? 0);
+    for (const a of card.actions ?? []) {
+      const held = t.intercept?.[a.id] ?? 0;
+      if (interceptCapacity(a) === undefined || held <= 0) continue;
+      reach = Math.max(reach, a.range ?? 0);
+      slots[slot] = (slots[slot] ?? 0) + held;
+    }
   }
-  return reach < 0 ? {} : { intercept: { reach, left: interceptLeft(t) } };
+  return reach < 0 ? {} : { intercept: { reach, left: interceptLeft(t), slots } };
 }
 
 // The Ally Mechs a unit's base meets (rules.ts inContact): those a Carrier's

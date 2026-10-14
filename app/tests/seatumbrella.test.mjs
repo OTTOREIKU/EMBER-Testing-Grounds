@@ -60,7 +60,7 @@ const V = Object.fromEntries(view.units.map((u) => [u.label, u]));
 const apart = (a, b) => Math.abs(a.col - b.col) + Math.abs(a.row - b.row);
 check('THE STAGE: the Guard\'s Opportunity is open; the view gives its Interception (Range 3, three Tokens) and nobody else\'s; Dune four Grids off',
   [d?.kind, d?.unit === U.Guard.uid, V.Guard.intercept, V.Dune.intercept ?? null, V.Pod.intercept ?? null, apart(V.Guard.grid, V.Dune.grid)],
-  ['opp.act', true, { reach: 3, left: 3 }, null, null, 4]);
+  ['opp.act', true, { reach: 3, left: 3, slots: { backpack: 3 } }, null, null, 4]);
 
 const best = (weights) => AI.weighed(d, view, {}, weights)[0];
 const off = best({});

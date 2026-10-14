@@ -843,6 +843,25 @@ const plain = only({});
   check('where a hit lands is chosen by what the Tactician prices each ending at: a Part of the enemy Commander is a third of the way to the Commander, so a sure Part outweighs three chances in ten of the kill',
     [c.option, c.reason, gainOf(sure, lead, v, W) > gainOf(kill, lead, v, W)], ['part.pick:leftHand', 'hit_location', true]);
 }
+{
+  // WHAT A PART STILL DOES (`partUse`, 2026-10-14; OTTO: a GoF Missile rolled ANY against a Mech whose AMS pack had
+  // spent every Interception Token, "The computer chose the pack ... A human would have chosen a more dangerous part").
+  // The pack, its Tokens spent, and the arm with the gun, each as sure to be destroyed and worth as many points.
+  const me = unit(1, 's1', 'mech', 0, 0);
+  const foe = unit(2, 's2', 'mech', 3, 0, { weapons: [gun(6)] });
+  const v = viewOf([me, foe]);
+  const pick = (slot, f) => ({ id: `part.pick:${slot}`, label: slot, tags: ['pick'], run: {}, chance: () => f });
+  const sure = odds(0, 0.9, 0);
+  const d = { id: 'p', kind: 'attack.part', seat: 's1', unit: 1, fallback: 'part.pick:backpack', facts: { targetUid: 2, role: 'attacker' }, options: [pick('backpack', sure), pick('rightHand', sure)] };
+  check('AS IT SHIPS every Part is a step toward the Mech\'s Integrity Loss and no more: the spent pack, as sure and as dear as the gun arm, is taken',
+    plain.choose(d, v, rng).option, 'part.pick:backpack');
+  check('WITH `partUse` 1 the arm with the gun: what a Part still does counts, and a pack with no Tokens left does nothing',
+    only({}, { partUse: 1 }).choose(d, v, rng).option, 'part.pick:rightHand');
+  const guarded = viewOf([me, { ...foe, intercept: { reach: 3, left: 3, slots: { backpack: 3 } } }]);
+  check('and an AMS pack with its three Tokens is worth hitting for them, though less than a gun of five dice',
+    only({}, { partUse: 1 }).choose(d, guarded, rng).option, 'part.pick:rightHand');
+  check('as it ships (2026-10-14): 0 until measured', W.partUse, 0);
+}
 
 {
   // ANSWERS THAT PREPARE SOMETHING where it stands: a Stance, a Charge, a

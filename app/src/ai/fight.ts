@@ -26,13 +26,21 @@ export const forecasts = (options: Option[]): { o: Option; f: Forecast }[] =>
 // WHERE THE HIT LANDS, the attacker's to say: the Part worth most to hit
 // (finishing a Damaged one, by the odds), and of two worth the same the one
 // that cost more.
-export function hitLocation(d: Decision, view: SeatView, worth: Worth): Choice | null {
+export function hitLocation(d: Decision, view: SeatView, worth: Worth, use?: (slot: string, f: Forecast) => number): Choice | null {
   const picks = forecasts(d.options.filter((o) => o.id.startsWith('part.pick:')));
   if (!picks.length) return null;
   const target = unitOf(view, d.facts.targetUid);
-  const cost = (o: Option): number => target?.parts.find((p) => p.slot === o.id.slice('part.pick:'.length))?.points ?? 0;
-  const best = picks.reduce((a, b) => (beats(worth, b.f, a.f) || (!beats(worth, a.f, b.f) && cost(b.o) > cost(a.o)) ? b : a));
-  return { option: best.o.id, reason: 'hit_location', score: worth(best.f), why: 'the Part worth most to hit' };
+  const slotOf = (o: Option): string => o.id.slice('part.pick:'.length);
+  const cost = (o: Option): number => target?.parts.find((p) => p.slot === slotOf(o))?.points ?? 0;
+  // (`use`: what each Part still does, beside the worth of the hit, `partUse`.)
+  const worthOf = (x: { o: Option; f: Forecast }): number => worth(x.f) + (use ? use(slotOf(x.o), x.f) : 0);
+  const over = (a: { o: Option; f: Forecast }, b: { o: Option; f: Forecast }): boolean => {
+    if (!use) return beats(worth, a.f, b.f);
+    const more = worthOf(a) - worthOf(b);
+    return more > EXACT || (Math.abs(more) <= EXACT && a.f.pen > b.f.pen + EXACT);
+  };
+  const best = picks.reduce((a, b) => (over(b, a) || (!over(a, b) && cost(b.o) > cost(a.o)) ? b : a));
+  return { option: best.o.id, reason: 'hit_location', score: worthOf(best), why: 'the Part worth most to hit' };
 }
 
 // WHAT THE DEFENDER DECLARES before the Part Die: the Part, and the Parry on
