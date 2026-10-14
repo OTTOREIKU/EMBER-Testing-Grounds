@@ -187,6 +187,17 @@ function lossStep(t, r) {
     const by = t.state.tokens.find((x) => x.uid === r.option.facts.uid);
     if (by) lossGame.icpt.set(r.option.facts.targetUid, { side: by.side, n: (lossGame.icpt.get(r.option.facts.targetUid)?.n ?? 0) + 1 });
   }
+  // (LINGERING MISSILES, 2026-10-14: each Missile still on the table as a Delay Phase ends, which 3.6.1 and 4.7.5 say
+  // cannot be: it flies at a target, or finding none it is destroyed; the PK3 excepted, its card keeping it.)
+  const phase = M.TY.PHASES[t.state.round.phase];
+  if (lossGame.phase === 'Delay' && phase !== 'Delay') {
+    for (const x of t.state.tokens) {
+      if (x.kind !== 'projectile' || x.deployed === false) continue;
+      const flies = M.U.ownCards(data, x).some(({ card }) => (card.actions ?? []).some((a) => a.type === 'Delay' && M.U.fliesToTarget(a) && !M.U.keptWithoutTarget(a)));
+      if (flies) lossGame.linger[x.side] = (lossGame.linger[x.side] ?? 0) + 1;
+    }
+  }
+  lossGame.phase = phase;
   if (!r) {
     for (const side of ['s1', 's2']) {
       lossGame.cover[side].left = interceptors(t.state, side).reduce((n, x) => n + x.left, 0);
@@ -982,7 +993,7 @@ for (let seed = from; seed <= to; seed++) {
     policyNow = linesWatch(policyNow);
     if (foeNow) foeNow = linesWatch(foeNow);
   }
-  if (process.env.LOSSLOG) lossGame = { s1: {}, s2: {}, standing: null, by: null, pts: new Map(), projSeen: new Map(), projHit: new Set(), cover: { s1: {}, s2: {} }, icpt: new Map() };
+  if (process.env.LOSSLOG) lossGame = { s1: {}, s2: {}, standing: null, by: null, pts: new Map(), projSeen: new Map(), projHit: new Set(), cover: { s1: {}, s2: {} }, icpt: new Map(), linger: {}, phase: null };
   if (process.env.BLINDSPOTS) {
     blindGame = { seed, subjectSeat, s1: blindFresh(), s2: blindFresh() };
     policyNow = blindWatch(policyNow);
@@ -1430,6 +1441,7 @@ for (let seed = from; seed <= to; seed++) {
     const proj = (side) => { const mine = [...lossGame.projSeen].filter(([, sd]) => sd === side).map(([uid]) => uid); return `${mine.filter((uid) => lossGame.projHit.has(uid)).length}/${mine.length}`; };
     console.log(`  projectiles struck/launched s1 ${proj('s1')} s2 ${proj('s2')}`);
     console.log(`  cover s1 ${JSON.stringify(lossGame.cover.s1)} s2 ${JSON.stringify(lossGame.cover.s2)}`);
+    console.log(`  linger s1 ${lossGame.linger.s1 ?? 0} s2 ${lossGame.linger.s2 ?? 0}`);
   }
   if (dodgeGame) console.log(`  dodges s1 ${dodgeGame.s1} s2 ${dodgeGame.s2}`);
   if (dshotGame) console.log(`  droneshots s1 ${dshotGame.s1.shots.size}/${dshotGame.s1.acts.size} s2 ${dshotGame.s2.shots.size}/${dshotGame.s2.acts.size}`);
