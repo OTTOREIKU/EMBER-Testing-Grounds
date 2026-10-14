@@ -381,8 +381,9 @@ M.L.setLocalSeat(null);
   // (Played and weighed as these moments were staged, `nextAfter` 0, `press` 0 and no learned judge (`learned` 0):
   // all adopted since, at 1, 10 and 10, they change what a plan that acts counts a turn on, how a squad behind walks,
   // and where a walk is worth ending. And `commandNext` 0, adopted at 1 on 2026-10-12: a Command-only Drone's Command
-  // a round on, which `seatcommandnext.test` holds.)
-  const PIN = { nextAfter: 0, press: 0, learned: 0, commandNext: 0 };
+  // a round on, which `seatcommandnext.test` holds. And `ammoPace` 0, adopted at 1 on 2026-10-14: the Ballista's two
+  // Missiles in round 1 count less with it, which `seatammopace.test` holds.)
+  const PIN = { nextAfter: 0, press: 0, learned: 0, commandNext: 0, ammoPace: 0 };
   const tact = AI.makeTactician(SK, PIN);
   // Two drivers at a table that has been set up, the units then stood where
   // the check wants them: the first squad along the north edge, the second in

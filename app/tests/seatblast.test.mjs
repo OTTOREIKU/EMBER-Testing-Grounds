@@ -822,6 +822,9 @@ const table = async ({ policies, dice, seed = 5 }) => {
 
 // ---------- what the policies make of it ----------
 {
+  // (`ammoPace` 0, adopted at 1 on 2026-10-14: the Wolf's single Stun Grenade in round 1 counts a fifth of its worth
+  // with it, and these stages weigh what a blast is worth, not when to spend it.)
+  const PACE0 = { ammoPace: 0 };
   const staged = async ({ seat = 's1', unit = 'Wolf', timing = 'projectile', phase = 2, policy = AI.eagerPolicy }, arrange) => {
     const x = await table({ policies: policy, dice: blank, seed: 2 });
     const made = arrange(x) ?? {};
@@ -830,10 +833,10 @@ const table = async ({ policies, dice, seed = 5 }) => {
     const d = x.t.drivers[seat].pending();
     const act = d && (d.kind === 'opp.act' || d.kind === 'activation.act');
     const pick = (p) => { const c = p.choose(d, viewOf(x.t.state, seat), new AI.Rng('pick')); return { ...c, o: d.options.find((o) => o.id === c.option) }; };
-    return { ...x, d, made, pick, rows: act ? AI.weighed(d, viewOf(x.t.state, seat), { focus: false }) : [] };
+    return { ...x, d, made, pick, rows: act ? AI.weighed(d, viewOf(x.t.state, seat), { focus: false }, PACE0) : [] };
   };
   const stay = (x) => x.rows.find((p) => p.how === 'stay');
-  const tact = AI.makeTactician({ focus: false });
+  const tact = AI.makeTactician({ focus: false }, PACE0);
 
   // A Grenade in reach, on the dial that throws it.
   const one = await staged({}, () => {});
@@ -848,7 +851,7 @@ const table = async ({ policies, dice, seed = 5 }) => {
   const worthOf = (cardId) => {
     const o = one.d.options.find((x) => x.facts?.cardId === cardId && x.facts.to.c === 5 && x.facts.to.r === 7);
     const only = { ...one.d, options: one.d.options.filter((x) => x.tags[0] !== 'launch' || x === o) };
-    return AI.weighed(only, viewOf(one.t.state, 's1'), { focus: false }).find((p) => p.how === 'stay').now;
+    return AI.weighed(only, viewOf(one.t.state, 's1'), { focus: false }, PACE0).find((p) => p.how === 'stay').now;
   };
   const each = { stun: worthOf('155'), grenade: worthOf('154'), pholcus: worthOf('156') };
   const most = Object.entries(each).reduce((a, b) => (b[1] > a[1] ? b : a))[0];
