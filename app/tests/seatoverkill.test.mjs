@@ -59,15 +59,16 @@ check('THE STAGE: the first Mech has launched at the Raven (its Missiles on the 
 
 const launching = (r) => String(r.does).startsWith('a Projectile');
 const bestLaunch = (skills, tune, dd = d, vv = view) => AI.weighed(dd, vv, skills, tune).filter(launching).reduce((a, b) => (!a || b.now > a.now ? b : a), null);
-const off = bestLaunch({}, {});
+const off = bestLaunch({}, { overkill: 0 });
 const on = bestLaunch({}, { overkill: 1 });
-check('AS IT SHIPS (`overkill` 0) a launch at the Raven is worth as much as though nothing were on the way',
+check('WITHOUT `overkill` (0) a launch at the Raven is worth as much as though nothing were on the way',
   [!!off, off ? off.now > 0 : null], [true, true]);
 check('WITH `overkill` 1 it is worth less: the squadmate\'s Missiles on the table will likely have destroyed the Raven',
   [!!on, on && off ? on.now < off.now : null], [true, true]);
+check('and as it ships, the launch at the Raven counts the Missiles already on the way', (bestLaunch({}, {})?.now ?? 0) < off.now, true);
 {
   // The Missile style's flat amount for each launch counts only what the launch could still strike.
-  const style = bestLaunch(AI.MISSILE_SKILLS, AI.MISSILE_WEIGHTS);
+  const style = bestLaunch(AI.MISSILE_SKILLS, { ...AI.MISSILE_WEIGHTS, overkill: 0 });
   const styled = bestLaunch(AI.MISSILE_SKILLS, { ...AI.MISSILE_WEIGHTS, overkill: 1 });
   check('and the Missile style\'s barrage counts only what is still standing', [!!style, !!styled && styled.now < style.now], [true, true]);
 }
@@ -82,7 +83,8 @@ check('WITH `overkill` 1 it is worth less: the squadmate\'s Missiles on the tabl
   check('A LAUNCH WITH ANOTHER ENEMY IN REACH keeps its worth: its Missile goes to the Rifle, which nothing in the air can reach',
     [d2?.unit === second, !!near && String(near.does).includes('Rifle'), !!near && near.now > 10 * on.now], [true, true, true]);
 }
-check('as it ships (2026-10-13): 0 until measured', AI.TACTICIAN.overkill, 0);
+check('AS IT SHIPS (2026-10-14): 1 for the Ace and the Veteran (the Missile style with them), 0 for the Brawler',
+  [AI.TACTICIAN.overkill, AI.BRAWLER_WEIGHTS.overkill], [1, 0]);
 t.close();
 
 console.log(`\n${pass} passed, ${fail} failed`);

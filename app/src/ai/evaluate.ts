@@ -213,8 +213,11 @@ export interface Weights {
   // Missiles in the air will destroy anyway, and keeps them for the units still to come. MEASURED 2026-10-14 (the
   // missile squads against the community squads, 200 a lever): 152 against 146, the Missile style 163 against 159.5,
   // the community squads level (109 against 108). It spreads the targets; the launches stay as many (19.3 a game to
-  // 19.2). OFF: with flightOdds and coverMates the missile squads lost ground (115 against 123, points -33 a game,
-  // p 0.03) where overkill, flightOdds and icptBurn together were level (124 against 123); read again on fresh seeds.
+  // 19.2). With flightOdds and coverMates the missile squads lost ground on the night's seeds (115 against 123, points
+  // -33 a game, p 0.03); READ AGAIN ON FRESH SEEDS (2026-10-14, the iMac's set1, 200 a lever): overkill + flightOdds 121
+  // against 116.5 (Victory Point margin +0.94 a game, p 0.006; points -23, p 0.10), with coverMates too 124 (VP +1.01,
+  // p 0.005), the community squads level (97 against 94). ON with flightOdds for the Ace and the Veteran (OTTO's rule:
+  // level on wins and closer to how people play); the Brawler and the Recruit keep 0.
   overkill: number;
   // KEEPING A MISSILE FOR A BIGGER TARGET (`keepAmmo`, M24, 2026-10-14; OTTO: "I would maybe fire off 4 to see how they
   // do and save my ammo for the mechs that are in the back"). An Ammo Token spent is one the launcher does not have
@@ -228,7 +231,7 @@ export interface Weights {
   // has more Missiles to come, at this share of what each Token would have stopped of one of them. MEASURED 2026-10-14
   // (the missile squads against the interceptor variants, 200 a lever): flightOdds 125 against 123, the Missiles going
   // round the interceptors (a strike on a guarded unit 3.37 a game to 2.96, on an unguarded one 2.52 to 3.14); icptBurn
-  // 124 and halves that. Both OFF for now: see `overkill` for the set that lost ground.
+  // 124 and halves that. flightOdds ON with overkill (see it, 2026-10-14); icptBurn OFF (with them, 116 against 116.5).
   flightOdds: number;
   icptBurn: number;
   // WHAT A PART STILL DOES (`partUse`, 2026-10-14): where the attacker says which Part a hit lands on, a Part counts
@@ -736,9 +739,9 @@ export const TACTICIAN: Weights = {
   launchThreat: 0,
   bait: 0,
   spentClose: 0,
-  overkill: 0,
+  overkill: 1,
   keepAmmo: 0,
-  flightOdds: 0,
+  flightOdds: 1,
   icptBurn: 0,
   partUse: 0,
   coverFire: 0,

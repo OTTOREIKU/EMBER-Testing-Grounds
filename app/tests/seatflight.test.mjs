@@ -61,7 +61,7 @@ check('THE DRIVER READS THE FLIGHT AS A LAUNCH: at the Rifle it almost never com
   [guarded?.survive?.() < 0.05, guarded?.drain?.()?.spent > 1, guarded?.drain?.()?.stop > 0.5, open?.survive === undefined], [true, true, true, true]);
 
 const target = (skills, tune, vv = view) => { const c = AI.makeTactician(skills, tune).choose(d, vv, new AI.Rng('flight')); return d.options.find((o) => o.id === c.option)?.facts?.targetUid; };
-check('AS IT SHIPS it flies at the Rifle, into the Interception', target({}, {}), U.Rifle.uid);
+check('WITHOUT `flightOdds` (0) it flies at the Rifle, into the Interception', target({}, { flightOdds: 0 }), U.Rifle.uid);
 check('WITH `flightOdds` 1 it takes the direct hit on the Raven', target({}, { flightOdds: 1 }), U.Raven.uid);
 check('WITH `icptBurn` 1 beside it, the other Razor still to fly, it burns the CIWS\'s Tokens on the Rifle',
   target({}, { flightOdds: 1, icptBurn: 1 }), U.Rifle.uid);
@@ -71,7 +71,9 @@ check('WITH `icptBurn` 1 beside it, the other Razor still to fly, it burns the C
   const alone = { ...view, units: view.units.filter((u) => u.uid !== other.uid) };
   check('and with no other Missile to come, the direct hit again', target({}, { flightOdds: 1, icptBurn: 1 }, alone), U.Raven.uid);
 }
-check('as it ships (2026-10-14): 0 until measured', [AI.TACTICIAN.flightOdds, AI.TACTICIAN.icptBurn], [0, 0]);
+check('AS IT SHIPS (2026-10-14): flightOdds 1 for the Ace and the Veteran, icptBurn 0; the Brawler 0',
+  [AI.TACTICIAN.flightOdds, AI.TACTICIAN.icptBurn, AI.BRAWLER_WEIGHTS.flightOdds], [1, 0, 0]);
+check('and as it ships, it takes the direct hit on the Raven', target({}, {}), U.Raven.uid);
 t.close();
 
 console.log(`\n${pass} passed, ${fail} failed`);
