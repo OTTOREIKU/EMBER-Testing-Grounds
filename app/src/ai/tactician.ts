@@ -692,8 +692,11 @@ function shotValue(o: Option, c: Ctx): { value: number; f: Forecast | null; targ
 // count, as many of them as the squad has Missiles still to come (its others on the table, and three at most from each
 // launcher with Ammo), each at what it would have stopped of one like this (its chance to stop one, times this strike
 // as if unguarded), at `icptBurn`.
+// Asked where the Missile itself chooses its target, in the Delay Phase, and not where a launch is weighed: read into
+// every launch, the odds held the missile squads back from launching (the PC's xp arms, 2026-10-14: 18.5 launches a
+// game to 15.2, 12.6 strikes to 9.4, 72 wins of 100 to 66).
 function flightOf(o: Option, value: number, c: Ctx): number {
-  if (!o.survive || !o.tags.includes('detonate') || (c.w.flightOdds <= 0 && c.w.icptBurn <= 0)) return value;
+  if (c.me.kind !== 'projectile' || !o.survive || !o.tags.includes('detonate') || (c.w.flightOdds <= 0 && c.w.icptBurn <= 0)) return value;
   const through = c.w.flightOdds > 0 ? o.survive() : null;
   const kept = through === null ? value : value * through ** c.w.flightOdds;
   if (c.w.icptBurn <= 0) return kept;
