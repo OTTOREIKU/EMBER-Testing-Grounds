@@ -224,7 +224,10 @@ export interface Weights {
   // unit's Ammo Tokens / the rounds left, this one counted, - 1) of its own worth more, at most that much either way:
   // less while the Tokens are short, more while they would go unspent. The target is untouched. At 0 nothing. (It
   // replaced `keepAmmo`, built the same morning, which kept a Missile for a bigger target; OTTO: "Shots on drones are
-  // important as well".)
+  // important as well".) MEASURED 2026-10-14 (the legal missile squads against the legal community squads, 200 games,
+  // against the Ace with overkill and flightOdds on): 142 against 132.5 (p 0.18), points +38 a game (p 0.07);
+  // launches by round 4.7 4.2 4.0 3.2 2.4 to 4.7 4.7 4.1 3.6 3.2, the Drone shots kept, Tokens left 9.2 to 7.5. ON
+  // for the Ace and the Veteran (OTTO: "Once you confirm ammo pace you can push"); the Brawler and the Recruit 0.
   ammoPace: number;
   // A MISSILE'S FLIGHT THROUGH INTERCEPTION (M24, 2026-10-14). `flightOdds`: a Missile's strike on a target counts at
   // the chance it comes through the Interception attempts its flight draws (each enemy interceptor in Range of where
@@ -742,7 +745,7 @@ export const TACTICIAN: Weights = {
   bait: 0,
   spentClose: 0,
   overkill: 1,
-  ammoPace: 0,
+  ammoPace: 1,
   flightOdds: 1,
   icptBurn: 0,
   partUse: 0,

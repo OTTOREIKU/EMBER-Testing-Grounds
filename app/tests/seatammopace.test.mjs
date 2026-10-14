@@ -88,7 +88,14 @@ const read = (n, tune) => { tokens(n); return { off: bestLaunch({ ammoPace: 0 })
   }
   at(U.Rifle, 5, 13, 0);
 }
-check('THE WEIGHT SHIPS AT 0', AI.TACTICIAN.ammoPace, 0);
+check('AS IT SHIPS (2026-10-14): 1 for the Ace and the Veteran, 0 for the Brawler and the Recruit made of it',
+  [AI.TACTICIAN.ammoPace, AI.VETERAN_WEIGHTS.ammoPace ?? AI.TACTICIAN.ammoPace, AI.BRAWLER_WEIGHTS.ammoPace], [1, 1, 0]);
+{
+  // And as it ships, one Token in round 1 makes the launch count a fifth, as `ammoPace` 1 does above.
+  const { on } = read(1);
+  const shipped = bestLaunch({});
+  check('and as it ships, the launch reads as with `ammoPace` 1', on && shipped ? near(shipped.now, on.now) : null, true);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
