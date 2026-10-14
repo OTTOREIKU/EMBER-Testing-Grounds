@@ -518,6 +518,8 @@ interface Ctx {
   launchFires: Map<number, number>;
   // What each enemy's Projectiles could do to the rest of the squad, for each unit asking (`rivalShot`, `bait`).
   baits: Map<string, number>;
+  // What the enemy's Projectiles stand to do to each unit of this squad where it stands (`missileOn`, `coverMates`).
+  covers: Map<number, number>;
   harms: Map<string, Harm>;
   nexts: Map<string, number>;
   walks: Map<string, Stroll | null>;
@@ -591,12 +593,12 @@ interface Target {
 // given to is then asked the very question that was planned. The answers the
 // engine gave are the same answers, so they are not asked for twice.
 export interface Memo {
-  table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>; downs: Map<number, number>; launchFires: Map<number, number>; baits: Map<string, number>;
+  table: string; harms: Map<string, Harm>; nexts: Map<string, number>; firepower: Map<number, number>; downs: Map<number, number>; launchFires: Map<number, number>; baits: Map<string, number>; covers: Map<number, number>;
   walks: Map<string, Stroll | null>; targets: Map<string, Target[]>; holdings: Map<number, number>;
   handed: Map<string, number | null>; aims: Map<number, Map<number, number>>; races: { map: Map<string, Race> | null };
   backs: { map: Map<number, Back> | null }; calls: Map<number, number>; screens: Map<string, number>; clears: Map<string, number>;
 }
-export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), downs: new Map(), launchFires: new Map(), baits: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map(), clears: new Map() });
+export const newMemo = (): Memo => ({ table: '', harms: new Map(), nexts: new Map(), firepower: new Map(), downs: new Map(), launchFires: new Map(), baits: new Map(), covers: new Map(), walks: new Map(), targets: new Map(), holdings: new Map(), handed: new Map(), aims: new Map(), races: { map: null }, backs: { map: null }, calls: new Map(), screens: new Map(), clears: new Map() });
 
 // The table as far as those answers depend on it: every unit, where it stands
 // and in what state. Whose activation is open is left out, and so is a Command
@@ -786,6 +788,64 @@ function launchFire(e: UnitView, c: Ctx): number {
   }
   c.launchFires.set(e.uid, worst);
   return worst;
+}
+
+// INTERCEPTOR COVER (`coverFire`, `coverMates`, M24, 2026-10-13; OTTO: "analyze why the community squads lost and then
+// try to tune our ai models to deal with the threat better"). A Missile flying at a unit owes an Interception to each
+// of its enemies with Interception Tokens left whose Intercept Range reaches the Grid it flies into (4.9; FAQ M9/M20),
+// and each tries while the Missile stands and it has Tokens left (FAQ M5). With interceptors put into the community
+// squads the missile squads struck 10.9 times a game where they had struck 12.4, for 4.6 Interceptions a game against
+// 18 launches: nothing in the planner read the squad's own Interception, so nothing stood where it would intercept.
+// The chance an enemy Projectile striking a unit in this Grid comes through the squad's interceptors as they stand
+// (this unit at `at`), each trying at `coverStop` with up to three Tokens; `skip` leaves one of them out.
+function coverAt(at: Grid, c: Ctx, skip = -1): number {
+  let through = 1;
+  for (const u of c.view.units) {
+    if (u.side !== c.view.seat || !u.intercept || !u.alive || !u.deployed || u.uid === skip) continue;
+    if (apart(u.uid === c.me.uid ? at : u.grid, at) > u.intercept.reach) continue;
+    through *= (1 - c.w.coverStop) ** Math.min(3, u.intercept.left);
+  }
+  return through;
+}
+
+// What the enemy's Projectiles stand to do to a unit of this squad where it stands this round (`coverMates`): the
+// strike on it of each Projectile on the table, and each launcher's Projectiles from the Landing Point nearest it
+// (`salvoOn`, read whatever `salvo` is: what an interceptor stands to stop is the squad's, not a reason for one unit to
+// hide), on `exposure`'s own scale. Asked once a table.
+function missileOn(u: UnitView, c: Ctx): number {
+  const known = c.covers.get(u.uid);
+  if (known !== undefined) return known;
+  let v = 0;
+  const out = c.d.here?.();
+  if (out) {
+    const as: Ctx = { ...c, me: u };
+    for (const e of c.hostile) {
+      if (e.done) continue;
+      if (e.kind === 'projectile') {
+        if (inReachOf(e, u.grid)) v += c.w.exposure * barrage(shotsOn(out.turnOf(e.uid, [`strike:${u.uid}`]), u.uid), as, true).value;
+      } else if (e.weapons.some((x) => ready(x) && x.type === 'Projectile') && !(e.kind === 'mech' && e.timing && e.timing !== 'projectile')) {
+        v += c.w.exposure * c.w.launch * salvoOn(e, out, u.grid, as).value;
+      }
+    }
+  }
+  c.covers.set(u.uid, v);
+  return v;
+}
+
+// AN INTERCEPTOR'S GRID (`coverMates`): what it would stop there of the Projectile fire each squadmate in its
+// Intercept Range stands to take this round, beyond what the squad's other interceptors would stop of it.
+function umbrellaOf(at: Grid, c: Ctx): number {
+  const mine = c.me.intercept;
+  if (c.w.coverMates <= 0 || !mine) return 0;
+  const stop = 1 - (1 - c.w.coverStop) ** Math.min(3, mine.left);
+  let gain = 0;
+  for (const u of c.view.units) {
+    if (u.side !== c.view.seat || u.uid === c.me.uid || !u.alive || !u.deployed || u.kind === 'projectile') continue;
+    if (apart(at, u.grid) > mine.reach) continue;
+    const harm = missileOn(u, c);
+    if (harm > 0) gain += harm * coverAt(u.grid, c, c.me.uid) * stop;
+  }
+  return c.w.coverMates * gain;
 }
 
 // WHAT AN ENEMY PROJECTILE'S STRIKE WOULD DO TO THIS SQUAD (`shootDown`): its own turn as the engine would ask it
@@ -1759,6 +1819,9 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
   // THE PACK (`pack`): the other blades of the squad that would go in beside it share the guns' fire. The
   // budget is read on the same scale, so a plan is not given up on for a cost it would not pay.
   const pk = c.w.pack > 0 || c.w.packNear > 0 ? packOf(c, order) : null;
+  // INTERCEPTOR COVER (`coverFire`): an enemy Projectile's strike on the unit where it stands comes through the
+  // squad's interceptors in reach of that Grid only so often.
+  const shield = c.w.coverFire > 0 ? 1 - c.w.coverFire * (1 - coverAt(at, c)) : 1;
   const shared = pk ? 1 + c.w.pack * pk.able + c.w.packNear * pk.engaged : 1;
   budget *= shared;
   // What an enemy could do to the unit on each of some Timings: the worst.
@@ -1824,6 +1887,7 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
       for (const [uid, v] of aimsOf(e, c)) if (uid !== c.me.uid) rival = Math.max(rival, v);
       if (rival > worst.value) p = (worst.value / rival) ** c.w.decoy;
     }
+    if (e.kind === 'projectile' && shield < 1) p *= shield;
     const weight = p * (after ? c.w.exposureLater * (e.done ? 1 : c.w.later) : c.w.exposure);
     const share = weight * (once ? worst.value - worst.box : worst.value);
     cost += share;
@@ -1851,9 +1915,9 @@ function exposure(out: Outlook | null | undefined, at: Grid, c: Ctx, budget = In
       if (cost > budget) return { cost, risk: lost(), partial: true };
       const v = salvoOn(e, out, at, c);
       if (v.value <= 0) continue;
-      cost += c.w.salvo * c.w.exposure * c.w.launch * (once ? v.value - v.box : v.value);
-      if (once) keep *= 1 - Math.min(1, c.w.salvo * c.w.exposure * c.w.launch) * v.pen;
-      hits.push(...v.hits.map((f) => atChance(f, Math.min(1, c.w.salvo * c.w.launch))));
+      cost += c.w.salvo * c.w.exposure * c.w.launch * shield * (once ? v.value - v.box : v.value);
+      if (once) keep *= 1 - Math.min(1, c.w.salvo * c.w.exposure * c.w.launch * shield) * v.pen;
+      hits.push(...v.hits.map((f) => atChance(f, Math.min(1, c.w.salvo * c.w.launch * shield))));
     }
   }
   // THE ROUND AFTER. An enemy Mech that cannot attack the unit there this
@@ -2376,7 +2440,7 @@ function shapeAt(at: Grid, c: Ctx, quarry: Quarry | null, left?: number[], took:
       pull -= c.w.bladeIn * Math.max(0, far - reach);
     }
   }
-  return pull + lockOf(at, c);
+  return pull + lockOf(at, c) + umbrellaOf(at, c);
 }
 
 // A Drone whose every way of striking (a gun, a blade, a launcher) is an Action bearing the Command icon: it strikes
@@ -3065,7 +3129,7 @@ function* plansSteps(c: Ctx): Steps<Plan[]> {
     const faces = d.options.filter((o) => handed(o, c) && !c.handed.has(handKey(c, o)));
     if (faces.length) {
       // What this table has been asked already is this decision's own to keep.
-      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, downs: c.downs, launchFires: c.launchFires, baits: c.baits, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens, clears: c.clears };
+      const kept: Memo = { table: tableOf(view, c.skills.carded), harms: c.harms, nexts: c.nexts, firepower: c.firepower, downs: c.downs, launchFires: c.launchFires, baits: c.baits, covers: c.covers, walks: c.walks, targets: c.targets, holdings: c.holdings, handed: c.handed, aims: c.aims, races: c.races, backs: c.backs, calls: c.calls, screens: c.screens, clears: c.clears };
       for (const o of faces) {
         c.handed.set(handKey(c, o), yield* commandGain(o, view, w, c.skills, kept));
         yield;
@@ -3732,6 +3796,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     memo.downs.clear();
     memo.launchFires.clear();
     memo.baits.clear();
+    memo.covers.clear();
     memo.clears.clear();
     memo.walks.clear();
     memo.targets.clear();
@@ -3757,6 +3822,7 @@ function context(d: Decision, view: SeatView, w: Weights, skills: Skills, memo: 
     downs: memo.downs,
     launchFires: memo.launchFires,
     baits: memo.baits,
+    covers: memo.covers,
     clears: memo.clears,
     harms: memo.harms,
     nexts: memo.nexts,

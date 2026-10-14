@@ -31,7 +31,7 @@ import { actionRoute, shockWalk, type ActionRoute } from './turn';
 import { inContact } from './rules';
 import { PHASES, statusCount, TIMINGS, zonesOf } from './types';
 import type { CardAction, Facing, GameState, PartState, Side, Stance, Timing, Token } from './types';
-import { actionRange, extraActivationOf, freehandSlots, isGroundUnit, isRwsAction, keepsCommand, maneuverRange, maxLink, onHitRiders, stationaryBonus, structureOf, tokenCards, twoHandedRider, twoHandedUse } from './units';
+import { actionRange, extraActivationOf, freehandSlots, interceptCapacity, interceptLeft, isGroundUnit, isRwsAction, keepsCommand, maneuverRange, maxLink, onHitRiders, stationaryBonus, structureOf, tokenCards, twoHandedRider, twoHandedUse } from './units';
 import { sightedIn, walkIn, type WalkMemo } from './owed';
 
 // ---------- the view ----------
@@ -159,6 +159,10 @@ export interface UnitView {
   health: number;
   points: number;
   weapons: WeaponView[];
+  // Its Interception (4.9): the furthest Range of its Intercept Actions with Interception Tokens left, on Parts that
+  // still work, and the Tokens it holds. Absent where it cannot Intercept now: none left, Shutdown, Fire Control
+  // Interference (units.ts interceptsOwed). A Load lent by a Carrier in Contact is left out.
+  intercept?: { reach: number; left: number };
   // Its Initiative on each Timing, off its pilot's card (a Mech that has one): loop.ts activationOrder plays a
   // Timing's Mechs by it, the lowest first, ties alternating from the First Player. What a seat orders the round
   // it plans by (M18).
@@ -477,6 +481,7 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
     health: parts.length ? parts.reduce((n, p) => n + (HEALTH[p.state] ?? 1), 0) / parts.length : 0,
     points: cards.reduce((n, c) => n + (c.card.score ?? 0), 0),
     weapons,
+    ...interceptOf(t, cards, stateOf),
     ...(initOf(data, t) ? { init: initOf(data, t) } : {}),
     maneuver: t.kind === 'mech' ? maneuverRange(data, t) : 0,
     move: t.kind === 'projectile' ? 0 : maneuverRange(data, t),
@@ -489,6 +494,19 @@ function unitView(data: GameData, state: GameState, t: Token, seat: Side, comman
     lends: t.kind === 'drone' && cards.some((c) => c.slot !== 'main' && c.slot !== 'pilot'),
     ...(t.kind === 'drone' && t.deployed !== false && cards.some((c) => c.slot !== 'main' && c.slot !== 'pilot') ? { touches: touching(state, t) } : {}),
   };
+}
+
+// A unit's Interception as the view gives it (`intercept`).
+function interceptOf(t: Token, cards: { slot: string; card: { actions?: CardAction[] } }[], stateOf: Map<string, PartView>): { intercept?: { reach: number; left: number } } {
+  if (t.kind === 'projectile' || (t.kind === 'mech' && t.stance === 'shutdown') || statusCount(t.statuses, 'fci') > 0) return {};
+  let reach = -1;
+  for (const { slot, card } of cards) {
+    if (t.kind !== 'mech' && slot !== 'main') continue;
+    const part = stateOf.get(slot);
+    if (part && part.state === 'destroyed' && !part.repaired) continue;
+    for (const a of card.actions ?? []) if (interceptCapacity(a) !== undefined && (t.intercept?.[a.id] ?? 0) > 0) reach = Math.max(reach, a.range ?? 0);
+  }
+  return reach < 0 ? {} : { intercept: { reach, left: interceptLeft(t) } };
 }
 
 // The Ally Mechs a unit's base meets (rules.ts inContact): those a Carrier's

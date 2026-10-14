@@ -194,6 +194,16 @@ export interface Weights {
   // blade or a launcher and has none left (its Ammo spent, its Parts destroyed), each Grid still to go to stand beside
   // the nearest enemy (tactician.ts `closesIn`); the Melee Lock it makes there counted whole. At 0 nothing.
   spentClose: number;
+  // INTERCEPTOR COVER (M24, 2026-10-13, the missile defence). A Missile flying at a unit owes an Interception to each
+  // of its enemies with Interception Tokens left whose Intercept Range reaches the Grid it flies into (4.9; FAQ
+  // M9/M20), and each tries while the Missile stands and it has Tokens (FAQ M5): `coverStop` is the chance one try
+  // stops it, a guess to be measured. `coverFire`: an enemy Projectile's strike on a unit (one on the table, or one
+  // still to be launched, `salvo`) counts as often as it would come through the squad's interceptors in reach of
+  // where the unit stands, at this share. `coverMates`: an interceptor's Grid is worth what it would stop of the
+  // Projectile fire the squadmates in its Range stand to take this round.
+  coverFire: number;
+  coverMates: number;
+  coverStop: number;
   // What a plan must be better by before a unit leaves where it stands.
   better: number;
   // A zone entered by a Maneuver and the Movement Action after it is planned
@@ -688,6 +698,9 @@ export const TACTICIAN: Weights = {
   launchThreat: 0,
   bait: 0,
   spentClose: 0,
+  coverFire: 0,
+  coverMates: 0,
+  coverStop: 0.3,
   better: 0.01,
   entry: 1,
   card: 0.3,

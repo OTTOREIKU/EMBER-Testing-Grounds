@@ -164,6 +164,44 @@ function lossStep(t, r) {
   // a Mine still waiting, a Beacon.)
   for (const x of t.state.tokens) if (x.kind === 'projectile' && !lossGame.projSeen.has(x.uid)) lossGame.projSeen.set(x.uid, x.side);
   if (actor?.kind === 'projectile' && (tags.includes('attack') || tags.includes('detonate') || r?.decision?.kind === 'blast.resolve')) lossGame.projHit.add(actor.uid);
+  // (INTERCEPTOR COVER, 2026-10-13: each Projectile's strike on a unit, by where the struck side's interceptors with
+  // Interception Tokens left stood: one within its Intercept Range of the unit (`in`), the nearest 1 or 2 Grids
+  // short of it, further, or none with a Token left; and each side's Interception Tokens unspent at the end.)
+  const target = actor?.kind === 'projectile' && tags.includes('attack') && typeof r?.option?.facts?.targetUid === 'number'
+    ? t.state.tokens.find((x) => x.uid === r.option.facts.targetUid) : undefined;
+  if (target && target.kind !== 'projectile') {
+    let short = Infinity;
+    for (const x of interceptors(t.state, target.side)) short = Math.min(short, M.R.rangeBetween(x.t, target).range - x.reach);
+    const k = short === Infinity ? 'none' : short <= 0 ? 'in' : short === 1 ? 'short1' : short === 2 ? 'short2' : 'far';
+    lossGame.cover[target.side][k] = (lossGame.cover[target.side][k] ?? 0) + 1;
+  }
+  // (And each Interception made, at which Projectile: `tries` made, `aimed` the Projectiles they were made at, `stopped`
+  // those of them that never struck.)
+  if (r?.decision?.kind === 'intercept.attempt' && tags.includes('intercept') && !tags.includes('decline') && typeof r.option?.facts?.targetUid === 'number') {
+    const by = t.state.tokens.find((x) => x.uid === r.option.facts.uid);
+    if (by) lossGame.icpt.set(r.option.facts.targetUid, { side: by.side, n: (lossGame.icpt.get(r.option.facts.targetUid)?.n ?? 0) + 1 });
+  }
+  if (!r) {
+    for (const side of ['s1', 's2']) {
+      lossGame.cover[side].left = interceptors(t.state, side).reduce((n, x) => n + x.left, 0);
+      const mine = [...lossGame.icpt].filter(([, v]) => v.side === side);
+      if (mine.length) Object.assign(lossGame.cover[side], { tries: mine.reduce((n, [, v]) => n + v.n, 0), aimed: mine.length, stopped: mine.filter(([uid]) => !lossGame.projHit.has(uid)).length });
+    }
+  }
+}
+function interceptors(s, side) {
+  const out = [];
+  for (const x of s.tokens) {
+    if (x.side !== side || x.kind === 'projectile' || x.deployed === false || M.U.interceptLeft(x) <= 0) continue;
+    if ((x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed' || (x.kind === 'mech' && x.stance === 'shutdown')) continue;
+    let reach = -1;
+    for (const { slot, card } of M.U.ownCards(data, x)) {
+      if (!M.U.partUsable(x, slot)) continue;
+      for (const a of card.actions ?? []) if (M.U.interceptCapacity(a) !== undefined && (x.intercept?.[a.id] ?? 0) > 0) reach = Math.max(reach, a.range ?? 0);
+    }
+    if (reach >= 0) out.push({ t: x, reach, left: M.U.interceptLeft(x) });
+  }
+  return out;
 }
 const blindKind = (u) => {
   if (u.kind !== 'mech') return `drone:${u.cardId}`;
@@ -938,7 +976,7 @@ for (let seed = from; seed <= to; seed++) {
     policyNow = linesWatch(policyNow);
     if (foeNow) foeNow = linesWatch(foeNow);
   }
-  if (process.env.LOSSLOG) lossGame = { s1: {}, s2: {}, standing: null, by: null, pts: new Map(), projSeen: new Map(), projHit: new Set() };
+  if (process.env.LOSSLOG) lossGame = { s1: {}, s2: {}, standing: null, by: null, pts: new Map(), projSeen: new Map(), projHit: new Set(), cover: { s1: {}, s2: {} }, icpt: new Map() };
   if (process.env.BLINDSPOTS) {
     blindGame = { seed, subjectSeat, s1: blindFresh(), s2: blindFresh() };
     policyNow = blindWatch(policyNow);
@@ -1385,6 +1423,7 @@ for (let seed = from; seed <= to; seed++) {
     console.log(`  losses s1 ${JSON.stringify(lossGame.s1)} s2 ${JSON.stringify(lossGame.s2)}`);
     const proj = (side) => { const mine = [...lossGame.projSeen].filter(([, sd]) => sd === side).map(([uid]) => uid); return `${mine.filter((uid) => lossGame.projHit.has(uid)).length}/${mine.length}`; };
     console.log(`  projectiles struck/launched s1 ${proj('s1')} s2 ${proj('s2')}`);
+    console.log(`  cover s1 ${JSON.stringify(lossGame.cover.s1)} s2 ${JSON.stringify(lossGame.cover.s2)}`);
   }
   if (dodgeGame) console.log(`  dodges s1 ${dodgeGame.s1} s2 ${dodgeGame.s2}`);
   if (dshotGame) console.log(`  droneshots s1 ${dshotGame.s1.shots.size}/${dshotGame.s1.acts.size} s2 ${dshotGame.s2.shots.size}/${dshotGame.s2.acts.size}`);
