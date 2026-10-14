@@ -1164,7 +1164,12 @@ function activationOwed(data: GameData, state: GameState, seat: Side, t: Token, 
   // it took it, and the phase could then never be left), and a Teaching one
   // takes it, so ending is not an answer while the Unfold is on offer.
   const folded = options.some((x) => !!x && x.tags[0] === 'unfold');
-  if (wants(want, 'end') && !folded) {
+  // Nor a Projectile with its Delayed Action on offer: every one performs it in the Delay Phase (3.6.1), and one that
+  // needs a target and finds none in Range is destroyed (4.7.5), unless its card keeps it (the PK3's own answer). Ending
+  // instead left it on the table for the next round (OTTO, 2026-10-14: an M60 and an MC-3 with no target stayed on the
+  // field after the Delay Phase, the computer having chosen to end rather than lose the Missile).
+  const delayed = t.kind === 'projectile' && options.some((x) => !!x && x.tags[0] === 'detonate');
+  if (wants(want, 'end') && !folded && !delayed) {
     const end: Command = { kind: 'endOpportunity', seat, uid: t.uid };
     options.push(sends(data, state, 'end', state.round.phase === 2 ? 'End this Opportunity' : 'End this activation', ['end'], [end]));
     // An activation that ends in a loose Black Box's Grid may pick it up as it
