@@ -7,6 +7,10 @@
 // by column way, so the two agree only by both being right. An Aerial end sees
 // past everything but smoke; whether either unit stands in smoke is the
 // caller's to ask, as rules.ts firingSight asks it.
+// A line within TOUCH of a cell touches it (OTTO, 2026-10-15: 1 mm, a
+// twenty-fifth of a Small Grid): reckoned here as the segment's distance from
+// each of the square's four sides, not the walk's way from its corners.
+export const TOUCH = 0.04;
 export function reckonLines(M, a, b, terrain, tokens, smokeGrids) {
   const aerial = !!((a.aerial && !a.mine) || (b.aerial && !b.mine));
   if (aerial && !smokeGrids) return 'clear';
@@ -54,7 +58,7 @@ export function reckonLines(M, a, b, terrain, tokens, smokeGrids) {
     } else {
       const x0 = Math.min(p.x, q.x) - 1, x1 = Math.max(p.x, q.x) + 1, y0 = Math.min(p.y, q.y) - 1, y1 = Math.max(p.y, q.y) + 1;
       for (const [c, r] of cells) {
-        if (c < x0 || c > x1 || r < y0 || r > y1 || !meets(p, q, c, r, c + 1, r + 1)) continue;
+        if (c < x0 || c > x1 || r < y0 || r > y1 || !touches(p, q, c, r)) continue;
         const key = `${c},${r}`;
         if (blocks.has(key)) blocked = true;
         if (fills.has(key)) obstruct = true;
@@ -80,4 +84,22 @@ export function meets(p, q, x0, y0, x1, y1) {
     if (P[i] < 0) { if (r > t1 + 1e-12) return false; if (r > t0) t0 = r; } else { if (r < t0 - 1e-12) return false; if (r < t1) t1 = r; }
   }
   return t0 <= t1 + 1e-12;
+}
+
+// Does the segment p->q come within TOUCH of the cell (c, r): meet it, or pass
+// one of its four sides by TOUCH or less? Two segments apart are nearest at an
+// end of one of them.
+export function touches(p, q, c, r) {
+  if (meets(p, q, c, r, c + 1, r + 1)) return true;
+  const toSeg = (x, y, a, b) => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(x - a.x - t * dx, y - a.y - t * dy);
+  };
+  const corners = [{ x: c, y: r }, { x: c + 1, y: r }, { x: c + 1, y: r + 1 }, { x: c, y: r + 1 }];
+  for (let i = 0; i < 4; i++) {
+    const a = corners[i], b = corners[(i + 1) % 4];
+    if (Math.min(toSeg(p.x, p.y, a, b), toSeg(q.x, q.y, a, b), toSeg(a.x, a.y, p, q), toSeg(b.x, b.y, p, q)) <= TOUCH) return true;
+  }
+  return false;
 }

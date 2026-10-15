@@ -10,7 +10,7 @@
 // Cat's own table, against the rule's two cases built by hand, and against a
 // second reckoning of every line on boards drawn at random.
 import { loadEngine, freshState } from './_engine.mjs';
-import { meets, reckonLines } from './_sightref.mjs';
+import { touches, reckonLines } from './_sightref.mjs';
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -50,11 +50,11 @@ const wall = (id, cells, height = 3) => ({
     M.R.losBetweenNow(dune, porcupine, terrain, [...tokens, porcupine]), 'obstructed');
   // THE LINE THE BOARD DRAWS (OTTO, 2026-10-10: "lets have the engine draw the line in the way thats it's using to
   // calculate obstructed vs blocked"): the one the reading was taken on, judged here by the second reckoning's own
-  // clipping: it meets no 3-inch cell, where the line between the centres would.
+  // clipping: it comes within 1 mm of no 3-inch cell, where the line between the centres meets one.
   const seen = [...tokens, porcupine];
   const drawn = M.R.firingSightLine(dune, porcupine, terrain, seen, []);
   const walls = terrain.filter((p) => p.blocksLos).flatMap((p) => p.subCells);
-  const crosses = (x0, y0, x1, y1) => walls.some((c) => meets({ x: x0, y: y0 }, { x: x1, y: y1 }, c.col, c.row, c.col + 1, c.row + 1));
+  const crosses = (x0, y0, x1, y1) => walls.some((c) => touches({ x: x0, y: y0 }, { x: x1, y: y1 }, c.col, c.row));
   const centres = [dune.col + dune.size / 2, dune.row + dune.size / 2, porcupine.col + porcupine.size / 2, porcupine.row + porcupine.size / 2];
   check('the board draws the line the sight was read on: past the corner, where the line between the centres meets the building',
     [drawn.sight, crosses(drawn.x0, drawn.y0, drawn.x1, drawn.y1), crosses(...centres)], ['obstructed', false, true]);
@@ -81,6 +81,26 @@ const wall = (id, cells, height = 3) => ({
   check('one wall alone leaves the lines past its corner on the open side', M.R.losBetweenNow(a, b, [walls[0]], [a, b]), 'obstructed');
   const c = unit(3, 1, 0, 1);
   check('a unit in a cell the line passes only at the corner obstructs it', M.R.losBetweenNow(a, b, [], [a, b, c]), 'obstructed');
+}
+
+// HOW CLOSE IS TOUCHING (OTTO, 2026-10-15: a shot whose line "was very very close to the edge of a 3'' terrain but
+// it counted"; he chose 1 mm). Two pairs a census of the maps found on Hotspot. The first saw past a building's
+// corner by a ten-thousandth of a Small Grid, every line that saw no further from it: within 1 mm it touches, so no
+// sight. The second's best line keeps 1.01 mm: it still sees, and the line drawn keeps 1 mm from every 3-inch cell.
+{
+  const s = freshState(M, data);
+  s.map = 'hotspot';
+  const terrain = M.TU.terrainOf(data, s);
+  const walls = terrain.filter((p) => p.blocksLos).flatMap((p) => p.subCells);
+  const grazes = (l) => walls.some((c) => touches({ x: l.x0, y: l.y0 }, { x: l.x1, y: l.y1 }, c.col, c.row));
+  const a = unit(1, 31, 2, 3);
+  const b = unit(2, 20, 29, 1);
+  check('a line that misses a 3-inch corner by a hair touches it: no sight', M.R.losBetweenNow(a, b, terrain, [a, b]), 'blocked');
+  const c = unit(3, 7, 30, 3);
+  const d = unit(4, 13, 1, 1);
+  const line = M.R.firingSightLine(c, d, terrain, [c, d], []);
+  check('a line that keeps 1 mm from every 3-inch cell sees past them, and is the line drawn',
+    [M.R.losBetweenNow(c, d, terrain, [c, d]), line.sight, grazes(line)], ['obstructed', 'obstructed', false]);
 }
 
 // A line along a Grid's edge (only a Medium Base's middle draws one) passes

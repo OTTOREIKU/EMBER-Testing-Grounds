@@ -1262,6 +1262,7 @@ export function obstructorsOf(a: Token, b: Token, terrain: TerrainPiece[], token
   terrain.forEach((p, i) => { for (const c of p.subCells) put(cellNo(c.col, c.row), i); });
   units.forEach((t, j) => { for (const c of baseCells(t)) put(cellNo(c.col, c.row), terrain.length + j); });
   const crossed = new Set<number>();
+  const filled = (c: number, r: number): boolean => fills.has(cellNo(c, r));
   if (fills.size) {
     const boxA: Box = baseBox(a);
     const boxB: Box = baseBox(b);
@@ -1278,7 +1279,7 @@ export function obstructorsOf(a: Token, b: Token, terrain: TerrainPiece[], token
           const ys = fills.get(cellNo(c2, r2));
           if (ys) for (const i of xs) if (ys.includes(i)) crossed.add(i);
           return false;
-        });
+        }, filled);
       }
     }
   }
@@ -1323,7 +1324,16 @@ function basePoints(b: Box): { x: number; y: number }[] {
 // point every third of a cell and could step over a line's crossing of a
 // cell's corner (OTTO, 2026-10-08: a Wild Cat saw a Dune past two 3-inch
 // buildings). `visit` answers true to end the line there.
+//
+// TOUCHING (OTTO, 2026-10-15: a shot whose line "was very very close to the
+// edge of a 3'' terrain but it counted"; asked how close is touching, he chose
+// 1 mm): a line that comes within TOUCH of a cell, a twenty-fifth of a Small
+// Grid's 25 mm, passes through it as a line that meets its edge or corner
+// does. Exact, the walk saw past a corner it missed by a few thousandths of a
+// millimetre; about one sight in a hundred on the maps hung on a line within
+// 1 mm (a census of the maps, 2026-10-15).
 const ON_GRID = 1e-9;
+const TOUCH = 0.04;
 const toGrid = (v: number): number => {
   const r = Math.round(v);
   return Math.abs(v - r) < ON_GRID ? r : v;
@@ -1331,6 +1341,7 @@ const toGrid = (v: number): number => {
 function lineCells(
   x0: number, y0: number, x1: number, y1: number, boxA: Box, boxB: Box,
   visit: (col: number, row: number, col2?: number, row2?: number) => boolean,
+  filled: (col: number, row: number) => boolean,
 ): void {
   const inBases = (c: number, r: number): boolean =>
     (c >= boxA.col && c < boxA.col + boxA.w && r >= boxA.row && r < boxA.row + boxA.h)
@@ -1351,21 +1362,64 @@ function lineCells(
   }
   // Each column the line meets, edges included, and in it the rows the line
   // spans there, edges included: a corner the line passes through is in the
-  // columns and the rows on both sides of it.
+  // columns and the rows on both sides of it. Then the cells it only comes
+  // near: those within TOUCH of it on either axis that something fills (the
+  // reader's `filled`) are asked their true distance, and taken at TOUCH or
+  // less.
   const upright = Math.abs(x1 - x0) < ON_GRID;
   const slope = upright ? 0 : (y1 - y0) / (x1 - x0);
   const lo = Math.min(x0, x1);
   const hi = Math.max(x0, x1);
-  for (let c = Math.ceil(toGrid(lo)) - 1; c <= Math.floor(toGrid(hi)); c++) {
-    const xa = Math.max(lo, c);
-    const xb = Math.min(hi, c + 1);
+  const top = Math.min(y0, y1);
+  const bottom = Math.max(y0, y1);
+  for (let c = Math.ceil(toGrid(lo) - TOUCH) - 1; c <= Math.floor(toGrid(hi) + TOUCH); c++) {
+    let metFrom = 0;
+    let metTo = -1;
+    const ma = Math.max(lo, c);
+    const mb = Math.min(hi, c + 1);
+    if (ma <= mb) {
+      const ya = upright ? top : toGrid(y0 + (ma - x0) * slope);
+      const yb = upright ? bottom : toGrid(y0 + (mb - x0) * slope);
+      metFrom = Math.ceil(Math.min(ya, yb)) - 1;
+      metTo = Math.floor(Math.max(ya, yb));
+    }
+    const xa = Math.max(lo, c - TOUCH);
+    const xb = Math.min(hi, c + 1 + TOUCH);
     if (xa > xb) continue;
-    const ya = upright ? Math.min(y0, y1) : toGrid(y0 + (xa - x0) * slope);
-    const yb = upright ? Math.max(y0, y1) : toGrid(y0 + (xb - x0) * slope);
-    for (let r = Math.ceil(Math.min(ya, yb)) - 1; r <= Math.floor(Math.max(ya, yb)); r++) {
-      if (!inBases(c, r) && visit(c, r)) return;
+    const ya = upright ? top : y0 + (xa - x0) * slope;
+    const yb = upright ? bottom : y0 + (xb - x0) * slope;
+    const to = Math.floor(Math.max(ya, yb) + TOUCH);
+    for (let r = Math.ceil(Math.min(ya, yb) - TOUCH) - 1; r <= to; r++) {
+      if (inBases(c, r)) continue;
+      if ((r >= metFrom && r <= metTo) || (filled(c, r) && nearCell(x0, y0, x1, y1, c, r))) {
+        if (visit(c, r)) return;
+      }
     }
   }
+}
+
+// A cell the line only comes near is passed through at TOUCH or less. Its
+// distance from the line is the least of its corners' from the segment and the
+// segment's ends' from it: a segment and a square apart are nearest so.
+function nearCell(x0: number, y0: number, x1: number, y1: number, c: number, r: number): boolean {
+  const t2 = TOUCH * TOUCH;
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len2 = dx * dx + dy * dy;
+  for (let i = 0; i < 4; i++) {
+    const px = c + (i & 1);
+    const py = r + (i >> 1);
+    const t = Math.max(0, Math.min(1, ((px - x0) * dx + (py - y0) * dy) / len2));
+    const ex = px - x0 - t * dx;
+    const ey = py - y0 - t * dy;
+    if (ex * ex + ey * ey <= t2) return true;
+  }
+  const ax = Math.max(c - x0, 0, x0 - c - 1);
+  const ay = Math.max(r - y0, 0, y0 - r - 1);
+  if (ax * ax + ay * ay <= t2) return true;
+  const bx = Math.max(c - x1, 0, x1 - c - 1);
+  const by = Math.max(r - y1, 0, y1 - r - 1);
+  return bx * bx + by * by <= t2;
 }
 
 // `first` stops the walk at the first line that is sight, for a reader that
@@ -1439,6 +1493,8 @@ function walkLinesNow(
   const blocks = (key: number): boolean => losCells.has(key) || !!ground?.los.has(key);
   const fills = (key: number): boolean => obstructCells.has(key) || !!ground?.all.has(key);
   const smoky = (c: number, r: number): boolean => !!smoke?.has(cellNo(Math.floor(c / 3), Math.floor(r / 3)));
+  // What blocks a line fills its cell too (a 3-inch wall is terrain, a 3-inch Barricade a unit).
+  const filled = (c: number, r: number): boolean => fills(cellNo(c, r)) || (smoke !== null && smoky(c, r));
 
   let anySight = false;
   let smokeTook = false;
@@ -1465,7 +1521,7 @@ function walkLinesNow(
         if (fills(key) && fills(key2)) lineObstruct = true;
         if (smoky(c, r) && smoky(c2, r2)) lineSmoked = true;
         return false;
-      });
+      }, filled);
       if (pick) {
         const rank = lineBlocked || lineSmoked ? 2 : lineObstruct ? 1 : 0;
         const off = (pa.x - centreA.x) ** 2 + (pa.y - centreA.y) ** 2 + (pb.x - centreB.x) ** 2 + (pb.y - centreB.y) ** 2;
@@ -1547,6 +1603,7 @@ export function unitTerrain(tokens: Token[]): TerrainPiece[] {
 export function lineCrossesUnit(a: Token, b: Token, unit: Token): boolean {
   if (unit.uid === a.uid || unit.uid === b.uid) return false;
   const cells = new Set(baseCells(unit).map((c) => cellNo(c.col, c.row)));
+  const filled = (c: number, r: number): boolean => cells.has(cellNo(c, r));
   const boxA = baseBox(a);
   const boxB = baseBox(b);
   const pointsB = basePoints(boxB);
@@ -1554,7 +1611,7 @@ export function lineCrossesUnit(a: Token, b: Token, unit: Token): boolean {
     for (const pb of pointsB) {
       let hit = false;
       lineCells(pa.x, pa.y, pb.x, pb.y, boxA, boxB, (c, r, c2, r2) =>
-        (hit = cells.has(cellNo(c, r)) && (c2 === undefined || r2 === undefined || cells.has(cellNo(c2, r2)))));
+        (hit = cells.has(cellNo(c, r)) && (c2 === undefined || r2 === undefined || cells.has(cellNo(c2, r2)))), filled);
       if (hit) return true;
     }
   }
