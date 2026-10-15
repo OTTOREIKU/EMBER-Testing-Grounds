@@ -2840,8 +2840,7 @@ async function startSolo(): Promise<void> {
       mission: spec.scenario.mission ?? null,
       opponent: spec.opponent,
       // How the computer played (M19), and the Custom style's picks when it was that one.
-      style: spec.style,
-      custom: spec.style === 'custom' ? customText(spec.custom) : '',
+      ...styleLog(spec),
       speed: () => solo?.table.speed ?? spec.speed,
       human: spec.human,
       bot: spec.bot,
@@ -2940,6 +2939,17 @@ async function startSolo(): Promise<void> {
   // On the dev server only: the game in hand for whoever is testing the page.
   if (import.meta.env.DEV) (window as unknown as { __solo?: unknown }).__solo = { spec, table, state: () => state, data, send, loopback, refusals: diagRefusals, errors: diagErrors, botlog: () => botlog };
   table.start();
+}
+
+// The styles a game was asked with (M19), for an address that asks for the
+// game again; and as the game's log keeps them, the Custom picks as text.
+function styleAsk(spec: SoloSpec): Pick<SoloSpec, 'style' | 'style2' | 'custom'> {
+  const { style, style2, custom } = spec;
+  return { style, style2, custom };
+}
+function styleLog(spec: SoloSpec): Record<'style' | 'custom', string> {
+  const custom = spec.style === 'custom' ? customText(spec.custom) : '';
+  return { style: spec.style, custom };
 }
 
 // A computer's level as the setup dialog names it (Recruit, Veteran, Ace,
@@ -3112,7 +3122,7 @@ function setSoloSpeed(speed: Speed): void {
   // Kept in the address, so a reload and a rematch play at the same speed.
   const { spec } = solo;
   try {
-    history.replaceState(null, '', `./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: spec.seed, speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2, season: spec.season ?? undefined, style: spec.style, style2: spec.style2, custom: spec.custom })}`);
+    history.replaceState(null, '', `./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: spec.seed, speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2, season: spec.season ?? undefined, ...styleAsk(spec) })}`);
   } catch { /* an address that cannot be rewritten costs only that */ }
   render();
 }
@@ -3136,7 +3146,7 @@ async function soloRestart(ask = true): Promise<void> {
   const { spec, table } = solo;
   table.stop();
   botlogLeaving = 'restarted';
-  location.assign(`./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: Math.floor(Math.random() * 1e9), speed: table.speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2, season: spec.season ?? undefined, style: spec.style, style2: spec.style2, custom: spec.custom })}`);
+  location.assign(`./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: Math.floor(Math.random() * 1e9), speed: table.speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2, season: spec.season ?? undefined, ...styleAsk(spec) })}`);
 }
 
 // The computer has stopped and cannot go on by itself: said in plain words,
