@@ -83,8 +83,8 @@ check('and as it ships, the launch at the Raven counts the Missiles already on t
   check('A LAUNCH WITH ANOTHER ENEMY IN REACH keeps its worth: its Missile goes to the Rifle, which nothing in the air can reach',
     [d2?.unit === second, !!near && String(near.does).includes('Rifle'), !!near && near.now > 10 * on.now], [true, true, true]);
 }
-check('AS IT SHIPS (2026-10-14): 1 for the Ace and the Veteran (the Missile style with them), 0 for the Brawler',
-  [AI.TACTICIAN.overkill, AI.BRAWLER_WEIGHTS.overkill], [1, 0]);
+check('AS IT SHIPS (2026-10-15): 1 for every level (the Missile style with them), the Brawler with the Ace',
+  [AI.TACTICIAN.overkill, AI.BRAWLER_WEIGHTS.overkill ?? AI.TACTICIAN.overkill], [1, 1]);
 t.close();
 
 console.log(`\n${pass} passed, ${fail} failed`);

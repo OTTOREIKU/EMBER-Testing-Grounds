@@ -22,9 +22,12 @@ export const BRAWLER_SKILLS: Partial<Skills> = { hunter: true };
 // was measured without it. Nor a Command-only Drone's Command a round on (`commandNext`, 2026-10-12): level on random
 // squads, its margins a little worse, kept off until measured on community squads. Nor an RWS Mech's Commands a round
 // on (`rwsNext`, 2026-10-13): measured on the Ace and the Veteran alone. Nor an interceptor standing where it covers its
-// squadmates (`coverMates`, 2026-10-14): measured on the Ace alone. Nor the missile levers of the same day (`overkill`,
-// `flightOdds`, `ammoPace`): measured on the Ace alone.
-export const BRAWLER_WEIGHTS: Partial<Weights> = { exposure: 0.4, exposureLater: 0.2, hunt: 1, closeIn: 1, learned: 0, commandNext: 0, rwsNext: 0, coverMates: 0, overkill: 0, flightOdds: 0, ammoPace: 0 };
+// squadmates (`coverMates`, 2026-10-14): measured on the Ace alone. The missile levers of the same day (`overkill`,
+// `flightOdds`, `ammoPace`) it plays as the Ace does, measured on it (2026-10-14/15, the legal squads): with the
+// missile squads 143.5 against 134 (Victory Point margin +1.60 a game, p 0.003; points +46, p 0.03), the gain
+// ammoPace's (overkill + flightOdds alone 134 against 134); with the community squads level (217.5 against 220 over two
+// batches of 200, the points -26 and +39).
+export const BRAWLER_WEIGHTS: Partial<Weights> = { exposure: 0.4, exposureLater: 0.2, hunt: 1, closeIn: 1, learned: 0, commandNext: 0, rwsNext: 0, coverMates: 0 };
 export const brawlerPolicy: Policy = { ...makeTactician(BRAWLER_SKILLS, BRAWLER_WEIGHTS), name: 'brawler' };
 
 // THE MISSILE BARRAGE (M24 and M19, 2026-10-13; OTTO: "Lets bake in a missile strategy, mechs and drones that try to

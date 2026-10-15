@@ -71,8 +71,8 @@ check('WITH `icptBurn` 1 beside it, the other Razor still to fly, it burns the C
   const alone = { ...view, units: view.units.filter((u) => u.uid !== other.uid) };
   check('and with no other Missile to come, the direct hit again', target({}, { flightOdds: 1, icptBurn: 1 }, alone), U.Raven.uid);
 }
-check('AS IT SHIPS (2026-10-14): flightOdds 1 for the Ace and the Veteran, icptBurn 0; the Brawler 0',
-  [AI.TACTICIAN.flightOdds, AI.TACTICIAN.icptBurn, AI.BRAWLER_WEIGHTS.flightOdds], [1, 0, 0]);
+check('AS IT SHIPS (2026-10-15): flightOdds 1 for every level, the Brawler with the Ace; icptBurn 0',
+  [AI.TACTICIAN.flightOdds, AI.TACTICIAN.icptBurn, AI.BRAWLER_WEIGHTS.flightOdds ?? AI.TACTICIAN.flightOdds], [1, 0, 1]);
 check('and as it ships, it takes the direct hit on the Raven', target({}, {}), U.Raven.uid);
 t.close();
 
