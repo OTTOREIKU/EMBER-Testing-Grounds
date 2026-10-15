@@ -407,6 +407,12 @@ export interface Skills {
   // (a Kick, a Melee Lock, a zone, a body in a line of fire). Its turn a round on was already nothing (the engine's
   // look ahead takes it off in the End Phase). OFF until measured.
   doomedCharge: boolean;
+  // THE ENEMY'S ANSWER, JUDGED (M25, first form, 2026-10-14 night; "for each activation, its few best plans; for each,
+  // the enemy's best reply; the table after judged by the learned judge"). The judge read the table a plan leaves as
+  // though the unit then stood there safe, while the exposure reads the other squad's answer there (`risk`, the chance
+  // the unit is lost to it). With the skill, the judge reads both: the table the plan leaves, and the same table
+  // without the unit, as often as the answer destroys it. OFF until measured.
+  reply: boolean;
 }
 
 export const SKILLS: Skills = {
@@ -416,7 +422,7 @@ export const SKILLS: Skills = {
   entryDeed: true, shove: true, mend: true, faced: true, bounded: true, carded: true, aimed: true, sprints: true, held: true, seconds: false,
   lastRound: true, boxOnce: true, shock: true, holdLate: true, smokeSquad: false, smokeAhead: false, breakIn: true,
   squadDials: false, secName: true, hunter: false, cardPick: true, clearLines: true, leash: true, lanes: false, trueRange: false,
-  accessFirst: false, sighted: true, noHold: true, ammoCount: false, doomedCharge: false,
+  accessFirst: false, sighted: true, noHold: true, ammoCount: false, doomedCharge: false, reply: false,
 };
 
 // How much of the board is put to the engine in one decision.
@@ -3701,6 +3707,9 @@ function* bestSteps(c: Ctx, slack = 0): Steps<{ best: Plan; stay: Plan; plans: P
     // trees read it, against the chance now. Where its walk leaves the squad; and where its deed is an attack that may
     // destroy its target, the position without the target as much as the attack is likely to destroy it (the trees
     // read the score most: a walk alone seldom moves it, a unit destroyed does).
+    // (Kept for the enemy's answer, `reply`: the table judged and what the judge read there.)
+    let judgedLeft: Outlook | null | undefined;
+    let judgedV: number | null = null;
     if (judgedNow !== null) {
       const left = p.via ? p.via.after?.() : p.option ? p.option.after?.() : c.d.here?.();
       let v = left ? judge(left) : null;
@@ -3711,6 +3720,8 @@ function* bestSteps(c: Ctx, slack = 0): Steps<{ best: Plan; stay: Plan; plans: P
         if (gone !== null) v = (1 - kill) * v + kill * gone;
       }
       p.judged = v === null ? 0 : c.w.learned * (v - judgedNow);
+      judgedLeft = left;
+      judgedV = v;
     }
     // A SQUADMATE'S LINE (`clearLines`): what the squad's shots still to come lose to its standing where the plan
     // leaves it (a Large unit gives their targets Unit Protection, 4.5.3).
@@ -3770,6 +3781,12 @@ function* bestSteps(c: Ctx, slack = 0): Steps<{ best: Plan; stay: Plan; plans: P
     p.risk = harm.risk;
     // A MECH LEAVING AT THIS ROUND'S END (`doomedCharge`): what a hit would cost it is lost either way.
     if (c.skills.doomedCharge && doomed(c.me)) { p.cost = 0; p.risk = 0; }
+    // THE ENEMY'S ANSWER, JUDGED (`reply`, M25's first form): the table the plan leaves, and the same table without this
+    // unit as often as the other squad's answer there destroys it.
+    if (c.skills.reply && judgedNow !== null && judgedLeft && judgedV !== null && p.risk > EXACT) {
+      const lost = judge(judgedLeft.without(c.me.uid));
+      if (lost !== null) p.judged = c.w.learned * ((1 - p.risk) * judgedV + p.risk * lost - judgedNow);
+    }
   };
   const reachable = (p: Plan): boolean => c.hostile.some((e) => threatens(e, p.at, c));
   let best: Plan | null = null;
@@ -3868,7 +3885,7 @@ export function weighed(d: Decision, view: SeatView, skills: Partial<Skills> = {
     .map((p) => ({
       label: p.option ? `${p.option.label}${p.via ? `, then ${p.via.label}` : ''}` : 'stay', how: p.how, at: p.at, does: p.deed?.why ?? '',
       now: p.now, next: p.next, mission: p.mission, shape: p.shape, cost: p.cost, risk: p.risk,
-      worth: p.priced ? worthOf(p) : sumOf(p), priced: !!p.priced, lines: p.lines ?? 0,
+      worth: p.priced ? worthOf(p) : sumOf(p), priced: !!p.priced, lines: p.lines ?? 0, judged: p.judged ?? 0,
     }))
     .sort((a, b) => Number(b.priced) - Number(a.priced) || b.worth - a.worth);
 }
