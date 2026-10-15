@@ -1373,8 +1373,8 @@ function lineCells(
   const top = Math.min(y0, y1);
   const bottom = Math.max(y0, y1);
   for (let c = Math.ceil(toGrid(lo) - TOUCH) - 1; c <= Math.floor(toGrid(hi) + TOUCH); c++) {
-    let metFrom = 0;
-    let metTo = -1;
+    let metFrom = Infinity;
+    let metTo = -Infinity;
     const ma = Math.max(lo, c);
     const mb = Math.min(hi, c + 1);
     if (ma <= mb) {
@@ -1388,8 +1388,8 @@ function lineCells(
     if (xa > xb) continue;
     const ya = upright ? top : y0 + (xa - x0) * slope;
     const yb = upright ? bottom : y0 + (xb - x0) * slope;
-    const to = Math.floor(Math.max(ya, yb) + TOUCH);
-    for (let r = Math.ceil(Math.min(ya, yb) - TOUCH) - 1; r <= to; r++) {
+    const to = Math.max(Math.floor(Math.max(ya, yb) + TOUCH), metTo);
+    for (let r = Math.min(Math.ceil(Math.min(ya, yb) - TOUCH) - 1, metFrom); r <= to; r++) {
       if (inBases(c, r)) continue;
       if ((r >= metFrom && r <= metTo) || (filled(c, r) && nearCell(x0, y0, x1, y1, c, r))) {
         if (visit(c, r)) return;
