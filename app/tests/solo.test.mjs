@@ -24,7 +24,7 @@ console.log('A game against the computer\n');
 const { M, data } = await loadEngine('solo', [
   "export * as SEAT from '../src/seat';", "export * as AI from '../src/ai/index';",
   "export * as LOOP from '../src/loopback';", "export * as SOLO from '../src/solo';", "export * as SETUP from '../src/solosetup';", "export * as SQ from '../src/squadstore';",
-  "export * as H from '../src/tactichand';", "export * as HUD from '../src/matchhud';",
+  "export * as H from '../src/tactichand';", "export * as HUD from '../src/matchhud';", "export * as ASK from '../src/soloask';",
 ]);
 const { LoopbackRelay } = M.LOOP;
 const { SoloTable, soloAsk, soloSpec, soloQuery, soloSetup, thinkMs, restMs, SPEEDS, OPPONENTS } = M.SOLO;
@@ -228,12 +228,12 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
     rows, [`game:${alley.id}`, `game:${vip.id}*`, 'side:s1', 'side:s2*', 'rival:recruit', 'rival:veteran', 'rival:brawler*', 'rival:tactician', 'speed:relaxed*', 'speed:normal', 'speed:brisk']);
   // OTTO, 2026-10-10: "the buttons would just have the name and then difficulty, ie. [Recruit -------------- EASY]".
   check('each opponent is named with how hard it is at the row\'s end, and nothing more, in the same row a game or a speed has',
-    [/<p class="dlg-eyebrow">The computer is<\/p>/.test(html), /data-rival="recruit" aria-pressed="false"><span>Recruit<\/span><em>EASY<\/em>/.test(html),
+    [/<p class="dlg-eyebrow">Difficulty<\/p>/.test(html), /data-rival="recruit" aria-pressed="false"><span>Recruit<\/span><em>EASY<\/em>/.test(html),
       /data-rival="veteran" aria-pressed="false"><span>Veteran<\/span><em>MEDIUM<\/em>/.test(html),
       /data-rival="brawler" aria-pressed="true"><span>Brawler<\/span><em>HARD<\/em>/.test(html),
       /data-rival="tactician" aria-pressed="false"><span>Ace<\/span><em>HARDEST<\/em>/.test(html),
       /makes mistakes|ignores return fire|fights for the zones|plays for the mission/.test(html)], [true, true, true, true, true, false]);
-  check('and has one way on and one way out', [(html.match(/data-ok/g) ?? []).length, (html.match(/data-cancel/g) ?? []).length, /Start the game/.test(html)], [1, 1, true]);
+  check('and has one way on and one way out', [(html.match(/data-ok/g) ?? []).length, (html.match(/data-cancel/g) ?? []).length, /data-ok data-autofocus>Start</.test(html)], [1, 1, true]);
   check('Start goes to the Match Centre\'s page, asked for that game and that opponent',
     [soloAddress({ scenario: vip.id, side: 's2', speed: 'relaxed', opponent: 'tactician' }), soloAddress({ scenario: alley.id, side: 's1', speed: 'normal', opponent: 'tactician' }),
       soloAddress({ scenario: alley.id, side: 's1', speed: 'normal', opponent: 'brawler' })],
@@ -242,8 +242,8 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
   // WHO PLAYS (OTTO, 2026-10-05: "an option to have two computers play against each other").
   const watching = soloSetupHtml(data, { ...M.SETUP.soloPick(data, null), scenario: vip.id, side: 's2', watch: true, opponent: 'brawler', opponent2: 'recruit' });
   const picks = [...watching.matchAll(/data-(who|rival|rival2)="([^"]+)" aria-pressed="(true|false)"/g)].map((m) => `${m[1]}:${m[2]}${m[3] === 'true' ? '*' : ''}`);
-  check('WHO PLAYS: you, or two computers while you watch; watched, a computer is picked for each squad, named by it, and Start says what it starts',
-    [picks, [...watching.matchAll(/<p class="dlg-eyebrow">([^<]*) is played by<\/p>/g)].map((m) => m[1]), /The squad you watch from/.test(watching), /Start watching/.test(watching), /The computer is</.test(watching)],
+  check('MODE: play, or watch two computers; watched, a Difficulty is picked for each squad, named by it ("UN Raid · Difficulty"), the squad watched from is asked for, and Start starts it',
+    [picks, [...watching.matchAll(/<p class="dlg-eyebrow">([^<]*) · Difficulty<\/p>/g)].map((m) => m[1]), />Watch from</.test(watching), /data-ok data-autofocus>Start</.test(watching), /<p class="dlg-eyebrow">Difficulty</.test(watching)],
     [['who:you', 'who:watch*', 'rival2:recruit*', 'rival2:veteran', 'rival2:brawler', 'rival2:tactician', 'rival:recruit', 'rival:veteran', 'rival:brawler*', 'rival:tactician'],
       [soloSquadLabel(data, vip, 's2').name, soloSquadLabel(data, vip, 's1').name], true, true, false]);
   check('played, the same dialog asks who plays with You picked, and asks for one computer',
@@ -251,7 +251,7 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
   // OTTO, 2026-10-10: the watched game's opening alone read as if a game could only be watched.
   const opening = (h) => (h.match(/<p class="dlg-body">([^<]*)<\/p>/) ?? [])[1] ?? '';
   check('the dialog opens on both ways in, played or watched: a game against a computer, or two computers against each other',
-    [html, watching].map((h) => opening(h).startsWith('Play a full game against a computer opponent, or watch two computers play each other.')), [true, true]);
+    [html, watching].map((h) => opening(h).startsWith('Play against the computer, or watch two computers play. No account or connection needed.')), [true, true]);
   // THE LEARNED JUDGE (M17, adopted 2026-10-10): the page fetches the model before a game only where an Ace plays.
   const judged = (opponent, watch = false, opponent2 = 'recruit') => M.SOLO.soloJudged({ opponent, watch, opponent2 });
   check('THE JUDGE is loaded for a game with the Ace in it, the second computer of a watched game counted; not for the other levels alone',
@@ -265,8 +265,8 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
     [[true, 'veteran'], [false, 'tactician']]);
   // THE RULES PLAYED: the main rules or a Season, picked in the dialog as on the pad.
   const seasonRows = (h) => [...h.matchAll(/data-season="([^"]*)" aria-pressed="(true|false)"><span>([^<]*)<\/span><em>([^<]*)<\/em>/g)].map((m) => [m[1], m[2] === 'true', m[3], m[4]]);
-  check('RULES: the main rules picked unless a Season is, each Season named as the pad names it with what it changes',
-    seasonRows(html), [['', true, 'Main rules', 'the rulebook and its updates'], ['1.04', false, 'Season 1.04', 'Stabilize System becomes a Medium Action; Smoke thins faster']]);
+  check('RULES: Standard picked unless a Season is, each Season by its name (the canvas "Computer Play Styles", version 7)',
+    seasonRows(html), [['', true, 'Standard', 'core rules and FAQ'], ['1.04', false, 'Season 1.04', 'season rule changes']]);
   check('a Season picked is marked, kept with the pick, and asked for by Start; one this build has not is the main rules',
     [seasonRows(soloSetupHtml(data, { ...M.SETUP.soloPick(data, null), season: '1.04' })).map((r) => r[1]),
       M.SETUP.soloPick(data, { season: '1.04' }).season, M.SETUP.soloPick(data, { season: '7.7' }).season,
@@ -305,7 +305,7 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
   const pick = soloPick(data, kept, squads);
   const { map: _m, mission: _t, mine: _a, theirs: _b, secondaries: _s, ...head } = kept;
   check('a game of your own kept from last time opens again as it was (kept from before a game could be watched: played, the second computer the usual one)',
-    pick, { ...head, watch: false, opponent2: 'tactician', map: kept.map, mission: kept.mission, mine: kept.mine, theirs: kept.theirs, secondaries: kept.secondaries, season: '' });
+    pick, { ...head, watch: false, opponent2: 'tactician', map: kept.map, mission: kept.mission, mine: kept.mine, theirs: kept.theirs, secondaries: kept.secondaries, season: '', style: 'default', style2: 'default', custom: {} });
   check('what this build or this device no longer has falls back: a battlefield, a Main Task, a squad; and with no squad to play it with there is no game of your own',
     [(() => { const p = soloPick(data, { ...kept, map: 'moon', mission: 'tea', mine: 'gone', theirs: 7 }, squads); return [p.scenario, p.map, p.mission, p.mine, p.theirs]; })(), soloPick(data, kept, []).scenario],
     [[SOLO_OWN, 'alley', 'control-frontal-breakthrough', 'builtin:squad-raid-rdl', 'builtin:squad-raid-un'], alley.id]);
@@ -1163,5 +1163,86 @@ for (const [scenario, human] of [[alley, 's1'], [alley, 's2'], [vip, 's1'], [vip
 
 M.C.onPerformed(null);
 M.L.setLocalSeat(null);
+// ---------- THE PLAY STYLES (M19; the canvas "Computer Play Styles", version 7; released 2026-10-15) ----------
+{
+  const { STYLES, STYLE, CUSTOM_ROWS, customText, customFrom, squadHas, styleFits } = M.ASK;
+  const { styledPolicy, ownSet, LEVEL_SETS, STYLE_SETS, CUSTOM_SETS, customSet } = M.AI;
+  const { soloPolicy } = M.SOLO;
+  const { soloSetupHtml, soloPick, styleListHtml, customHtml, settleStyles, soloAddress } = M.SETUP;
+  check('THE STYLES: Default, Missile Barrage, Stealth, Melee Rush, Objective Focus, Custom, each with a short neutral line; Default the usual one',
+    [STYLES.map((x) => `${x.id}:${x.name}:${x.line}`), STYLE],
+    [['default:Default:balanced play', 'missile:Missile Barrage:focuses on missile attacks', 'stealth:Stealth:uses Optical Camouflage', 'melee:Melee Rush:closes in for melee attacks',
+      'objective:Objective Focus:plays for the Main Task first', 'custom:Custom:set each behaviour'], 'default']);
+  const levels = Object.keys(LEVEL_SETS);
+  check('DEFAULT CHANGES NOTHING: for every level the policy played is the level\'s own, the very one measured',
+    [levels, levels.map((l) => styledPolicy(l, 'default')), levels.map((l) => soloPolicy(l, 'default', {}) === OPPONENTS[l].policy)],
+    [['tactician', 'veteran', 'brawler', 'recruit'], [null, null, null, null], [true, true, true, true]]);
+  check('a style is laid over each level by its own name, the Ace still reading the judge and the Recruit still making its mistakes',
+    [styledPolicy('tactician', 'missile').name, !!styledPolicy('tactician', 'missile').judge, styledPolicy('veteran', 'stealth').name, !!styledPolicy('veteran', 'stealth').judge,
+      styledPolicy('recruit', 'melee').name, styledPolicy('brawler', 'objective').name, styledPolicy('eager', 'missile'), styledPolicy('tactician', 'warp')],
+    ['tactician+missile', true, 'veteran+stealth', false, 'recruit+melee', 'brawler+objective', null, null]);
+  check('each preset is the levers measured for it (M19, M24)',
+    Object.fromEntries(Object.entries(STYLE_SETS).map(([k, v]) => [k, { ...v.skills, ...v.weights }])),
+    { missile: { launchBias: 1, volleyLaunch: 1 }, stealth: { hiddenWorth: 3 }, melee: { blade: 1, bladeIn: 1, closeIn: 2, contactStep: 0.15, lockDeny: 1 }, objective: { zonePull: 1.5 } });
+  // The page's rows and the AI's sets are one list in two places: held together here.
+  const sets = CUSTOM_ROWS.map((r) => [r.id, r.opts.filter((o) => !CUSTOM_SETS[r.id]?.[o]).join('|')]);
+  check('THE CUSTOM ROWS: thirteen, in seven groups, each choice that is no level\'s own set by the AI (and no set without a row)',
+    [CUSTOM_ROWS.length, [...new Set(CUSTOM_ROWS.map((r) => r.group))], sets.filter(([, missing]) => missing && missing !== 'Normal'), Object.keys(CUSTOM_SETS).filter((k) => !CUSTOM_ROWS.some((r) => r.id === k))],
+    [13, ['Targeting', 'Movement', 'Stealth', 'Missiles', 'Melee', 'Main Task', 'Teamwork'], [], []]);
+  check('each row shows each level\'s own choice as the AI plays it (the page\'s copy held to the AI\'s)',
+    levels.flatMap((l) => CUSTOM_ROWS.filter((r) => M.ASK.ownChoice(l, r.id) !== M.AI.ownChoice(r.id, ownSet(l))).map((r) => `${l}:${r.id}`)), []);
+  check('a Custom style left as it opens, or set to each level\'s own, is the level itself ("Normal matches Default")',
+    [levels.map((l) => styledPolicy(l, 'custom', {})), levels.map((l) => styledPolicy(l, 'custom', Object.fromEntries(CUSTOM_ROWS.map((r) => [r.id, M.ASK.ownChoice(l, r.id)]))))],
+    [[null, null, null, null], [null, null, null, null]]);
+  const cs = (picks, level) => { const x = customSet(picks, ownSet(level)); return { ...x.skills, ...x.weights }; };
+  check('a Custom pick sets what its row says, over the level\'s own: the Ace hunting, the Veteran weighing return fire twice the Ace\'s, the Brawler not hunting, more missiles, Timing Dials together',
+    [cs({ hunter: 'On' }, 'tactician'), cs({ cover: 'More' }, 'veteran'), cs({ hunter: 'Off' }, 'brawler'), cs({ launch: 'More' }, 'tactician'), cs({ dials: 'On', leash: 'Off' }, 'tactician')],
+    [{ hunter: true, hunt: 1 }, { exposure: true, exposureLater: 0.7, ...{ exposure: 1.6 } }, { hunter: false, hunt: 0 }, { launchBias: 1 }, { squadDials: true, leash: false }].map((o) => JSON.parse(JSON.stringify(o))));
+  check('the Custom picks travel as text and come back, anything unknown dropped',
+    [customText({ contact: 'More', hunter: 'On', nonsense: 'On', camo: 'Maybe' }), customFrom('hunter-on.contact-more.camo-maybe.x-y.constructor-on'), customFrom(7)],
+    ['hunter-on.contact-more', { hunter: 'On', contact: 'More' }, {}]);
+  // What the shipped squads bring, read off their cards.
+  const rdl = data.solo.squads['raid-rdl'];
+  const un = data.solo.squads['raid-un'];
+  const has = (sq) => ['launcher', 'camouflage', 'melee'].map((n) => squadHas(data, sq, n));
+  check('a style\'s parts read off the squad\'s cards: RDL Raid launches and has blades and no Optical Camouflage, UN Raid has a blade alone',
+    [has(rdl), has(un), styleFits(data, un, 'missile'), styleFits(data, un, 'objective'), styleFits(data, null, 'custom'), styleFits(data, null, 'stealth')],
+    [[true, false, true], [false, false, true], false, true, true, false]);
+  // The setup: the row, the list, the rows of Custom, the fallback.
+  const base = { ...soloPick(data, null), scenario: alley.id, side: 's2' };
+  const played = soloSetupHtml(data, { ...base, style: 'missile' });
+  check('THE SETUP: under the Difficulty a Play style row opens the styles, showing the one picked, its line, and that styles are for practice',
+    [/<p class="dlg-eyebrow">Play style<\/p><div class="dlg-picks"><button type="button" class="dlg-pick dlg-open" data-style="bot"><span>Style<\/span><span class="dlg-pick-end"><em>Missile Barrage<\/em>/.test(played),
+      /<p class="dlg-note">Focuses on missile attacks\. Styles are for practice and can play weaker than Default\.<\/p>/.test(played),
+      /<p class="dlg-note">Balanced play\.<\/p>/.test(soloSetupHtml(data, base))],
+    [true, true, true]);
+  const watched = soloSetupHtml(data, { ...base, watch: true, style: 'melee', style2: 'objective' });
+  check('watched, one style for each computer, under each squad\'s Difficulty, by the squad\'s name',
+    [[...watched.matchAll(/<p class="dlg-eyebrow">([^<]*) · Play style<\/p><div class="dlg-picks"><button type="button" class="dlg-pick dlg-open" data-style="(bot|human)"><span>Style<\/span><span class="dlg-pick-end"><em>([^<]*)<\/em>/g)].map((m) => `${m[1]}:${m[2]}:${m[3]}`)],
+    [['UN Raid:human:Objective Focus', 'RDL Raid:bot:Melee Rush']]);
+  const list = styleListHtml(data, 'default', un);
+  check('THE STYLES LIST: a style the squad has no parts for shown greyed, with why, and not to be picked; the others picked by a press; Custom opens its rows',
+    [[...list.matchAll(/aria-disabled="true" data-why="([^"]*)"><span>([^<]*)<\/span><em>([^<]*)<\/em>/g)].map((m) => [m[2], m[1], m[3]]),
+      [...list.matchAll(/data-pick="([^"]+)"/g)].map((m) => m[1]), /The computer plays UN Raid\. A style its squad has no parts for is shown but cannot be picked\./.test(list)],
+    [[['Missile Barrage', 'needs missiles; UN Raid has none', 'needs missiles · UN Raid has none'], ['Stealth', 'needs Optical Camouflage; UN Raid has none', 'needs Optical Camouflage · UN Raid has none']],
+      ['default', 'melee', 'objective', 'custom'], true]);
+  const rows = (h) => [...h.matchAll(/data-row="([^"]+)" data-opt="([^"]+)" aria-pressed="true"/g)].map((m) => `${m[1]}:${m[2]}`);
+  check('THE CUSTOM ROWS on the page: each with its choices, the level\'s own pressed until another is picked; Done, Reset to Default, Cancel',
+    [rows(customHtml('brawler', {})).slice(0, 4), rows(customHtml('tactician', { hunter: 'On', task: 'More' })).filter((r) => /^(hunter|task)/.test(r)), (customHtml('tactician', {}).match(/class="dlg-row"/g) ?? []).length,
+      /data-ok>Done<\/button>\s*<button data-reset>Reset to Default<\/button>\s*<button data-cancel>Cancel<\/button>/.test(customHtml('tactician', {}))],
+    [['hunter:On', 'lines:On', 'contact:Normal', 'cover:Normal'], ['hunter:On', 'task:More'], 13, true]);
+  const fell = { ...base, side: 's1', style: 'missile' };
+  const said = settleStyles(data, fell, []);
+  check('THE FALLBACK: a style the computer\'s squad cannot play goes back to Default, said once in plain words',
+    [fell.style, said, settleStyles(data, { ...base, style: 'missile' }, [])],
+    ['default', ['Missile Barrage needs missiles. The computer now plays UN Raid, which has none, so its style is back to Default.'], []]);
+  check('Start asks for the style, the second computer\'s when watched, and the Custom picks only when one plays Custom; the game reads them back',
+    [soloAddress({ ...base, style: 'missile' }), soloAddress({ ...base, watch: true, style: 'objective', style2: 'custom', custom: { hunter: 'On' } }), soloAddress({ ...base, style: 'objective', custom: { hunter: 'On' } }),
+      (() => { const sp = soloSpec(data, soloAsk(soloAddress({ ...base, style: 'custom', custom: { contact: 'More' } }).slice('match/'.length)), () => 1); return [sp.style, sp.style2, sp.custom]; })(),
+      (() => { const sp = soloSpec(data, soloAsk(`?solo=${alley.id}&side=s1&style=missile`), () => 1); return sp.style; })()],
+    [`match/?solo=${alley.id}&side=s2&style=missile`, `match/?solo=${alley.id}&side=s2&watch=1&style=objective&style2=custom&custom=hunter-on`, `match/?solo=${alley.id}&side=s2&style=objective`,
+      ['custom', 'default', { contact: 'More' }], 'default']);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

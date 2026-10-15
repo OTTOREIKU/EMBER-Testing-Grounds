@@ -6,8 +6,8 @@ export { behindNow, carried, gainOf, holds, marginOf, missionOf, payFrom, second
 export { FEATURES, FIRST_READING, featureMap, featuresOf, type Look } from './features';
 export { hasModel, judge, judgeFeatures, SHIPPED_JUDGE, useModel, type Model, type Tree } from './learned';
 export { legalPolicy } from './legal';
-export { blundering, RECRUIT_RATE, recruitPolicy, VETERAN_SKILLS, VETERAN_WEIGHTS, veteranPolicy } from './levels';
-export { BRAWLER_SKILLS, BRAWLER_WEIGHTS, brawlerPolicy, MISSILE_SKILLS, MISSILE_WEIGHTS, missilePolicy } from './styles';
+export { blundering, LEVEL_SETS, ownSet, RECRUIT_RATE, recruitPolicy, styledPolicy, VETERAN_SKILLS, VETERAN_WEIGHTS, veteranPolicy } from './levels';
+export { BRAWLER_SKILLS, BRAWLER_WEIGHTS, brawlerPolicy, CUSTOM_SETS, customSet, MISSILE_SKILLS, MISSILE_WEIGHTS, missilePolicy, ownChoice, STYLE_SETS, type OwnSet, type StyleSet } from './styles';
 export { exposureAt, firstAnswers, makeTactician, races, SKILLS, TACTICIAN_LIMITS, tacticianPolicy, DIALS, TIES, terminalAtRisk, turnPlanner, weighed, type DialInfo, type Skills, type TieInfo, type Weighed } from './tactician';
 export { chooseDials, likelyTiming, projectRound, ROUND_KILL, roundOrder, type DialOwn, type Planner, type ProjectedRound, type RoundCut, type RoundStep, type SquadChoice, type TurnPlan } from './squad';
 export { bestCard, CARD_ORDER } from './secondary';

@@ -44,6 +44,9 @@ export interface BotGameBody {
   map: string | null;
   mission: string | null;
   opponent: string;
+  // How the computer played (M19): its style, and the Custom style's picks ('' for any other).
+  style: string;
+  custom: string;
   speed: string;
   human: Side;
   seed: number;

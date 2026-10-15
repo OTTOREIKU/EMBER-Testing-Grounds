@@ -8,11 +8,11 @@
 //     `VETERAN_WEIGHTS`): it plays for the mission a turn at a time.
 //   ACE: the Tactician whole.
 import { legalPolicy } from './legal';
-import { brawlerPolicy } from './styles';
+import { BRAWLER_SKILLS, BRAWLER_WEIGHTS, brawlerPolicy, customSet, STYLE_SETS, type StyleSet } from './styles';
 import type { Choice, Policy } from './policy';
 import type { Rng } from './rng';
-import { makeTactician, type Skills } from './tactician';
-import type { Weights } from './evaluate';
+import { makeTactician, SKILLS, type Skills } from './tactician';
+import { TACTICIAN, type Weights } from './evaluate';
 import type { Decision } from '../seat';
 
 // The questions a mistake is made in: a unit's turn, its Timing Dial, a
@@ -65,3 +65,32 @@ export const recruitPolicy: Policy = blundering(brawlerPolicy, RECRUIT_RATE, 're
 export const VETERAN_SKILLS: Partial<Skills> = { exposure: false, cardPick: false };
 export const VETERAN_WEIGHTS: Partial<Weights> = { learned: 0 };
 export const veteranPolicy: Policy = { ...makeTactician(VETERAN_SKILLS, VETERAN_WEIGHTS), name: 'veteran' };
+
+// EACH LEVEL'S OWN SKILLS AND WEIGHTS, as the policies above are made of them, for a style to be laid over (M19). The
+// Recruit is the Brawler's, with its mistakes made after.
+export const LEVEL_SETS: Record<string, StyleSet & { blunders?: number }> = {
+  tactician: { skills: {}, weights: {} },
+  veteran: { skills: VETERAN_SKILLS, weights: VETERAN_WEIGHTS },
+  brawler: { skills: BRAWLER_SKILLS, weights: BRAWLER_WEIGHTS },
+  recruit: { skills: BRAWLER_SKILLS, weights: BRAWLER_WEIGHTS, blunders: RECRUIT_RATE },
+};
+
+// A level's own skills and weights, whole (what a Custom row reads as the level's own).
+export function ownSet(level: string): { skills: Skills; weights: Weights } | null {
+  const base = LEVEL_SETS[level];
+  return base ? { skills: { ...SKILLS, ...base.skills }, weights: { ...TACTICIAN, ...base.weights } } : null;
+}
+
+// A LEVEL PLAYING A STYLE (M19): the level's own skills and weights with the style's laid over them, and the
+// Recruit's mistakes made after. Null where the style changes nothing (Default, an unknown style, a Custom style left
+// at the level's own, a level that is no Tactician): the level's own policy then plays, the very one measured.
+export function styledPolicy(level: string, style: string, custom: Readonly<Record<string, string>> = {}): Policy | null {
+  const base = LEVEL_SETS[level];
+  const own = ownSet(level);
+  if (!base || !own) return null;
+  const set = style === 'custom' ? customSet(custom, own) : STYLE_SETS[style];
+  if (!set || (!Object.keys(set.skills).length && !Object.keys(set.weights).length)) return null;
+  const made = makeTactician({ ...base.skills, ...set.skills }, { ...base.weights, ...set.weights });
+  const named: Policy = { ...made, name: `${level}+${style}` };
+  return base.blunders ? blundering(named, base.blunders, `recruit+${style}`) : named;
+}

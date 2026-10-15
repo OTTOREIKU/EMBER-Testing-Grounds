@@ -14,9 +14,19 @@
 // tint (ui.css rules 1 and 2). A row that has more choices than fit shows the
 // one chosen and opens the list in a dialog of its own (.dlg-open, with the
 // chevron every "way into something" carries).
+//
+// THE PLAY STYLE (M19; OTTO, 2026-10-13, the canvas "Computer Play Styles",
+// version 7, its words; released 2026-10-15): how each computer plays, beside
+// its Difficulty, picked in a dialog of its own; Custom opens one more, a row
+// for each behaviour. A style the computer's squad has no parts for is shown
+// greyed with why, and one picked before the squad changed goes back to
+// Default with a line saying so.
 import type { GameData, SoloScenario, SoloSquad } from './data';
 import { openDialog } from './dialog';
-import { RIVAL, RIVALS, SOLO_OWN, SOLO_OWN_KEY, SPEEDS, soloQuery, type SoloOwn, type Speed } from './soloask';
+import {
+  CUSTOM_ROWS, customFrom, NEED_WORDS, ownChoice, RIVAL, RIVALS, SOLO_OWN, SOLO_OWN_KEY, SPEEDS, STYLE, STYLES, styleFits, soloQuery,
+  type SoloOwn, type Speed,
+} from './soloask';
 import { loadSquads, type SavedSquad } from './squadstore';
 import type { MechLoadout, Side } from './types';
 
@@ -40,6 +50,12 @@ export interface SoloPick {
   // The Season Rules the game is played with, or '' for the main rules (OTTO,
   // 2026-10-05: "a toggle to turn these seasonal rules on or off").
   season: string;
+  // How the computer plays (soloask.ts STYLES), and in a game the player
+  // watches the one in their seat (`style2`); the Custom style's picks, kept
+  // on this device for whichever computer plays it.
+  style: string;
+  style2: string;
+  custom: Record<string, string>;
 }
 
 // The last game set up on this device, so the dialog opens on it again.
@@ -116,7 +132,38 @@ export function soloPick(data: GameData, kept: unknown, squads: SoloSquadRow[] =
     theirs: has(k.theirs) ? k.theirs : usual('builtin:squad-raid-un', 1),
     secondaries: k.secondaries === true,
     season: (data.seasons ?? []).some((s) => s.id === k.season) ? k.season as string : '',
+    style: STYLES.find((x) => x.id === k.style)?.id ?? STYLE,
+    style2: STYLES.find((x) => x.id === k.style2)?.id ?? STYLE,
+    custom: customFrom(Object.entries(k.custom && typeof k.custom === 'object' ? k.custom : {}).map(([r, o]) => `${r}-${String(o).toLowerCase()}`).join('.')),
   };
+}
+
+// ---------- the play style ----------
+
+// The squad a computer plays: in a game the player plays, the other seat's;
+// in one the player watches, `which` says whose ('bot' the other squad,
+// 'human' the one watched from). A game of the player's own seats them first.
+export function computerSquad(data: GameData, pick: SoloPick, squads: SoloSquadRow[], which: 'bot' | 'human'): SoloSquad | null {
+  if (pick.scenario === SOLO_OWN && squads.length) return squads.find((s) => s.id === (which === 'bot' ? pick.theirs : pick.mine))?.squad ?? null;
+  const game = data.solo.scenarios.find((g) => g.id === pick.scenario) ?? data.solo.scenarios[0];
+  const seat: Side = which === 'human' ? pick.side : pick.side === 's1' ? 's2' : 's1';
+  return game ? data.solo.squads[game.seats[seat]] ?? null : null;
+}
+
+// THE FALLBACK (the canvas's "Fallback"): a style the computer's squad has no
+// parts for goes back to Default, in a line the dialog shows once.
+export function settleStyles(data: GameData, pick: SoloPick, squads: SoloSquadRow[]): string[] {
+  const said: string[] = [];
+  const settle = (key: 'style' | 'style2', which: 'bot' | 'human'): void => {
+    const sq = computerSquad(data, pick, squads, which);
+    if (styleFits(data, sq, pick[key])) return;
+    const st = STYLES.find((x) => x.id === pick[key]);
+    pick[key] = STYLE;
+    if (st?.needs) said.push(`${st.name} needs ${NEED_WORDS[st.needs]}. The computer now plays ${sq?.name ?? 'a squad'}, which has none, so its style is back to Default.`);
+  };
+  settle('style', 'bot');
+  if (pick.watch) settle('style2', 'human');
+  return said;
 }
 
 // A game in a player's words: its Main Task, and where it is played.
@@ -150,7 +197,7 @@ export function soloLists(data: GameData, squads: SoloSquadRow[]): Record<'map' 
   };
 }
 
-export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadRow[] = []): string {
+export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadRow[] = [], said: string[] = []): string {
   const games = data.solo.scenarios;
   const own = pick.scenario === SOLO_OWN && squads.length > 0;
   const game = games.find((g) => g.id === pick.scenario) ?? games[0];
@@ -164,12 +211,12 @@ export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadR
   const named = (what: 'map' | 'mission' | 'mine' | 'theirs', id: string): Listed => lists[what].rows.find((r) => r.id === id) ?? { id, name: id, note: '' };
   const offered = [
     ...games.map((g) => row('game', g.id, soloGameLabel(data, g), !own && g.id === game.id)),
-    ...(squads.length ? [row('game', SOLO_OWN, { name: 'Your own game', note: 'any battlefield, Task and squads' }, own)] : []),
+    ...(squads.length ? [row('game', SOLO_OWN, { name: 'Custom Game', note: 'any map, mission and squads' }, own)] : []),
   ];
   // In a game the player watches, the squad on their side of the table is the
   // one the page shows the game from, and a computer is picked for each.
   const watch = pick.watch;
-  const yours = watch ? 'The squad you watch from' : 'Your squad';
+  const yours = watch ? 'Watch from' : 'Your squad';
   const table = own
     ? `<p class="dlg-eyebrow">The table</p>
     <div class="dlg-picks">${opens('map', 'Battlefield', named('map', pick.map).name)}${opens('mission', 'Main Task', named('mission', pick.mission).name)}</div>
@@ -188,36 +235,49 @@ export function soloSetupHtml(data: GameData, pick: SoloPick, squads: SoloSquadR
   const nameOf = (seat: Side): string => (own ? named(seat === 's1' ? 'mine' : 'theirs', seat === 's1' ? pick.mine : pick.theirs).name : soloSquadLabel(data, game, seat).name);
   const near: Side = own ? 's1' : pick.side;
   const far: Side = near === 's1' ? 's2' : 's1';
+  // Each computer's style: the row that opens the styles, and what the style
+  // does in a line under it (the canvas's "Main" and "Watch").
+  const styled = (key: 'style' | 'style2', which: 'bot' | 'human'): string => {
+    const st = STYLES.find((x) => x.id === pick[key]) ?? STYLES[0];
+    const line = st.id === 'custom' ? 'Your own settings for each behaviour.' : `${st.line.charAt(0).toUpperCase()}${st.line.slice(1)}.`;
+    const practice = !watch && st.id !== STYLE ? ' Styles are for practice and can play weaker than Default.' : '';
+    return `<div class="dlg-picks"><button type="button" class="dlg-pick dlg-open" data-style="${which}"><span>Style</span><span class="dlg-pick-end"><em>${esc(st.name)}</em><span class="ui-go" aria-hidden="true">›</span></span></button></div>
+    <p class="dlg-note">${esc(line + practice)}</p>`;
+  };
+  const notice = said.map((t) => `<p class="dlg-note dlg-notice" role="status">${esc(t)}</p>`).join('');
   const computers = watch
-    ? `<p class="dlg-eyebrow">${esc(nameOf(near))} is played by</p>${levels('rival2', pick.opponent2)}
-    <p class="dlg-eyebrow">${esc(nameOf(far))} is played by</p>${levels('rival', pick.opponent)}`
-    : `<p class="dlg-eyebrow">The computer is</p>${levels('rival', pick.opponent)}`;
+    ? `<p class="dlg-eyebrow">${esc(nameOf(near))} · Difficulty</p>${levels('rival2', pick.opponent2)}
+    <p class="dlg-eyebrow">${esc(nameOf(near))} · Play style</p>${styled('style2', 'human')}
+    <p class="dlg-eyebrow">${esc(nameOf(far))} · Difficulty</p>${levels('rival', pick.opponent)}
+    <p class="dlg-eyebrow">${esc(nameOf(far))} · Play style</p>${styled('style', 'bot')}${notice}`
+    : `<p class="dlg-eyebrow">Difficulty</p>${levels('rival', pick.opponent)}
+    <p class="dlg-eyebrow">Play style</p>${styled('style', 'bot')}${notice}`;
   // THE RULES PLAYED: the main rules, or a Season the publisher trials beside
   // them (Supplementary Rules 1.04, section 8), each in a line of what it
   // changes. The pad's setup offers the same choice in the same words.
   const seasons = data.seasons ?? [];
   const rules = seasons.length
     ? `<p class="dlg-eyebrow">Rules</p>
-    <div class="dlg-picks">${row('season', '', { name: 'Main rules', note: 'the rulebook and its updates' }, !pick.season, true)}${
-      seasons.map((s) => row('season', s.id, { name: s.label, note: s.rules.map((r) => r.basic.replace(/:.*$/, '').replace(/\.$/, '')).join('; ') }, pick.season === s.id, true)).join('')}</div>`
+    <div class="dlg-picks">${row('season', '', { name: 'Standard', note: 'core rules and FAQ' }, !pick.season)}${
+      seasons.map((s) => row('season', s.id, { name: s.label, note: 'season rule changes' }, pick.season === s.id)).join('')}</div>`
     : '';
   // The opening names both ways in, whichever is picked (OTTO, 2026-10-10: the watched game's line alone read as if
   // a game could only be watched).
   return `<h3 class="dlg-title">Play the computer</h3>
-    <p class="dlg-body">Play a full game against a computer opponent, or watch two computers play each other. The game opens on the Match Centre's table and needs no account and no connection.${watch
+    <p class="dlg-body">Play against the computer, or watch two computers play. No account or connection needed.${watch
     ? ' The Thinking tab shows what each one chose and why.'
     : own ? ' The computer plays any squad you give it; it does not yet use every special Action a card prints.' : ''}</p>
-    <p class="dlg-eyebrow">The game</p>
+    <p class="dlg-eyebrow">Game</p>
     <div class="dlg-picks">${offered.join('')}</div>
-    <p class="dlg-eyebrow">Who plays</p>
-    <div class="dlg-picks">${row('who', 'you', { name: 'You', note: 'against the computer' }, !watch)}${row('who', 'watch', { name: 'Two computers', note: 'you watch' }, watch)}</div>
+    <p class="dlg-eyebrow">Mode</p>
+    <div class="dlg-picks">${row('who', 'you', { name: 'Play', note: 'you vs. the computer' }, !watch)}${row('who', 'watch', { name: 'Watch', note: 'computer vs. computer' }, watch)}</div>
     ${table}
     ${computers}
     ${rules}
-    <p class="dlg-eyebrow">${watch ? 'They play at' : 'The computer plays at'}</p>
+    <p class="dlg-eyebrow">Speed</p>
     <div class="dlg-picks">${SPEEDS.map((s) => row('speed', s.id, { name: s.name, note: s.note }, s.id === pick.speed)).join('')}</div>
     <div class="dlg-actions">
-      <button class="dlg-primary" data-ok data-autofocus>${watch ? 'Start watching' : 'Start the game'}</button>
+      <button class="dlg-primary" data-ok data-autofocus>Start</button>
       <button data-cancel>Cancel</button>
     </div>`;
 }
@@ -238,7 +298,10 @@ export function soloOwnGame(pick: SoloPick, squads: SoloSquadRow[]): SoloOwn | n
 // Where Start goes: the Match Centre's page, asked for this game.
 export function soloAddress(pick: SoloPick): string {
   const own = pick.scenario === SOLO_OWN;
-  return `match/${soloQuery({ scenario: pick.scenario, side: own ? 's1' : pick.side, speed: pick.speed, opponent: pick.opponent, watch: pick.watch, opponent2: pick.opponent2, season: pick.season || undefined })}`;
+  return `match/${soloQuery({
+    scenario: pick.scenario, side: own ? 's1' : pick.side, speed: pick.speed, opponent: pick.opponent, watch: pick.watch, opponent2: pick.opponent2,
+    season: pick.season || undefined, style: pick.style, style2: pick.style2, custom: pick.custom,
+  })}`;
 }
 
 // One of a game's own lists, in a dialog of its own over the setup: the row
@@ -270,16 +333,118 @@ function pickFrom(title: string, rows: Listed[], current: string): Promise<strin
   });
 }
 
+// THE STYLES, in a dialog of their own over the setup (the canvas's "Styles"):
+// a press on one picks it and closes; one the squad has no parts for is shown
+// and cannot be picked (aria-disabled, with why). Custom answers 'custom', and
+// the setup opens its rows. Null when it is closed with nothing picked.
+export function styleListHtml(data: GameData, current: string, squad: SoloSquad | null): string {
+  const name = squad?.name ?? 'Its squad';
+  const rows = STYLES.map((st) => {
+    if (!styleFits(data, squad, st.id) && st.needs) {
+      return `<button type="button" class="dlg-pick dlg-pick-long" aria-disabled="true" data-why="${esc(`needs ${NEED_WORDS[st.needs]}; ${name} has none`)}"><span>${esc(st.name)}</span><em>${esc(`needs ${NEED_WORDS[st.needs]} · ${name} has none`)}</em></button>`;
+    }
+    const on = st.id === current;
+    if (st.id === 'custom') {
+      return `<button type="button" class="dlg-pick dlg-open" data-pick="custom" aria-pressed="${on}"${on ? ' data-autofocus' : ''}><span>${esc(st.name)}</span><span class="dlg-pick-end"><em>${esc(st.line)}</em><span class="ui-go" aria-hidden="true">›</span></span></button>`;
+    }
+    return `<button type="button" class="dlg-pick" data-pick="${esc(st.id)}" aria-pressed="${on}"${on ? ' data-autofocus' : ''}><span>${esc(st.name)}</span><em>${esc(st.line)}</em></button>`;
+  });
+  return `<h3 class="dlg-title">Play style</h3>
+    <p class="dlg-body">Changes how the computer plays, not its difficulty.</p>
+    <div class="dlg-picks">${rows.join('')}</div>
+    <p class="dlg-note">The computer plays ${esc(name)}. A style its squad has no parts for is shown but cannot be picked.</p>
+    <div class="dlg-actions"><button data-cancel>Cancel</button></div>`;
+}
+
+function pickStyle(data: GameData, current: string, squad: SoloSquad | null): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (id: string | null, close?: () => void): void => {
+      if (settled) return;
+      settled = true;
+      close?.();
+      resolve(id);
+    };
+    openDialog(styleListHtml(data, current, squad), (panel, close) => {
+      panel.addEventListener('click', (ev) => {
+        const b = (ev.target as HTMLElement).closest<HTMLElement>('button');
+        if (!b || !panel.contains(b) || b.getAttribute('aria-disabled') === 'true') return;
+        if (b.dataset.pick !== undefined) done(STYLES.some((x) => x.id === b.dataset.pick) ? b.dataset.pick : null, close);
+        else if ('cancel' in b.dataset) done(null, close);
+      });
+    }, () => done(null));
+  });
+}
+
+// THE CUSTOM STYLE'S ROWS (the canvas's "Customize"), each behaviour with its
+// choices, the one in play in the accent tint: the player's pick, else the
+// level's own ("Normal matches Default").
+export function customHtml(level: string, picks: Readonly<Record<string, string>>): string {
+  const groups: string[] = [];
+  for (const row of CUSTOM_ROWS) if (!groups.includes(row.group)) groups.push(row.group);
+  const body = groups.map((g) => `<p class="dlg-eyebrow">${esc(g)}</p>
+    <div class="dlg-picks">${CUSTOM_ROWS.filter((r) => r.group === g).map((r) => {
+      const now = picks[r.id] ?? ownChoice(level, r.id);
+      return `<div class="dlg-row"><span>${esc(r.label)}</span><span class="dlg-seg" role="group" aria-label="${esc(r.label)}">${
+        r.opts.map((o) => `<button type="button" data-row="${esc(r.id)}" data-opt="${esc(o)}" aria-pressed="${o === now}">${esc(o)}</button>`).join('')}</span></div>`;
+    }).join('')}</div>`).join('');
+  return `<h3 class="dlg-title">Custom style</h3>
+    <p class="dlg-body">Set each behaviour. Normal matches Default. Saved on this device.</p>
+    ${body}
+    <div class="dlg-actions">
+      <button class="dlg-primary" data-ok>Done</button>
+      <button data-reset>Reset to Default</button>
+      <button data-cancel>Cancel</button>
+    </div>`;
+}
+
+function customize(level: string, kept: Readonly<Record<string, string>>): Promise<Record<string, string> | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const picks: Record<string, string> = { ...kept };
+    const done = (out: Record<string, string> | null, close?: () => void): void => {
+      if (settled) return;
+      settled = true;
+      close?.();
+      resolve(out);
+    };
+    openDialog(customHtml(level, picks), (panel, close) => {
+      panel.addEventListener('click', (ev) => {
+        const b = (ev.target as HTMLElement).closest<HTMLElement>('button');
+        if (!b || !panel.contains(b)) return;
+        if (b.dataset.row && b.dataset.opt) {
+          const row = CUSTOM_ROWS.find((r) => r.id === b.dataset.row);
+          if (!row || !row.opts.includes(b.dataset.opt)) return;
+          picks[row.id] = b.dataset.opt;
+          panel.innerHTML = customHtml(level, picks);
+          panel.querySelector<HTMLElement>(`[data-row="${row.id}"][data-opt="${b.dataset.opt}"]`)?.focus();
+        } else if ('reset' in b.dataset) {
+          for (const k of Object.keys(picks)) delete picks[k];
+          panel.innerHTML = customHtml(level, picks);
+          panel.querySelector<HTMLElement>('[data-reset]')?.focus();
+        } else if ('ok' in b.dataset) {
+          // Only what differs from the level's own is kept: a row left as it was follows the level.
+          done(Object.fromEntries(Object.entries(picks).filter(([r, o]) => o !== ownChoice(level, r))), close);
+        } else if ('cancel' in b.dataset) done(null, close);
+      });
+    }, () => done(null));
+  });
+}
+
 export function openSoloSetup(data: GameData, go: (address: string) => void): void {
   let kept: unknown = null;
   try { kept = JSON.parse(localStorage.getItem(KEY) ?? 'null'); } catch { /* unreadable is the same as absent */ }
   const squads = soloSquads(data, loadSquads());
   const pick = soloPick(data, kept, squads);
   if (!pick.scenario) return;
-  openDialog(soloSetupHtml(data, pick, squads), (panel, close) => {
+  // A style kept from last time that this squad cannot play is said at once.
+  let said = settleStyles(data, pick, squads);
+  openDialog(soloSetupHtml(data, pick, squads, said), (panel, close) => {
     const draw = (pressed: string): void => {
-      // Drawn again with the pick, and the focus put back on the row pressed.
-      panel.innerHTML = soloSetupHtml(data, pick, squads);
+      // Drawn again with the pick, a style the squads now in play cannot play
+      // put back to Default and said, and the focus put back on the row pressed.
+      said = settleStyles(data, pick, squads);
+      panel.innerHTML = soloSetupHtml(data, pick, squads, said);
       panel.querySelector<HTMLElement>(pressed)?.focus();
     };
     // The panel is drawn again after every pick, so the presses are heard on
@@ -299,7 +464,26 @@ export function openSoloSetup(data: GameData, go: (address: string) => void): vo
         pick.season = (data.seasons ?? []).some((s) => s.id === b.dataset.season) ? b.dataset.season : '';
         pressed = `[data-season="${pick.season}"]`;
       }
-      else if (b.dataset.open) {
+      else if (b.dataset.style) {
+        // The computer whose style it is: in a game the player watches, the
+        // one in their seat ('human') or the other.
+        const which = b.dataset.style === 'human' && pick.watch ? 'human' : 'bot';
+        const key = which === 'human' ? 'style2' : 'style';
+        const level = which === 'human' ? pick.opponent2 : pick.opponent;
+        void pickStyle(data, pick[key], computerSquad(data, pick, squads, which)).then(async (id) => {
+          if (id === 'custom') {
+            const picks = await customize(level, pick.custom);
+            if (picks) {
+              pick.custom = picks;
+              pick[key] = 'custom';
+              // Saved on this device as the dialog says, with the rest of the pick as it stands.
+              try { localStorage.setItem(KEY, JSON.stringify(pick)); } catch { /* kept until Start, then */ }
+            }
+          } else if (id !== null) pick[key] = id;
+          draw(`[data-style="${which}"]`);
+        });
+        return;
+      } else if (b.dataset.open) {
         const what = b.dataset.open as 'map' | 'mission' | 'mine' | 'theirs';
         const list = soloLists(data, squads)[what];
         if (!list) return;

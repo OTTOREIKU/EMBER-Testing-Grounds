@@ -8,7 +8,7 @@ import { LoopbackRelay } from './loopback';
 import { Rng } from './ai/rng';
 import { forecastOf } from './ai/odds';
 import { hasModel, SHIPPED_JUDGE, useModel, type Model } from './ai/learned';
-import { OPPONENTS, ownGame, publicDecisions, RIVALS, SOLO_OWN, SOLO_OWN_KEY, SOLO_ROOM, SoloTable, soloAsk, soloHands, soloJudged, soloQuery, soloSetup, soloSpec, SPEEDS, type SoloOwn, type SoloSpec, type Speed } from './solo';
+import { customText, OPPONENTS, ownGame, publicDecisions, RIVALS, SOLO_OWN, SOLO_OWN_KEY, SOLO_ROOM, SoloTable, soloAsk, soloHands, soloJudged, soloQuery, soloSetup, soloSpec, SPEEDS, STYLE, STYLES, type SoloOwn, type SoloSpec, type Speed } from './solo';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { diagErrors, diagRefusals, installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
 import { openBoardReport } from './reportui';
@@ -2839,6 +2839,9 @@ async function startSolo(): Promise<void> {
       map: spec.scenario.map ?? null,
       mission: spec.scenario.mission ?? null,
       opponent: spec.opponent,
+      // How the computer played (M19), and the Custom style's picks when it was that one.
+      style: spec.style,
+      custom: spec.style === 'custom' ? customText(spec.custom) : '',
       speed: () => solo?.table.speed ?? spec.speed,
       human: spec.human,
       bot: spec.bot,
@@ -2876,8 +2879,8 @@ async function startSolo(): Promise<void> {
     // game the player watches, each squad by its name and the level playing it
     // ("RDL Raid (Ace)"): two computers of one level would otherwise read alike.
     names: (spec.watch
-      ? { [spec.human]: `${spec.squads[spec.human].name} (${levelName(spec.opponent2)})`, [spec.bot]: `${spec.squads[spec.bot].name} (${levelName(spec.opponent)})` }
-      : { [spec.human]: state.sideNames?.[spec.human] || 'Player', [spec.bot]: OPPONENTS[spec.opponent].name }) as Record<Side, string>,
+      ? { [spec.human]: `${spec.squads[spec.human].name} (${levelName(spec.opponent2, spec.style2)})`, [spec.bot]: `${spec.squads[spec.bot].name} (${levelName(spec.opponent, spec.style)})` }
+      : { [spec.human]: state.sideNames?.[spec.human] || 'Player', [spec.bot]: spec.style === STYLE ? OPPONENTS[spec.opponent].name : `Computer (${levelName(spec.opponent, spec.style)})` }) as Record<Side, string>,
     // One seeded stream for every die the table rolls: a game is its seed and
     // what the player did.
     dice: new Rng(`${spec.seed}:dice`),
@@ -2940,9 +2943,12 @@ async function startSolo(): Promise<void> {
 }
 
 // A computer's level as the setup dialog names it (Recruit, Veteran, Ace,
-// Brawler), or its own name for the two only an address asks for.
-function levelName(id: string): string {
-  return RIVALS.find((r) => r.id === id)?.name ?? OPPONENTS[id]?.name ?? id;
+// Brawler), or its own name for the two only an address asks for; and its play
+// style after it where it has one ("Ace · Missile Barrage", M19).
+function levelName(id: string, style = STYLE): string {
+  const level = RIVALS.find((r) => r.id === id)?.name ?? OPPONENTS[id]?.name ?? id;
+  const named = style === STYLE ? null : STYLES.find((s) => s.id === style)?.name;
+  return named ? `${level} · ${named}` : level;
 }
 
 // The table's pictures as they come in (`tablePictures`).
@@ -3106,7 +3112,7 @@ function setSoloSpeed(speed: Speed): void {
   // Kept in the address, so a reload and a rematch play at the same speed.
   const { spec } = solo;
   try {
-    history.replaceState(null, '', `./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: spec.seed, speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2, season: spec.season ?? undefined })}`);
+    history.replaceState(null, '', `./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: spec.seed, speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2, season: spec.season ?? undefined, style: spec.style, style2: spec.style2, custom: spec.custom })}`);
   } catch { /* an address that cannot be rewritten costs only that */ }
   render();
 }
@@ -3130,7 +3136,7 @@ async function soloRestart(ask = true): Promise<void> {
   const { spec, table } = solo;
   table.stop();
   botlogLeaving = 'restarted';
-  location.assign(`./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: Math.floor(Math.random() * 1e9), speed: table.speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2, season: spec.season ?? undefined })}`);
+  location.assign(`./${soloQuery({ scenario: spec.scenario.id, side: spec.human, seed: Math.floor(Math.random() * 1e9), speed: table.speed, opponent: spec.opponent, watch: spec.watch, opponent2: spec.opponent2, season: spec.season ?? undefined, style: spec.style, style2: spec.style2, custom: spec.custom })}`);
 }
 
 // The computer has stopped and cannot go on by itself: said in plain words,

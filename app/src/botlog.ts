@@ -34,6 +34,9 @@ export interface BotGameSpec {
   map: string | null;
   mission: string | null;
   opponent: string;
+  // The computer's play style (M19, soloask.ts STYLES) and, for the Custom one, its picks (soloask.ts customText).
+  style: string;
+  custom: string;
   speed: () => string;
   human: Side;
   bot: Side;
@@ -146,6 +149,8 @@ export class BotLog {
       map: spec.map,
       mission: spec.mission,
       opponent: spec.opponent,
+      style: spec.style,
+      custom: spec.custom,
       speed: spec.speed(),
       human: spec.human,
       seed: spec.seed,

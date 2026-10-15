@@ -79,7 +79,7 @@ export function openAccount(host: AccountHost): void {
       </label>
       <details class="acc-kept">
         <summary>What is kept</summary>
-        <p>The cards each side brought, by card number, with factions and points. The battlefield, the Main Task and the Secondary Tasks. Who went first, the score by round and what scored it, the units destroyed and when, the Tactics Cards played, the winner and how the game ended. Season rules on or off, the computer's level, the app's version, and how long the game took.</p>
+        <p>The cards each side brought, by card number, with factions and points. The battlefield, the Main Task and the Secondary Tasks. Who went first, the score by round and what scored it, the units destroyed and when, the Tactics Cards played, the winner and how the game ended. Season rules on or off, the computer's level and play style, the app's version, and how long the game took.</p>
         <p><b>Never kept:</b> your name or any name you typed (squads, Mechs, units), your device, your browser, or where you connect from.</p>
         <p>In a game against another player only your own side is linked to your account. The other side stays anonymous unless that player logs the game too.</p>
       </details>

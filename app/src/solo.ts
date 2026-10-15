@@ -18,14 +18,14 @@ import { Driver, type Host, type LogEntry } from './ai/driver';
 import { eagerPolicy } from './ai/eager';
 import { legalPolicy } from './ai/legal';
 import { tacticianPolicy } from './ai/tactician';
-import { recruitPolicy, veteranPolicy } from './ai/levels';
+import { recruitPolicy, styledPolicy, veteranPolicy } from './ai/levels';
 import { brawlerPolicy } from './ai/styles';
 import type { Policy } from './ai/policy';
 import { Rng } from './ai/rng';
 import type { LoopbackRelay } from './loopback';
 import { newSalt, sealTactic } from './secrecy';
 import { handCommand, type HeldCard } from './tactichand';
-import { RIVAL, SOLO_OWN, SPEEDS, WATCH_SCALE, type SoloOwn, type Speed } from './soloask';
+import { customFrom, RIVAL, SOLO_OWN, SPEEDS, STYLE, STYLES, styleFits, WATCH_SCALE, type SoloOwn, type Speed } from './soloask';
 import type { Decision, Option } from './seat';
 import { mapConfig, missionConfig } from './tableconfig';
 import { alive } from './loop';
@@ -36,7 +36,7 @@ import { PHASES, STATUSES, type GameState, type PartSlot, type PartState, type S
 
 // The speeds and the address itself are soloask.ts's, which a page that only
 // offers a game imports alone.
-export { ownGame, RIVAL, RIVALS, SOLO_OWN, SOLO_OWN_KEY, SPEEDS, soloAsk, soloQuery, type SoloOwn, type Speed } from './soloask';
+export { customText, ownGame, RIVAL, RIVALS, SOLO_OWN, SOLO_OWN_KEY, SPEEDS, STYLE, STYLES, soloAsk, soloQuery, type SoloOwn, type Speed } from './soloask';
 
 // Who sits in the other seat. The plan's opponents arrive here by name. The
 // TACTICIAN is the one a game is played against (soloask.ts RIVAL): it weighs
@@ -67,9 +67,15 @@ export const OPPONENTS: Record<string, { name: string; policy: Policy }> = {
 
 // Whether a computer in the game reads the learned judge (policy.ts `judge`; the Ace does): the page loads the model
 // before such a game begins. The computers are the one in the other seat and, in a game that is watched, the second.
-export function soloJudged(spec: Pick<SoloSpec, 'opponent' | 'opponent2' | 'watch'>): boolean {
-  const reads = (id: string): boolean => !!(OPPONENTS[id]?.policy ?? OPPONENTS[OPPONENT].policy).judge;
-  return reads(spec.opponent) || (spec.watch && reads(spec.opponent2));
+export function soloJudged(spec: Pick<SoloSpec, 'opponent' | 'opponent2' | 'watch'> & Partial<Pick<SoloSpec, 'style' | 'style2' | 'custom'>>): boolean {
+  const reads = (id: string, style?: string): boolean => !!soloPolicy(id, style ?? STYLE, spec.custom ?? {}).judge;
+  return reads(spec.opponent, spec.style) || (spec.watch && reads(spec.opponent2, spec.style2));
+}
+
+// THE POLICY A SEAT PLAYS: its level with its style laid over (M19; ai/levels.ts styledPolicy), or the level's own
+// policy where the style changes nothing, the very one measured.
+export function soloPolicy(level: string, style: string, custom: Readonly<Record<string, string>>): Policy {
+  return styledPolicy(level, style, custom) ?? OPPONENTS[level]?.policy ?? OPPONENTS[OPPONENT].policy;
 }
 
 export interface SoloSpec {
@@ -87,6 +93,11 @@ export interface SoloSpec {
   // to fight it").
   watch: boolean;
   opponent2: string;
+  // How each computer plays (M19): `style` the one in the other seat, `style2` the one in the page's own seat in a
+  // game that is watched; a style the computer's squad cannot play is Default. `custom`: the Custom style's picks.
+  style: string;
+  style2: string;
+  custom: Record<string, string>;
   // The Season Rules the game is played with (Supplementary Rules 1.04,
   // section 8), or none for the main rules (OTTO, 2026-10-05: "a toggle to
   // turn these seasonal rules on or off when choosing the AI settings").
@@ -132,7 +143,15 @@ export function soloSpec(data: GameData, ask: Record<string, string>, newSeed: (
   const opponent2 = ask.ai2 && OPPONENTS[ask.ai2] ? ask.ai2 : OPPONENT;
   // Only a season the data holds.
   const season = ask.season && (data.seasons ?? []).some((s) => s.id === ask.season) ? ask.season : null;
-  return { scenario, squads, human, bot: other(human), seed, speed, opponent, watch: ask.watch === '1', opponent2, season };
+  const watch = ask.watch === '1';
+  const bot = other(human);
+  // A style the data names, and one the computer's squad can play (else Default, as it would play anyway).
+  const styleOf = (want: string | undefined, seat: Side): string =>
+    want && STYLES.some((x) => x.id === want) && styleFits(data, squads[seat], want) ? want : STYLE;
+  const style = styleOf(ask.style, bot);
+  const style2 = watch ? styleOf(ask.style2, human) : STYLE;
+  const custom = style === 'custom' || style2 === 'custom' ? customFrom(ask.custom) : {};
+  return { scenario, squads, human, bot, seed, speed, opponent, watch, opponent2, style, style2, custom, season };
 }
 
 // What the host sends to set the table before either seat is taken: the
@@ -587,7 +606,7 @@ export class SoloTable {
     // Each computer plays at its own level: the page's seat, in a game the
     // player watches, at the second one picked.
     const seated = (seat: Side, send: (cmd: Command) => CheckResult, roll: Host['roll']): Driver => {
-      const policy = OPPONENTS[seat === spec.bot ? spec.opponent : spec.opponent2]?.policy ?? OPPONENTS[OPPONENT].policy;
+      const policy = seat === spec.bot ? soloPolicy(spec.opponent, spec.style, spec.custom) : soloPolicy(spec.opponent2, spec.style2, spec.custom);
       const driver = new Driver(seat, {
         data,
         state: () => h.state(),
