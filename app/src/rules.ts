@@ -1206,8 +1206,11 @@ export function losBetweenNow(a: Token, b: Token, terrain: TerrainPiece[], token
 }
 // THE LINE A FIRING ACTION'S SIGHT IS TAKEN ON, for the board to draw (OTTO, 2026-10-10: "lets have the engine draw
 // the line in the way thats it's using to calculate obstructed vs blocked"): firingSight's reading, and of the 81
-// lines it read, the most central one that gives it: a clear line where one is clear, else one that is obstructed but
-// sees past what blocks the others. Where none sees, the line between the two centres. In cells, as the Bases are.
+// lines it read, one that gives it: a clear line where one is clear, else one that is obstructed but sees past what
+// blocks the others. Of those, the one that keeps most room from what it passes (OTTO, 2026-10-15: the most central
+// line that saw was the one that just cleared a building's corner, drawn a millimetre from it where another kept four;
+// he chose the clearest), any room past a quarter of a Small Grid as good as more, and of those the most central.
+// Where none sees, the line between the two centres. In cells, as the Bases are.
 export function firingSightLine(
   a: Token,
   b: Token,
@@ -1217,7 +1220,7 @@ export function firingSightLine(
 ): { sight: Sight; x0: number; y0: number; x1: number; y1: number } {
   const boxA = baseBox(a);
   const boxB = baseBox(b);
-  const pick: SightPick = { x0: boxA.col + boxA.w / 2, y0: boxA.row + boxA.h / 2, x1: boxB.col + boxB.w / 2, y1: boxB.row + boxB.h / 2, rank: 3, off: Infinity };
+  const pick: SightPick = { x0: boxA.col + boxA.w / 2, y0: boxA.row + boxA.h / 2, x1: boxB.col + boxB.w / 2, y1: boxB.row + boxB.h / 2, rank: 3, off: Infinity, room: 0 };
   const grids = smoke.length ? new Set(smoke.map(smokeKey)) : null;
   const sight: Sight = grids && (standsInSmoke(a, grids) || standsInSmoke(b, grids))
     ? 'smoked'
@@ -1425,10 +1428,40 @@ function nearCell(x0: number, y0: number, x1: number, y1: number, c: number, r: 
 // `first` stops the walk at the first line that is sight, for a reader that
 // asks only whether there is one (sightBetween): the answer is then 'clear'
 // for "some line is", and says nothing of what obstructs the others.
-// The line a reading was taken on, for a page that draws it (firingSightLine): of the lines walked, the most central
-// of the best kind, a clear line before one that is obstructed but sees, and one that sees before one that does not.
-// In cells, as the Bases are.
-interface SightPick { x0: number; y0: number; x1: number; y1: number; rank: number; off: number }
+// The line a reading was taken on, for a page that draws it (firingSightLine): of the lines walked, the best kind, a
+// clear line before one that is obstructed but sees, and one that sees before one that does not; of those the one with
+// most room (up to SHOWN_ROOM) from what it must keep clear of, everything for a clear line, what blocks for one that
+// sees past it; then the most central. In cells, as the Bases are.
+interface SightPick { x0: number; y0: number; x1: number; y1: number; rank: number; off: number; room: number }
+const SHOWN_ROOM = 0.25;
+
+// How far a line keeps from the nearest of some cells, none of which it passes through: the least of each cell's
+// corners' distance from the segment and the segment's ends' from the cell. Cells by their number (walkLinesNow's).
+function roomFrom(x0: number, y0: number, x1: number, y1: number, cells: number[]): number {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len2 = dx * dx + dy * dy;
+  const left = Math.min(x0, x1) - SHOWN_ROOM - 1;
+  const right = Math.max(x0, x1) + SHOWN_ROOM;
+  const up = Math.min(y0, y1) - SHOWN_ROOM - 1;
+  const down = Math.max(y0, y1) + SHOWN_ROOM;
+  let least = Infinity;
+  for (const key of cells) {
+    const c = Math.floor(key / 4096) - 1024;
+    const r = (key % 4096) - 1024;
+    if (c < left || c > right || r < up || r > down) continue;
+    for (let i = 0; i < 4; i++) {
+      const px = c + (i & 1);
+      const py = r + (i >> 1);
+      const t = Math.max(0, Math.min(1, ((px - x0) * dx + (py - y0) * dy) / len2));
+      least = Math.min(least, Math.hypot(px - x0 - t * dx, py - y0 - t * dy));
+    }
+    least = Math.min(least,
+      Math.hypot(Math.max(c - x0, 0, x0 - c - 1), Math.max(r - y0, 0, y0 - r - 1)),
+      Math.hypot(Math.max(c - x1, 0, x1 - c - 1), Math.max(r - y1, 0, y1 - r - 1)));
+  }
+  return least;
+}
 
 function walkLinesNow(
   a: Token,
@@ -1496,6 +1529,11 @@ function walkLinesNow(
   // What blocks a line fills its cell too (a 3-inch wall is terrain, a 3-inch Barricade a unit).
   const filled = (c: number, r: number): boolean => fills(cellNo(c, r)) || (smoke !== null && smoky(c, r));
 
+  // For the line a page draws: the cells a line keeps clear of, by their number, all that fill and those that block.
+  const shown = pick
+    ? { all: [...new Set([...obstructCells, ...(ground?.all ?? [])])], walls: [...new Set([...losCells, ...(ground?.los ?? [])])] }
+    : null;
+
   let anySight = false;
   let smokeTook = false;
   let anyObstruct = false;
@@ -1522,10 +1560,13 @@ function walkLinesNow(
         if (smoky(c, r) && smoky(c2, r2)) lineSmoked = true;
         return false;
       }, filled);
-      if (pick) {
+      if (pick && shown) {
         const rank = lineBlocked || lineSmoked ? 2 : lineObstruct ? 1 : 0;
         const off = (pa.x - centreA.x) ** 2 + (pa.y - centreA.y) ** 2 + (pb.x - centreB.x) ** 2 + (pb.y - centreB.y) ** 2;
-        if (rank < pick.rank || (rank === pick.rank && off < pick.off)) Object.assign(pick, { x0: pa.x, y0: pa.y, x1: pb.x, y1: pb.y, rank, off });
+        const room = rank === 2 ? 0 : Math.min(SHOWN_ROOM, roomFrom(pa.x, pa.y, pb.x, pb.y, rank === 0 ? shown.all : shown.walls));
+        if (rank < pick.rank || (rank === pick.rank && (room > pick.room || (room === pick.room && off < pick.off)))) {
+          Object.assign(pick, { x0: pa.x, y0: pa.y, x1: pb.x, y1: pb.y, rank, off, room });
+        }
       }
       if (first && !lineBlocked && !lineSmoked) return 'clear';
       if (!lineBlocked && !lineSmoked) anySight = true;

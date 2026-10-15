@@ -103,6 +103,20 @@ const wall = (id, cells, height = 3) => ({
     [M.R.losBetweenNow(c, d, terrain, [c, d]), line.sight, grazes(line)], ['obstructed', 'obstructed', false]);
 }
 
+// OTTO's shot (2026-10-15): from B11 at a unit in C4 behind the Steelworks building in C5. The most central line that
+// saw ran 1.5 mm from the building's corner, where the line from the shooter's far corner keeps 5.1 mm: the board
+// draws the clearest line that sees (he chose it), of those keeping a quarter of a Small Grid the most central.
+{
+  const s = freshState(M, data);
+  s.map = 'steelworks';
+  const terrain = M.TU.terrainOf(data, s);
+  const shooter = unit(1, 3, 30, 3);
+  const target = unit(2, 6, 10, 1);
+  const line = M.R.firingSightLine(shooter, target, terrain, [shooter, target], []);
+  check('the board draws the line that keeps the most room from the building',
+    [line.sight, [line.x0, line.y0, line.x1, line.y1].map((v) => +v.toFixed(2))], ['obstructed', [3.08, 30.08, 6.08, 10.08]]);
+}
+
 // A line along a Grid's edge (only a Medium Base's middle draws one) passes
 // through what fills both sides of it: the line down the middle of a wall two
 // cells wide is no sight.
