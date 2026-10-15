@@ -1183,7 +1183,7 @@ M.L.setLocalSeat(null);
     ['tactician+missile', true, 'veteran+stealth', false, 'recruit+melee', 'brawler+objective', null, null]);
   check('each preset is the levers measured for it (M19, M24)',
     Object.fromEntries(Object.entries(STYLE_SETS).map(([k, v]) => [k, { ...v.skills, ...v.weights }])),
-    { missile: { launchBias: 1, volleyLaunch: 1 }, stealth: { hiddenWorth: 3 }, melee: { blade: 1, bladeIn: 1, closeIn: 2, contactStep: 0.15, lockDeny: 1 }, objective: { zonePull: 1.5 } });
+    { missile: { launchBias: 1, volleyLaunch: 1 }, stealth: { hiddenWorth: 3 }, melee: { blade: 2, bladeIn: 2, charge: 2, lockDeny: 1, pack: 1 }, objective: { zonePull: 1.5 } });
   // The page's rows and the AI's sets are one list in two places: held together here.
   const sets = CUSTOM_ROWS.map((r) => [r.id, r.opts.filter((o) => !CUSTOM_SETS[r.id]?.[o]).join('|')]);
   check('THE CUSTOM ROWS: thirteen, in seven groups, each choice that is no level\'s own set by the AI (and no set without a row)',

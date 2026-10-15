@@ -49,15 +49,22 @@ export const missilePolicy: Policy = { ...makeTactician(MISSILE_SKILLS, MISSILE_
 // names and lines are soloask.ts STYLES; Default and Custom are not here (Default changes nothing; Custom is
 // CUSTOM_SETS below).
 export const STYLE_SETS: Record<string, StyleSet> = {
-  // Missile Barrage: the barrage above.
+  // Missile Barrage: the barrage above. MEASURED (measure_m19.sh, the missile squads, 40 games paired with the Ace's own
+  // play): 23.9 Projectiles launched a game against 20.0, 6.9 in the first round against 4.0; won 32 against 28.
   missile: { skills: MISSILE_SKILLS, weights: MISSILE_WEIGHTS },
-  // Stealth: Optical Camouflage kept (M24's camouflage style: hidden 90% of the rounds against 76%).
+  // Stealth: Optical Camouflage kept. MEASURED (the camouflage squads): hidden 86.8% of its camouflaged rounds against
+  // 82.3%, five times cloaked against two; won 22 against 19.
   stealth: { skills: {}, weights: { hiddenWorth: 3 } },
-  // Melee Rush: walks to its blades' reach (`blade`), an outranged blade goes in (`bladeIn`), closes in (`closeIn`,
-  // `contactStep`) and Locks the enemy's guns (`lockDeny`); it still weighs return fire.
-  melee: { skills: {}, weights: { blade: 1, bladeIn: 1, closeIn: 2, contactStep: 0.15, lockDeny: 1 } },
+  // Melee Rush: walks to its blades' reach and an outranged blade goes in (`blade`, `bladeIn`, both 2), Shock Attacks
+  // weighed twice (`charge`), the blades kept together (`pack`) and the enemy's guns Locked (`lockDeny`). MEASURED (the
+  // melee squads; measure_m19b.sh): 0.90 Melee strikes a Mech against 0.70, more of its blades destroyed before they
+  // strike (40 against 19); won 13 against 18. The first form (`blade`, `bladeIn` 1 and a push to contact, `closeIn`
+  // 2, `contactStep` 0.15) struck LESS (0.65) and the push alone off less still (0.59): rejected.
+  melee: { skills: {}, weights: { blade: 2, bladeIn: 2, charge: 2, lockDeny: 1, pack: 1 } },
   // Objective Focus: the walk to the Main Task's zones weighed two and a half times (`zonePull`), return fire still
-  // weighed (M24's objective rush without `exposure` walked into fire).
+  // weighed (M24's objective rush without `exposure` walked into fire). MEASURED (the community squads): the Main Task
+  // paid 8.15 a game against 7.75, the Secondary 2.35 against 2.60; won 19 against 17. At `zonePull` 3 the Main Task
+  // paid less (7.47; won 15): kept at 1.5.
   objective: { skills: {}, weights: { zonePull: 1.5 } },
 };
 
@@ -90,7 +97,11 @@ export const CUSTOM_SETS: Record<string, Record<string, (own: OwnSet) => StyleSe
     On: (o) => ({ skills: {}, weights: { volleyLaunch: Math.max(o.weights.volleyLaunch, 0.05) } }),
     Off: () => ({ skills: {}, weights: { volleyLaunch: 0 } }),
   },
-  blade: { On: () => ({ skills: {}, weights: { blade: 1, bladeIn: 1 } }), Off: () => ({ skills: {}, weights: { blade: 0, bladeIn: 0 } }) },
+  // As Melee Rush seeks it (its blades and Shock Attacks), without its pack and Locks, which are rows of their own.
+  blade: {
+    On: (o) => ({ skills: {}, weights: { blade: 2, bladeIn: 2, charge: Math.max(o.weights.charge, 2) } }),
+    Off: () => ({ skills: {}, weights: { blade: 0, bladeIn: 0 } }),
+  },
   lock: { On: () => ({ skills: {}, weights: { lockDeny: 1 } }), Off: () => ({ skills: {}, weights: { lockDeny: 0 } }) },
   task: {
     Less: (o) => ({ skills: {}, weights: { zonePull: o.weights.zonePull / 2 } }),
