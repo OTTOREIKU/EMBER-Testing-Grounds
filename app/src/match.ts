@@ -1790,8 +1790,12 @@ function cardLabel(id: string): string {
 // the page reads, not cards that once existed.
 const known = (id: string): boolean => !!data?.byId.get(id);
 
-// What the Admin door shows once the account on it is not an admin's (signed
-// out while it was open): the tab itself is offered to admins only.
+// What a door shows that is not open to the account on it: the Admin door
+// once the account is no admin's (signed out while it was open; the tab itself
+// is offered to admins only), and the Stats door to everyone but an admin
+// until it opens to the public (OTTO, 2026-10-15: "hide that stats tab from
+// everyone else other than my admin account for now ... I still want to make
+// some UI tweaks to that page so it's not ready for the public just yet").
 function soonHtml(): string {
   return '<div class="mc-col mc-soon"><p>Coming Soon</p></div>';
 }
@@ -2072,7 +2076,7 @@ function adminHtml(): string {
 }
 
 function doorHtml(): string {
-  if (door === 'stats') return publicStatsHtml();
+  if (door === 'stats') return account?.role === 'admin' ? publicStatsHtml() : soonHtml();
   if (door === 'admin') return account?.role === 'admin' ? adminHtml() : soonHtml();
   return `<div class="mc-col">
     <h1 class="mc-h">Start a match</h1>
@@ -3218,7 +3222,7 @@ function render(): void {
   // In a room too: the lobby rail pins Launch to its own bottom, so the lobby
   // must never be taller than the window either.
   // Stats (the logged games anyone may read) and Admin are the reading views.
-  const capped = !hud && !!data && !!account && (relay.state.room ? true : door === 'stats' || (door === 'admin' && account.role === 'admin'));
+  const capped = !hud && !!data && !!account && (relay.state.room ? true : (door === 'stats' || door === 'admin') && account.role === 'admin');
   // Three fixed hosts, so the stateful board survives every re-render: the
   // bar and veils redraw freely, the body only redraws outside HUD mode.
   if (!document.getElementById('mc-barhost')) {
@@ -3396,7 +3400,7 @@ function wire(): void {
     b.addEventListener('click', () => {
       door = b.dataset.door as Door;
       if (door === 'admin') loadAdmin();
-      if (door === 'stats') loadPublicStats();
+      if (door === 'stats' && account?.role === 'admin') loadPublicStats();
       render();
     }),
   );
