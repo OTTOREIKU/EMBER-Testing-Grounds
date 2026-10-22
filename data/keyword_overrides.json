@@ -108,13 +108,13 @@
     "墙": {
       "en": {
         "name": "Wall",
-        "value": "Deployable subtype tag on the card banner of the AS3 Inflatable Walls, which are Barricades 3 inches high: like Terrain they block line of sight and give Terrain Protection. See Barricade."
+        "value": "Deployable subtype tag on the card banner of the AS3 Inflatable Walls, which are Barricades 3 inches high: like Terrain they block line of sight and give Terrain Protection. See Barricade. The MD-4E Reaper Engineer Type carries both of its walls by Covert Carry."
       }
     },
     "信标": {
       "en": {
         "name": "Beacon",
-        "value": "Deployable subtype tag on the card banner: a placed marker providing support effects. See the card's own actions."
+        "value": "Deployable subtype tag on the card banner: a placed marker providing support effects. See the card's own actions. The CP-3 Beacon Backpack carries its B3 Beacon by Covert Carry."
       }
     },
     "机动掩体": {
@@ -337,6 +337,19 @@
         "value": "A Part with this tag has two or more forms, each its own Part card, and may be deployed in any of them. Performing an Action with the Transformation keyword may transform it: the card is replaced with the other form's. Triangle Tokens move to the new card; a Round Token moves only to an Action of the same name there, and otherwise stays with the old card."
       },
       "_note": "Supplementary Rules 1.04, 3.2 (the tag and the keyword). The White Dwarf Core (287, 288) and the Ols1B Harpoon (PDLH-202, PDLH-202-T) are the Parts that transform."
+    },
+    "秘密携带": {
+      "zh": {
+        "name": "秘密携带"
+      },
+      "en": {
+        "name": "Covert Carry",
+        "value": "Before deployment, secretly pick which version of the listed Projectile this unit carries and note it down. The CP-3 Beacon Backpack picks one B3 Beacon: B3/1 Link Beacon, B3/2 Decoy Beacon or B3/3 Tactical Beacon. The MD-4E Reaper Engineer Type picks one type for both of its walls: AS3-A Inert Inflatable Wall or AS3-B Explosive Inflatable Wall. Your opponent can see the card but not your pick. Every copy is that version for the whole game. Reveal it the moment the Projectile is Deployed (FAQ P19)."
+      },
+      "jp": {
+        "name": "秘密携帯"
+      },
+      "_note": "Not in the printed glossary. Built from Rulebook 3.1.4 (the opponent may review a deployed Mech's Control Panel excluding Covert Parts), FAQ P19 (a Projectile with Covert Carry must be revealed at the moment it is Deployed) and the two cards that print it, 008_B and PRDR-105_C. The English cards print \"may Covert Carry\"; the Chinese 秘密携带 and the Japanese 秘密携帯する carry no choice. Wording agreed by OTTO, 2026-10-22. The tabletop locks the pick on the first launch rather than in secret before deployment (covertCarryLock, units.ts)."
     }
   },
   "_aliases": "`aliases` lists other English names the publisher prints for the same keyword; the app indexes them beside the name and links them in card text. Fire in arc is printed Indirect Fire on the RDL ML-32 (029) while the rulebook 4.7.1, the parts lists and the UN and GoF cards print Fire in arc (checked on the scans, 2026-09-29). Shock Attack X is named Assault X in the Supplementary Rules 1.04 (3.8), the Japanese 突撃 too; the cards print Shock Attack.",

@@ -114,6 +114,9 @@ const INTENTIONAL = [
   // The two tags the Supplementary Rules 1.04 add (3.1, 3.2), which the
   // bundle cannot have: English keys, as Automatic Action is.
   'Breakable', 'Transformation',
+  // Covert Carry, printed on two cards (008_B, PRDR-105_C) and ruled on in
+  // FAQ P19, but in no glossary (OTTO, 2026-10-22).
+  '秘密携带',
 ].sort();
 const surprises = appended.slice().sort().filter((k) => !INTENTIONAL.includes(k));
 check('no override key silently appended a new entry', surprises, []);

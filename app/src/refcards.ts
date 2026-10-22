@@ -1404,7 +1404,10 @@ export function crossRefs(): { kw: Map<string, string[]>; cards: Map<string, str
     }
     const text = [
       c.description?.en ?? '',
-      ...(c.actions ?? []).map((a) => a.description?.en ?? ''),
+      // The text the Action DRAWS, translation included: its links show, so
+      // its card belongs in "Appears on" too. The Reaper Engineer was missing
+      // from Covert Carry's list for exactly this (2026-10-22).
+      ...(c.actions ?? []).map(actionEnglish),
     ].filter(Boolean).join(' \u00b7 ');
     if (!text) continue;
     for (const named of linksIn(text).keywords) {
