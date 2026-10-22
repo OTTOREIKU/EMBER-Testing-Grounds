@@ -542,6 +542,78 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-turn-unit .pad-turn-name { display: block; margin-bottom: 4px; }
 .pad-bar-round.off { opacity: 0.45; cursor: default; }
 
+/* ---------- the turn order (OTTO, 2026-10-17/22; order.ts) ----------
+   The bar's ORDER chip (mockup A), the sheet it opens (the house sheet: mono
+   amber title, .ui-list rows, the one close), and the Guided strip's track
+   (B3: one thin segment per Mech in its timing's colour, the gone ones faded,
+   the acting one thicker). The timing colours are the dial's (--t-*). */
+.pad-bar-order {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 36px; padding: 0 10px; border: none; border-radius: var(--radius);
+  background: var(--surface2); color: var(--text2);
+  font: 600 10.5px var(--mono); letter-spacing: 0.14em; text-transform: uppercase;
+  cursor: pointer; transition: background 0.12s, color 0.12s;
+}
+.pad-bar-order:hover { background: var(--surface3); color: var(--text); }
+.pad-bar-order svg { width: 15px; height: 15px; }
+/* The narrowest phones keep the icon; the word goes before the round chip's. */
+@media (max-width: 360px) { .pad-bar-order span { display: none; } }
+
+.pad-order-sheet .dlg-title { margin-bottom: 2px; }
+.pad-order-sub { margin: 0 0 4px; font-size: 12px; color: var(--text3); }
+.pad-order-note { margin: 2px 0 10px; font-size: 12px; line-height: 1.45; color: var(--text2); }
+.pad-order-sheet .pad-sec { margin-top: 12px; }
+.pad-order-sheet .pad-sec.pad-order-grey { color: var(--text3); }
+.pad-order { --ui-row: var(--surface2); margin-bottom: 8px; }
+.ui-list.pad-order > li { min-height: 44px; }
+.ui-list.pad-order > li[data-act] { cursor: pointer; }
+.ui-list.pad-order > li[data-act]:hover { background: var(--surface3); }
+.ui-list.pad-order > li.done { background: var(--bg); }
+.ui-list.pad-order > li.now { background: var(--accent-lt); }
+.pad-order-n { width: 14px; flex: 0 0 auto; text-align: right; font: 600 11px var(--mono); color: var(--text3); }
+.pad-order-t {
+  flex: 0 0 auto; min-width: 46px; padding: 3px 0; border-radius: var(--radius-sm); text-align: center;
+  background: var(--surface3); color: var(--text3); font: 700 10.5px var(--mono);
+}
+.pad-order-t[data-timing="swift"] { background: var(--t-swift); color: var(--on-accent); }
+.pad-order-t[data-timing="melee"] { background: var(--t-melee); color: var(--on-accent); }
+.pad-order-t[data-timing="projectile"] { background: var(--t-projectile); color: var(--on-accent); }
+.pad-order-t[data-timing="firing"] { background: var(--t-firing); color: var(--on-accent); }
+.pad-order-t[data-timing="movement"] { background: var(--t-movement); color: var(--on-accent); }
+.pad-order-t[data-timing="tactical"] { background: var(--t-tactical); color: var(--on-accent); }
+.done .pad-order-t { opacity: 0.45; }
+.pad-order-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; }
+.pad-order-name > span:not(.pad-order-dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pad-order-name small { font: 10px var(--mono); letter-spacing: 0.08em; color: var(--text3); }
+.pad-order-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.done .pad-order-name, .hidden .pad-order-name { color: var(--text3); }
+.now .pad-order-name { color: var(--accent); font-weight: 700; }
+.pad-order-tag { flex: 0 0 auto; padding: 3px 7px; border-radius: 999px; font: 700 10px var(--mono); letter-spacing: 0.12em; color: var(--text3); }
+.now .pad-order-tag { background: var(--accent); color: var(--on-accent); }
+.next .pad-order-tag { background: var(--surface3); color: var(--text); }
+
+.pad-order-track {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; margin: 0 0 4px;
+  padding: 4px 4px 4px 0; border: none; border-radius: var(--radius-sm); background: none;
+  color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background 0.12s;
+}
+.pad-order-track:hover { background: var(--surface2); }
+.pad-order-tw { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.pad-order-segs { display: flex; align-items: center; gap: 3px; height: 10px; }
+.pad-order-segs i { flex: 1; height: 6px; border-radius: 3px; background: var(--surface3); }
+.pad-order-segs i[data-timing="swift"] { background: var(--t-swift); }
+.pad-order-segs i[data-timing="melee"] { background: var(--t-melee); }
+.pad-order-segs i[data-timing="projectile"] { background: var(--t-projectile); }
+.pad-order-segs i[data-timing="firing"] { background: var(--t-firing); }
+.pad-order-segs i[data-timing="movement"] { background: var(--t-movement); }
+.pad-order-segs i[data-timing="tactical"] { background: var(--t-tactical); }
+.pad-order-segs i.done { opacity: 0.25; }
+.pad-order-segs i.next, .pad-order-segs i.up { opacity: 0.6; }
+.pad-order-segs i.now { height: 10px; }
+.pad-order-cap { display: flex; gap: 10px; font: 600 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text3); white-space: nowrap; overflow: hidden; }
+.pad-order-cap b { font-weight: 600; color: var(--text2); }
+.pad-order-track:hover .ui-go { background: var(--accent); color: var(--on-accent); }
+
 /* The Perform button on an action row. A refused one stays a button, greyed,
    and says why on a long press (notices, 2026-09-29). */
 .pad-act-go { display: block; margin-top: 6px; }

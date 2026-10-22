@@ -63,11 +63,12 @@ import { applyChangelogFilter, decorateSheetHead, drawsAdvanced, holdDetailHeigh
 import { found, matchCard, matchKeyword, matchMission, matchSecondary, nmCard, nmKeyword, nmMission, nmSecondary, norm } from '../src/refsearch';
 import { mountCardImage, mountCardImageCopy, warmAllImagesWhenIdle } from '../src/images';
 import { runFirstVisitPreload } from '../src/preload';
-import { ICON_GEAR, squadColour } from '../src/icons';
+import { ICON_GEAR, ICON_ORDER, squadColour } from '../src/icons';
 import { BUILD_SLOTS, buildDefaultName, confirmLegalBuild, mechBuilderHtml, openMechSlot, slotPool, type BuildSlot } from '../src/mechbuilder';
 import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { bindCollection, builtOnlyOn, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setBuiltOnly, setCollectionOn, shortfalls, type Collection } from '../src/collection';
-import { choiceDialog, confirmDialog, pickManyDialog, promptDialog } from '../src/dialog';
+import { choiceDialog, confirmDialog, openDialog, pickManyDialog, promptDialog } from '../src/dialog';
+import { orderSheetHtml } from './order';
 import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updates';
 import { configureNotices, explainOnHold, notify, redrawNotice, speakInPlace, type NoticeKind } from '../src/notices';
 import { boxHands, normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
@@ -2332,10 +2333,13 @@ function barHtml(): string {
   if (view.status === 'offline' && room) who = '<span class="pad-bar-warn">Reconnecting…</span>';
   else if (catchingUp) who = '<span class="pad-bar-dim">Catching up…</span>';
   else if (room) {
+    // SOLO or MULTI and nothing more (OTTO, 2026-10-17), to make room for the
+    // ORDER chip without cutting the text off. The other player's name is on
+    // the dock and the room's code in the More panel; the dot still says
+    // whether they are here.
     const name = room.seats[them];
-    who = `<span class="pad-dot${room.online[them] ? ' on' : ''}"></span><span class="pad-bar-name">${
-      name ? esc(name) : `<span class="pad-bar-dim">${esc(room.id)}</span>`}</span>`;
-  } else who = '<span class="pad-bar-name pad-bar-dim">Solo // Table</span>';
+    who = `<span class="pad-dot${room.online[them] ? ' on' : ''}"></span><span class="pad-bar-name" title="${esc(name ?? room.id)}">Multi</span>`;
+  } else who = '<span class="pad-bar-name pad-bar-dim">Solo</span>';
   const r = table.round;
   const rd = readiness();
   if (gameOver()) {
@@ -2364,14 +2368,37 @@ function barHtml(): string {
   // 2026-09-29): while a tap turns the phase it wears the site's go chevron
   // (ui.css .ui-go), and loses it while the step on the sheet holds it.
   const go = guided && !stalled ? '<span class="ui-go" aria-hidden="true">›</span>' : '';
+  const orderChip = `<button class="pad-bar-order" data-act="order" aria-label="Turn order" title="Turn order">${ICON_ORDER}<span>Order</span></button>`;
   return `<a class="ui-home" href="../"><b>‹</b>EMBER</a>
     <div class="pad-bar-l" data-act="dock" data-dock="more" role="button">${who}</div>
+    ${orderChip}
     <button class="pad-bar-round${state}" data-act="phase"${stalled ? greyWhy(true, 'Finish the step on the sheet first.') : ` title="${room ? (rd.me ? 'Waiting for the other player. Tap again to take it back.' : 'Ready to move on') : 'Next phase'}"`}>
       ${roundLabel}${hint}${go}
     </button>
     <button class="pad-bar-vp" data-act="dock" data-dock="tasks" title="Tasks and score">
       <b style="color:${sideColour(me)}">${vp[me]}</b><span>:</span><b style="color:${sideColour(them)}">${vp[them]}</b>
     </button>`;
+}
+
+// ---------- the turn order (OTTO, 2026-10-17/22; order.ts) ----------
+
+// The bar's ORDER chip and the Guided strip's track open it. A row is the way
+// to that unit's sheet, as a tab on the strip is.
+function openOrder(): void {
+  if (!data) return;
+  const inner = orderSheetHtml(data, table, guidedOn(table), { esc, sideName })
+    + '<button class="dlg-close" data-close aria-label="Close">✕</button>';
+  openDialog(inner, (panel, close) => {
+    panel.querySelectorAll<HTMLElement>('[data-act="order-unit"]').forEach((row) =>
+      row.addEventListener('click', () => {
+        const u = unitOf(Number(row.dataset.uid));
+        close();
+        if (!u) return;
+        picks[u.side] = u.uid;
+        selectSide(u.side);
+      }),
+    );
+  }, undefined, 'dlg-sheet pad-order-sheet');
 }
 
 // ---------- the unit strip ----------
@@ -5463,6 +5490,7 @@ function act(el: HTMLElement, ev: Event): void {
     case 'set-rounds': send({ kind: 'configureTable', seat: mySeat(), roundLimit: Number(el.dataset.n) }); return;
     case 'set-scale': send({ kind: 'configureTable', seat: mySeat(), scale: el.dataset.id as GameState['scale'] }); return;
     case 'phase': pressContinue(); return;
+    case 'order': openOrder(); return;
     case 'turn-fold':
       turnFold = turnFold === null ? (el.textContent ?? '').trim() : null;
       render();

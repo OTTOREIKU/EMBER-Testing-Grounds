@@ -15,6 +15,7 @@ import { actionIconUrl, cardName } from '../src/data';
 import { readyCommands, rebootOwed, taskDesignations, missionZones, type CheckResult, type Command, swarmFor } from '../src/commands';
 import { asterBlockers, offerCoordination, runAster } from '../src/commandpick';
 import { alive, canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn, tiedChoices, type LoopPhase } from '../src/loop';
+import { orderTrackHtml } from './order';
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript, idleWorldFor } from '../src/glue';
 import { smokePerGroup } from '../src/season';
@@ -588,7 +589,10 @@ function actionHtml(api: GuideApi): string {
     : null;
   const turnOnly = chassisGone(t);
   const moved = moveCheck ? btn(api, 'g-moved', turnOnly ? 'Turned (M)' : 'Moved (M)', moveCheck.ok ? '' : refused(api, moveCheck.why)) : '';
+  // B3 (OTTO, 2026-10-22): where the turn has got to, under the head; it
+  // opens the bar's turn order sheet.
   return head(api, t.label, tm || 'Action Phase', owner)
+    + orderTrackHtml(api.data, s, { esc: api.esc, sideName: api.sideName })
     + (owner
       ? `${tieHtml(api)}<div class="pad-chips">${moved}${btn(api, 'g-end', 'End Opportunity', '', 'pad-chip on')}</div>
          ${extrasHtml(api, t, opp)}
