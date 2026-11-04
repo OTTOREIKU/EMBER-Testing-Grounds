@@ -1447,22 +1447,22 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 
 /* An either/or: its cards inside one dashed outline in the pair's colour, each
    with a lettered link tag, and one count for the pick. */
-.bl-pair { --hue: var(--accent); position: relative; flex: 0 0 auto; display: flex; gap: 8px; padding: 5px; margin: -5px 1px; border: 1.5px dashed var(--hue); border-radius: 10px; }
+.bl-pair { --hue: var(--accent); position: relative; flex: 0 0 auto; max-width: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding: 5px; margin: -5px 1px; border: 1.5px dashed var(--hue); border-radius: 10px; }
 .bl-pair .bl-tile { flex: 0 0 var(--tw); width: var(--tw); }
-.bl-pair.bl-wide .bl-tile { width: calc(var(--tw) * 2 + 8px); }
+.bl-pair .bl-tile.bl-wide { flex: 0 0 calc(var(--tw) * 2 + var(--gap)); width: calc(var(--tw) * 2 + var(--gap)); }
 .bl-pair > .bl-n { right: -4px; top: -6px; z-index: 4; }
 .bl-hue2 { --hue: #5fb3e8; } .bl-hue3 { --hue: #8fd16a; } .bl-hue4 { --hue: #d18be0; }
 .bl-link { position: absolute; z-index: 3; left: 4px; top: 4px; font: 700 9.5px var(--font); padding: 2px 5px; border-radius: 4px; background: var(--hue); color: #111; }
 
 /* A part with no card art: its picture on nothing at all (the official ones
    are transparent around the part) or an icon, with its code and name. */
-.bl-noart .bl-art { border-radius: 6px; background: var(--surface2); border: 1px solid var(--surface3); overflow: hidden; }
+.bl-noart .bl-art { border-radius: 6px; background: var(--surface2); border: 1px solid var(--surface3); }
 .bl-noart-art .bl-art { background: none; border: 0; }
 .bl-drawing { object-fit: contain; background: none; padding: 0 0 40px; }
 .bl-ph-icon { background: none; border: 0; padding-bottom: 36px; }
 .bl-icon { width: 46%; height: auto; fill: none; stroke: var(--text3); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .bl-noart-lbl { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; padding: 5px 6px 6px; display: flex; flex-direction: column; gap: 1px; font-size: 10px; line-height: 1.2; color: var(--text2); }
-.bl-noart:not(.bl-noart-art) .bl-noart-lbl { background: var(--surface3); }
+.bl-noart:not(.bl-noart-art) .bl-noart-lbl { background: var(--surface3); border-radius: 0 0 5px 5px; }
 .bl-noart-lbl b { font: 700 11px var(--mono); color: var(--text); }
 .bl-noart-lbl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bl-noart-lbl em { font-style: normal; font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text3); }
@@ -1473,14 +1473,12 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 .bl-kit { position: relative; flex: 0 0 auto; max-width: 100%; border: 1.5px solid var(--surface3); border-radius: 10px; background: color-mix(in srgb, var(--surface2) 60%, transparent); padding: 6px 7px 7px; }
 .bl-kit-lbl { display: block; margin: 0 0 5px; font: 700 9.5px var(--font); text-transform: uppercase; letter-spacing: 0.07em; color: var(--text2); }
 .bl-kit-row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
-.bl-kit-row > .bl-tile { width: var(--tw); }
+.bl-kit-row > .bl-tile { width: calc(var(--tw) * 2 + var(--gap)); }
+.bl-kit-row > .bl-noart .bl-art { aspect-ratio: 700 / 480; }
 .bl-kit-heads { display: flex; gap: 8px; flex-wrap: wrap; }
-.bl-kit-heads > .bl-tile { width: calc(var(--tw) * 1.5); }
+.bl-kit-heads > .bl-tile { width: calc(var(--tw) * 2 + var(--gap)); }
 /* The card a magnet body plays as with no head on it (ADK30C). */
 .bl-bare { position: absolute; z-index: 3; left: 4px; top: 4px; font: 700 9px var(--font); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 5px; border-radius: 4px; background: var(--surface3); color: var(--text); }
-@media (max-width: 480px) {
-  .bl-kit-heads > .bl-tile { width: calc(var(--tw) * 1.25); }
-}
 
 /* A part picture as the card sheet's thumbnail: just the picture. */
 .dthumb div.card-ph.card-part { padding: 3px; grid-template-rows: 1fr; }

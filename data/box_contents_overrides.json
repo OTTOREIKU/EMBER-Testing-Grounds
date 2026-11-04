@@ -8,9 +8,23 @@
       }
     },
     "SINGLE_UN_TAURUS": {
-      "_note": "OTTO 2026-09-26, from his physical Single Pack Taurus: it also holds a TM35N Alligator Electronic Warfare Core (097), which the community data filed under Doorbreaker alone. Doorbreaker has it too (he checked that box as well), so 097 is now in both. The other seven cards are the community data's list, unchanged.",
+      "_note": "OTTO 2026-09-26, from his physical Single Pack Taurus: it also holds a TM35N Alligator Electronic Warfare Core (097), which the community data filed under Doorbreaker alone. Doorbreaker has it too (he checked that box as well), so 097 is now in both. The other seven cards are the community data's list, unchanged. OTTO 2026-11-04: \"Yes Taurus has the normal S100 + discard and the R7 and Discard.\" Both are printed either/or builds in the Taurus PDF (R7MG or R7, S100 + Grenade Pod or S100), so R7 104/105 and S100 142/143 are added.",
       "cards": {
-        "555": 1, "099": 1, "107": 1, "111": 1, "556": 1, "557": 1, "083": 1, "097": 1
+        "555": 1, "099": 1, "107": 1, "111": 1, "556": 1, "557": 1, "083": 1, "097": 1,
+        "104": 1, "105": 1, "142": 1, "143": 1
+      }
+    },
+    "UN_DOORBREAKER": {
+      "_note": "OTTO 2026-11-04, from his physical Door Breaker box: \"TM35N, TM35B, LM213B x2, JP1 x2, OCSP x2, EC50 x2, G6 & Discard x2, G6+M5 & Discard x2, M15BO (katana) x2, S100 & Discard, IGX350 & Discard, MX82 x2, K7+S10, M7, ADK15D x2, ADK15/MAS x2 ... No card for ADK30 or SGM2.\" The community data also filed ADK30C (162), ADK30F (163) and SGM-2 (167) here; they belong to UN Core and are gone from this box. \"G6\" is G6 + Grenade Pod (146/147), the only other G6 build in the PDF. M7 is card 154. The four pilots are kept from the community data (his list covered the mech cards).",
+      "cards": {
+        "097": 1, "098": 1,
+        "101": 2,
+        "088": 2, "090": 2, "089": 2,
+        "146": 2, "147": 2, "148": 2, "149": 2, "145": 2,
+        "142": 1, "143": 1, "140": 1, "141": 1, "139": 2, "144": 1,
+        "154": 1,
+        "160": 2, "161": 2,
+        "LPA-22": 1, "LPA-23": 1, "LPA-33": 1, "LPA-34": 1
       }
     },
     "GAME_PACK": {

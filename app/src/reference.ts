@@ -1,7 +1,7 @@
 import { barcodeSvg } from './barcode';
 import './reference.css';
 import './ui.css';
-import { battlefieldCardUrl, boxCoverUrl, cardName, environmentImageUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, missionImageUrl, secondaryImageUrl, type BoxDef, type BoxSprues, type SpruesBuild, type EnvironmentCard, type FactionDef, type GameData } from './data';
+import { assetUrl, battlefieldCardUrl, boxCoverUrl, cardName, environmentImageUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, missionImageUrl, secondaryImageUrl, type BoxDef, type BoxSprues, type SpruesBuild, type EnvironmentCard, type FactionDef, type GameData } from './data';
 import { mountCardImage, mountCardImageCopy, preloadCardImages, printsWide, warmAllImagesWhenIdle, watchImageFallbacks } from './images';
 import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
@@ -362,11 +362,13 @@ function spruesPanel(sp: BoxSprues | undefined, key: string): string {
 function pdfsPanel(sp: BoxSprues | undefined): string {
   const cfPdfs = sp?.crowdfunding?.pdfs ?? [];
   const pdfs = sp?.pdfs ?? [];
+  // A bare path is a file of ours under assets/ (assets/instructions/*.pdf).
+  const href = (url: string): string => (/^https?:\/\//.test(url) ? url : assetUrl(url));
   const pdfList = (list: typeof pdfs): string =>
     `<ul class="box-parts ui-list bs-pdfs">${list
         .map(
           (p) => `<li class="${p.url ? '' : 'bs-nocard'}">
-          <span class="bp-name">${p.url ? `<a class="kw-link" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.label)}</a>` : esc(p.label)}</span>
+          <span class="bp-name">${p.url ? `<a class="kw-link" href="${esc(href(p.url))}" target="_blank" rel="noopener">${esc(p.label)}</a>` : esc(p.label)}</span>
           <span class="bp-slot">${p.url ? '<span class="tag">PDF</span>' : '<span class="tag bp-tag">not attached yet</span>'}</span></li>`,
         )
         .join('')}</ul>`;

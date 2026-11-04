@@ -36,6 +36,8 @@ function staticDirs(map: Record<string, string>): Plugin {
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
     '.svg': 'image/svg+xml',
+    // Assembly instructions (assets/instructions), opened in a new tab.
+    '.pdf': 'application/pdf',
   };
   return {
     name: 'ember-static-dirs',

@@ -2,7 +2,7 @@
  "_comment": "What each box's sprues build, read from the assembly PDFs (OTTO's ask 2026-10-29: a Sprues tab on the box popup so players can tell what they have to choose between). Keyed by box key. sprues = sprue code to count; builds = code, name, slot, card id (null = no card), count (how many you always get outside any choice; 0 = only through a choice), printed page, extra (true = on the sprues but no card or build page in the box, with _extra saying where it was found); choices = pick 1 of the listed build codes, count times, source 'printed' when Queti prints the either/or, 'derived' when we worked it out from shared sprue pieces or the summary page; looks = options that change the model but not the card; misprints = where the PDF contradicts itself; pdfs = the instruction files for the Instructions tab (url empty until hosted). crowdfunding = the 2019 backer-only parts (sprues XA + XB) that came in some copies of the box, shown only when the Crowdfunding toggle is on and never counted in containedIn. newBoxes = boxes boxes.json does not have, added at load. Full reading notes: Project-Documents/research/box-catalogue/.",
  "boxes": {
   "COMBAT_RAID": {
-   "side": "RDL",
+   "side": "RDL and UN",
    "pdf": "Assembly Instructions/RDL/Raid _ RDL Side.pdf",
    "sprues": {
     "AA": 1,
@@ -11,7 +11,17 @@
     "AE": 1,
     "AH": 1,
     "BA": 1,
-    "SA": 2
+    "SA": 2,
+    "SB": 1,
+    "SC": 1,
+    "SD": 1,
+    "FF": 1,
+    "DA": 1,
+    "DB": 1,
+    "DF": 1,
+    "DG": 1,
+    "DH": 1,
+    "DI": 1
    },
    "builds": [
     {
@@ -157,6 +167,158 @@
      "card": "071",
      "count": 2,
      "page": 35
+    },
+    {
+     "code": "CSC60",
+     "name": "Cooler",
+     "slot": "backpack",
+     "card": "083",
+     "count": 1,
+     "page": 7
+    },
+    {
+     "code": "JP5",
+     "name": "Mobility Enhancement Pack",
+     "slot": "backpack",
+     "card": "538",
+     "count": 1,
+     "page": 8
+    },
+    {
+     "code": "TM31Q",
+     "name": "\"Wild Cat\" Battle Core",
+     "slot": "torso",
+     "card": "539",
+     "count": 0,
+     "page": 10
+    },
+    {
+     "code": "TM31R",
+     "name": "\"Caracal\" Battle Core",
+     "slot": "torso",
+     "card": "092",
+     "count": 0,
+     "page": 13
+    },
+    {
+     "code": "LM231",
+     "name": "Standard Chassis",
+     "slot": "chassis",
+     "card": "099",
+     "count": 1,
+     "page": 17
+    },
+    {
+     "code": "S9 + IGX106",
+     "name": "\"Meteor\" Shield + Ion Shotgun",
+     "slot": "leftArm",
+     "card": "540",
+     "count": 0,
+     "page": 22
+    },
+    {
+     "code": "S9 + M5",
+     "name": "\"Meteor\" Shield + Pile Bunker",
+     "slot": "leftArm",
+     "card": "103",
+     "count": 0,
+     "page": 24
+    },
+    {
+     "code": "R7K",
+     "name": "Tactical Rifle",
+     "slot": "rightArm",
+     "card": "541",
+     "count": 0,
+     "page": 26
+    },
+    {
+     "code": "R7",
+     "name": "Automatic Rifle",
+     "slot": "rightArm",
+     "card": "104",
+     "count": 0,
+     "page": 27
+    },
+    {
+     "code": "R6",
+     "name": "SMG",
+     "slot": "rightArm",
+     "card": "109",
+     "count": 0,
+     "page": 29
+    },
+    {
+     "code": "R33",
+     "name": "Sniper Rifle",
+     "slot": "rightArm",
+     "card": "106",
+     "count": 1,
+     "page": 31
+    },
+    {
+     "code": "ADK30",
+     "name": "\"Tarantula\" drone body",
+     "slot": "drone",
+     "card": null,
+     "count": 1,
+     "page": 34
+    },
+    {
+     "code": "ADK30C",
+     "name": "\"Tarantula\" Carrier Type",
+     "slot": "drone",
+     "card": "162",
+     "count": 1,
+     "page": 34
+    },
+    {
+     "code": "ADK60R",
+     "name": "\"Raven\" Scout Type",
+     "slot": "drone",
+     "card": "164",
+     "count": 0,
+     "page": 36
+    },
+    {
+     "code": "ADK60EC",
+     "name": "\"Raven\" EC Type",
+     "slot": "drone",
+     "card": "165",
+     "count": 0,
+     "page": 36
+    },
+    {
+     "code": "ADK60S",
+     "name": "\"Raven\" Interference Type",
+     "slot": "drone",
+     "card": "166",
+     "count": 0,
+     "page": 36
+    },
+    {
+     "code": "ADK15",
+     "name": "\"Porcupine\" drone body",
+     "slot": "drone",
+     "card": null,
+     "count": 1,
+     "page": 38
+    },
+    {
+     "code": "ADK15D",
+     "name": "\"Porcupine\" CIWS Type",
+     "slot": "drone",
+     "card": "160",
+     "count": 1,
+     "page": 38
+    },
+    {
+     "code": "ADK15P",
+     "name": "\"Porcupine\" Ion Type",
+     "slot": "drone",
+     "card": "543",
+     "count": 1,
+     "page": 39
     }
    ],
    "choices": [
@@ -199,6 +361,48 @@
      "source": "printed",
      "why": "Both are built on the same arm (AA5, AA6, AA14, AA15).",
      "count": 1
+    },
+    {
+     "pick": 1,
+     "of": [
+      "TM31Q",
+      "TM31R"
+     ],
+     "source": "printed",
+     "count": 1,
+     "why": "One core: SB1, SB2, SB9, SB10, SB15-17 and DA1, DA2, DA4, DA5, DA11, DA12, DA14, DA15 make both."
+    },
+    {
+     "pick": 1,
+     "of": [
+      "S9 + IGX106",
+      "S9 + M5"
+     ],
+     "source": "printed",
+     "count": 1,
+     "why": "One S9 shield arm (SD1, SD7, SD9, SD14, SD16, SD19, SD23, DG4, DG11, DG12, DG21) carries one weapon."
+    },
+    {
+     "pick": 1,
+     "of": [
+      "R7K",
+      "R7",
+      "R6"
+     ],
+     "source": "printed",
+     "count": 1,
+     "why": "All three use the one SD22 shoulder; R33 uses SD24, so it can be built alongside."
+    },
+    {
+     "pick": 1,
+     "of": [
+      "ADK60R",
+      "ADK60EC",
+      "ADK60S"
+     ],
+     "source": "printed",
+     "count": 1,
+     "why": "One Raven body (DH2, DH3, DH6, DH7); every weapon gets built, but the one you choose is glued on (no magnet)."
     }
    ],
    "looks": [
@@ -209,18 +413,30 @@
    "misprints": [
     "p13-14: either/or note swaps the X ('RTX-06 Mire', 'RT-06SR MireSR'); fixed in the Discord 'Raid RDL(revised)'",
     "p28: PC-6 step 1 labels the barrel AH1; AH1 looks like the RTX-06SR armour, barrel probably AH3 (still AH1 in the revised file)",
-    "revised file only: Chinese RL-08 note reads 'RL-08x'"
+    "revised file only: Chinese RL-08 note reads 'RL-08x'",
+    "UN side, contents page: the Drone section is listed at page 29; it starts at page 33.",
+    "UN side, LM231 chassis: the steps skip 6 and 9. Step 10L/10R build on \"9L\"/\"9R\", which are the 8L/8R results, and step 12 joins \"9\", which is the step 5 hip. Achillain's revised file has the same numbering.",
+    "UN side, pages 24-25 (S9 + M5 Pile Bunker): the page-foot icon marks a right arm; it is a left arm (card 103), as pages 22-23 for S9 + IGX106 show.",
+    "UN side, pages 26-27 (R7K and R7): the page-foot icon marks a left arm; both are right arms.",
+    "UN side, pages 27-30: the either/or note swaps the names, calling R7 the Tactical Rifle and R7K the Automatic Rifle (in all three languages). Page 26 and the cards have it right: R7K Tactical Rifle, R7 Automatic Rifle.",
+    "UN side, chassis notes: page 16 shows the base as square \"75-75\"; step 14 and the drone pages use the round 75A base.",
+    "UN side, small typos: \"Wild Cat\" and \"Wildcat\" both used for TM31Q; \"R7KAutomatic\" and \"R7Automatic\" with the space missing."
    ],
    "pdfs": [
     {
-     "label": "Raid, RDL side (revised)",
+     "label": "Raid, RDL side",
      "file": "RDL/Raid RDL (revised).pdf",
      "by": "Achillain (Discord), from Queti's instructions",
-     "url": ""
+     "url": "instructions/raid-rdl-side.pdf"
+    },
+    {
+     "label": "Raid, UN side",
+     "file": "UN/Raid _ UN Side.pdf",
+     "by": "Queti",
+     "url": "instructions/raid-un-side.pdf"
     }
    ],
-   "sideNote": "RDL side only so far. The UN side is still to be catalogued.",
-   "_drones": "For the UN side, when it is catalogued (OTTO, 2026-11-03): the ADK15 'Porcupine' body takes its 15D and 15P heads on a magnet, and with no head on it the same body is the ADK30C, so all three are one body (a magnet kit). The ADK60 'Raven' is not a magnet: every weapon attachment gets built, but one is glued on for good, so EC / Scout / Interference is a pick-1 choice."
+   "_drones": "UN side (read 2026-11-04): two magnet bodies. The ADK15 \"Porcupine\" body (FF sprue) takes its 15D or 15P head on 2 mm magnets (page 40). The ADK30 \"Tarantula\" body (DH11-DH14) carries a UN backpack on 2 mm magnets, which makes it ADK30C (page 34). The ADK60 \"Raven\" is one body with three weapon options, no magnets: glue one on."
   },
   "RDL_CORE": {
    "pdf": "Assembly Instructions/RDL/RDL Core.pdf",
@@ -431,10 +647,10 @@
    "_pages": "Page numbers are from the 2019 crowdfunding print. OTTO's retail book runs ML-34 on p9 then Torso on p10, so pages after p9 sit 2 lower in retail (and lower again after the ACX-350 gap).",
    "pdfs": [
     {
-     "label": "Core (Queti)",
+     "label": "Core",
      "file": "RDL/RDL Core.pdf",
      "by": "Queti",
-     "url": ""
+     "url": "instructions/rdl-core.pdf"
     }
    ],
    "crowdfunding": {
@@ -477,7 +693,7 @@
       "label": "Crowdfunding Exclusive Parts",
       "file": "RDL/RDL Crowdfunding Exclusive Parts.pdf",
       "by": "Queti",
-      "url": ""
+      "url": "instructions/rdl-crowdfunding.pdf"
      }
     ]
    }
@@ -693,7 +909,7 @@
      "label": "Cavalry",
      "file": "RDL/RDL - Cavalry - Instructions - Spreads.pdf",
      "by": "Achillain (Discord), from Queti's instructions",
-     "url": ""
+     "url": "instructions/rdl-cavalry.pdf"
     }
    ]
   },
@@ -930,10 +1146,10 @@
    "_pages": "Page numbers are from the 2019 crowdfunding print; retail will differ after p7.",
    "pdfs": [
     {
-     "label": "Heavy Metal (Queti)",
+     "label": "Heavy Metal",
      "file": "RDL/RDL Heavy Metal.pdf",
      "by": "Queti",
-     "url": ""
+     "url": "instructions/rdl-heavy-metal.pdf"
     }
    ],
    "crowdfunding": {
@@ -976,10 +1192,911 @@
       "label": "Crowdfunding Exclusive Parts",
       "file": "RDL/RDL Crowdfunding Exclusive Parts.pdf",
       "by": "Queti",
-      "url": ""
+      "url": "instructions/rdl-crowdfunding.pdf"
      }
     ]
    }
+  },
+  "UN_CORE": {
+   "side": "UN",
+   "pdf": "Assembly Instructions/UN/UN Core.pdf",
+   "sprues": {
+    "SB": 4,
+    "SC": 3,
+    "SD": 8,
+    "DA": 2,
+    "DB": 2,
+    "DC": 2,
+    "DD": 2,
+    "DE": 3,
+    "DF": 4,
+    "DG": 4,
+    "DH": 2
+   },
+   "builds": [
+    {
+     "code": "EBS/X40",
+     "name": "Armor Energy Charger",
+     "slot": "backpack",
+     "card": "081",
+     "count": 2,
+     "page": 7
+    },
+    {
+     "code": "GSD2A",
+     "name": "\"Pholcus\" Mine Rack",
+     "slot": "backpack",
+     "card": "082",
+     "count": 2,
+     "page": 7
+    },
+    {
+     "code": "CSC60",
+     "name": "Cooler",
+     "slot": "backpack",
+     "card": "083",
+     "count": 4,
+     "page": 8
+    },
+    {
+     "code": "TM31C",
+     "name": "\"Gray Wolf\" Battle Core",
+     "slot": "torso",
+     "card": "091",
+     "count": 2,
+     "page": 10
+    },
+    {
+     "code": "TM31R",
+     "name": "\"Caracal\" Battle Core",
+     "slot": "torso",
+     "card": "092",
+     "count": 2,
+     "page": 13
+    },
+    {
+     "code": "LM231",
+     "name": "Standard Chassis",
+     "slot": "chassis",
+     "card": "099",
+     "count": 4,
+     "page": 17
+    },
+    {
+     "code": "S9 + M5",
+     "name": "\"Meteor\" Shield + Pile Bunker",
+     "slot": "leftArm",
+     "card": "103",
+     "count": 4,
+     "page": 22
+    },
+    {
+     "code": "S100 + Grenade Pod",
+     "name": "Shield + Grenade Pod",
+     "slot": "leftArm",
+     "card": "107",
+     "count": 2,
+     "page": 34,
+     "_note": "Each DE sprue (3) makes one S100 arm, Grenade Pod or R6SS: DE5, DE8 and the DE9/DE12 pairs are in both. The summary shows 2 + 1."
+    },
+    {
+     "code": "RH21 + M3 (L)",
+     "name": "Pistol + Vibroblade (L)",
+     "slot": "leftArm",
+     "card": "111",
+     "count": 2,
+     "page": 30
+    },
+    {
+     "code": "R7",
+     "name": "Automatic Rifle",
+     "slot": "rightArm",
+     "card": "104",
+     "count": 4,
+     "page": 24
+    },
+    {
+     "code": "R33",
+     "name": "Sniper Rifle",
+     "slot": "rightArm",
+     "card": "106",
+     "count": 2,
+     "page": 26
+    },
+    {
+     "code": "R6",
+     "name": "SMG",
+     "slot": "rightArm",
+     "card": "109",
+     "count": 2,
+     "page": 28
+    },
+    {
+     "code": "RH21 + M3 (R)",
+     "name": "Pistol + Vibroblade (R)",
+     "slot": "rightArm",
+     "card": "113",
+     "count": 2,
+     "page": 32
+    },
+    {
+     "code": "S100 + R6SS",
+     "name": "Shield + SMG",
+     "slot": "rightArm",
+     "card": "115",
+     "count": 1,
+     "page": 36
+    },
+    {
+     "code": "ADK30",
+     "name": "\"Tarantula\" drone body",
+     "slot": "drone",
+     "card": null,
+     "count": 2,
+     "page": 39
+    },
+    {
+     "code": "ADK30C",
+     "name": "\"Tarantula\" Carrier Type",
+     "slot": "drone",
+     "card": "162",
+     "count": 2,
+     "page": 40
+    },
+    {
+     "code": "ADK30F",
+     "name": "\"Tarantula\" Firepower Type",
+     "slot": "drone",
+     "card": "163",
+     "count": 2,
+     "page": 39
+    },
+    {
+     "code": "ADK60R",
+     "name": "\"Raven\" Scout Type",
+     "slot": "drone",
+     "card": "164",
+     "count": 0,
+     "page": 42
+    },
+    {
+     "code": "ADK60EC",
+     "name": "\"Raven\" EC Type",
+     "slot": "drone",
+     "card": "165",
+     "count": 0,
+     "page": 42
+    },
+    {
+     "code": "ADK60S",
+     "name": "\"Raven\" Interference Type",
+     "slot": "drone",
+     "card": "166",
+     "count": 0,
+     "page": 42
+    },
+    {
+     "code": "SGM2",
+     "name": "\"Pholcus\" Automatic Mine (Unfolded)",
+     "slot": "drone",
+     "card": "167",
+     "count": 6,
+     "page": 44
+    },
+    {
+     "code": "SGM2 (folded)",
+     "name": "\"Pholcus\" Automatic Mine",
+     "slot": "projectile",
+     "card": "156",
+     "count": 6,
+     "page": 45
+    },
+    {
+     "code": "M9",
+     "name": "Stun Grenade",
+     "slot": "projectile",
+     "card": "155",
+     "count": 3,
+     "page": 45
+    }
+   ],
+   "choices": [
+    {
+     "pick": 1,
+     "of": [
+      "ADK60R",
+      "ADK60EC",
+      "ADK60S"
+     ],
+     "source": "printed",
+     "count": 2,
+     "why": "Two Raven bodies; every weapon gets built, but each body has the one you choose glued on (no magnet)."
+    }
+   ],
+   "looks": [
+    "S9 + M5, R6, RH21 + M3: SD1 or SD2 shoulder armour, and SD13 or SD18 elbow armour",
+    "S100 + Grenade Pod: DE4 or DE10 hand; S100 + R6SS: DE3 or DE11 hand"
+   ],
+   "misprints": [
+    "Page 4: the DB sprue is labelled for R33 only, but R6 is built from it too (DB6, DB14-DB18). The Raid PDF labels the same sprue \"R33 R6\".",
+    "LM231 chassis: the steps skip 6 and 9. Step 10L/10R build on \"9L\"/\"9R\", which are the 8L/8R results, and step 12 joins \"9\", which is the step 5 hip (the same pages as in the Raid PDF).",
+    "Chassis notes: page 16 shows the base as square \"75-75\"; step 14 uses the round 75A base.",
+    "Crowdfunding parts, pages 1-3: the Japanese name of MDXS \"Fairy\" System is printed as 「メテオ」シールド (\"Meteor\" Shield), the S9's name."
+   ],
+   "pdfs": [
+    {
+     "label": "UN Core",
+     "file": "UN/UN Core.pdf",
+     "by": "Queti",
+     "url": "instructions/un-core.pdf"
+    }
+   ],
+   "_drones": "Two ADK30 \"Tarantula\" bodies (DH11-DH14): each takes a UN backpack (ADK30C) or the DD turret (ADK30F) on 2 mm magnets (page 40). Two ADK60 \"Raven\" bodies, weapons glued on.",
+   "crowdfunding": {
+    "note": "2019 crowdfunding backer copies only (sprue XC). Not in retail boxes.",
+    "sprues": {
+     "XC": 1
+    },
+    "cards": {
+     "117": 1,
+     "118": 1,
+     "119": 1,
+     "120": 1
+    },
+    "builds": [
+     {
+      "code": "MDXS + R6 (L)",
+      "name": "\"Fairy\" System + SMG (L)",
+      "slot": "leftArm",
+      "card": "117",
+      "count": 1,
+      "page": 1
+     },
+     {
+      "code": "MDXS + R6 (R)",
+      "name": "\"Fairy\" System + SMG (R)",
+      "slot": "rightArm",
+      "card": "119",
+      "count": 1,
+      "page": 3
+     }
+    ],
+    "pdfs": [
+     {
+      "label": "Crowdfunding Exclusive Parts",
+      "file": "UN/UN Crowdfunding Exclusive Parts.pdf",
+      "by": "Queti",
+      "url": "instructions/un-crowdfunding.pdf"
+     }
+    ],
+    "_box": "Which retail box these came with is inferred from the card numbers (117-120 follow UN Core's arms, 103-116), the way the RDL backer cards sit next to Core and Heavy Metal. Not confirmed."
+   }
+  },
+  "UN_DOORBREAKER": {
+   "side": "UN",
+   "pdf": "Assembly Instructions/UN/UN Door Breaker.pdf",
+   "sprues": {
+    "SB": 2,
+    "SC": 3,
+    "SD": 4,
+    "FA": 2,
+    "FB": 2,
+    "FC": 2,
+    "FD": 2,
+    "FE": 2,
+    "FF": 2,
+    "DE": 1
+   },
+   "builds": [
+    {
+     "code": "JP1",
+     "name": "Jetpack",
+     "slot": "backpack",
+     "card": "088",
+     "count": 2,
+     "page": 7
+    },
+    {
+     "code": "EC50",
+     "name": "Electronic Warfare Pod",
+     "slot": "backpack",
+     "card": "089",
+     "count": 2,
+     "page": 8
+    },
+    {
+     "code": "OCSP",
+     "name": "Overloading Pack",
+     "slot": "backpack",
+     "card": "090",
+     "count": 2,
+     "page": 9
+    },
+    {
+     "code": "TM35N",
+     "name": "\"Alligator\" Electronic Warfare Core",
+     "slot": "torso",
+     "card": "097",
+     "count": 1,
+     "page": 11,
+     "_note": "Each FB sprue (2) makes one TM35 core, N or B: FB1-FB4 and FB9-FB16 are in both. The summary shows 1 + 1."
+    },
+    {
+     "code": "TM35B",
+     "name": "\"Bison\" Assault Core",
+     "slot": "torso",
+     "card": "098",
+     "count": 1,
+     "page": 14
+    },
+    {
+     "code": "LM213B",
+     "name": "Combat Chassis",
+     "slot": "chassis",
+     "card": "101",
+     "count": 2,
+     "page": 18
+    },
+    {
+     "code": "G6 + Grenade Pod",
+     "name": "Shotgun + Grenade Pod",
+     "slot": "leftArm",
+     "card": "146",
+     "count": 2,
+     "page": 24
+    },
+    {
+     "code": "S100",
+     "name": "Shield",
+     "slot": "leftArm",
+     "card": "142",
+     "count": 1,
+     "page": 30
+    },
+    {
+     "code": "MX82",
+     "name": "Multifunctional Whip",
+     "slot": "leftArm",
+     "card": "139",
+     "count": 2,
+     "page": 32
+    },
+    {
+     "code": "K7 + S10",
+     "name": "Nail Gun + Shield",
+     "slot": "leftArm",
+     "card": "144",
+     "count": 1,
+     "page": 34
+    },
+    {
+     "code": "IGX350",
+     "name": "Ion Shotgun",
+     "slot": "rightArm",
+     "card": "140",
+     "count": 1,
+     "page": 26
+    },
+    {
+     "code": "G6 + M5",
+     "name": "Shotgun + Pile Bunker",
+     "slot": "rightArm",
+     "card": "148",
+     "count": 2,
+     "page": 28
+    },
+    {
+     "code": "M15BO",
+     "name": "\"Katana\"",
+     "slot": "rightArm",
+     "card": "145",
+     "count": 2,
+     "page": 36
+    },
+    {
+     "code": "ADK15",
+     "name": "\"Porcupine\" drone body",
+     "slot": "drone",
+     "card": null,
+     "count": 2,
+     "page": 39
+    },
+    {
+     "code": "ADK15D",
+     "name": "\"Porcupine\" CIWS Type",
+     "slot": "drone",
+     "card": "160",
+     "count": 2,
+     "page": 39
+    },
+    {
+     "code": "ADK15/MAS",
+     "name": "\"Porcupine\" Microwave Type",
+     "slot": "drone",
+     "card": "161",
+     "count": 2,
+     "page": 40
+    }
+   ],
+   "choices": [],
+   "looks": [
+    "S100: DE4 or DE10 hand",
+    "M15BO: katana held in the hand (a) or carried on the back (b), page 36",
+    "Most arms: SD13 or SD18 elbow armour; G6 arms: SC23 or SC25 shoulder cap"
+   ],
+   "misprints": [
+    "LM213B chassis, page 18: the steps go 1, 2, 3, then 6, and step 6 builds on \"5\": steps 4 and 5 are not printed.",
+    "Chassis notes: page 17 shows the base as square \"75-75\"; step 15 uses the round 75A base.",
+    "IGX350, page 27: the big grey background title reads \"OCSP\", copied from the backpack page.",
+    "G6 + M5, page 28, step 1: a part is labelled \"AD14\", but this box has no AD sprue (AD is an RDL sprue).",
+    "K7 + S10, page 35: two steps are numbered 4; the magnet step should be 5.",
+    "Page 4: the FE sprue is labelled for ADK15/MAS, G6 + M5 and G6 + Grenade Pod, but M15BO is built from it too (FE7, FE8, FE10-FE12, FE15, FE16).",
+    "ADK15D, page 41: the Chinese name reads \"防型\" where page 39 has \"近防型\" (CIWS type)."
+   ],
+   "pdfs": [
+    {
+     "label": "UN Door Breaker",
+     "file": "UN/UN Door Breaker.pdf",
+     "by": "Queti",
+     "url": "instructions/un-door-breaker.pdf"
+    }
+   ],
+   "_drones": "Two ADK15 \"Porcupine\" bodies (FF sprue): each takes the 15D head (FF) or the 15/MAS head (FE) on 2 mm magnets (page 41).",
+   "crowdfunding": {
+    "note": "2019 crowdfunding backer copies only (sprue XD). Not in retail boxes.",
+    "sprues": {
+     "XD": 1
+    },
+    "cards": {
+     "150": 1,
+     "151": 1,
+     "152": 1,
+     "153": 1
+    },
+    "builds": [
+     {
+      "code": "RHX23 (L)",
+      "name": "\"Rainstorm\" Assault Pistol (L)",
+      "slot": "leftArm",
+      "card": "150",
+      "count": 1,
+      "page": 5
+     },
+     {
+      "code": "RHX23 (R)",
+      "name": "\"Rainstorm\" Assault Pistol (R)",
+      "slot": "rightArm",
+      "card": "152",
+      "count": 1,
+      "page": 7
+     }
+    ],
+    "pdfs": [
+     {
+      "label": "Crowdfunding Exclusive Parts",
+      "file": "UN/UN Crowdfunding Exclusive Parts.pdf",
+      "by": "Queti",
+      "url": "instructions/un-crowdfunding.pdf"
+     }
+    ],
+    "_box": "Which retail box these came with is inferred from the card numbers (150-153 follow Door Breaker's arms, 139-149). Not confirmed."
+   }
+  },
+  "UN_SCALPEL": {
+   "side": "UN",
+   "pdf": "Assembly Instructions/UN/UN Scalpel.pdf",
+   "sprues": {
+    "SB": 4,
+    "SC": 1,
+    "SD": 2,
+    "EA": 2,
+    "EB": 2,
+    "EC": 2,
+    "ED": 2,
+    "EE": 1,
+    "EF": 1,
+    "EG": 1,
+    "DD": 2,
+    "DH": 2,
+    "EH": 1,
+    "EI": 1
+   },
+   "builds": [
+    {
+     "code": "RKG70 Pack",
+     "name": "RKG70 Ammunition Pack",
+     "slot": "backpack",
+     "card": "086",
+     "count": 2,
+     "page": 7
+    },
+    {
+     "code": "MSH2",
+     "name": "Stabilizer Arm",
+     "slot": "backpack",
+     "card": "087",
+     "count": 1,
+     "page": 8
+    },
+    {
+     "code": "DBP Rack",
+     "name": "\"Turtle Shell\" Barricade Rack",
+     "slot": "backpack",
+     "card": "084",
+     "count": 1,
+     "page": 10
+    },
+    {
+     "code": "AMDS210 Carrier",
+     "name": "\"Delphinium\" Carrier",
+     "slot": "backpack",
+     "card": "085",
+     "count": 2,
+     "page": 10,
+     "_note": "The summary shows one carrier, but EB x2 gives the parts for two (three EB10 and one EB16 each). The Reference has 2 cards."
+    },
+    {
+     "code": "TM39",
+     "name": "\"Viper\" Low Profile Core",
+     "slot": "torso",
+     "card": "094",
+     "count": 2,
+     "page": 12
+    },
+    {
+     "code": "TM641",
+     "name": "\"Octopus\" Stealth Core",
+     "slot": "torso",
+     "card": "096",
+     "count": 2,
+     "page": 15
+    },
+    {
+     "code": "LM210S",
+     "name": "Stealth Chassis",
+     "slot": "chassis",
+     "card": "100",
+     "count": 2,
+     "page": 19
+    },
+    {
+     "code": "RKG70",
+     "name": "Missile Pod",
+     "slot": "leftArm",
+     "card": "129",
+     "count": 2,
+     "page": 24
+    },
+    {
+     "code": "K9 + M14BO",
+     "name": "Nail Gun + \"Wakizashi\"",
+     "slot": "leftArm",
+     "card": "126",
+     "count": 1,
+     "page": 28
+    },
+    {
+     "code": "M4 + Grenade Pod (L)",
+     "name": "Vibroblade + Grenade Pod (L)",
+     "slot": "leftArm",
+     "card": "135",
+     "count": 1,
+     "page": 30,
+     "_note": "Each DD sprue (2) makes one left and one right blade arm: DD5/DD7/DD13 (left) and DD6/DD8/DD12 (right) go into both M4 + Grenade Pod and M3S. The summary shows one of each on each side."
+    },
+    {
+     "code": "M3S (L)",
+     "name": "Vibroblade (L)",
+     "slot": "leftArm",
+     "card": "131",
+     "count": 1,
+     "page": 32
+    },
+    {
+     "code": "MSH1",
+     "name": "Assistance Arm (L)",
+     "slot": "leftArm",
+     "card": "121",
+     "count": 1,
+     "page": 40
+    },
+    {
+     "code": "R6SD",
+     "name": "SMG",
+     "slot": "rightArm",
+     "card": "124",
+     "count": 1,
+     "page": 26
+    },
+    {
+     "code": "M4 + Grenade Pod (R)",
+     "name": "Vibroblade + Grenade Pod (R)",
+     "slot": "rightArm",
+     "card": "137",
+     "count": 1,
+     "page": 31
+    },
+    {
+     "code": "M3S (R)",
+     "name": "Vibroblade (R)",
+     "slot": "rightArm",
+     "card": "133",
+     "count": 1,
+     "page": 33
+    },
+    {
+     "code": "R9B",
+     "name": "Tactical Rifle",
+     "slot": "rightArm",
+     "card": "127",
+     "count": 2,
+     "page": 34
+    },
+    {
+     "code": "IGX920",
+     "name": "Heavy Ion Gun",
+     "slot": "rightArm",
+     "card": "122",
+     "count": 1,
+     "page": 36
+    },
+    {
+     "code": "AMDS210",
+     "name": "\"Delphinium\" Automatic Defense System",
+     "slot": "drone",
+     "card": "159",
+     "count": 2,
+     "page": 10,
+     "_note": "No build page of its own; the summary icon is one carrier pod (EB10). Summary 1, Reference 2 cards."
+    },
+    {
+     "code": "ADK30",
+     "name": "\"Tarantula\" drone body",
+     "slot": "drone",
+     "card": null,
+     "count": 2,
+     "page": 42
+    },
+    {
+     "code": "ADK30C",
+     "name": "\"Tarantula\" Carrier Type",
+     "slot": "drone",
+     "card": "162",
+     "count": 2,
+     "page": 43
+    },
+    {
+     "code": "ADK30F",
+     "name": "\"Tarantula\" Firepower Type",
+     "slot": "drone",
+     "card": "163",
+     "count": 2,
+     "page": 42
+    },
+    {
+     "code": "ADK60R",
+     "name": "\"Raven\" Scout Type",
+     "slot": "drone",
+     "card": "164",
+     "count": 0,
+     "page": 45
+    },
+    {
+     "code": "ADK60EC",
+     "name": "\"Raven\" EC Type",
+     "slot": "drone",
+     "card": "165",
+     "count": 0,
+     "page": 45
+    },
+    {
+     "code": "ADK60S",
+     "name": "\"Raven\" Interference Type",
+     "slot": "drone",
+     "card": "166",
+     "count": 0,
+     "page": 45
+    },
+    {
+     "code": "DBP",
+     "name": "\"Turtle Shell\" Barricade",
+     "slot": "projectile",
+     "card": "158",
+     "count": 1,
+     "page": 47
+    },
+    {
+     "code": "Optical Camouflage",
+     "name": "Decoy figure",
+     "slot": "projectile",
+     "card": null,
+     "count": 2,
+     "page": 48,
+     "_note": "Two decoy figures on 50E/50-75 bases (page 48). The summary shows them as two unlabelled grey silhouettes; no card in the Reference."
+    },
+    {
+     "code": "RKG70 Missiles",
+     "name": "Missile Group",
+     "slot": "projectile",
+     "card": "157",
+     "count": 2,
+     "page": 49
+    }
+   ],
+   "choices": [
+    {
+     "pick": 1,
+     "of": [
+      "ADK60R",
+      "ADK60EC",
+      "ADK60S"
+     ],
+     "source": "printed",
+     "count": 2,
+     "why": "Two Raven bodies; every weapon gets built, but each body has the one you choose glued on (no magnet)."
+    }
+   ],
+   "looks": [
+    "K9 + M14BO: wakizashi held (a) or sheathed (b), page 28",
+    "IGX920: gun carried low (a) or upright (b), page 38"
+   ],
+   "misprints": [
+    "Page 4: the sprue header lists \"DH 42/2\" twice; the second should be \"EH 10/1\" (only that makes the part and sprue totals add up).",
+    "DBP Barricade Rack, page 10: the magnet step is numbered \"1\" again; it should be 4.",
+    "LM210S chassis: the steps skip 4 and 5, step 9R builds on \"8L\", and the numbering jumps from 10 to 12.",
+    "Chassis notes: the base is shown as square \"75-75\"; the build uses the round 75A base.",
+    "Summary page: the K9 + M14BO arm is labelled \"K91 + M14BO\"; the build page and the card say K9.",
+    "Summary page: the two Optical Camouflage figures (page 48) are drawn as grey silhouettes with no label.",
+    "The AMDS210 drone is on the summary page but has no build page in the Drone section."
+   ],
+   "pdfs": [
+    {
+     "label": "UN Scalpel",
+     "file": "UN/UN Scalpel.pdf",
+     "by": "Queti",
+     "url": "instructions/un-scalpel.pdf"
+    }
+   ],
+   "_drones": "Two ADK30 \"Tarantula\" bodies (DH11-DH14): page 42 builds one with the DD turret (ADK30F), page 43 one with a UN backpack (ADK30C), both on 2 mm magnets, so either body takes either top. Two ADK60 \"Raven\" bodies, weapons glued on."
+  },
+  "SINGLE_UN_TAURUS": {
+   "side": "UN",
+   "pdf": "Assembly Instructions/UN/UN Taurus.pdf",
+   "sprues": {
+    "SB": 1,
+    "SC": 1,
+    "SD": 1,
+    "FB": 1,
+    "DD": 1,
+    "DE": 1,
+    "DF": 1,
+    "DG": 1,
+    "Resin A": 1,
+    "Resin B": 1
+   },
+   "builds": [
+    {
+     "code": "CSC60",
+     "name": "Cooler",
+     "slot": "backpack",
+     "card": "083",
+     "count": 1,
+     "page": 7
+    },
+    {
+     "code": "TM35BT",
+     "name": "\"Taurus\" Experimental Core",
+     "slot": "torso",
+     "card": "555",
+     "count": 0,
+     "page": 9
+    },
+    {
+     "code": "TM35N",
+     "name": "\"Alligator\" Electronic Warfare Core",
+     "slot": "torso",
+     "card": "097",
+     "count": 0,
+     "page": 12
+    },
+    {
+     "code": "LM231",
+     "name": "Standard Chassis",
+     "slot": "chassis",
+     "card": "099",
+     "count": 1,
+     "page": 16
+    },
+    {
+     "code": "S100 + Grenade Pod",
+     "name": "Shield + Grenade Pod",
+     "slot": "leftArm",
+     "card": "107",
+     "count": 0,
+     "page": 25
+    },
+    {
+     "code": "S100",
+     "name": "Shield",
+     "slot": "leftArm",
+     "card": "142",
+     "count": 0,
+     "page": 27
+    },
+    {
+     "code": "RH21 + M3 (L)",
+     "name": "Pistol + Vibroblade (L)",
+     "slot": "leftArm",
+     "card": "111",
+     "count": 1,
+     "page": 29
+    },
+    {
+     "code": "R7MG",
+     "name": "LMG",
+     "slot": "rightArm",
+     "card": "556",
+     "count": 0,
+     "page": 21
+    },
+    {
+     "code": "R7",
+     "name": "Automatic Rifle",
+     "slot": "rightArm",
+     "card": "104",
+     "count": 0,
+     "page": 23
+    }
+   ],
+   "choices": [
+    {
+     "pick": 1,
+     "of": [
+      "TM35BT",
+      "TM35N"
+     ],
+     "source": "printed",
+     "count": 1,
+     "why": "One FB sprue: FB9-FB16 make both cores; TM35BT adds the resin A parts, TM35N the FB1-FB8 and FB17-FB20 armour."
+    },
+    {
+     "pick": 1,
+     "of": [
+      "R7MG",
+      "R7"
+     ],
+     "source": "printed",
+     "count": 1,
+     "why": "One gun arm: the SD shoulder and arm parts make either; R7MG uses the resin B gun, R7 the DG gun."
+    },
+    {
+     "pick": 1,
+     "of": [
+      "S100 + Grenade Pod",
+      "S100"
+     ],
+     "source": "printed",
+     "count": 1,
+     "why": "One DE shield arm; the Grenade Pod version uses SC8/SC9, the plain shield SC14/SC15."
+    }
+   ],
+   "looks": [
+    "S100 arms: DE4 or DE10 hand"
+   ],
+   "misprints": [
+    "Page 8 (Torso section start): the page-foot icon marks the backpack section; it should mark the torso.",
+    "LM231 chassis: the steps skip 6 and 9. Step 10L/10R build on \"9L\"/\"9R\", which are the 8L/8R results, and step 12 joins \"9\", which is the step 5 hip (the same pages as in UN Core and Raid).",
+    "Chassis notes, page 15: the base is shown as square \"75-75\"; step 14 uses the round 75A base.",
+    "R7MG / R7 either/or note, pages 21-24: it calls the gun \"R7M LMG\" (the title and card say R7MG), and \"R7Automatic\" is missing a space."
+   ],
+   "pdfs": [
+    {
+     "label": "UN Taurus",
+     "file": "UN/UN Taurus.pdf",
+     "by": "Queti",
+     "url": "instructions/un-taurus.pdf"
+    }
+   ]
   }
  }
 }

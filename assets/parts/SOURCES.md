@@ -2,7 +2,7 @@
 
 Pictures for parts that have no card scan of their own (2026-11-03/04). The app shows them without credit text; this file is where their sources are recorded.
 
-- **Box sheet tiles** (app/src/boxtiles.ts `PART_ART`, by sprue code): the DTG-30 drone body and the GA-3 grenade.
+- **Box sheet tiles** (app/src/boxtiles.ts `PART_ART`, by sprue code): the DTG-30, ADK15 and ADK30 drone bodies, the GA-3 grenade and the Optical Camouflage decoy.
 - **In place of a missing card scan** everywhere else (app/src/data.ts `PART_IMAGES`, drawn by `cardPlaceholder` in app/src/images.ts): every part-<id>.webp below, shown with a small "part picture" line so it is never mistaken for the printed card. The list of every card without a scan is in Project-Documents/research/box-catalogue/MISSING-CARD-ART.md.
 
 The publisher's database (api.obsidianprotocol.net, cached by tools/sync_official.mjs in .cache/official/) has a `pic` for every card it holds, but no record for a drone body on its own (DTG-30, ADK15 Porcupine), so those have no official picture.
@@ -10,6 +10,14 @@ The publisher's database (api.obsidianprotocol.net, cached by tools/sync_officia
 ## dtg-30-body.webp
 
 The DTG-30 "Hyena" drone body on its own, cut out like Queti's part pictures: transparent outside, white-filled, black line art. Source: step 4 of Achillain's (Discord) "RDL - DTG30 Hyena Drone.pdf", drawn after Queti's instructions, rendered at 600 dpi; the step number, magnet, pin and the "3" callout were removed and the outside flood-filled to transparent. Achillain gave OTTO the OK to use his files, with credit kept here rather than in the app.
+
+## adk30-body.webp, adk15-body.webp, optical-camouflage.webp
+
+Cut out of Queti's own assembly PDFs on 2026-11-04 (OTTO: "we should try to cut it out of the PDF if there isnt an official image"). The publisher database has no record for a drone body on its own or for the decoys. Each was rendered at 400-600 dpi from the vector page. The step number, magnets, leader lines, callouts and the frame were removed, everything outside the part was made transparent, and the inside was filled white with the black line art kept. Each was then trimmed and resized to 480 px wide.
+
+- **adk30-body.webp:** the ADK30 "Tarantula" body, step 3 of the ADK30 build, `UN/UN Core.pdf` printed page 39.
+- **adk15-body.webp:** the ADK15 "Porcupine" body, step 3 of the ADK15 build, `UN/UN Door Breaker.pdf` printed page 39.
+- **optical-camouflage.webp:** one Optical Camouflage decoy, step 4 (the leader lines to the base were taken out of the vector drawing first), `UN/UN Scalpel.pdf` printed page 48.
 
 ## Official part pictures (Queti, obsidianprotocol.net), fetched 2026-11-03
 

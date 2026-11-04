@@ -26,7 +26,10 @@ export interface Tile {
 // Parts no card shows, by their sprue code. Sources: assets/parts/SOURCES.md.
 const PART_ART: Record<string, string> = {
   'DTG-30': 'parts/dtg-30-body.webp',
+  ADK15: 'parts/adk15-body.webp',
+  ADK30: 'parts/adk30-body.webp',
   'GA-3': 'parts/part-070.webp',
+  'Optical Camouflage': 'parts/optical-camouflage.webp',
 };
 const noArt = (t: Tile): boolean => !t.or && !t.kit && (!t.card || (!!t.code && t.code in PART_ART));
 
@@ -45,11 +48,16 @@ const SLOTS = ['Torso', 'Chassis', 'Left arm', 'Right arm', 'Backpack', 'Pilots'
 const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 
-// An Extra (on the sprue, no card or build page) sorts after everything else.
-const sortName = (t: Tile): string => (t.extra ? '￿' : '') + (t.or ? t.or[0].name : t.kit ? t.kit.body.name : t.name).toLowerCase();
+// A part with no card ("part only") sorts after the cards in its group, and an
+// Extra (on the sprue, no card or build page) after everything else. A swap
+// kit is a group of cards and keeps its place; its body stays first inside it.
+// (A rank, not a high character in front of the name: localeCompare ignores
+// noncharacters, so that put them anywhere.)
+const sortRank = (t: Tile): number => (t.extra ? 2 : noArt(t) ? 1 : 0);
+const sortName = (t: Tile): string => (t.or ? t.or[0].name : t.kit ? t.kit.body.name : t.name).toLowerCase();
 
 function byFaction(tiles: Tile[], factions: string[]): { label: string; tiles: Tile[] }[] {
-  const sorted = [...tiles].sort((a, b) => sortName(a).localeCompare(sortName(b)));
+  const sorted = [...tiles].sort((a, b) => sortRank(a) - sortRank(b) || sortName(a).localeCompare(sortName(b)));
   if (factions.length < 2) return [{ label: '', tiles: sorted }];
   const order = [...factions, ...new Set(sorted.map((t) => t.faction).filter((f) => !factions.includes(f)))];
   return order
@@ -114,13 +122,15 @@ function pickTile(t: Tile): string {
 const baseCode = (t: Tile): string => /^([A-Z]+-?\d+)/.exec(t.code ?? t.name)?.[1] ?? '';
 const fullCode = (t: Tile): string => /^\S+/.exec(t.code ?? t.name)?.[0] ?? '';
 
-// Only these bodies take their heads on a magnet (OTTO, 2026-11-03). The ADK60
-// Raven's weapons are glued on, so a Raven is built once as one of them: an
-// either/or on the sprues, not a kit. `bare` is the card a body plays as with
-// no head on it: the ADK15 Porcupine body alone is the ADK30C.
+// Only these bodies take their heads on a magnet. The ADK60 Raven's weapons
+// are glued on, so a Raven is built once as one of them: an either/or on the
+// sprues, not a kit. The ADK30 "Tarantula" takes a UN backpack (ADK30C) or the
+// turret (ADK30F) on its magnets (UN Core PDF page 40, Raid UN page 34). `bare`
+// names a card a body plays as with nothing on it; none needs it so far.
 const MAGNET_BODIES: Record<string, { bare?: string }> = {
   'DTG-30': {},
-  ADK15: { bare: 'ADK30C' },
+  ADK15: {},
+  ADK30: {},
 };
 
 function kitify(tiles: Tile[]): Tile[] {
@@ -145,7 +155,8 @@ function kitify(tiles: Tile[]): Tile[] {
       faction: heads[0].faction,
       slot: 'Drones',
     };
-    kits.push({ ...b, card: null, n: b.n, kit: { body: b, heads } });
+    // A body with no card of its own takes its side from its heads (Raid holds both).
+    kits.push({ ...b, card: null, n: b.n, faction: heads[0]?.faction ?? b.faction, kit: { body: b, heads } });
   }
   return [...tiles.filter((t) => !used.has(t)), ...kits];
 }
@@ -158,9 +169,22 @@ function kitTile(t: Tile): string {
     // The card a body plays as with no head on it (ADK30C) says so.
     return bare && fullCode(h) === bare ? html.replace('<span class="bl-art">', '<span class="bl-art"><span class="bl-bare">no head</span>') : html;
   };
-  return `<div class="bl-kit">
-      <span class="bl-kit-lbl">⇄ 1 body · swap heads</span>
-      <div class="bl-kit-row">${noArtTile({ ...body, n: t.n })}<span class="bl-kit-heads">${heads.map(headTile).join('')}</span></div></div>`;
+  const lbl = heads.length > 1 ? '⇄ 1 body · swap heads' : '1 body · 1 head';
+  const n = kitCopies(t);
+  // One kit per body when there are heads enough for every body (OTTO,
+  // 2026-11-04: Door Breaker's two Porcupines each take either head), so no
+  // count badge; otherwise one kit with the body count on it.
+  const one = `<div class="bl-kit">
+      <span class="bl-kit-lbl">${lbl}</span>
+      <div class="bl-kit-row">${noArtTile({ ...body, n: n > 1 ? 1 : t.n })}<span class="bl-kit-heads">${heads.map(headTile).join('')}</span></div></div>`;
+  return one.repeat(n);
+}
+
+// How many times a kit is drawn: once per body, when every head comes as
+// many times as there are bodies.
+function kitCopies(t: Tile): number {
+  const bodies = t.n ?? 1;
+  return bodies > 1 && t.kit!.heads.every((h) => (h.n ?? 0) >= bodies) ? bodies : 1;
 }
 
 const any = (t: Tile): string => (t.kit ? kitTile(t) : t.or ? pickTile(t) : tile(t));
@@ -181,13 +205,21 @@ export function handleTileTap(t: HTMLElement): boolean {
 // Each module's width comes from what it holds, in card widths (`--u`) plus
 // pixels (`--x`: a pair's frame, the gaps inside a pair or kit), so the flow
 // packs the same in every browser rather than trusting each one's idea of a
-// wrapping flex box's natural width. A drone head prints sideways and is drawn
-// HEAD_W card widths wide in a kit.
-const HEAD_W = 1.5;
+// wrapping flex box's natural width. A drone card prints sideways and is drawn
+// the same wide size everywhere (two card widths and a gap: OTTO, 2026-11-04,
+// "make sure all drone card images are the same size"); in a swap kit the body
+// picture takes that same box, so the row lines up.
+const GAP = 8;
 const units = (t: Tile): number =>
-  t.kit ? 1 + t.kit.heads.length * HEAD_W : t.or ? t.or.length * (t.or[0].wide ? 2 : 1) : t.wide ? 2 : 1;
+  t.kit ? (1 + t.kit.heads.length) * 2 * kitCopies(t) : t.or ? t.or.length * (t.or[0].wide ? 2 : 1) : t.wide ? 2 : 1;
 const extraPx = (t: Tile): number =>
-  t.kit ? t.kit.heads.length * 8 + 14 : t.or ? (t.or.length - 1) * 8 + 12 : t.wide ? 8 : 0;
+  t.kit
+    ? (14 + t.kit.heads.length * 8 + (1 + t.kit.heads.length) * GAP) * kitCopies(t) + (kitCopies(t) - 1) * GAP
+    : t.or
+      ? (t.or.length - 1) * 8 + 12 + (t.or[0].wide ? t.or.length * GAP : 0)
+      : t.wide
+        ? GAP
+        : 0;
 
 function module(g: { label: string; tiles: Tile[] }): string {
   const u = g.tiles.reduce((n, t) => n + units(t), 0);
