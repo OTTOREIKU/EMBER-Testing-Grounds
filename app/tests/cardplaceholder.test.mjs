@@ -37,7 +37,7 @@ check('the pad\'s Find sheet mounts it like the reference',
 check('and drops neither its Photo tab nor its thumbnail', /querySelector\('\.dthumb'\)\?\.remove\(\)/.test(pad), false);
 
 check('the squad panel\'s card stands it in',
-  /img\.replaceWith\(cardPlaceholder\(\{ label: cardName\(card\), wide: printsWide\(card\) \}, 'card-img'\)\)/.test(src('../src/panel.ts')), true);
+  /img\.replaceWith\(cardPlaceholder\(\{ label: cardName\(card\), wide: printsWide\(card\)(?:, id: card\.id)? \}, 'card-img'\)\)/.test(src('../src/panel.ts')), true);
 
 const picker = src('../src/partpicker.ts');
 check('the part picker keeps one in each preview slot',

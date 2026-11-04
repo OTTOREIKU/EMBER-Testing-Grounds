@@ -1,4 +1,4 @@
-import { assetUrl, cardImageUrl } from './data';
+import { assetUrl, cardImageUrl, partImageUrl } from './data';
 import type { Card } from './types';
 
 const CARD_CACHE_MAX = 40;
@@ -137,6 +137,8 @@ export function isCardImageReady(id: string): boolean {
 export interface CardPlaceholder {
   label: string;
   wide?: boolean;
+  // With the card's id, a part picture stands in where we have one.
+  id?: string;
 }
 
 // A cover image that fails to load takes its frame with it. That used to be an
@@ -166,6 +168,17 @@ export function cardPlaceholder(ph: CardPlaceholder, className = ''): HTMLElemen
   el.className = ['card-ph', ph.wide ? 'wide' : '', className].filter(Boolean).join(' ');
   el.setAttribute('role', 'img');
   el.setAttribute('aria-label', `${ph.label}, no card image`);
+  const part = ph.id ? partImageUrl(ph.id) : null;
+  if (part) {
+    el.classList.add('card-part');
+    el.setAttribute('aria-label', `${ph.label}, part picture (no card image)`);
+    // The publisher's picture of the part itself, with the name and a plain
+    // "part picture" line under it, so nobody takes it for the printed card.
+    const img = el.appendChild(document.createElement('img'));
+    img.src = part;
+    img.alt = '';
+    el.appendChild(document.createElement('em')).textContent = 'part picture';
+  }
   el.appendChild(document.createElement('span')).textContent = ph.label;
   return el;
 }
@@ -187,6 +200,7 @@ export function mountCardImage(slot: HTMLElement, id: string, className: string,
   const img = loadCardImage(id);
   img.className = className;
   img.alt = '';
+  ph = ph && { id, ...ph };
   showOrStandIn(slot, img, className, ph);
 }
 
@@ -205,6 +219,7 @@ export function mountCardImageCopy(slot: HTMLElement, id: string, className: str
   img.src = cardImageUrl(id);
   img.className = className;
   img.alt = '';
+  ph = ph && { id, ...ph };
   showOrStandIn(slot, img, className, ph);
 }
 

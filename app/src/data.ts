@@ -46,6 +46,67 @@ export interface BoxDef {
   hidden?: boolean;
 }
 
+// What a box's sprues build, from the assembly PDFs (box_sprues.json): the
+// Sprues and Instructions tabs of the box sheet. Optional per box; a box with
+// no entry has simply not been catalogued yet.
+export interface SpruesBuild {
+  code: string;
+  name: string;
+  slot: string;
+  card: string | null;
+  count: number | null;
+  page?: number | null;
+  _count?: string;
+  // On the sprues but no card or build page in the box (GA-3 on Cavalry's CE
+  // sprue); listed with an Extra tag and left out of the counts.
+  extra?: boolean;
+  _extra?: string;
+}
+
+export interface SpruesChoice {
+  pick: number | 'any';
+  of: string[];
+  source: 'printed' | 'derived';
+  why: string;
+  // How many times the pick is made; a build's own count leaves these out.
+  count?: number;
+}
+
+export interface BoxPdf {
+  label: string;
+  file: string;
+  by: string;
+  url: string;
+}
+
+export interface BoxSprues {
+  sprues: Record<string, number>;
+  builds: SpruesBuild[];
+  choices: SpruesChoice[];
+  looks: string[];
+  misprints: string[];
+  pdfs: BoxPdf[];
+  cameWith?: Record<string, string>;
+  // For a box shared between factions and catalogued one side at a time.
+  sideNote?: string;
+  // The 2019 backer-only parts some copies came with: their own section on the
+  // box sheet, never written into containedIn, so collection tools count retail only.
+  crowdfunding?: BoxCrowdfunding;
+}
+
+export interface BoxCrowdfunding {
+  note: string;
+  sprues: Record<string, number>;
+  cards: Record<string, number>;
+  builds: SpruesBuild[];
+  pdfs: BoxPdf[];
+}
+
+interface BoxSpruesFile {
+  boxes?: Record<string, BoxSprues>;
+  newBoxes?: BoxDef[];
+}
+
 interface BoxStatus {
   boxes?: Record<string, { released?: boolean; product?: string; hasImage?: boolean; hidden?: boolean }>;
 }
@@ -580,6 +641,8 @@ export interface GameData {
   // `terrain.maps`; these are the ones with zones and Task layers.
   boardMaps: BoardMapDef[];
   boxes: BoxDef[];
+  // Keyed by box key; see BoxSprues.
+  sprues: Record<string, BoxSprues>;
   factionOf(card: Card): string | null;
   keywords: KeywordDef[];
   keyword(nameOrKey: string): KeywordDef | undefined;
@@ -738,7 +801,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, diceRef, xlate, names, missions, environments, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards, changelog, tokenData, soloData] = await Promise.all([
+  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, diceRef, xlate, names, missions, environments, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards, changelog, tokenData, soloData, spruesData] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     // Optional, and empty until a map is authored and committed: a missing or
@@ -824,7 +887,18 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('solo.json'))
       .then((r) => (r.ok ? (r.json() as Promise<Partial<SoloData>>) : ({} as Partial<SoloData>)))
       .catch(() => ({}) as Partial<SoloData>),
+    // Optional too: without it a box sheet shows its cards and nothing else.
+    fetch(dataUrl('box_sprues.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<BoxSpruesFile>) : ({} as BoxSpruesFile)))
+      .catch(() => ({}) as BoxSpruesFile),
   ]);
+
+  // Boxes of our own that boxes.json, being extracted, will never have (none at
+  // the moment). Added before the status loop so they take their box_status
+  // entry like any other box.
+  for (const nb of spruesData.newBoxes ?? []) {
+    if (!boxes.some((b) => b.key === nb.key)) boxes.push(nb);
+  }
 
   // Cards the community bundle does not have. cards.json is regenerated from
   // that bundle, so a card added there by hand would vanish on the next
@@ -937,6 +1011,7 @@ export async function loadData(): Promise<GameData> {
     // put a nameless or idless map in the picker.
     boardMaps: (boardMaps.maps ?? []).filter((m) => m && typeof m.id === 'string' && m.id),
     boxes,
+    sprues: spruesData.boxes ?? {},
     factionOf,
     keywords,
     keyword,
@@ -1090,6 +1165,32 @@ export function rulesLines(text: string | undefined): string[] {
 // and are still named on them; they simply never pad a list of boxes.
 export function isListedBox(b: BoxDef): boolean {
   return b.key !== 'UNSALE' && !b.hidden;
+}
+
+// Cards we hold no scan for, but whose part the publisher pictures on its own
+// card page (obsidianprotocol.net, the `pic` of the card's record). Shown in
+// place of the missing scan as a part picture, never dressed up as the card.
+// Sources: assets/parts/SOURCES.md. The full gap list:
+// Project-Documents/research/box-catalogue/MISSING-CARD-ART.md.
+const PART_IMAGES: Record<string, string> = {
+  'PDAM-007': 'parts/part-PDAM-007.webp',
+  'PDBP-202': 'parts/part-PDBP-202.webp',
+  'PDBP-203': 'parts/part-PDBP-203.webp',
+  'PDBP-204': 'parts/part-PDBP-204.webp',
+  'PDCH-201': 'parts/part-PDCH-201.webp',
+  'PDLH-201': 'parts/part-PDLH-201.webp',
+  'PDRH-201': 'parts/part-PDRH-201.webp',
+  'PDTR-201': 'parts/part-PDTR-201.webp',
+  'XPA-62': 'parts/part-XPA-62.webp',
+  '070': 'parts/part-070.webp',
+  '523': 'parts/part-523.webp',
+  '560': 'parts/part-560.webp',
+  '524': 'parts/part-524.webp',
+};
+
+export function partImageUrl(id: string): string | null {
+  const p = PART_IMAGES[id];
+  return p ? assetUrl(p) : null;
 }
 
 export function cardImageUrl(id: string): string {

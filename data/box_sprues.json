@@ -1,0 +1,985 @@
+{
+ "_comment": "What each box's sprues build, read from the assembly PDFs (OTTO's ask 2026-10-29: a Sprues tab on the box popup so players can tell what they have to choose between). Keyed by box key. sprues = sprue code to count; builds = code, name, slot, card id (null = no card), count (how many you always get outside any choice; 0 = only through a choice), printed page, extra (true = on the sprues but no card or build page in the box, with _extra saying where it was found); choices = pick 1 of the listed build codes, count times, source 'printed' when Queti prints the either/or, 'derived' when we worked it out from shared sprue pieces or the summary page; looks = options that change the model but not the card; misprints = where the PDF contradicts itself; pdfs = the instruction files for the Instructions tab (url empty until hosted). crowdfunding = the 2019 backer-only parts (sprues XA + XB) that came in some copies of the box, shown only when the Crowdfunding toggle is on and never counted in containedIn. newBoxes = boxes boxes.json does not have, added at load. Full reading notes: Project-Documents/research/box-catalogue/.",
+ "boxes": {
+  "COMBAT_RAID": {
+   "side": "RDL",
+   "pdf": "Assembly Instructions/RDL/Raid _ RDL Side.pdf",
+   "sprues": {
+    "AA": 1,
+    "AB": 1,
+    "AD": 1,
+    "AE": 1,
+    "AH": 1,
+    "BA": 1,
+    "SA": 2
+   },
+   "builds": [
+    {
+     "code": "SH-15",
+     "name": "Repair System",
+     "slot": "backpack",
+     "card": "001",
+     "count": 1,
+     "page": 6
+    },
+    {
+     "code": "AMS-190",
+     "name": "Active Defense System",
+     "slot": "backpack",
+     "card": "003",
+     "count": 1,
+     "page": 6
+    },
+    {
+     "code": "ML-34",
+     "name": "Quad Missile Rack",
+     "slot": "backpack",
+     "card": "004",
+     "count": 1,
+     "page": 7
+    },
+    {
+     "code": "ECS-3",
+     "name": "External Cooler",
+     "slot": "backpack",
+     "card": "532",
+     "count": 0,
+     "page": 8
+    },
+    {
+     "code": "ECS-2",
+     "name": "External Cooler",
+     "slot": "backpack",
+     "card": "002",
+     "count": 0,
+     "page": 8
+    },
+    {
+     "code": "RTX-06SR",
+     "name": "\"MireSR\" Battle Core",
+     "slot": "torso",
+     "card": "533",
+     "count": 0,
+     "page": 11
+    },
+    {
+     "code": "RT-06",
+     "name": "\"Mire\" Battle Core",
+     "slot": "torso",
+     "card": "012",
+     "count": 0,
+     "page": 13
+    },
+    {
+     "code": "RT-07T",
+     "name": "\"Dune\" Tactical Core",
+     "slot": "torso",
+     "card": "014",
+     "count": 1,
+     "page": 15
+    },
+    {
+     "code": "RL-06",
+     "name": "Standard Chassis",
+     "slot": "chassis",
+     "card": "020",
+     "count": 1,
+     "page": 19
+    },
+    {
+     "code": "RL-08C",
+     "name": "Armored Chassis",
+     "slot": "chassis",
+     "card": "534",
+     "count": 0,
+     "page": 21
+    },
+    {
+     "code": "RL-08",
+     "name": "Armored Chassis",
+     "slot": "chassis",
+     "card": "021",
+     "count": 0,
+     "page": 24
+    },
+    {
+     "code": "PC-6",
+     "name": "Shotgun",
+     "slot": "rightArm",
+     "card": "536",
+     "count": 0,
+     "page": 28
+    },
+    {
+     "code": "AC-32",
+     "name": "Automatic Rifle",
+     "slot": "rightArm",
+     "card": "025",
+     "count": 0,
+     "page": 29
+    },
+    {
+     "code": "CC-7",
+     "name": "Cleaver (L)",
+     "slot": "leftArm",
+     "card": "535",
+     "count": 1,
+     "page": 30
+    },
+    {
+     "code": "R-20 (L)",
+     "name": "Shoulder Mounted Railgun (L)",
+     "slot": "leftArm",
+     "card": "032",
+     "count": 1,
+     "page": 32
+    },
+    {
+     "code": "R-20 (R)",
+     "name": "Shoulder Mounted Railgun (R)",
+     "slot": "rightArm",
+     "card": "033",
+     "count": 1,
+     "page": 33
+    },
+    {
+     "code": "TYPE 55 + CC-6",
+     "name": "Shield + Cleaver",
+     "slot": "leftArm",
+     "card": "023",
+     "count": 1,
+     "page": 34
+    },
+    {
+     "code": "MC-3",
+     "name": "\"Razor\" Missile",
+     "slot": "projectile",
+     "card": "071",
+     "count": 2,
+     "page": 35
+    }
+   ],
+   "choices": [
+    {
+     "pick": 1,
+     "of": [
+      "ECS-3",
+      "ECS-2"
+     ],
+     "source": "printed",
+     "why": "Both are built from AD25 and AD26.",
+     "count": 1
+    },
+    {
+     "pick": 1,
+     "of": [
+      "RTX-06SR",
+      "RT-06"
+     ],
+     "source": "printed",
+     "why": "Both are built on the same core pieces (SA4, SA5, SA10, SA11, SA17, AA12, AA13, AB1, AB2, AB7, AB12, AB18).",
+     "count": 1
+    },
+    {
+     "pick": 1,
+     "of": [
+      "RL-08C",
+      "RL-08"
+     ],
+     "source": "printed",
+     "why": "Both are built from most of the BA sprue.",
+     "count": 1
+    },
+    {
+     "pick": 1,
+     "of": [
+      "PC-6",
+      "AC-32"
+     ],
+     "source": "printed",
+     "why": "Both are built on the same arm (AA5, AA6, AA14, AA15).",
+     "count": 1
+    }
+   ],
+   "looks": [
+    "RT-07T: AD5 + AD29 fins folded or upright",
+    "CC-7: blade in the hand or along the forearm, open hand or fist",
+    "R-20 L and R: choice of hand"
+   ],
+   "misprints": [
+    "p13-14: either/or note swaps the X ('RTX-06 Mire', 'RT-06SR MireSR'); fixed in the Discord 'Raid RDL(revised)'",
+    "p28: PC-6 step 1 labels the barrel AH1; AH1 looks like the RTX-06SR armour, barrel probably AH3 (still AH1 in the revised file)",
+    "revised file only: Chinese RL-08 note reads 'RL-08x'"
+   ],
+   "pdfs": [
+    {
+     "label": "Raid, RDL side (revised)",
+     "file": "RDL/Raid RDL (revised).pdf",
+     "by": "Achillain (Discord), from Queti's instructions",
+     "url": ""
+    }
+   ],
+   "sideNote": "RDL side only so far. The UN side is still to be catalogued.",
+   "_drones": "For the UN side, when it is catalogued (OTTO, 2026-11-03): the ADK15 'Porcupine' body takes its 15D and 15P heads on a magnet, and with no head on it the same body is the ADK30C, so all three are one body (a magnet kit). The ADK60 'Raven' is not a magnet: every weapon attachment gets built, but one is glued on for good, so EC / Scout / Interference is a pick-1 choice."
+  },
+  "RDL_CORE": {
+   "pdf": "Assembly Instructions/RDL/RDL Core.pdf",
+   "sprues": {
+    "AA": 4,
+    "AB": 4,
+    "AC": 2,
+    "AD": 1,
+    "AE": 1,
+    "AF": 2,
+    "AG": 2,
+    "BA": 2,
+    "SA": 5
+   },
+   "builds": [
+    {
+     "code": "SH-15",
+     "name": "Repair System",
+     "slot": "backpack",
+     "card": "001",
+     "count": 4,
+     "page": 7
+    },
+    {
+     "code": "AMS-190",
+     "name": "Active Defense System",
+     "slot": "backpack",
+     "card": "003",
+     "count": 1,
+     "page": 7
+    },
+    {
+     "code": "ECS-2",
+     "name": "External Cooler",
+     "slot": "backpack",
+     "card": "002",
+     "count": 1,
+     "page": 8
+    },
+    {
+     "code": "ML-34",
+     "name": "Quad Missile Rack",
+     "slot": "backpack",
+     "card": "004",
+     "count": 1,
+     "page": 9
+    },
+    {
+     "code": "RT-06",
+     "name": "\"Mire\" Battle Core",
+     "slot": "torso",
+     "card": "012",
+     "count": 4,
+     "page": 13
+    },
+    {
+     "code": "RT-07T",
+     "name": "\"Dune\" Tactical Core",
+     "slot": "torso",
+     "card": "014",
+     "count": 1,
+     "page": 15
+    },
+    {
+     "code": "RL-06",
+     "name": "Standard Chassis",
+     "slot": "chassis",
+     "card": "020",
+     "count": 3,
+     "page": 19
+    },
+    {
+     "code": "RL-08",
+     "name": "Armored Chassis",
+     "slot": "chassis",
+     "card": "021",
+     "count": 1,
+     "page": 21
+    },
+    {
+     "code": "TYPE 55 + CC-6",
+     "name": "Shield + Cleaver",
+     "slot": "leftArm",
+     "card": "023",
+     "count": 4,
+     "page": 25
+    },
+    {
+     "code": "AC-32",
+     "name": "Automatic Rifle",
+     "slot": "rightArm",
+     "card": "025",
+     "count": 4,
+     "page": 26
+    },
+    {
+     "code": "CC-4",
+     "name": "Cleaver (R)",
+     "slot": "rightArm",
+     "card": "036",
+     "count": 2,
+     "page": 27
+    },
+    {
+     "code": "ML-32 + CC-3",
+     "name": "Dual Launcher + Dagger",
+     "slot": "leftArm",
+     "card": "029",
+     "count": 2,
+     "page": 28
+    },
+    {
+     "code": "AC-150",
+     "name": "HMG",
+     "slot": "rightArm",
+     "card": "030",
+     "count": 2,
+     "page": 30
+    },
+    {
+     "code": "R-20 (L)",
+     "name": "Shoulder Mounted Railgun (L)",
+     "slot": "leftArm",
+     "card": "032",
+     "count": 1,
+     "page": 32
+    },
+    {
+     "code": "R-20 (R)",
+     "name": "Shoulder Mounted Railgun (R)",
+     "slot": "rightArm",
+     "card": "033",
+     "count": 1,
+     "page": 33
+    },
+    {
+     "code": "TYPE 77",
+     "name": "Bulwark",
+     "slot": "leftArm",
+     "card": "034",
+     "count": 2,
+     "page": 34
+    },
+    {
+     "code": "DTG-30",
+     "name": "\"Hyena\" Drone body",
+     "slot": "drone",
+     "card": null,
+     "count": 2,
+     "page": 43
+    },
+    {
+     "code": "DTG-30M",
+     "name": "\"Hyena\" MG head",
+     "slot": "drone",
+     "card": "078",
+     "count": 2,
+     "page": 44
+    },
+    {
+     "code": "DTG-30S",
+     "name": "\"Hyena\" Missile head",
+     "slot": "drone",
+     "card": "079",
+     "count": 2,
+     "page": 44
+    },
+    {
+     "code": "DTG-30R",
+     "name": "\"Hyena\" Radar head",
+     "slot": "drone",
+     "card": "080",
+     "count": 2,
+     "page": 45
+    },
+    {
+     "code": "MC-3",
+     "name": "\"Razor\" Missile",
+     "slot": "projectile",
+     "card": "071",
+     "count": 3,
+     "page": 47,
+     "_count": "summary page shows 3; two AC sprues carry 6 sets of AC12 + AC13"
+    }
+   ],
+   "choices": [
+    {
+     "pick": 1,
+     "of": [
+      "RL-06",
+      "RL-08"
+     ],
+     "source": "derived",
+     "why": "Five SA sprues make five chassis. Queti's summary lists RL-06 ×3, RL-08 ×1 and one \"RL-06 / RL-08\", so you get 3 RL-06 + 2 RL-08, or 4 RL-06 + 1 RL-08.",
+     "count": 1
+    }
+   ],
+   "looks": [
+    "RT-07T fins folded or upright",
+    "ML-32 + CC-3: dagger in hand, stowed with open hand, or other grip",
+    "R-20 L and R: choice of hand"
+   ],
+   "misprints": [
+    "Dune is named three ways: RT-07T (build page), RT-07 (AD sprue label), RT-07S (summary page)",
+    "MC-3: summary shows 3 missiles, the two AC sprues hold parts for 6"
+   ],
+   "_crowdfunding": "The 2019 crowdfunding print of this book also lists XA and XB sprues (LGP-80, ACX-350, SPHX-3) and leaves gaps where their pages were. OTTO's retail book (checked 2026-10-29) has no gap and no XA/XB, so they sit under this box's crowdfunding entry, shown only with the Crowdfunding toggle on.",
+   "_pages": "Page numbers are from the 2019 crowdfunding print. OTTO's retail book runs ML-34 on p9 then Torso on p10, so pages after p9 sit 2 lower in retail (and lower again after the ACX-350 gap).",
+   "pdfs": [
+    {
+     "label": "Core (Queti)",
+     "file": "RDL/RDL Core.pdf",
+     "by": "Queti",
+     "url": ""
+    }
+   ],
+   "crowdfunding": {
+    "note": "2019 crowdfunding backer copies only (sprues XA + XB). Not in retail boxes.",
+    "sprues": {
+     "XA": 1,
+     "XB": 1
+    },
+    "cards": {
+     "005": 1,
+     "038": 1,
+     "039": 1,
+     "040": 1
+    },
+    "builds": [
+     {
+      "code": "LGP-80",
+      "name": "Artillery",
+      "slot": "backpack",
+      "card": "005",
+      "count": 1
+     },
+     {
+      "code": "ACX-350",
+      "name": "\"Stratus\" Prototype HMG",
+      "slot": "rightArm",
+      "card": "038",
+      "count": 1
+     },
+     {
+      "code": "SPHX-3",
+      "name": "Supporting Arm",
+      "slot": "leftArm",
+      "card": "040",
+      "count": 1
+     }
+    ],
+    "pdfs": [
+     {
+      "label": "Crowdfunding Exclusive Parts",
+      "file": "RDL/RDL Crowdfunding Exclusive Parts.pdf",
+      "by": "Queti",
+      "url": ""
+     }
+    ]
+   }
+  },
+  "RDL_CAVALRY": {
+   "pdf": "Assembly Instructions/RDL/RDL Cavalry.pdf",
+   "sprues": {
+    "CA": 2,
+    "CB": 1,
+    "CC": 3,
+    "CD": 3,
+    "CE": 2,
+    "CF": 2,
+    "SA": 3,
+    "AC": 1
+   },
+   "builds": [
+    {
+     "code": "TB-600",
+     "name": "Jetpack",
+     "slot": "backpack",
+     "card": "010",
+     "count": 1,
+     "page": 6
+    },
+    {
+     "code": "ML-92",
+     "name": "Dual Missile Rack",
+     "slot": "backpack",
+     "card": "011",
+     "count": 1,
+     "page": 7
+    },
+    {
+     "code": "MUE/N-20",
+     "name": "\"Echoes\" Support Backpack",
+     "slot": "backpack",
+     "card": "009",
+     "count": 1,
+     "page": 8
+    },
+    {
+     "code": "RT-15/EC",
+     "name": "\"Aurora\" ECM Core",
+     "slot": "torso",
+     "card": "018",
+     "count": 1,
+     "page": 10
+    },
+    {
+     "code": "RT-15B",
+     "name": "\"Lava\" Assault Core",
+     "slot": "torso",
+     "card": "017",
+     "count": 0,
+     "page": 13
+    },
+    {
+     "code": "RT-15C",
+     "name": "\"Glacier\" Assault Core",
+     "slot": "torso",
+     "card": "019",
+     "count": 0,
+     "page": 13
+    },
+    {
+     "code": "RL-03D",
+     "name": "\"Steed\" Swift Chassis",
+     "slot": "chassis",
+     "card": "022",
+     "count": 3,
+     "page": 17
+    },
+    {
+     "code": "TYPE 55 + MES",
+     "name": "Shield + Beacon Launcher",
+     "slot": "leftArm",
+     "card": "064",
+     "count": 2,
+     "page": 22
+    },
+    {
+     "code": "AC-39",
+     "name": "Tactical Rifle",
+     "slot": "rightArm",
+     "card": "058",
+     "count": 2,
+     "page": 24
+    },
+    {
+     "code": "TYPE 62 + CC-20",
+     "name": "Buckler + Sabre (L)",
+     "slot": "leftArm",
+     "card": "062",
+     "count": 2,
+     "page": 26
+    },
+    {
+     "code": "TYPE 63 + CC-20",
+     "name": "Arm MG + Sabre (R)",
+     "slot": "rightArm",
+     "card": "063",
+     "count": 2,
+     "page": 28
+    },
+    {
+     "code": "G/AC-6",
+     "name": "Rocket Launcher",
+     "slot": "leftArm",
+     "card": "056",
+     "count": 2,
+     "page": 30
+    },
+    {
+     "code": "AC-161",
+     "name": "SMG",
+     "slot": "rightArm",
+     "card": "068",
+     "count": 2,
+     "page": 32,
+     "_count": "summary shows 2; AC-161 parts are on CD, which comes x3"
+    },
+    {
+     "code": "DTG-30",
+     "name": "\"Hyena\" Drone body",
+     "slot": "drone",
+     "card": null,
+     "count": 1,
+     "page": 34
+    },
+    {
+     "code": "DTG-30M",
+     "name": "\"Hyena\" MG head",
+     "slot": "drone",
+     "card": "078",
+     "count": 1,
+     "page": 35
+    },
+    {
+     "code": "DTG-30S",
+     "name": "\"Hyena\" Missile head",
+     "slot": "drone",
+     "card": "079",
+     "count": 1,
+     "page": 35
+    },
+    {
+     "code": "DTG-30R",
+     "name": "\"Hyena\" Radar head",
+     "slot": "drone",
+     "card": "080",
+     "count": 1,
+     "page": 36
+    },
+    {
+     "code": "MC-3",
+     "name": "\"Razor\" Missile",
+     "slot": "projectile",
+     "card": "071",
+     "count": 3,
+     "page": 38
+    },
+    {
+     "code": "MES",
+     "name": "Beacon",
+     "slot": "projectile",
+     "card": "072",
+     "count": 4,
+     "page": 39
+    },
+    {
+     "code": "MR-9",
+     "name": "\"Falcon\" Missile",
+     "slot": "projectile",
+     "card": "073",
+     "count": 4,
+     "page": 39
+    },
+    {
+     "code": "GA-3",
+     "name": "HE Grenade",
+     "slot": "projectile",
+     "card": "070",
+     "count": null,
+     "extra": true,
+     "_extra": "On the CE sprue (its label lists GA-3) but no card in the box and no build page in Queti's booklet; OTTO confirmed the piece is on his CE sprue (2026-11-03). Achillain's Cavalry booklet (Spreads, last build page; A5 p40) has its two build steps. Nothing in the 1.02 or 1.04 parts lists launches it."
+    }
+   ],
+   "choices": [
+    {
+     "pick": 1,
+     "of": [
+      "RT-15B",
+      "RT-15C"
+     ],
+     "source": "printed",
+     "why": "One core, built twice: at step 2, CD27 makes it Lava and CD24 makes it Glacier. So 2 Lava, 2 Glacier, or one of each.",
+     "count": 2
+    }
+   ],
+   "looks": [
+    "TYPE 62 + CC-20 and TYPE 63 + CC-20: sabre in hand or along the forearm with an open hand"
+   ],
+   "misprints": [
+    "CA and CE sprue labels call the right arm 'TYPE-62 + CC-20'; build page and summary say TYPE 63 + CC-20",
+    "Build page says MR-9 'Falcon' Missile; CE sprue label and summary say MC-9",
+    "CE sprue label lists GA-3 but nothing shows how to build it",
+    "G/AC-6 subtitle spelled 'Roket Launcher'",
+    "RT-15B/C is an either/or with no printed note"
+   ],
+   "pdfs": [
+    {
+     "label": "Cavalry",
+     "file": "RDL/RDL - Cavalry - Instructions - Spreads.pdf",
+     "by": "Achillain (Discord), from Queti's instructions",
+     "url": ""
+    }
+   ]
+  },
+  "RDL_HEAVY_METAL": {
+   "pdf": "Assembly Instructions/RDL/RDL Heavy Metal.pdf",
+   "sprues": {
+    "BA": 2,
+    "BB": 1,
+    "BC": 1,
+    "BD": 2,
+    "BE": 1,
+    "BF": 1,
+    "BG": 1,
+    "SA": 3,
+    "AC": 1
+   },
+   "builds": [
+    {
+     "code": "MUD-1",
+     "name": "\"Muck\" ECM Backpack",
+     "slot": "backpack",
+     "card": "007",
+     "count": 1,
+     "page": 6
+    },
+    {
+     "code": "GLP-15",
+     "name": "Mine Layer",
+     "slot": "backpack",
+     "card": "006",
+     "count": 1,
+     "page": 7
+    },
+    {
+     "code": "CP-3",
+     "name": "Beacon Backpack",
+     "slot": "backpack",
+     "card": "008",
+     "count": 1,
+     "page": 10
+    },
+    {
+     "code": "RT-09A",
+     "name": "\"Volcano\" Armored Core",
+     "slot": "torso",
+     "card": "016",
+     "count": 2,
+     "page": 12
+    },
+    {
+     "code": "RT-08",
+     "name": "\"Tempest\" Artillery Core",
+     "slot": "torso",
+     "card": "015",
+     "count": 1,
+     "page": 15
+    },
+    {
+     "code": "RL-08",
+     "name": "Armored Chassis",
+     "slot": "chassis",
+     "card": "021",
+     "count": 2,
+     "page": 19
+    },
+    {
+     "code": "FCC-12",
+     "name": "\"Big Hand\" Grappler",
+     "slot": "leftArm",
+     "card": "050",
+     "count": 1,
+     "page": 23
+    },
+    {
+     "code": "TYPE 79",
+     "name": "Combat Shield",
+     "slot": "leftArm",
+     "card": "045",
+     "count": 1,
+     "page": 24
+    },
+    {
+     "code": "L-320 + TYPE 55 + CC-6",
+     "name": "SMMG + Shield + Cleaver",
+     "slot": "leftArm",
+     "card": "041",
+     "count": 1,
+     "page": 26
+    },
+    {
+     "code": "R-35",
+     "name": "Heavy Railgun",
+     "slot": "rightArm",
+     "card": "043",
+     "count": 1,
+     "page": 28
+    },
+    {
+     "code": "TYPE 55 + PC-9 (L)",
+     "name": "Shield + Shotgun (L)",
+     "slot": "leftArm",
+     "card": "053",
+     "count": 1,
+     "page": 30
+    },
+    {
+     "code": "TYPE 55 + PC-9 (R)",
+     "name": "Shield + Shotgun (R)",
+     "slot": "rightArm",
+     "card": "046",
+     "count": 0,
+     "page": 32
+    },
+    {
+     "code": "TYPE 55 + Smoke Grenade + PC-9 (R)",
+     "name": "Shield + Smoke Grenade + Shotgun (R)",
+     "slot": "rightArm",
+     "card": "048",
+     "count": 0,
+     "page": 32
+    },
+    {
+     "code": "L-320 + CC-90",
+     "name": "SMMG + Glaive",
+     "slot": "rightArm",
+     "card": "051",
+     "count": 2,
+     "page": 34
+    },
+    {
+     "code": "CC-100",
+     "name": "\"Hercules\" Meteor Hammer",
+     "slot": "rightArm",
+     "card": "055",
+     "count": 1,
+     "page": 36
+    },
+    {
+     "code": "DTG-30",
+     "name": "\"Hyena\" Drone body",
+     "slot": "drone",
+     "card": null,
+     "count": 1,
+     "page": 45
+    },
+    {
+     "code": "DTG-30M",
+     "name": "\"Hyena\" MG head",
+     "slot": "drone",
+     "card": "078",
+     "count": 1
+    },
+    {
+     "code": "DTG-30S",
+     "name": "\"Hyena\" Missile head",
+     "slot": "drone",
+     "card": "079",
+     "count": 1
+    },
+    {
+     "code": "DTG-30R",
+     "name": "\"Hyena\" Radar head",
+     "slot": "drone",
+     "card": "080",
+     "count": 1
+    },
+    {
+     "code": "MC-3",
+     "name": "\"Razor\" Missile",
+     "slot": "projectile",
+     "card": "071",
+     "count": 3,
+     "page": 49,
+     "_count": "summary shows 5; one AC sprue has parts for 3"
+    },
+    {
+     "code": "GM-35",
+     "name": "Anti-Armor Mine",
+     "slot": "projectile",
+     "card": "074",
+     "count": 5,
+     "page": 49
+    },
+    {
+     "code": "B3/1",
+     "name": "Link Beacon",
+     "slot": "projectile",
+     "card": "075",
+     "count": 1,
+     "page": 50
+    },
+    {
+     "code": "B3/2",
+     "name": "Decoy Beacon",
+     "slot": "projectile",
+     "card": "076",
+     "count": 1,
+     "page": 51
+    },
+    {
+     "code": "B3/3",
+     "name": "Tactical Beacon",
+     "slot": "projectile",
+     "card": "077",
+     "count": 1,
+     "page": 52
+    }
+   ],
+   "choices": [
+    {
+     "pick": 1,
+     "of": [
+      "TYPE 55 + PC-9 (R)",
+      "TYPE 55 + Smoke Grenade + PC-9 (R)"
+     ],
+     "source": "printed",
+     "why": "One right arm: step 1 fits the smoke grenade or leaves it out.",
+     "count": 1
+    }
+   ],
+   "looks": [
+    "TYPE 55 + PC-9 (L) and (R): grip BE10/BE8 or BE11/BE9",
+    "CC-100: two chain styles",
+    "RL-08: armour plates BA14/BA4/BA2"
+   ],
+   "misprints": [
+    "Sprue labels BB and BD are swapped: BB says RT-09A but RT-08 is built from BB; BD says RT-08 but RT-09A is built from BD",
+    "MUD-1 English subtitle reads 'External cooler'; the Chinese says electronic-warfare backpack and our card is the Muck ECM Backpack",
+    "Contents page says projectiles start on p47; they start on p49",
+    "Summary calls the left arm 'TYPE-55 + L-320 + CC-6'; build page says L-320 + TYPE 55 + CC-6",
+    "MC-3: summary shows 5 missiles, one AC sprue holds parts for 3"
+   ],
+   "_crowdfunding": "The 2019 crowdfunding print of this book also lists XA and XB sprues (LGP-80, ACX-350, SPHX-3) and leaves gaps where their pages were. OTTO's retail book (checked 2026-10-29) has no gap and no XA/XB, so they sit under this box's crowdfunding entry, shown only with the Crowdfunding toggle on.",
+   "_pages": "Page numbers are from the 2019 crowdfunding print; retail will differ after p7.",
+   "pdfs": [
+    {
+     "label": "Heavy Metal (Queti)",
+     "file": "RDL/RDL Heavy Metal.pdf",
+     "by": "Queti",
+     "url": ""
+    }
+   ],
+   "crowdfunding": {
+    "note": "2019 crowdfunding backer copies only (sprues XA + XB). Not in retail boxes.",
+    "sprues": {
+     "XA": 1,
+     "XB": 1
+    },
+    "cards": {
+     "005": 1,
+     "038": 1,
+     "039": 1,
+     "040": 1
+    },
+    "builds": [
+     {
+      "code": "LGP-80",
+      "name": "Artillery",
+      "slot": "backpack",
+      "card": "005",
+      "count": 1
+     },
+     {
+      "code": "ACX-350",
+      "name": "\"Stratus\" Prototype HMG",
+      "slot": "rightArm",
+      "card": "038",
+      "count": 1
+     },
+     {
+      "code": "SPHX-3",
+      "name": "Supporting Arm",
+      "slot": "leftArm",
+      "card": "040",
+      "count": 1
+     }
+    ],
+    "pdfs": [
+     {
+      "label": "Crowdfunding Exclusive Parts",
+      "file": "RDL/RDL Crowdfunding Exclusive Parts.pdf",
+      "by": "Queti",
+      "url": ""
+     }
+    ]
+   }
+  }
+ }
+}

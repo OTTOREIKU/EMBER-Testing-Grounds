@@ -122,7 +122,7 @@ export function boxesOf(cards: readonly Card[], boxes: readonly BoxInfo[], id: s
   return (c?.containedIn ?? []).map((e) => e.box).filter((b) => listed.has(b));
 }
 
-// The rule behind the "Exclusive cards" tick, in one place: a card is
+// The rule behind the "Exclusive" tick, in one place: a card is
 // exclusive to a box when that box is the only listed one that ships it.
 export function isExclusiveTo(cards: readonly Card[], boxes: readonly BoxInfo[], id: string, key: string): boolean {
   const all = boxesOf(cards, boxes, id);
@@ -145,7 +145,7 @@ export function sharedCount(cards: readonly Card[], boxes: readonly BoxInfo[], a
 
 // The inventory's own checkbox, so the reference's tick is the same tick.
 export function exclusiveToggle(id: string, checked: boolean, extraClass = ''): string {
-  return `<label class="inv-filter${extraClass ? ` ${extraClass}` : ''}"><input type="checkbox" id="${id}"${checked ? ' checked' : ''}><span class="inv-tick"></span> Exclusive cards</label>`;
+  return `<label class="inv-filter${extraClass ? ` ${extraClass}` : ''}"><input type="checkbox" id="${id}"${checked ? ' checked' : ''}><span class="inv-tick"></span> Exclusive</label>`;
 }
 
 export interface CompareChrome {

@@ -1388,3 +1388,115 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 .ref-facets .inv-cmp-btn { padding: 7px 11px; font-size: 12px; }
 .ref-compare .inv-cmp-filter { margin: 10px 0 12px; }
 .ref-compare .inv-cmp-list { overflow: visible; }
+
+/* ---------- BOX SHEET: CARDS, SPRUES AND INSTRUCTIONS TABS ----------
+   OTTO's layout, picked from a run of mockups (2026-11-03/04, boxtiles.ts):
+   card images in slot groups that flow side by side, an either/or as linked
+   cards, a magnet drone as its body with its heads, backer parts in a
+   collapsed section of their own. */
+.bs-came { margin: 0 0 12px; }
+.bs-mis { margin: 4px 0 0; padding-left: 18px; color: var(--text2); line-height: 1.45; font-size: 12.5px; }
+.bs-mis li { margin-bottom: 4px; }
+.bs-pdfs li { min-height: 44px; }
+.box-parts li.bs-nocard { cursor: default; }
+.box-parts li.bs-nocard:hover { background: var(--surface2); }
+
+/* The card width follows the popup, so two three-card groups (Cavalry's arms)
+   always share a line and a wider popup gives the room to the cards. A fixed
+   width where the browser has no container units. */
+.bl-root { container-type: inline-size; --tw: 92px; }
+.bl-mods { --gap: 8px; display: flex; flex-wrap: wrap; gap: 12px 14px; align-items: stretch; margin-bottom: 10px; }
+@supports (width: 1cqw) {
+  .bl-mods { --tw: clamp(78px, calc((100cqw - 130px) / 6), 124px); }
+  @container (max-width: 520px) { .bl-mods { --tw: clamp(60px, calc((100cqw - 50px) / 4), 100px); --gap: 6px; } }
+}
+.bl-fac { margin-top: 14px; }
+
+/* A slot group: a vertical label tab, then its cards. Sized from its card
+   count (boxtiles.ts module()), not left to the browser: one browser gave every
+   group a full line when the width was intrinsic. */
+.bl-mod { display: flex; gap: 6px; flex: 0 0 auto; max-width: 100%; min-width: 0; width: calc(28px + var(--u) * var(--tw) + (var(--k) - 1) * var(--gap) + var(--x)); }
+.bl-mod-lbl { margin: 0; writing-mode: vertical-rl; transform: rotate(180deg); display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 6px 3px; border-radius: 4px; background: var(--surface2); white-space: nowrap; font: 700 10px var(--font); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); }
+.bl-mod-lbl .fc-n { font-size: 10px; }
+.bl-mod-row { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--gap); }
+.bl-mod-row > .bl-tile { flex: 0 0 var(--tw); }
+.bl-mod-row > .bl-tile.bl-wide { flex-basis: calc(var(--tw) * 2 + var(--gap)); }
+
+/* A card: its image, its count, its tags. The name is in the tile's title. */
+.bl-tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; cursor: pointer; color: var(--text); text-decoration: none; }
+.bl-tile:not([data-card]) { cursor: default; }
+.bl-art { position: relative; display: block; aspect-ratio: 480 / 700; }
+.bl-wide .bl-art { aspect-ratio: 700 / 480; }
+.bl-img, .bl-ph { position: relative; z-index: 1; display: block; width: 100%; height: 100%; object-fit: contain; border-radius: 6px; background: var(--surface2); transition: transform 0.25s ease, filter 0.25s ease; }
+.bl-tile[data-card]:hover .bl-img { transform: translateY(-2px); }
+.bl-ph { display: grid; place-items: center; padding: 6px; text-align: center; font-size: 10.5px; line-height: 1.25; color: var(--text3); border: 1px dashed var(--surface3); }
+.bl-n { position: absolute; z-index: 2; right: -4px; top: -6px; font: 700 10.5px var(--mono); background: var(--accent); color: var(--bg, #111); border-radius: 999px; padding: 2px 6px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+.bl-tag { position: absolute; z-index: 2; left: 4px; bottom: 4px; font: 700 9px var(--font); text-transform: uppercase; letter-spacing: 0.05em; border-radius: 4px; padding: 2px 5px; }
+.bl-mode { background: var(--surface3); color: var(--text2); }
+.bl-hasdis .bl-mode { bottom: 32px; }
+.bl-dim { opacity: 0.35; }
+.bl-excl .bl-img { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The discard face peeks out behind its Part, like the card under it in the
+   box; the flip button brings it forward and sends the Part behind. */
+.bl-peek { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 6px; transform: translate(6px, -5px) rotate(4deg); filter: brightness(0.7); transition: transform 0.25s ease, filter 0.25s ease; }
+.bl-flip { position: absolute; z-index: 3; right: 4px; bottom: 4px; width: 24px; height: 24px; border-radius: 50%; border: 0; display: grid; place-items: center; font: 700 14px/1 var(--font); background: rgba(10, 12, 16, 0.78); color: #fff; cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); }
+.bl-flip:hover { background: var(--accent); color: var(--bg, #111); }
+.bl-flipped .bl-peek { z-index: 1; transform: none; filter: none; }
+.bl-flipped .bl-img:not(.bl-peek), .bl-tile.bl-flipped:hover .bl-img:not(.bl-peek) { z-index: 0; transform: translate(6px, -5px) rotate(4deg); filter: brightness(0.7); }
+
+/* An either/or: its cards inside one dashed outline in the pair's colour, each
+   with a lettered link tag, and one count for the pick. */
+.bl-pair { --hue: var(--accent); position: relative; flex: 0 0 auto; display: flex; gap: 8px; padding: 5px; margin: -5px 1px; border: 1.5px dashed var(--hue); border-radius: 10px; }
+.bl-pair .bl-tile { flex: 0 0 var(--tw); width: var(--tw); }
+.bl-pair.bl-wide .bl-tile { width: calc(var(--tw) * 2 + 8px); }
+.bl-pair > .bl-n { right: -4px; top: -6px; z-index: 4; }
+.bl-hue2 { --hue: #5fb3e8; } .bl-hue3 { --hue: #8fd16a; } .bl-hue4 { --hue: #d18be0; }
+.bl-link { position: absolute; z-index: 3; left: 4px; top: 4px; font: 700 9.5px var(--font); padding: 2px 5px; border-radius: 4px; background: var(--hue); color: #111; }
+
+/* A part with no card art: its picture on nothing at all (the official ones
+   are transparent around the part) or an icon, with its code and name. */
+.bl-noart .bl-art { border-radius: 6px; background: var(--surface2); border: 1px solid var(--surface3); overflow: hidden; }
+.bl-noart-art .bl-art { background: none; border: 0; }
+.bl-drawing { object-fit: contain; background: none; padding: 0 0 40px; }
+.bl-ph-icon { background: none; border: 0; padding-bottom: 36px; }
+.bl-icon { width: 46%; height: auto; fill: none; stroke: var(--text3); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.bl-noart-lbl { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; padding: 5px 6px 6px; display: flex; flex-direction: column; gap: 1px; font-size: 10px; line-height: 1.2; color: var(--text2); }
+.bl-noart:not(.bl-noart-art) .bl-noart-lbl { background: var(--surface3); }
+.bl-noart-lbl b { font: 700 11px var(--mono); color: var(--text); }
+.bl-noart-lbl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-noart-lbl em { font-style: normal; font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text3); }
+/* Extra: on the sprues, but no card or build page in the box. */
+.bl-extra { left: 4px; top: 4px; bottom: auto; background: rgba(95, 179, 232, 0.9); color: #0d1a24; }
+
+/* A magnet drone: the body, then its heads, inside one solid outline. */
+.bl-kit { position: relative; flex: 0 0 auto; max-width: 100%; border: 1.5px solid var(--surface3); border-radius: 10px; background: color-mix(in srgb, var(--surface2) 60%, transparent); padding: 6px 7px 7px; }
+.bl-kit-lbl { display: block; margin: 0 0 5px; font: 700 9.5px var(--font); text-transform: uppercase; letter-spacing: 0.07em; color: var(--text2); }
+.bl-kit-row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.bl-kit-row > .bl-tile { width: var(--tw); }
+.bl-kit-heads { display: flex; gap: 8px; flex-wrap: wrap; }
+.bl-kit-heads > .bl-tile { width: calc(var(--tw) * 1.5); }
+/* The card a magnet body plays as with no head on it (ADK30C). */
+.bl-bare { position: absolute; z-index: 3; left: 4px; top: 4px; font: 700 9px var(--font); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 5px; border-radius: 4px; background: var(--surface3); color: var(--text); }
+@media (max-width: 480px) {
+  .bl-kit-heads > .bl-tile { width: calc(var(--tw) * 1.25); }
+}
+
+/* A part picture as the card sheet's thumbnail: just the picture. */
+.dthumb div.card-ph.card-part { padding: 3px; grid-template-rows: 1fr; }
+.dthumb div.card-ph.card-part > em, .dthumb div.card-ph.card-part > span { display: none; }
+
+/* A box's backer parts: the chip that points at them and their own collapsed
+   section at the bottom of each tab (reference.ts cfSection). */
+.bs-cf-chip { border: 1px dashed var(--accent); background: none; color: var(--accent); font: 700 10.5px var(--font); text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 9px; border-radius: 999px; cursor: pointer; }
+.bs-cf-chip:hover { background: var(--accent-lt); }
+.bs-cf-sec { margin: 18px 0 6px; border-top: 1px dashed var(--surface3); padding-top: 10px; }
+.bs-cf-sec > summary { cursor: pointer; font: 700 11px var(--font); text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); list-style: none; padding: 4px 0 8px; }
+.bs-cf-sec > summary::-webkit-details-marker { display: none; }
+.bs-cf-sec > summary::before { content: '▸ '; }
+.bs-cf-sec[open] > summary::before { content: '▾ '; }
+.bs-cf-sec > summary .fc-n { color: var(--text3); }
+
+@media (prefers-reduced-motion: reduce) {
+  .bl-img, .bl-peek { transition: none; }
+}

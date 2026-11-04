@@ -5,7 +5,7 @@
  * the two pages disagree about the same box. The dialog's own shell - the
  * flyout, the box grid, the owned counts - stays in styles.css.
  *
- * The checkbox here is THE checkbox: the reference's "Exclusive cards" tick
+ * The checkbox here is THE checkbox: the reference's "Exclusive" tick
  * is this markup and these rules, so it looks the same as the inventory's. */
 
 .inv-filter {

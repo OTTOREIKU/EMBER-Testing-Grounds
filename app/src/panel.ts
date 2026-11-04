@@ -818,7 +818,7 @@ export class Panel {
     img.className = 'card-img';
     img.src = cardImageUrl(card.id);
     img.alt = cardName(card);
-    img.addEventListener('error', () => img.replaceWith(cardPlaceholder({ label: cardName(card), wide: printsWide(card) }, 'card-img')), { once: true });
+    img.addEventListener('error', () => img.replaceWith(cardPlaceholder({ label: cardName(card), wide: printsWide(card), id: card.id }, 'card-img')), { once: true });
     shot.appendChild(img);
 
     const flipTo = (next: Card, backTo?: { card: Card; label: string }) => {

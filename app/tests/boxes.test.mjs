@@ -18,7 +18,10 @@ const cards = JSON.parse(readFileSync(new URL('../../data/cards.json', import.me
 const list = Array.isArray(cards) ? cards : cards.cards ?? [];
 const boxes = JSON.parse(readFileSync(new URL('../../data/boxes.json', import.meta.url), 'utf8'));
 const boxList = Array.isArray(boxes) ? boxes : boxes.boxes ?? [];
-const boxKeys = new Set(boxList.map((b) => b.key));
+// Boxes of our own (box_sprues.json newBoxes) are real keys too: the app adds
+// them to the list at load, so an override may name one.
+const sprueFile = JSON.parse(readFileSync(new URL('../../data/box_sprues.json', import.meta.url), 'utf8'));
+const boxKeys = new Set([...boxList.map((b) => b.key), ...(sprueFile.newBoxes ?? []).map((b) => b.key)]);
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {

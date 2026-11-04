@@ -167,6 +167,17 @@ div.card-ph > span {
   font-size: 13px; font-weight: 600; line-height: 1.3;
   overflow-wrap: anywhere; text-wrap: balance;
 }
+/* A part picture in place of a missing scan (images.ts, data.ts PART_IMAGES):
+ * the publisher's own PNG of the part, which is transparent around the part,
+ * on nothing at all (OTTO, 2026-11-03: no panel, no outline), with a small
+ * "part picture" line and the name under it. */
+div.card-ph.card-part {
+  grid-template-rows: 1fr auto auto; gap: 4px; padding: 2%;
+  background: none; border: 0; color: var(--text2);
+}
+div.card-ph.card-part > img { width: 100%; height: 100%; min-height: 0; object-fit: contain; box-shadow: none; border: 0; margin: 0; background: none; }
+div.card-ph.card-part > em { font-style: normal; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); }
+div.card-ph.card-part > span { font-size: 12px; }
 /* The same placeholder in a missing pilot portrait (cardart.ts): it takes the
  * portrait's square and corners, and the slot's own fill goes. */
 div.card-ph.portrait-ph {

@@ -1,8 +1,8 @@
 import { barcodeSvg } from './barcode';
 import './reference.css';
 import './ui.css';
-import { battlefieldCardUrl, boxCoverUrl, cardName, environmentImageUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, missionImageUrl, secondaryImageUrl, type BoxDef, type EnvironmentCard, type FactionDef, type GameData } from './data';
-import { mountCardImage, mountCardImageCopy, preloadCardImages, warmAllImagesWhenIdle, watchImageFallbacks } from './images';
+import { battlefieldCardUrl, boxCoverUrl, cardName, environmentImageUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, missionImageUrl, secondaryImageUrl, type BoxDef, type BoxSprues, type SpruesBuild, type EnvironmentCard, type FactionDef, type GameData } from './data';
+import { mountCardImage, mountCardImageCopy, preloadCardImages, printsWide, warmAllImagesWhenIdle, watchImageFallbacks } from './images';
 import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
 import { type Card, type TerrainMap } from './types';
@@ -11,7 +11,8 @@ import { cardRow, currentSeason, dieEntries, esc, fillPortraits, keywordCard, li
 import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSeason, matchSecondary, matchStance, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmSeason, nmSecondary, norm, rank } from './refsearch';
 import { installDiagnostics } from './diagnostics';
 import { boxPicker, compareGrid, exclusiveToggle, isExclusiveTo, sharedCount } from './boxcompare';
-import { applyChangelogFilter, decorateSheetHead, drawsAdvanced, holdDetailHeight, noteSheetLeft, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, type SheetNav } from './refsheet';
+import { handleTileTap, renderTiles, watchTileImages, type Tile } from './boxtiles';
+import { applyChangelogFilter, decorateSheetHead, drawsAdvanced, holdDetailHeight, noteSheetLeft, revealLog, runSheetClick, runSheetFocus, runSheetInput, runSheetKey, showDetailTab, type SheetNav } from './refsheet';
 import type { ReportCategory } from './report';
 import { openReferenceReport } from './reportui';
 // FIRST, before anything else in this module runs. A net that is installed
@@ -75,7 +76,7 @@ const facetChoice: Partial<Record<Tab, string>> = {};
 const factionChoice: Partial<Record<Tab, string>> = {};
 let rulesSection: string | undefined;
 // The Boxes tab's two doors, asked for at the table. `boxExclusive` is the
-// inventory's own "Exclusive cards" tick: on a box's sheet it keeps only the
+// inventory's own "Exclusive" tick: on a box's sheet it keeps only the
 // cards no other listed box ships, and on the comparison it does the same to
 // both columns. `cmpPair` is which two boxes are being compared.
 let boxExclusive = false;
@@ -120,7 +121,21 @@ function boxDetail(key: string): string | null {
   const listed = data.boxes.filter(isListedBox);
   const all = boxContents(key);
   const exclusive = all.filter((i) => isExclusiveTo(data.cards, listed, i.card.id, key));
-  const items = boxExclusive ? exclusive : all;
+  const sp = data.sprues[key];
+  const cf = sp?.crowdfunding;
+  // Backer parts ship in no retail box, so they never join the list: they have
+  // a collapsed section of their own at the bottom (cfSection).
+  const backer = cf
+    ? Object.entries(cf.cards).flatMap(([id, n]) => {
+        const card = data.byId.get(id);
+        return card ? [{ card, n }] : [];
+      })
+    : [];
+  const items: { card: Card; n: number; discardOf?: string }[] = all;
+  // The Exclusive tick dims rather than hides, as on the Sprues tab (OTTO,
+  // 2026-11-03): what else the box holds is still worth seeing.
+  const exclIds = new Set(exclusive.map((i) => i.card.id));
+  const exclLook = (id: string): '' | 'excl' | 'dim' => (!boxExclusive ? '' : exclIds.has(id) ? 'excl' : 'dim');
   const { cards, pieces } = boxCardCount(key);
   const used = new Set<string>();
   const groups = BOX_GROUPS.map((g) => {
@@ -133,10 +148,8 @@ function boxDetail(key: string): string | null {
 
   // A Discard Card is the same Part after its hand-held kit is dropped, and it
   // ships under that Part (rulebook 1.x/5.x). Listed as a sibling it reads as a
-  // second, unrelated weapon - which is exactly how it read to OTTO - so it is
-  // attached to its parent instead: indented, named for what it is rather than
-  // repeating the parent's name, and NOT dimmed, because dimming was carrying
-  // the unrelated "not a counted copy" meaning.
+  // second, unrelated weapon - which is exactly how it read to OTTO - so it
+  // rides behind its parent's tile instead, with a button to flip it forward.
   const discardName = (n: string): string | null => {
     const m = /^(.*?)\s*[（(]\s*D\s*[)）]\s*[）)]?\s*$/.exec(n);
     return m ? m[1].trim() : null;
@@ -166,46 +179,59 @@ function boxDetail(key: string): string | null {
   const facs = (box.faction ?? [])
     .map((f) => `<span class="tag" data-fac="${esc(f)}">${esc(FACTION_LABEL[f] ?? f)}</span>`)
     .join('');
-  const list = groups
-    .map(
-      (g) => `<h3 class="ref-sub">${esc(g.label)} <span class="fc-n">${g.hit.length}</span></h3>
-      <ul class="box-parts ui-list">${g.hit
-        .map(
-          (i) => {
-            // Three shapes of row. A discard face is a child of the row above
-            // it. A zero-count card that is NOT a discard is an alternate MODE
-            // — literally the same piece of cardboard, flipped — and that is
-            // the only thing still called paired. Everything else is a plain
-            // counted card.
-            const kid = !!i.discardOf;
-            const mode = !kid && !i.n;
-            return `<li data-card="${esc(i.card.id)}" class="${kid ? 'bp-kid' : ''}${mode ? ' bp-paired' : ''}">
-            <span class="bp-name">${
-              kid
-                ? '<span class="bp-tick" aria-hidden="true">└</span>discarded face'
-                : esc(cardName(i.card))
-            }</span>
-            <span class="bp-slot">${
-              mode
-                // Deliberately states the DATA fact and offers the usual cause,
-                // rather than asserting a physical claim we cannot always
-                // check: in the curated boxes these are confirmed second
-                // faces, in the leftovers bucket a couple are just unknowns.
-                ? '<span class="tag bp-tag" title="In the box, but not counted as a separate copy: usually the other face of a double-sided card, or an alternate mode of the card above it.">same card</span>'
-                : ''
-            }</span>
-            <span class="mono bp-pts">${!kid && i.card.score ? `${i.card.score}p` : ''}</span>
-            <span class="bp-n">${i.n > 1 ? `×${i.n}` : ''}</span></li>`;
-          },
-        )
-        .join('')}</ul>`,
-    )
-    .join('');
-
   // Only alternate MODES are still counted as "same card"; a discard face is
   // now shown as part of its parent's row rather than tallied as a curiosity.
   const kids = new Set(groups.flatMap((g) => g.hit.filter((i) => i.discardOf).map((i) => i.card.id)));
   const sameCard = items.filter((i) => !i.n && !kids.has(i.card.id)).length;
+  // One tile per card (boxtiles.ts), its discard face riding on it.
+  const cardTiles = (): Tile[] =>
+    groups.flatMap((g) =>
+      g.hit
+        .filter((i) => !i.discardOf)
+        .map((i) => {
+          const discard = g.hit.find((j) => j.discardOf === i.card.id)?.card.id;
+          const look = exclLook(i.card.id);
+          return {
+          card: i.card.id,
+          name: cardName(i.card),
+          n: i.n,
+          faction: data.factionOf(i.card) ?? '',
+          slot: g.label,
+          wide: printsWide(i.card),
+          discard,
+          mode: !i.n,
+          look: look === 'dim' && discard && exclIds.has(discard) ? 'excl' : look,
+        };
+        }),
+    );
+  const shown = groups.length ? renderTiles(cardTiles(), box.faction ?? []) : '';
+  // The backer parts' own section (OTTO, 2026-11-04: no Backer tag in there,
+  // the section's heading already says what they are).
+  const backerTiles = (): Tile[] =>
+    backer
+      .filter((b) => !discardName(cardName(b.card)))
+      .map((b) => ({
+        card: b.card.id,
+        name: cardName(b.card),
+        n: b.n,
+        faction: data.factionOf(b.card) ?? '',
+        slot: BOX_GROUPS.find((g) => g.match(b.card))?.label ?? 'Other',
+        wide: printsWide(b.card),
+        discard: backer.find((j) => discardName(cardName(j.card))?.toLowerCase() === cardName(b.card).trim().toLowerCase())?.card.id,
+      }));
+  const backerSection = cf
+    ? cfSection(
+        sp!,
+        renderTiles(backerTiles(), []),
+      )
+    : '';
+  const cardsPanel = `<div class="ref-box-tools">
+      ${boxTools(sp, 'cards', `${exclusive.length} of ${all.length}`)}
+      ${isListedBox(box) ? `<button class="inv-cmp-btn" data-compare="${esc(box.key)}">Compare with another box</button>` : ''}
+    </div>
+    ${shown || '<p class="ref-note">No cards in the data list this box.</p>'}${
+      boxExclusive && !exclusive.length ? '<p class="ref-note">Every card in this box also ships in another box.</p>' : ''
+    }${backerSection}`;
   return `<h2>${esc(box.name.en || box.name.zh || box.key)}</h2>
     <p class="ref-meta">${esc(
       `${cards} card${cards === 1 ? '' : 's'} · ${pieces} copies${sameCard ? ` · ${sameCard} alternate face${sameCard === 1 ? '' : 's'}` : ''}`,
@@ -217,11 +243,144 @@ function boxDetail(key: string): string | null {
         : ''
     }
     ${box.hasImage ? `<div class="box-cover"><img src="${boxCoverUrl(box.id)}" alt="" loading="lazy" data-gone=".box-cover"></div>` : ''}
-    <div class="ref-box-tools">
-      ${exclusiveToggle('ref-box-excl', boxExclusive)}<span class="fc-n">${exclusive.length} of ${all.length}</span>
-      ${isListedBox(box) ? `<button class="inv-cmp-btn" data-compare="${esc(box.key)}">Compare with another box</button>` : ''}
+    <div class="dtabs" role="tablist">
+      <button data-dtab="cards" class="on" role="tab" aria-selected="true">Cards</button>
+      <button data-dtab="sprues" role="tab" aria-selected="false">Sprues</button>
+      <button data-dtab="pdfs" role="tab" aria-selected="false">Instructions</button>
     </div>
-    ${list || (boxExclusive ? '<p class="ref-note">Every card in this box also ships in another box.</p>' : '<p class="ref-note">No cards in the data list this box.</p>')}`;
+    <div class="dpanel" data-dpanel="cards">${cardsPanel}</div>
+    <div class="dpanel" data-dpanel="sprues" hidden>${spruesPanel(sp, key)}</div>
+    <div class="dpanel" data-dpanel="pdfs" hidden>${pdfsPanel(sp)}</div>`;
+}
+
+// ---------- the Sprues and Instructions tabs ----------
+//
+// From box_sprues.json, read off the assembly PDFs. The Cards tab answers
+// "what cards come in this box"; the Sprues tab answers the builder's question,
+// "what can I make from this plastic, and where do I have to choose".
+
+// A box's 2019 backer-only parts (box_sprues.json `crowdfunding`) sit in a
+// collapsed section at the bottom of each tab, never mixed into the retail box
+// (OTTO picked this of four mockups, 2026-11-04). The chip in the tools row
+// says they are there and opens the section.
+function cfChip(sp: BoxSprues | undefined): string {
+  const cf = sp?.crowdfunding;
+  return cf ? `<button type="button" class="bs-cf-chip" data-cfchip title="${esc(cf.note)}">+${cf.builds.length} backer parts</button>` : '';
+}
+
+function cfSection(sp: BoxSprues, body: string): string {
+  return `<details class="bs-cf-sec"><summary>Crowdfunding (2019 backers) <span class="fc-n">${sp.crowdfunding!.builds.length} parts</span></summary>
+    <p class="ref-note">${esc(sp.crowdfunding!.note)}</p>${body}</details>`;
+}
+
+// The tools row a tab opens with: the Exclusive tick and its count where the
+// tab has one, then the backer chip.
+function boxTools(sp: BoxSprues | undefined, tab: string, counter = ''): string {
+  const excl = tab !== 'pdfs';
+  return `${excl ? exclusiveToggle(tab === 'cards' ? 'ref-box-excl' : 'ref-box-excl-sprues', boxExclusive) : ''}${
+    counter ? `<span class="fc-n">${esc(counter)}</span>` : ''
+  }${cfChip(sp)}`;
+}
+
+const BUILD_GROUPS: { slot: string; label: string }[] = [
+  { slot: 'torso', label: 'Torso' },
+  { slot: 'chassis', label: 'Chassis' },
+  { slot: 'leftArm', label: 'Left arm' },
+  { slot: 'rightArm', label: 'Right arm' },
+  { slot: 'backpack', label: 'Backpack' },
+  { slot: 'drone', label: 'Drones' },
+  { slot: 'projectile', label: 'Projectiles' },
+];
+
+function spruesPanel(sp: BoxSprues | undefined, key: string): string {
+  if (!sp) return "<p class=\"ref-note\">This box's sprues have not been catalogued yet.</p>";
+  const byCode = new Map(sp.builds.map((b) => [b.code, b]));
+  const listed = data.boxes.filter(isListedBox);
+  // The Exclusive tick here dims rather than hides: the list is what the
+  // plastic builds, and a build is still on the sprue whether or not another
+  // box ships its card too.
+  const look = (card: string | null): Tile['look'] =>
+    !boxExclusive ? '' : card && isExclusiveTo(data.cards, listed, card, key) ? 'excl' : 'dim';
+  const boxFac = data.boxes.find((b) => b.key === key)?.faction ?? [];
+  const slotLabel = (slot: string): string => BUILD_GROUPS.find((g) => g.slot === slot)?.label ?? 'Other';
+  // A Part's discard face rides on its tile here too, so the flip button works
+  // on this tab as on Cards: the box's own "(D)" card named after the Part.
+  const inBox = [...boxContents(key).map((i) => i.card), ...Object.keys(sp.crowdfunding?.cards ?? {}).flatMap((id) => data.byId.get(id) ?? [])];
+  const discardFor = (card: Card): string | undefined => {
+    const nm = cardName(card).trim().toLowerCase();
+    return inBox.find((c) => /^(.*?)\s*[（(]\s*D\s*[)）]\s*[）)]?\s*$/.exec(cardName(c))?.[1].trim().toLowerCase() === nm)?.id;
+  };
+  const buildTile = (b: SpruesBuild): Tile => {
+    const card = b.card ? data.byId.get(b.card) : undefined;
+    return {
+      discard: card && discardFor(card),
+      card: b.card,
+      code: b.code,
+      name: card ? cardName(card) : `${b.code} ${b.name}`,
+      n: b.count,
+      faction: (card && data.factionOf(card)) || boxFac[0] || '',
+      slot: slotLabel(b.slot),
+      wide: !!card && printsWide(card),
+      extra: !!b.extra,
+      look: look(b.card),
+    };
+  };
+  // A build's count is what you always get; an either/or is ONE unit of its
+  // own, counted once, so a slot's total is how many models you actually end up
+  // with (OTTO, 2026-10-30: the shared pieces were being counted under both).
+  const spTiles = (): Tile[] => [
+    ...sp.builds.filter((b) => b.count !== 0).map(buildTile),
+    ...sp.choices
+      .filter((c) => c.pick === 1 && byCode.has(c.of[0]))
+      .map((c) => {
+        const or = c.of.map((code) => buildTile(byCode.get(code)!));
+        return { ...or[0], card: null, n: c.count ?? 1, or };
+      }),
+  ];
+  const shown = renderTiles(spTiles(), boxFac, true);
+
+  const came = sp.cameWith
+    ? `<p class="ref-note bs-came">Came with: ${Object.entries(sp.cameWith)
+        .map(([k, v]) => {
+          const b = data.boxes.find((x) => x.key === k);
+          return `<a class="kw-link" data-box="${esc(k)}">${esc(b?.name.en || k)}</a> (${esc(v)})`;
+        })
+        .join(', ')}</p>`
+    : '';
+
+  const side = sp.sideNote ? `<p class="ref-note bs-came">${esc(sp.sideNote)}</p>` : '';
+  const tools = `<div class="ref-box-tools">${boxTools(sp, 'sprues')}</div>`;
+  const section = sp.crowdfunding
+    ? cfSection(
+        sp,
+        renderTiles(sp.crowdfunding.builds.map(buildTile), []),
+      )
+    : '';
+  return `${tools}${side}${came}${shown}${section}`;
+}
+
+function pdfsPanel(sp: BoxSprues | undefined): string {
+  const cfPdfs = sp?.crowdfunding?.pdfs ?? [];
+  const pdfs = sp?.pdfs ?? [];
+  const pdfList = (list: typeof pdfs): string =>
+    `<ul class="box-parts ui-list bs-pdfs">${list
+        .map(
+          (p) => `<li class="${p.url ? '' : 'bs-nocard'}">
+          <span class="bp-name">${p.url ? `<a class="kw-link" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.label)}</a>` : esc(p.label)}</span>
+          <span class="bp-slot">${p.url ? '<span class="tag">PDF</span>' : '<span class="tag bp-tag">not attached yet</span>'}</span></li>`,
+        )
+        .join('')}</ul>`;
+  const files = pdfs.length ? pdfList(pdfs) : '<p class="ref-note">No assembly instructions attached to this box yet.</p>';
+  const section = cfPdfs.length ? cfSection(sp!, pdfList(cfPdfs)) : '';
+  // Hidden for now: OTTO wants to rework the misprint notes later (2026-11-03).
+  // The data stays in box_sprues.json; flip this back on to show them.
+  const SHOW_MISPRINTS = false;
+  const mis = SHOW_MISPRINTS && sp?.misprints.length
+    ? `<h3 class="ref-sub">Known misprints <span class="fc-n">${sp.misprints.length}</span></h3>
+      <ul class="bs-mis">${sp.misprints.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>`
+    : '';
+  const tools = sp?.crowdfunding ? `<div class="ref-box-tools">${boxTools(sp, 'pdfs')}</div>` : '';
+  return `${tools}${files}${section}${mis}`;
 }
 
 // Two boxes against each other, on a sheet of its own: the inventory's
@@ -900,6 +1059,7 @@ interface DetailView {
   scroll?: number;
   log?: boolean;
   advanced?: boolean;
+  tab?: string;
 }
 
 let navStack: DetailView[] = [];
@@ -921,7 +1081,15 @@ function repaintDetail(): void {
   const top = navStack[navStack.length - 1];
   if (!top || sheet().hidden) return;
   const html = viewHtml(top);
-  if (html !== null) paintDetail(html, sheetScroller().scrollTop);
+  if (html === null) return;
+  // A tick on the Sprues tab repaints the whole sheet, which is drawn on Cards.
+  const tab = openTab();
+  const scroll = sheetScroller().scrollTop;
+  paintDetail(html, scroll);
+  if (tab) {
+    showDetailTab(document.getElementById('ref-detail-content')!, tab);
+    sheetScroller().scrollTop = scroll;
+  }
 }
 
 // The scalar fields exactly as we hold them, so a "this is wrong" report can be
@@ -988,6 +1156,9 @@ function navigateDetail(kind: DetailView['kind'], rawKey: string, opts: { log?: 
     if (top && top.kind === kind && top.key === key) return;
     const under = navStack[navStack.length - 2];
     if (under && under.kind === kind && under.key === key) return backDetail();
+    // Back from a card picked off a box's Sprues tab lands on Sprues, not
+    // Cards (OTTO, 2026-10-30).
+    if (top) top.tab = openTab();
     if (top) {
       top.scroll = sheetScroller().scrollTop;
       noteSheetLeft(top);
@@ -1001,6 +1172,11 @@ function navigateDetail(kind: DetailView['kind'], rawKey: string, opts: { log?: 
 
 
 
+// Which tab of the open sheet is showing, if it has tabs.
+function openTab(): string | undefined {
+  return document.querySelector<HTMLElement>('#ref-detail-content .dtabs [data-dtab].on')?.dataset.dtab;
+}
+
 function backDetail(): void {
   if (navStack.length < 2) return closeDetail();
   navStack.pop();
@@ -1008,6 +1184,11 @@ function backDetail(): void {
   const html = viewHtml(prev);
   if (html === null) return closeDetail();
   paintDetail(html, prev.scroll ?? 0);
+  // The scroll was measured on that tab, so it goes back on after the switch.
+  if (prev.tab) {
+    showDetailTab(document.getElementById('ref-detail-content')!, prev.tab);
+    sheetScroller().scrollTop = prev.scroll ?? 0;
+  }
 }
 
 
@@ -1128,6 +1309,7 @@ function showCardImage(src: string, label: string): void {
 
 async function init(): Promise<void> {
   watchImageFallbacks();
+  watchTileImages();
   data = await loadData();
   // The shared renderers hold their own reference to the database, and this
   // page lends them its Boxes tab so a card can still say which boxes hold it.
@@ -1209,6 +1391,18 @@ async function init(): Promise<void> {
       navigateDetail('compare', `${left}|${right}`);
       return;
     }
+    if (handleTileTap(t)) {
+      ev.preventDefault();
+      return;
+    }
+    if (t.closest('[data-cfchip]')) {
+      const sec = t.closest('.dpanel')?.querySelector<HTMLDetailsElement>('.bs-cf-sec');
+      if (sec) {
+        sec.open = true;
+        sec.scrollIntoView({ block: 'nearest' });
+      }
+      return;
+    }
     const box = t.closest<HTMLElement>('[data-box]');
     if (box) {
       ev.preventDefault();
@@ -1237,7 +1431,7 @@ async function init(): Promise<void> {
   document.addEventListener('change', (ev) => {
     const el = ev.target as HTMLElement;
     if (!el.closest('#ref-detail')) return;
-    if (el.id === 'ref-box-excl' || el.id === 'ref-cmp-excl') {
+    if (el.id.startsWith('ref-box-excl') || el.id === 'ref-cmp-excl') {
       boxExclusive = (el as HTMLInputElement).checked;
       repaintDetail();
       return;
