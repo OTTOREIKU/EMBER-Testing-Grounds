@@ -1,5 +1,6 @@
 import { openAccount } from './account';
-import { ApiError, EmberApi, type Account, type AdminInvite, type RegistrationInfo, type AdminUser, type PublicStats, type SquadEntry } from './api';
+import { ApiError, EmberApi, type Account, type AdminInvite, type AdminReport, type RegistrationInfo, type AdminUser, type PublicStats, type SquadEntry } from './api';
+import { saveReport, type BoardReport, type ReferenceReport } from './report';
 import { bindBotLogs, BotLog, fileLog, keepLog, type BotGameEnd } from './botlog';
 import { bindCollection } from './collection';
 import { bindLibrary, onLibrary } from './library';
@@ -1930,7 +1931,11 @@ function doorTabs(): string {
 //
 // Rendered only for an admin account, and every endpoint behind it refuses
 // anyone else regardless — the tab is a convenience, not the gate.
-let admin: { users: AdminUser[]; invites: AdminInvite[] } | null = null;
+let admin: { users: AdminUser[]; invites: AdminInvite[]; reports: AdminReport[] } | null = null;
+// Which problem reports the list shows. New first, because that is the pile
+// that wants reading; Done is where they go once dealt with.
+type ReportFilter = 'new' | 'read' | 'done' | 'all';
+let reportFilter: ReportFilter = 'new';
 let adminLoading = false;
 let adminErr: string | null = null;
 let mintedNote: string[] = [];
@@ -1940,8 +1945,14 @@ function loadAdmin(force = false): void {
   if ((admin && !force) || adminLoading) return;
   adminLoading = true;
   adminErr = null;
-  void Promise.all([api.adminUsers(), api.adminInvites()])
-    .then(([users, invites]) => { admin = { users, invites }; })
+  void Promise.all([
+    api.adminUsers(),
+    api.adminInvites(),
+    // A server from before the reports table answers this with an error; the
+    // other two lists still show.
+    api.adminReports().catch(() => [] as AdminReport[]),
+  ])
+    .then(([users, invites, reports]) => { admin = { users, invites, reports }; })
     .catch((e) => { adminErr = e instanceof ApiError ? e.message : 'Could not load the admin view.'; })
     .finally(() => { adminLoading = false; render(); });
 }
@@ -1989,6 +2000,49 @@ function applyListFilters(): void {
     count('mc-usercount', users, admin.users.length, 'registered');
     count('mc-codecount', codes, admin.invites.length, 'codes');
   }
+}
+
+const REPORT_TOPIC: Record<string, string> = {
+  stuck: 'Stuck', rule: 'Wrong rule', display: 'Looks wrong', other: 'Something else',
+  card: 'Card', keyword: 'Keyword', rules: 'Rule', mission: 'Mission', box: 'Box', faction: 'Faction',
+};
+
+// What players sent from the report dialog. Every string in a row was typed by
+// a player, so every one goes through esc().
+function reportsHtml(): string {
+  const a = admin;
+  const chip = (id: ReportFilter, label: string): string => {
+    const n = a ? (id === 'all' ? a.reports.length : a.reports.filter((r) => r.status === id).length) : 0;
+    return `<button class="chipf${reportFilter === id ? ' on' : ''}" data-reportfilter="${id}">${esc(label)} ${n}</button>`;
+  };
+  const shown = a ? a.reports.filter((r) => reportFilter === 'all' || r.status === reportFilter) : [];
+  return `<div class="panel pane">
+    <h3>Problem reports</h3>
+    <p class="hint">Sent from the Report a problem and Something looks wrong buttons. Download gives the same file the player could save, and a board report opens in freeplay with Load.</p>
+    <div class="filterrow">${chip('new', 'New')}${chip('read', 'Read')}${chip('done', 'Done')}${chip('all', 'All')}</div>
+    <div class="scrollbox">
+      ${a
+        ? shown.length
+          ? `<div class="statlist">${shown.map((r) => `<div class="rprow ${esc(r.status)}">
+              <div class="rp-top">
+                <b class="rp-topic">${esc(r.type === 'board' ? 'Board' : 'Reference')} · ${esc(REPORT_TOPIC[r.topic] ?? r.topic)}</b>
+                ${r.subject ? `<span class="rp-subj">${esc(r.subject)}</span>` : ''}
+                <span class="rp-who">${r.username ? esc(r.username) : 'signed out'}</span>
+                <span class="sl-date" title="${esc(new Date(r.received_at).toLocaleString())}">${esc(shortDate(r.received_at))}</span>
+              </div>
+              <div class="rp-text">${r.said ? esc(r.said) : '<i>No words, just the report.</i>'}</div>
+              <div class="rp-acts">
+                <span class="rp-meta">#${Number(r.id)}${r.build ? ` · build ${esc(r.build)}` : ''}${r.page ? ` · ${esc(r.page)}` : ''}</span>
+                <button class="mini keep" data-reportget="${Number(r.id)}">Download</button>
+                ${r.status === 'done'
+                  ? `<button class="mini keep" data-reportstatus="${Number(r.id)}" data-to="read">Reopen</button>`
+                  : `<button class="mini keep" data-reportstatus="${Number(r.id)}" data-to="done">Done</button>`}
+              </div>
+            </div>`).join('')}</div>`
+          : `<p class="hint">${reportFilter === 'new' ? 'Nothing new.' : 'None here.'}</p>`
+        : adminLoading ? '<p class="hint">Loading…</p>' : ''}
+    </div>
+  </div>`;
 }
 
 function adminHtml(): string {
@@ -2071,6 +2125,7 @@ function adminHtml(): string {
         </div>
         <p class="quiet">The date is when they were last seen. Hover a row for when they joined, and with which code.</p>
       </div>
+      ${reportsHtml()}
     </div>
   </div>`;
 }
@@ -3478,6 +3533,36 @@ function wire(): void {
       }, (m) => { adminErr = m; });
     });
   });
+
+  root.querySelectorAll<HTMLButtonElement>('[data-reportfilter]').forEach((b) =>
+    b.addEventListener('click', () => { reportFilter = b.dataset.reportfilter as ReportFilter; render(); }),
+  );
+  // Downloading a new report counts as reading it.
+  root.querySelectorAll<HTMLButtonElement>('[data-reportget]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const id = Number(b.dataset.reportget);
+      void attempt(async () => {
+        const r = await api.adminReport(id);
+        saveReport(r as unknown as BoardReport | ReferenceReport);
+        const row = admin?.reports.find((x) => x.id === id);
+        if (row?.status === 'new') {
+          await api.setReportStatus(id, 'read');
+          row.status = 'read';
+        }
+      }, (m) => { adminErr = m; });
+    }),
+  );
+  root.querySelectorAll<HTMLButtonElement>('[data-reportstatus]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const id = Number(b.dataset.reportstatus);
+      const to = b.dataset.to as AdminReport['status'];
+      void attempt(async () => {
+        await api.setReportStatus(id, to);
+        const row = admin?.reports.find((x) => x.id === id);
+        if (row) row.status = to;
+      }, (m) => { adminErr = m; });
+    }),
+  );
 
   $('mc-host')?.addEventListener('click', () => {
     doorErr = null;

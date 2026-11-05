@@ -98,6 +98,15 @@ export interface MyRecord {
 
 // Admin-only views. The server refuses these to anyone whose role is not
 // admin, so the client's job is only to not offer them.
+// A problem report as the Admin list shows it (the API's GET /admin/reports).
+// `said` is cut to 300 characters there; the whole report is adminReport().
+// Every string came from a player: escape before drawing.
+export interface AdminReport {
+  id: number; received_at: string; type: 'board' | 'reference'; topic: string;
+  said: string; build: string | null; page: string | null;
+  status: 'new' | 'read' | 'done'; username: string | null; subject: string | null;
+}
+
 export interface AdminUser {
   id: number; username: string; display_name: string | null; role: string;
   is_active: boolean; created_at: string; last_login_at: string | null;
@@ -341,8 +350,10 @@ export class EmberApi {
 
   // "Delete my logged games": every game this account logged, and its games
   // against the computer. A game the other player logged too stays for them.
-  async deleteMyGames(): Promise<{ deleted: number; kept: number; computer: number }> {
-    return this.call<{ deleted: number; kept: number; computer: number }>('/games/mine', { method: 'DELETE' });
+  // `reports`: the problem reports that lost the account's name (none from a
+  // server from before them).
+  async deleteMyGames(): Promise<{ deleted: number; kept: number; computer: number; reports?: number }> {
+    return this.call<{ deleted: number; kept: number; computer: number; reports?: number }>('/games/mine', { method: 'DELETE' });
   }
 
   async publicStats(): Promise<PublicStats> {
@@ -393,6 +404,22 @@ export class EmberApi {
 
   async revokeInvite(id: number): Promise<void> {
     await this.call(`/admin/invites/${id}/revoke`, { method: 'POST' });
+  }
+
+  async adminReports(): Promise<AdminReport[]> {
+    const r = await this.call<{ reports: AdminReport[] }>('/admin/reports');
+    return r.reports;
+  }
+
+  // The whole report, exactly as the player's page built it (less the browser
+  // line the server never keeps): the same shape the report file has.
+  async adminReport(id: number): Promise<Record<string, unknown>> {
+    const r = await this.call<{ report: Record<string, unknown> }>(`/admin/reports/${id}`);
+    return r.report;
+  }
+
+  async setReportStatus(id: number, status: AdminReport['status']): Promise<void> {
+    await this.call(`/admin/reports/${id}/status`, { method: 'POST', body: { status } });
   }
 
   async setUserActive(id: number, active: boolean): Promise<void> {

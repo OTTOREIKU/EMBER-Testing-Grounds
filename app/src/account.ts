@@ -101,7 +101,7 @@ export function openAccount(host: AccountHost): void {
       <h4>Delete account</h4>
       ${admin
         ? '<p class="acc-note">An admin account cannot be deleted from here.</p>'
-        : `<p class="acc-note">Removes your account, your saved units and squads, and your collection. Games you logged stay in the stats with no name on them. This cannot be undone.</p>
+        : `<p class="acc-note">Removes your account, your saved units and squads, and your collection. Games you logged stay in the stats, and problem reports you sent stay too, with no name on them. This cannot be undone.</p>
       ${field('data-acc-del-pass', 'Password', 'current-password')}
       <div class="acc-actions">
         <button class="acc-btn danger" data-acc-delete>Delete my account</button>
@@ -228,7 +228,7 @@ export function openAccount(host: AccountHost): void {
       if (busy) return;
       void confirmDialog({
         title: 'Delete your logged games?',
-        body: 'Every game logged for this account is removed. A game the other player logged too stays for them, without your name. This cannot be undone.',
+        body: 'Every game logged for this account is removed. A game the other player logged too stays for them, without your name, and so do any problem reports you sent. This cannot be undone.',
         confirmLabel: 'Delete my logged games',
         cancelLabel: 'Keep them',
         danger: true,

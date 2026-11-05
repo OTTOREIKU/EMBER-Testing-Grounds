@@ -9027,7 +9027,7 @@ async function init() {
     try {
       const raw = JSON.parse(await file.text()) as Record<string, unknown> | null;
       // A bug report is a board wrapped in an envelope, and Load is how the
-      // board inside gets looked at -- refusing the very file "Save report"
+      // board inside gets looked at -- refusing the very file "Save file"
       // writes would make the reports folder a dead end. A stuck report also
       // carries the board from a few moves before, which is usually the more
       // useful one: load it and step forward, watching it break.

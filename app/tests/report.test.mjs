@@ -499,5 +499,17 @@ ok('and each entry there is one folder of the asset tree', (() => {
 ok('the purge is by path, not a cache wipe',
   /keys\s*\n?\s*\.filter\(\(req\) => REPLACED\.some/.test(sw));
 
+// ---------- sending it (OTTO, 2026-11-05: "auto log and store for me") ----------
+
+console.log('\nsending it to the server');
+const send = src('reportsend.ts');
+ok('the dialog has a Send report button', /data-rp="send">Send report</.test(ui));
+ok('and keeps Save file for when the server cannot be reached', /data-rp="save">Save file</.test(ui));
+ok('a failed send says so instead of claiming it went', /r\.ok/.test(ui) && /classList\.add\('bad'\)/.test(ui));
+ok('one tap files one report: the button is off while it sends', /btn\.disabled = true/.test(ui));
+ok('it posts to /reports', /\/reports`/.test(send) && /method: 'POST'/.test(send));
+ok('it sends what report.ts built, nothing gathered here', /body: reportText\(fitForSending\(r\)\)/.test(send));
+ok('a report too big for the API sheds the board picture first', /boardSvg: undefined/.test(send) && /SEND_LIMIT = 240_000/.test(send));
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

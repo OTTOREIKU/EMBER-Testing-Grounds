@@ -15,6 +15,7 @@ import {
   reportFilename, saveReport,
   type BoardReport, type ComputerLog, type ReferenceReport, type ReportCategory, type ReportKind, type ReportSubject,
 } from './report';
+import { sendReport } from './reportsend';
 import './report.css';
 import type { GameState } from './types';
 
@@ -78,7 +79,8 @@ function shell(title: string, lead: string, body: string): HTMLElement {
       <span class="rp-spacer"></span>
       <span class="rp-said" data-rp="said"></span>
       <button data-rp="copy">Copy</button>
-      <button class="rp-primary" data-rp="save">Save report</button>
+      <button data-rp="save">Save file</button>
+      <button class="rp-primary" data-rp="send">Send report</button>
     </div>
   </div>`;
   document.body.appendChild(dlg);
@@ -96,7 +98,7 @@ function manifestHtml(r: BoardReport | ReferenceReport): string {
     <ul class="rp-man-list">${
       manifestOf(r).map((l) => `<li><span>${esc(l.what)}</span><b>${esc(l.detail)}</b></li>`).join('')
     }</ul>
-    <p class="rp-man-note">Saved as <code>${esc(reportFilename(r))}</code></p>`;
+    <p class="rp-man-note">Send report passes this straight to the site's owner, with your browser's name and, if you are signed in, your account name. Deleting your logged games or your account takes the name off. Save file keeps a copy as <code>${esc(reportFilename(r))}</code></p>`;
 }
 
 // Both dialogs share their tail: build the report on demand, show what is in
@@ -124,6 +126,25 @@ function wire(dlg: HTMLElement, make: () => BoardReport | ReferenceReport): void
     const act = t.dataset.rp;
     if (act === 'close' || act === 'cancel') close();
     else if (act === 'save') { saveReport(make()); said.textContent = 'Saved.'; said.classList.remove('bad'); }
+    else if (act === 'send') {
+      const btn = t as HTMLButtonElement;
+      if (btn.disabled) return;
+      btn.disabled = true;
+      said.textContent = 'Sending…';
+      said.classList.remove('bad');
+      void sendReport(make()).then((r) => {
+        if (r.ok) {
+          // Sent is the end of it: the button stays off, so one report is
+          // not filed twice by a second tap while the thank-you is read.
+          said.textContent = 'Sent. Thank you!';
+          btn.textContent = 'Sent';
+        } else {
+          said.textContent = r.why;
+          said.classList.add('bad');
+          btn.disabled = false;
+        }
+      });
+    }
     else if (act === 'copy') {
       void copyReport(make()).then((ok) => {
         said.textContent = ok ? 'Copied.' : 'Could not copy. Use Save instead.';

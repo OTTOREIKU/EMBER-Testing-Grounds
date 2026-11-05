@@ -7,8 +7,9 @@
 // stuck position can be opened and driven. Everything here exists to get that
 // across intact, with enough context to say which build and which move.
 //
-// Local only for now: the report is a file the player saves and hands over.
-// Nothing here talks to a server, which is also why it works offline.
+// Building the report talks to no server and touches nothing on the
+// credential path, which is also why it works offline. Sending it to the
+// site's server is reportsend.ts's job, kept apart so that stays true.
 import { diagErrors, diagRefusals, type DiagEntry } from './diagnostics';
 import { historyEntries, snapshotBack } from './history';
 import type { GameState } from './types';
@@ -249,3 +250,4 @@ export async function copyReport(r: BoardReport | ReferenceReport): Promise<bool
     return false;
   }
 }
+
