@@ -7,6 +7,7 @@ import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
 import { type Card, type TerrainMap } from './types';
 import { registerOffline } from './offline';
+import { initLore, loadLore, loreArchiveHtml } from './lore';
 import { cardRow, currentSeason, dieEntries, esc, fillPortraits, keywordCard, linkKeywords, matchDie, matchTokenEntry, mechBlocks, rulesTab, sheetHtml, sheetLabel, SLOT_LABEL, tokenEntries, useCardData } from './refcards';
 import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSeason, matchSecondary, matchStance, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmSeason, nmSecondary, norm, rank } from './refsearch';
 import { installDiagnostics } from './diagnostics';
@@ -931,8 +932,9 @@ function render(): void {
 
   if (tab === 'factions') {
     const list = found(data.factions, q, matchFaction, nmFaction);
-    el.innerHTML = list.length
-      ? `<p class="ref-count">${list.length} faction${list.length === 1 ? '' : 's'} · tap one for its story</p>${list.map(factionRow).join('')}`
+    const lore = loreArchiveHtml(q);
+    el.innerHTML = list.length || lore
+      ? `${list.length ? `<p class="ref-count">${list.length} faction${list.length === 1 ? '' : 's'} · tap one for its story</p>${list.map(factionRow).join('')}` : ''}${lore}`
       : '<p class="ref-count">No matches</p>';
     return;
   }
@@ -1313,6 +1315,11 @@ async function init(): Promise<void> {
   watchImageFallbacks();
   watchTileImages();
   data = await loadData();
+  // The lore Archive loads on its own; the Factions tab redraws once it is in.
+  initLore();
+  loadLore(() => {
+    if (tab === 'factions') render();
+  });
   // The shared renderers hold their own reference to the database, and this
   // page lends them its Boxes tab so a card can still say which boxes hold it.
   useCardData(data, { boxRow });

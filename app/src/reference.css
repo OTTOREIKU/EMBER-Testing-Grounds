@@ -1011,6 +1011,15 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
   text-align: center; line-height: 1.15;
 }
 .tm-arrow { align-self: center; color: var(--text2); font-size: 10px; font-style: normal; }
+/* Too narrow for one row (OTTO, 2026-11-05): wrapping let the last row's
+   steps grow to twice the width of the rest, as if Movement and Tactical
+   mattered more. A grid of equal cells instead; the numbers keep the order,
+   so the arrows go. */
+@media (max-width: 640px) {
+  .tm-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .tm-step { min-width: 0; }
+  .tm-arrow { display: none; }
+}
 .tm-card .card-title { display: flex; align-items: center; gap: 0; }
 .tm-icon {
   width: 26px; height: 26px; object-fit: contain; margin-right: 8px; flex-shrink: 0;

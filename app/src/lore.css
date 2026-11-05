@@ -1,0 +1,330 @@
+/* The lore Archive (Factions tab) and its reader. See lore.ts.
+ *
+ * Follows ui.css's rules (OTTO, 2026-11-05: "adjust all of the badges and
+ * buttons so they match our UI style"): flat surfaces on the --surface ladder,
+ * no outlines on cards or controls, selected = the tint, colours from tokens,
+ * radii from --radius-sm / --radius / --radius-lg, and only background and
+ * colour transitions. The house classes do the work where they fit: the Part
+ * badge is .ui-badge, the back button .ui-home, the timeline chips .ref-facet,
+ * Previous / Next are .ui-row with the .ui-go chevron, a note closes on
+ * .dlg-close. What is left here is the reading itself. */
+
+.lore-archive {
+  grid-column: 1 / -1;
+  margin-top: 22px;
+  --lore-serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+}
+.lore-archive .ref-count { margin-bottom: 10px; }
+.lore-archive .lore-shelf-h { margin-top: 20px; }
+
+.lore-kicker {
+  font: 600 10.5px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+}
+.lore-kick-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
+.lore-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; }
+.tag.lore-fac { font: 600 10.5px var(--mono); letter-spacing: 0.06em; }
+.tag.lore-fac[data-fac="RDL"] { background: var(--rdl-lt); color: var(--rdl); }
+.tag.lore-fac[data-fac="UN"] { background: var(--un-lt); color: var(--un); }
+.tag.lore-fac[data-fac="GOF"] { background: var(--gof-lt); color: var(--gof); }
+
+/* featured piece: picture left, words right */
+.lore-feat {
+  display: grid; grid-template-columns: 1.6fr 1fr; min-height: 230px; cursor: pointer;
+  border-radius: var(--radius-lg); overflow: hidden; background: var(--surface);
+  transition: background 0.12s;
+}
+.lore-feat:hover { background: var(--surface2); }
+.lore-feat-img { position: relative; min-height: 180px; background: var(--bg); }
+.lore-feat-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.lore-feat-txt { padding: 20px 22px; display: flex; flex-direction: column; gap: 8px; }
+.lore-feat-ttl { font: 26px/1.15 var(--lore-serif); color: var(--text); }
+.lore-feat .lore-hook { font-size: 14px; }
+.lore-feat .lore-tags { margin-top: 0; padding-top: 2px; }
+/* The featured piece's way in: the tinted control with the site's go chevron. */
+.lore-btn {
+  align-self: flex-start; margin-top: auto; display: inline-flex; align-items: center; gap: 8px;
+  min-height: 34px; padding: 0 4px 0 12px; border-radius: var(--radius);
+  background: var(--accent-lt); color: var(--accent); font: 600 12px var(--font);
+  transition: background 0.12s, color 0.12s;
+}
+.lore-btn .ui-go { width: 26px; height: 26px; flex-basis: 26px; background: none; }
+.lore-feat:hover .lore-btn { background: var(--accent); color: var(--on-accent); }
+.lore-feat:hover .lore-btn .ui-go { color: var(--on-accent); }
+
+/* shelves */
+.lore-shelf { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.lore-shelf-stories { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.lore-shelf-designers .lore-tile { grid-column: span 2; }
+
+.lore-tile {
+  position: relative; display: flex; flex-direction: column; cursor: pointer; min-height: 220px;
+  border-radius: var(--radius-lg); overflow: hidden; background: var(--surface);
+  transition: background 0.12s;
+}
+.lore-tile:hover { background: var(--surface2); }
+.lore-tile:focus-visible, .lore-feat:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lore-art { height: 120px; overflow: hidden; background: var(--bg); flex: none; }
+.lore-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lore-shelf-designers .lore-art img { object-position: center 60%; }
+.lore-art.is-diagram { background: var(--collab); }
+.lore-art.is-diagram img { object-position: top; }
+.lore-quote {
+  height: 120px; flex: none; overflow: hidden; padding: 14px 16px;
+  font: italic 15px/1.4 var(--lore-serif); color: var(--text);
+  background: radial-gradient(120% 90% at 0% 0%, var(--accent-lt), transparent 60%), var(--surface2);
+}
+.lore-quote::before {
+  content: "\201C"; font-size: 42px; line-height: 0; vertical-align: -16px; color: var(--accent); margin-right: 4px;
+}
+.lore-tbody { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.lore-ttl { font-weight: 600; font-size: 15.5px; color: var(--text); }
+.lore-hook { color: var(--text2); line-height: 1.5; font-size: 13px; }
+
+@media (max-width: 860px) {
+  .lore-feat { grid-template-columns: 1fr; }
+  .lore-feat-img { min-height: 170px; }
+  .lore-shelf, .lore-shelf-stories { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .lore-shelf, .lore-shelf-stories { grid-template-columns: 1fr; }
+  .lore-shelf-designers .lore-tile { grid-column: auto; }
+  .lore-feat-ttl { font-size: 22px; }
+}
+
+/* ---- reader ---- */
+body.lore-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hidden; }
+
+#lore-reader {
+  --lore-serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+  position: fixed; inset: 0; z-index: 60; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg); color: var(--text);
+}
+#lore-reader[hidden] { display: none; }
+
+.lore-r-top {
+  position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; background: var(--surface);
+}
+.lore-r-close { border: none; cursor: pointer; }
+.lore-r-crumb { color: var(--text2); font: 11px var(--mono); letter-spacing: 0.06em; }
+.lore-r-crumb b { color: var(--accent); font-weight: 600; }
+.lore-r-prog { position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--accent); }
+
+/* The title sits under the picture, not on it: the key art carries big
+   lettering of its own and the two fought when overlaid. */
+.lore-r-hero { position: relative; }
+.lore-r-hero img { width: 100%; height: min(46vh, 380px); object-fit: cover; display: block; }
+.lore-r-hero::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: min(46vh, 380px);
+  background: linear-gradient(transparent 55%, var(--bg)); pointer-events: none;
+}
+.lore-r-hero .lore-r-ttl { padding: 6px 16px 22px; }
+.lore-r-plain { padding: 48px 16px 22px; }
+/* Air under the Chronology's sticky bar before the first line of text. */
+.tl-bar + .lore-prose { padding-top: 34px; }
+.lore-r-ttl { text-align: center; }
+.lore-r-ttl h1 { font: normal 40px/1.12 var(--lore-serif); margin: 8px 0 6px; color: var(--text); }
+.lore-r-meta { color: var(--text2); font: 12px var(--mono); }
+
+.lore-prose {
+  max-width: 66ch; margin: 0 auto; padding: 22px 20px 10px;
+  font: 18px/1.72 var(--lore-serif); color: var(--text);
+}
+.lore-prose p { margin: 0 0 1.05em; }
+.lore-prose h2 { font: italic 24px/1.25 var(--lore-serif); color: var(--text); margin: 1.6em 0 0.6em; }
+.lore-prose h3 { font: 600 19px/1.3 var(--lore-serif); margin: 1.4em 0 0.4em; }
+.lore-prose ul, .lore-prose ol { padding-left: 1.2em; }
+.lore-prose li { margin-bottom: 0.5em; }
+.lore-prose hr { border: 0; text-align: center; margin: 1.6em 0; }
+.lore-prose hr::after { content: "\2042"; color: var(--text3); }
+.lore-prose .lore-break { text-align: center; color: var(--text3); }
+.lore-prose .lore-lead { color: var(--text2); }
+.lore-prose strong { color: var(--text); }
+.lore-prose table { border-collapse: collapse; width: 100%; font: 14px/1.45 var(--font); margin: 0.6em 0 1.4em; }
+.lore-prose th, .lore-prose td { padding: 7px 10px; text-align: left; vertical-align: top; }
+.lore-prose tr:nth-child(even) td { background: var(--surface); }
+.lore-fig { margin: 1.6em 0; }
+.lore-fig img { width: 100%; display: block; border-radius: var(--radius); }
+.lore-fig figcaption { font: italic 13px/1.45 var(--font); color: var(--text2); text-align: center; margin-top: 8px; }
+@media (min-width: 900px) { .lore-fig { margin-left: -60px; margin-right: -60px; } }
+
+/* The foot of a piece: the notes, Previous / Next and the credit share the
+   prose column. The wrapper carries the prose's font size so its "ch" width,
+   and the timeline's and interview's wider ones, come out the same. */
+.lore-foot {
+  max-width: 66ch; margin: 0 auto; padding: 18px 20px calc(48px + env(safe-area-inset-bottom, 0px));
+  font: 18px/1.72 var(--lore-serif);
+}
+.lore-foot.is-timeline { max-width: 76ch; }
+.lore-foot.is-interview { max-width: 72ch; }
+
+/* Translator's notes: a panel that starts closed. */
+.lore-notes {
+  margin: 0 0 12px; border-radius: var(--radius-lg); background: var(--surface);
+  font: 14.5px/1.6 var(--font); color: var(--text2);
+}
+.lore-notes summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px;
+  min-height: 52px; padding: 0 12px 0 18px; border-radius: var(--radius-lg);
+  font: 600 10.5px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+  transition: background 0.12s;
+}
+.lore-notes summary::-webkit-details-marker { display: none; }
+.lore-notes summary > span:first-child { flex: 1; }
+.lore-notes summary:hover { background: var(--surface2); }
+.lore-notes summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lore-notes-hint { color: var(--text3); letter-spacing: 0.1em; }
+.lore-notes[open] .lore-notes-hint { font-size: 0; }
+.lore-notes[open] .lore-notes-hint::after { content: "Hide"; font-size: 10.5px; }
+.lore-notes[open] summary .ui-go { transform: rotate(90deg); }
+.lore-notes summary:hover .ui-go { background: var(--accent); color: var(--on-accent); }
+.lore-notes-body { padding: 4px 18px 16px; }
+@media (min-width: 720px) { .lore-notes-body { padding: 4px 24px 20px; } }
+.lore-notes ul { padding-left: 1.1em; margin: 0; }
+.lore-notes li { margin-bottom: 0.6em; }
+.lore-notes strong { color: var(--text); }
+
+/* Previous / Next: two equal list rows, the title on one line. */
+.lore-next { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.lore-next .ui-row {
+  margin: 0; min-height: 60px; padding: 8px 12px; gap: 12px;
+  color: var(--text); text-decoration: none; font: 500 14px/1.3 var(--font);
+}
+.lore-next .ui-row.r { text-align: right; }
+.lore-next .ui-row-name { overflow: hidden; }
+.lore-next .ui-row-name b { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lore-next .ui-row-name small {
+  display: block; font: 600 10px var(--mono); color: var(--text3); text-transform: uppercase; letter-spacing: 0.14em; margin-bottom: 3px;
+}
+.lore-next .ui-row:hover .ui-go { background: var(--accent); color: var(--on-accent); }
+.lore-credit {
+  margin: 0; padding: 28px 8px 0;
+  font: italic 12px/1.5 var(--font); color: var(--text3); text-align: center;
+}
+
+@media (max-width: 560px) {
+  .lore-r-ttl h1 { font-size: 30px; }
+  .lore-prose { font-size: 17px; }
+  .lore-r-crumb { display: none; }
+  .lore-next { grid-template-columns: 1fr; gap: 8px; }
+  .lore-foot { font-size: 17px; }
+}
+
+/* ---- reading aids: pull quotes, years in the margin ---- */
+.lore-pull {
+  margin: 1.8em 0; padding: 18px 0 18px 22px; border-left: 3px solid var(--accent);
+  font: italic 24px/1.4 var(--lore-serif); color: var(--text);
+}
+.lore-pull p { margin: 0; }
+.lore-pull cite {
+  display: block; margin-top: 10px; font: normal 600 11px var(--mono); letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--accent);
+}
+.lore-pull cite::before { content: "\2014  "; }
+@media (min-width: 900px) { .lore-pull { margin-left: -40px; margin-right: -40px; } }
+
+.lore-dated { position: relative; }
+.lore-dated::before {
+  content: attr(data-year); display: inline-block; margin-right: 8px; padding: 2px 7px; border-radius: 999px;
+  font: 700 11px/1.5 var(--mono); color: var(--accent); background: var(--accent-lt); vertical-align: 2px;
+}
+@media (min-width: 900px) {
+  .lore-dated::before { position: absolute; left: -76px; top: 6px; margin: 0; }
+}
+
+/* first paragraph of a plain story opens with a drop cap */
+.lore-prose:not(.is-timeline):not(.is-interview) > p:not(.lore-lead):first-of-type::first-letter {
+  float: left; font-size: 3.3em; line-height: 0.9; padding: 6px 8px 0 0; color: var(--accent);
+}
+.lore-prose:not(.is-timeline):not(.is-interview) > p.lore-dated:first-of-type::first-letter { float: none; font-size: inherit; padding: 0; color: inherit; }
+
+/* ---- glossary notes ---- */
+.lore-g {
+  border: none; background: none; padding: 0 1px; margin: 0 -1px; font: inherit; color: inherit; cursor: pointer;
+  text-decoration: underline dotted var(--accent); text-decoration-thickness: 1.5px; text-underline-offset: 4px;
+  border-radius: var(--radius-sm); transition: background 0.12s, color 0.12s;
+}
+.lore-g:hover, .lore-g.active { background: var(--accent-lt); color: var(--accent); }
+.lore-g:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lore-gpop {
+  position: absolute; z-index: 4; width: min(340px, calc(100% - 24px));
+  padding: 14px 18px 16px; border-radius: var(--radius-lg); background: var(--surface2);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  font: 14.5px/1.55 var(--font); color: var(--text2);
+}
+.lore-gpop-ttl { font: 600 16px/1.3 var(--font); color: var(--text); margin: 4px 26px 6px 0; }
+.lore-gpop-ttl span { font: 13px var(--zh); color: var(--text3); margin-left: 4px; }
+.lore-gpop p { margin: 0; }
+@media (max-width: 560px) {
+  .lore-gpop {
+    position: fixed; left: 12px !important; right: 12px; top: auto !important;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: auto;
+  }
+}
+
+/* ---- the Chronology ---- */
+.tl-bar { position: sticky; top: 49px; z-index: 2; padding: 8px 16px 10px; background: var(--surface); }
+.tl-row { max-width: 900px; margin: 0 auto; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.tl-row::-webkit-scrollbar { display: none; }
+.tl-row .ref-facet { min-height: 32px; }
+.tl-row .ref-facet .fc-n { min-width: 0; margin-left: 6px; }
+.tl-facs { margin-top: 6px; align-items: center; }
+.tl-facs > span { font: 600 10.5px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text3); margin-right: 2px; }
+.tl-facs .ref-facet { font-family: var(--mono); }
+.tl-facs .ref-facet[data-fac="RDL"] { color: var(--rdl); }
+.tl-facs .ref-facet[data-fac="UN"] { color: var(--un); }
+.tl-facs .ref-facet[data-fac="GOF"] { color: var(--gof); }
+
+.lore-prose.is-timeline { max-width: 76ch; }
+.tl-era[hidden], .tl-e[hidden] { display: none; }
+.tl-era-h {
+  display: flex; align-items: baseline; gap: 12px; margin: 1.8em 0 0.4em !important;
+  font: normal 28px/1.2 var(--lore-serif) !important; color: var(--text);
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.tl-era-h small { font: 600 12px var(--mono); color: var(--accent); letter-spacing: 0.06em; }
+.tl-e { display: grid; grid-template-columns: 86px 1fr; gap: 16px; padding: 14px 0 16px; }
+.tl-y { font: 600 13px/1.4 var(--mono); color: var(--accent); padding-top: 4px; }
+.tl-y small { display: block; color: var(--text3); font-weight: 400; font-size: 12px; }
+.tl-x { font-size: 16.5px; line-height: 1.65; }
+.tl-x p { margin: 0 0 0.5em; }
+.tl-x p:last-of-type { margin-bottom: 0; }
+.tl-x ul { margin: 0.3em 0 0.5em; }
+.tl-tags { display: flex; gap: 6px; margin-top: 8px; }
+@media (max-width: 560px) {
+  .tl-e { grid-template-columns: 1fr; gap: 4px; }
+  .tl-y small { display: inline; margin-left: 8px; }
+  .tl-era-h { font-size: 23px !important; flex-wrap: wrap; }
+}
+
+/* ---- the interview ---- */
+.lore-prose.is-interview { max-width: 72ch; }
+.iv-turn { display: grid; grid-template-columns: 38px 1fr; gap: 12px; margin: 0 0 18px; }
+.iv-av {
+  width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+  font: 700 12px var(--mono); background: var(--surface2); color: var(--text2);
+}
+.iv-R .iv-av { background: var(--accent-lt); color: var(--accent); }
+.iv-who { font: 600 12px var(--mono); color: var(--text); letter-spacing: 0.04em; margin: 2px 0 3px; }
+.iv-who small { color: var(--text3); font-weight: 400; margin-left: 4px; }
+.iv-say { font-size: 17px; line-height: 1.65; }
+.iv-say p { margin: 0 0 0.6em; }
+.iv-say p:last-child { margin-bottom: 0; }
+.iv-A .iv-say, .iv-J .iv-say { color: var(--text2); }
+.iv-R .iv-say {
+  background: var(--surface); padding: 12px 16px;
+  border-radius: var(--radius-sm) var(--radius-lg) var(--radius-lg) var(--radius-lg);
+}
+.iv-aside { font: italic 0.86em/1.5 var(--font); color: var(--text3); }
+.iv-interp {
+  margin: -8px 0 18px 50px; padding: 8px 12px; border-radius: var(--radius); background: var(--surface);
+  font: 13.5px/1.5 var(--font); color: var(--text2);
+}
+.iv-interp > span {
+  display: block; font: 600 10.5px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text3); margin-bottom: 2px;
+}
+.iv-interp p { margin: 0; }
+.iv-stage { text-align: center; margin: 0 0 18px; font: italic 14px/1.5 var(--font); color: var(--text3); }
+.iv-stage p { margin: 0; }
+.iv-say .lore-fig { margin: 12px 0; }
+@media (min-width: 900px) { .iv-say .lore-fig { margin-left: 0; margin-right: 0; } }
