@@ -150,6 +150,9 @@ export default defineConfig({
         // The pad lives in a FOLDER so its address stays short (/pad); see
         // the base note in pad/index.html.
         pad: path.resolve(here, 'pad/index.html'),
+        // My Collection: saved squads and units, built pieces and boxes
+        // (OTTO, 2026-11-11). A folder like the pad, so the address is /collection.
+        collection: path.resolve(here, 'collection/index.html'),
       },
     },
   },

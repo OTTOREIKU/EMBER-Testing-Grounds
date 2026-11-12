@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- What this page may load, and from where: the same rules as the pad and the reference. Scripts run only from
+       this site (plus the inline base line below, by its hash); images, styles and requests from this site, and
+       requests to the API. No frames, no plugins. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-MMrmsclROZtb9kICV79+pMbhdBdPKEF5wFIigAKAqXQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.embertg.online wss://api.embertg.online http://*:3002 ws://*:3002; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1216" />
+  <title>My Collection · EMBER</title>
+  <link rel="icon" href="../favicon.ico" sizes="any" />
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png" />
+</head>
+<body class="cl-body">
+  <div id="cl-root"></div>
+  <!-- Served from a FOLDER (/collection) like /pad and /reference, so /data and
+       /assets are one level up. Declared before any module loads; see the note
+       over BASE in src/data.ts. -->
+  <script>window.__EMBER_BASE__ = "../";</script>
+  <script type="module" src="../src/collectionpage.ts"></script>
+</body>
+</html>

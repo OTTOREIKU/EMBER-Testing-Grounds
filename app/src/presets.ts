@@ -1,5 +1,6 @@
 import type { MechLoadout } from './types';
 import { hiddenBuiltIns, hideBuiltIn } from './builtins';
+import { markRemoved } from './tombstones';
 
 // Saved mech builds, kept in local storage next to the custom maps rather than in
 // the board state, because a preset outlives any one game.
@@ -133,6 +134,20 @@ export function saveMechPreset(name: string, mech: MechLoadout, now: number): Me
   return loadMechPresets();
 }
 
+// A build changed in place on My Collection (renamed, a Part swapped), kept
+// under its id. A shipped build is saved as the player's own copy instead.
+export function updateMechPreset(p: MechPreset, now: number): MechPreset {
+  const copy: MechLoadout = {};
+  for (const slot of SLOTS) if (p.mech[slot]) copy[slot] = p.mech[slot];
+  const saved = loadMechPresets().filter((x) => !isBuiltInPreset(x.id));
+  const entry: MechPreset = { id: isBuiltInPreset(p.id) || !p.id ? `mp${now}` : p.id, name: p.name.trim() || 'Unnamed', mech: copy, saved: now };
+  const at = saved.findIndex((x) => x.id === entry.id);
+  if (at >= 0) saved[at] = entry;
+  else saved.push(entry);
+  write(saved);
+  return entry;
+}
+
 export function deleteMechPreset(id: string): MechPreset[] {
   // Only what this device saved is stored, so writing the merged list back would
   // bake the shipped builds into local storage and a later change to them would
@@ -140,6 +155,8 @@ export function deleteMechPreset(id: string): MechPreset[] {
   // A shipped build is put away rather than deleted (builtins.ts).
   if (isBuiltInPreset(id)) { hideBuiltIn(id); return loadMechPresets(); }
   const saved = loadMechPresets().filter((p) => !isBuiltInPreset(p.id) && p.id !== id);
+  // Recorded before the write, so the push it starts carries the delete.
+  markRemoved(id);
   write(saved);
   return loadMechPresets();
 }

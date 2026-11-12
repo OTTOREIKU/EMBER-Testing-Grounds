@@ -1,6 +1,7 @@
 import type { MechLoadout } from './types';
 import type { GameData } from './data';
 import { hiddenBuiltIns, hideBuiltIn } from './builtins';
+import { markRemoved } from './tombstones';
 
 // Whole squads remembered across games, kept in local storage next to the mech
 // presets rather than in the board state, because a squad outlives any one
@@ -17,8 +18,15 @@ export interface SavedSquad {
   // The Tactics Cards bought with the squad (5.4): part of the squad the same
   // way its points are, so saving and loading must carry them.
   tactics?: string[];
+  // The game size the squad is built for (5.1: 600 Skirmish, 900 Standard,
+  // 1200 Large), set on My Collection (OTTO, 2026-11-11: "a toggle to set the
+  // max point cap for a squad"). Absent on older saves; squadCap() reads one
+  // from the points then.
+  cap?: number;
   saved: number;
 }
+
+export const SQUAD_CAPS = [600, 900, 1200] as const;
 
 const SLOTS: (keyof MechLoadout)[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack', 'pilot'];
 
@@ -100,9 +108,11 @@ function clean(raw: unknown): SavedSquad | null {
   }
   if (!mechs.length && !drones.length) return null;
   const tactics = (Array.isArray(s.tactics) ? s.tactics : []).filter((t): t is string => typeof t === 'string' && !!t);
+  const cap = (SQUAD_CAPS as readonly number[]).includes(s.cap as number) ? s.cap : undefined;
   return {
     id: s.id, name: s.name, mechs, drones,
     ...(tactics.length ? { tactics } : {}),
+    ...(cap ? { cap } : {}),
     saved: typeof s.saved === 'number' ? s.saved : 0,
   };
 }
@@ -181,12 +191,35 @@ export function saveSquad(
   const entry: SavedSquad = {
     id: at >= 0 ? saved[at].id : `sq${now}`, name: trimmed, mechs, drones,
     ...(tactics?.length ? { tactics: [...tactics] } : {}),
+    ...(at >= 0 && saved[at].cap ? { cap: saved[at].cap } : {}),
     saved: now,
   };
   if (at >= 0) saved[at] = entry;
   else saved.push(entry);
   write(saved);
   return loadSquads();
+}
+
+// The cap a squad is weighed against: its own, or else the smallest game size
+// its points fit.
+export function squadCap(sq: SavedSquad, points: number): number {
+  if (sq.cap) return sq.cap;
+  return SQUAD_CAPS.find((c) => points <= c) ?? SQUAD_CAPS[SQUAD_CAPS.length - 1];
+}
+
+// A squad changed in place on My Collection: renamed, re-capped, a unit added
+// or taken out. A shipped squad is never edited: the change is saved as the
+// player's own copy under the same name, which shadows it (as saveSquad does).
+export function updateSquad(sq: SavedSquad, now: number): SavedSquad {
+  const saved = loadSquads().filter((s) => !isBuiltInSquad(s.id));
+  const entry: SavedSquad = { ...sq, id: isBuiltInSquad(sq.id) ? `sq${now}` : sq.id, saved: now };
+  if (!entry.tactics?.length) delete entry.tactics;
+  if (!entry.cap) delete entry.cap;
+  const at = saved.findIndex((s) => s.id === entry.id);
+  if (at >= 0) saved[at] = entry;
+  else saved.push(entry);
+  write(saved);
+  return entry;
 }
 
 export function deleteSquad(id: string): SavedSquad[] {
@@ -196,6 +229,8 @@ export function deleteSquad(id: string): SavedSquad[] {
   // A shipped squad is put away rather than deleted (builtins.ts).
   if (isBuiltInSquad(id)) { hideBuiltIn(id); return loadSquads(); }
   const saved = loadSquads().filter((s) => !isBuiltInSquad(s.id) && s.id !== id);
+  // Recorded before the write, so the push it starts carries the delete.
+  markRemoved(id);
   write(saved);
   return loadSquads();
 }

@@ -402,4 +402,15 @@ export function bindCollection(a: EmberApi): void {
   a.onSignedOut(forget);
   // Another tab on this origin (the board beside the pad) writing the store.
   window.addEventListener('storage', (ev) => { if (ev.key === KEY) announce(); });
+  // Coming back to the page: another device's changes are read now, not only
+  // on the next load (as library.ts does for the builds). At most every 10 s.
+  let lastLook = 0;
+  const look = (): void => {
+    if (!a.user || Date.now() - lastLook < 10_000) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    lastLook = Date.now();
+    void pullCollection();
+  };
+  window.addEventListener('focus', look);
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', look);
 }

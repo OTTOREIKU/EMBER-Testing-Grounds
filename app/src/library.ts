@@ -2,6 +2,7 @@ import { ApiError, type EmberApi } from './api';
 import { onMechPresetsWrite, replaceMechPresets, savedMechPresets, type MechPreset } from './presets';
 import { onSquadsWrite, replaceSquads, savedSquads, type SavedSquad } from './squadstore';
 import { hiddenBuiltIns, onHiddenBuiltInsWrite, replaceHiddenBuiltIns } from './builtins';
+import { removedIds, replaceRemoved } from './tombstones';
 
 // The saved units and squads, following the account. The two stores keep
 // writing to this device as they always have; this watches them, pushes what
@@ -66,12 +67,19 @@ function announce(): void {
   for (const fn of listeners) fn();
 }
 
+// Where this device's copy stands, for My Collection's sync chip: when the
+// account last had it, and whether a change is still to be sent.
+export function librarySync(): { updatedAt?: number; unsent: boolean } {
+  const m = meta();
+  return { updatedAt: m.updatedAt, unsent: !!m.unsent };
+}
+
 export function onLibrary(fn: () => void): void {
   listeners.add(fn);
 }
 
 function hasAnyLocal(): boolean {
-  return savedMechPresets().length > 0 || savedSquads().length > 0 || hiddenBuiltIns().length > 0;
+  return savedMechPresets().length > 0 || savedSquads().length > 0 || hiddenBuiltIns().length > 0 || removedIds().length > 0;
 }
 
 // A store was written by the player. The copy keeps whatever owner it had.
@@ -96,7 +104,7 @@ export async function pushLibrary(): Promise<boolean> {
   if (!api || !me || syncedFor !== me.id || meta().owner !== me.id) return false;
   const at = changes;
   try {
-    const r = await api.putLibrary(savedMechPresets(), savedSquads(), hiddenBuiltIns());
+    const r = await api.putLibrary(savedMechPresets(), savedSquads(), hiddenBuiltIns(), removedIds());
     writeMeta({ updatedAt: r.updatedAt, owner: me.id, ...(changes !== at ? { unsent: true } : {}) });
     return true;
   } catch {
@@ -107,12 +115,14 @@ export async function pushLibrary(): Promise<boolean> {
 
 // The account's own copy in place of this device's, cleaned the same way a
 // load is.
-function adopt(owner: number, remote: { units: unknown[]; squads: unknown[]; hidden?: unknown[]; updatedAt: number }): void {
+function adopt(owner: number, remote: { units: unknown[]; squads: unknown[]; hidden?: unknown[]; removed?: unknown[]; updatedAt: number }): void {
   quiet = true;
   try {
     replaceMechPresets(remote.units);
     replaceSquads(remote.squads);
     replaceHiddenBuiltIns(remote.hidden ?? []);
+    // A server from before deletes travelled sends none: keep what we know.
+    replaceRemoved(remote.removed ?? removedIds());
   } finally {
     quiet = false;
   }
@@ -130,6 +140,27 @@ function mergeById<T extends { id: string; saved: number }>(remote: T[], local: 
   return [...byId.values()];
 }
 
+// Both copies into one, nothing either side saved dropped: every build by id,
+// the later save where both hold one, minus anything either side deleted
+// (tombstones.ts) - so a delete on the phone is not undone by a desktop that
+// still held the build. Then this device's copy is sent as the account's.
+async function mergeAndPush(owner: number, remote: { units: MechPreset[]; squads: SavedSquad[]; hidden?: string[]; removed?: string[] }): Promise<void> {
+  const gone = new Set([...(remote.removed ?? []), ...removedIds()]);
+  quiet = true;
+  try {
+    replaceMechPresets(mergeById(remote.units, savedMechPresets()).filter((u) => !gone.has(u.id)));
+    replaceSquads(mergeById(remote.squads, savedSquads()).filter((q) => !gone.has(q.id)));
+    replaceHiddenBuiltIns([...new Set([...(remote.hidden ?? []), ...hiddenBuiltIns()])]);
+    replaceRemoved([...gone]);
+  } finally {
+    quiet = false;
+  }
+  writeMeta({ updatedAt: Date.now(), owner, unsent: true });
+  announce();
+  syncedFor = owner;
+  await pushLibrary();
+}
+
 export function pullLibrary(): Promise<void> {
   if (!api?.user) return Promise.resolve();
   pulling ??= reconcile().finally(() => { pulling = null; });
@@ -139,7 +170,7 @@ export function pullLibrary(): Promise<void> {
 async function reconcile(): Promise<void> {
   const me = api?.user;
   if (!api || !me) return;
-  let remote: { units: MechPreset[]; squads: SavedSquad[]; hidden?: string[]; updatedAt: number };
+  let remote: { units: MechPreset[]; squads: SavedSquad[]; hidden?: string[]; removed?: string[]; updatedAt: number };
   try {
     remote = await api.getLibrary();
   } catch {
@@ -157,23 +188,19 @@ async function reconcile(): Promise<void> {
   } else if (local.owner === undefined) {
     // A copy no account has had: saved signed out, or since a sign-in that
     // had not been read yet. Neither side's builds are dropped.
-    if (!hasAnyLocal()) {
+    if (!hasAnyLocal() && !removedIds().length) {
       adopt(me.id, remote);
     } else {
-      quiet = true;
-      try {
-        replaceMechPresets(mergeById(remote.units, savedMechPresets()));
-        replaceSquads(mergeById(remote.squads, savedSquads()));
-        replaceHiddenBuiltIns([...new Set([...(remote.hidden ?? []), ...hiddenBuiltIns()])]);
-      } finally {
-        quiet = false;
-      }
-      writeMeta({ updatedAt: Date.now(), owner: me.id, unsent: true });
-      announce();
-      syncedFor = me.id;
-      await pushLibrary();
+      await mergeAndPush(me.id, remote);
       return;
     }
+  } else if (local.unsent && remote.updatedAt > localAt) {
+    // Both sides moved: this device has a change the account has not had
+    // (saved offline, or the push failed) and another device saved since.
+    // Taking the account's copy whole used to throw this device's change
+    // away; now the two are merged and neither is lost.
+    await mergeAndPush(me.id, remote);
+    return;
   } else if (remote.updatedAt > localAt || (!hasAnyLocal() && remoteHas)) {
     adopt(me.id, remote);
   } else if (hasAnyLocal() && localAt > remote.updatedAt) {
@@ -196,6 +223,7 @@ function forget(): void {
     replaceMechPresets([]);
     replaceSquads([]);
     replaceHiddenBuiltIns([]);
+    replaceRemoved([]);
   } catch {
     // Storage blocked: there was nothing kept to clear.
   } finally {
@@ -246,4 +274,16 @@ export function bindLibrary(a: EmberApi): void {
   window.addEventListener('storage', (ev) => {
     if (ev.key === META || ev.key === 'ember-mech-presets-v1' || ev.key === 'ember-squads-v1' || ev.key === 'ember-hidden-builtins-v1') announce();
   });
+  // Coming back to the page: what another device saved meanwhile is read now,
+  // not only on the next load, so a squad built on the desktop is on the
+  // phone that was left open on the pad. At most every 10 s.
+  let lastLook = 0;
+  const look = (): void => {
+    if (!a.user || Date.now() - lastLook < 10_000) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    lastLook = Date.now();
+    void pullLibrary();
+  };
+  window.addEventListener('focus', look);
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', look);
 }

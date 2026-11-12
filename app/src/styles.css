@@ -159,6 +159,13 @@ button { font-family: inherit; }
    stretches to its share of the row nor centres its own text. */
 #btn-reference { display: flex; align-items: center; }
 #btn-import-squad:hover, #btn-reference:hover { background: var(--accent); color: var(--on-accent); }
+/* My Collection, a page of its own (collectionpage.ts): drawn like the
+   Inventory button beside it, a link that sits in the row as a flex item. */
+#btn-collection {
+  display: flex; align-items: center; background: var(--surface2); color: var(--text2); border-radius: var(--radius);
+  padding: 5px 9px; font-size: 11.5px; text-decoration: none; transition: background 0.12s, color 0.12s;
+}
+#btn-collection:hover { background: var(--surface3); color: var(--text); }
 /* ---------- hint bar, on the board's bottom line ---------- */
 /* The third element of one row: Zones bottom-left, this in the middle, zoom
    bottom-right — and centred on the BOARD, not on the gap between the other
@@ -327,6 +334,9 @@ main { display: flex; flex: 1; min-height: 0; }
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   margin: 2px 0 14px; padding-right: 20px;
 }
+/* Compare boxes sits at the end of the filter row, beside "Only show what I
+   own", the same height as the faction buttons (OTTO, 2026-11-12). */
+.inv-facets .inv-cmp-btn { margin-left: 6px; padding: 7px 11px; font-size: 12px; white-space: nowrap; }
 .inv-facet {
   flex: 0 0 auto; background: var(--surface2); color: var(--text2); border: none;
   border-radius: var(--radius); padding: 7px 11px; font-size: 12px; font-weight: 600;

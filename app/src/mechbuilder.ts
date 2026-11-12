@@ -176,6 +176,8 @@ export function openMechSlot(o: {
   badge?: (c: Card) => string;
   remaining?: (c: Card) => number | null;
   actionLabel?: string;
+  // The unit's name over the bench; its Torso's name when left out.
+  unitName?: string;
   onPick: (card: Card) => void;
 }): void {
   openPartPicker({
@@ -187,5 +189,12 @@ export function openMechSlot(o: {
     ...(o.badge ? { badge: o.badge } : {}),
     ...(o.remaining ? { remaining: o.remaining } : {}),
     actions: [{ label: o.actionLabel ?? `Set ${o.slot.label}`, run: o.onPick }],
+    // The mech wearing whatever is being looked at (partpicker.ts bench).
+    bench: {
+      title: o.unitName?.trim() || buildDefaultName(o.data, o.loadout) || 'New mech',
+      slotKey: o.slot.key,
+      loadout: o.loadout,
+      points: (m) => buildPoints(o.data, m),
+    },
   });
 }

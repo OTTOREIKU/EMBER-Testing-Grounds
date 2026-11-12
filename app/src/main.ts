@@ -9407,6 +9407,17 @@ async function init() {
   renderCombatIdle();
   renderUnitLog();
   renderAll();
+
+  // A squad sent from My Collection's "Play on Tabletop" (/table/?squad=id):
+  // loaded the way the roster's Saved Squads row loads one, which asks which
+  // side it joins. The address is cleaned first, so a reload does not add it
+  // a second time.
+  const handed = new URLSearchParams(location.search).get('squad');
+  if (handed) {
+    history.replaceState(null, '', location.pathname + location.hash);
+    const sq = loadSquads().find((s) => s.id === handed);
+    if (sq) void loadSavedSquad(sq);
+  }
 }
 
 init().catch((e) => {

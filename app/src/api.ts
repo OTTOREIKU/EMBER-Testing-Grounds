@@ -375,12 +375,14 @@ export class EmberApi {
   }
 
   // The player's saved units and squads on the account; library.ts owns the sync.
-  async getLibrary(): Promise<{ units: MechPreset[]; squads: SavedSquad[]; hidden: string[]; updatedAt: number }> {
+  // `removed` is the ids the player deleted (tombstones.ts), so a delete
+  // reaches every device; a server from before it answers without one.
+  async getLibrary(): Promise<{ units: MechPreset[]; squads: SavedSquad[]; hidden: string[]; removed?: string[]; updatedAt: number }> {
     return this.call('/library/me');
   }
 
-  async putLibrary(units: MechPreset[], squads: SavedSquad[], hidden: string[]): Promise<{ updatedAt: number }> {
-    return this.call('/library/me', { method: 'PUT', body: { units, squads, hidden } });
+  async putLibrary(units: MechPreset[], squads: SavedSquad[], hidden: string[], removed: string[] = []): Promise<{ updatedAt: number }> {
+    return this.call('/library/me', { method: 'PUT', body: { units, squads, hidden, removed } });
   }
 
   async myRecord(): Promise<MyRecord> {

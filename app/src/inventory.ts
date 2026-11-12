@@ -1,6 +1,5 @@
 import type { Card } from './types';
 import { boxCoverUrl, cardName, isListedBox } from './data';
-import { confirmDialog } from './dialog';
 import { collectionOn, copiesOf, hasAny, loadCollection, onCollection, saveCollection, setCollectionOn, type CardIndex, type Collection } from './collection';
 // The rows, the exclusivity rule and the two-column comparison live in
 // boxcompare.ts, shared with the reference's Boxes tab. This class keeps what
@@ -253,8 +252,6 @@ export class Inventory {
       <button id="inv-close" class="dlg-close" title="Close">✕</button>
       <div class="inv-head">
         <b>My inventory</b>
-        <button id="inv-compare-open" class="inv-cmp-btn">Compare boxes</button>
-        ${this.hasAny() ? '<button id="inv-clear" class="inv-cmp-btn">Clear</button>' : ''}
       </div>
       <p class="dim">Set how many copies of each box you own, and record the pieces you have built. Card lists then show your available copy counts. Signed in, the collection follows your account to the pad.</p>
       <div class="inv-facets">
@@ -265,6 +262,7 @@ export class Inventory {
           )
           .join('')}
         <label class="inv-filter"><input type="checkbox" id="inv-filter" ${this.filterEnabled ? 'checked' : ''}><span class="inv-tick"></span> Only show what I own</label>
+        <button id="inv-compare-open" class="inv-cmp-btn">Compare boxes</button>
       </div>
       <div class="inv-list">
         ${this.visibleBoxes()
@@ -300,19 +298,6 @@ export class Inventory {
     });
     dlg.querySelector('#inv-close')!.addEventListener('click', () => dlg.remove());
     dlg.querySelector('#inv-compare-open')!.addEventListener('click', () => this.showCompare(dlg));
-    dlg.querySelector('#inv-clear')?.addEventListener('click', () => {
-      void confirmDialog({
-        title: 'Clear the collection?',
-        body: 'Every box count and built piece is removed, here and on your account.',
-        confirmLabel: 'Clear it',
-        cancelLabel: 'Keep it',
-      }).then((go) => {
-        if (!go) return;
-        saveCollection({ boxes: {}, cards: {}, updatedAt: 0 });
-        this.onChange();
-        this.openDialog();
-      });
-    });
     dlg.querySelector<HTMLInputElement>('#inv-filter')!.addEventListener('change', (ev) => {
       this.filterEnabled = (ev.target as HTMLInputElement).checked;
       this.onChange();

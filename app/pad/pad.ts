@@ -370,6 +370,30 @@ let solo = false;
 // squad can only ever be your own.
 let squadSide: Side = 's1';
 
+// A squad sent from My Collection's "Use in Pad" (/pad/?squad=id). It joins
+// the first table this page opens - straight away if one is already open,
+// otherwise once the player starts or joins one - and only once. The address
+// is cleaned at once, so a reload does not bring it twice.
+let handedSquad: string | null = new URLSearchParams(location.search).get('squad');
+if (handedSquad) history.replaceState(null, '', location.pathname + location.hash);
+
+function applyHandedSquad(): void {
+  const id = handedSquad;
+  handedSquad = null;
+  const sq = id ? loadSquads().find((s) => s.id === id) : undefined;
+  if (!sq || !data) return;
+  if (sendSquad(sq.name, sq.mechs, sq.drones)) {
+    // The hand comes with the squad (5.4), as the saved-squads row does it.
+    if (sq.tactics?.length) {
+      const seat = solo ? squadSide : mySeat();
+      const merged = [...new Set([...handOf(seat), ...sq.tactics.filter((t) => data!.byId.get(t))])];
+      sendHand(seat, merged);
+    }
+    toast(`${sq.name} added from My Collection.`);
+  }
+  render();
+}
+
 const SOLO_KEY = 'ember.pad.solo';
 const GAMES_KEY = 'ember.pad.games';
 const ROOMS_KEY = 'ember.pad.rooms';
@@ -5104,6 +5128,7 @@ function render(): void {
   const atTable = !!view.room || solo;
   if (atTable && (account || solo)) screen = 'table';
   else if (screen === 'table' || ((screen === 'lobby' || screen === 'collection') && !account)) screen = account ? 'lobby' : 'signin';
+  if (screen === 'table' && data && handedSquad) queueMicrotask(applyHandedSquad);
 
   if (screen !== 'table') {
     // Back on the door screens, so a new build published mid-game is offered
