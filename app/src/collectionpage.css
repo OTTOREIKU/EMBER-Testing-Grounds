@@ -270,6 +270,14 @@ body.cl-body {
 .cl-drawer-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: auto; padding-top: 6px; }
 .cl-drawer-for { flex: 1 1 100%; display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
 .cl-drawer-for b { font-size: 13.5px; }
+/* "Pick parts from": all, what you own, or built only (2026-11-15). */
+.cl-partsfrom { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; flex: none; }
+.cl-partsfrom .cl-drawer-also { margin-top: 2px; }
+.cl-saved-as { flex: 1 1 auto; padding: 8px 10px; }
+.cl-btn.sm { min-height: 28px; padding: 0 10px; font-size: 11.5px; }
+/* "In your boxes, not marked built": one heading per owned box. */
+.cl-boxhead { margin: 14px 0 8px; font-size: 13px; color: var(--text2); }
+.cl-boxhead b { font-weight: 700; }
 
 /* ---------- built pieces and boxes ---------- */
 /* The Reference's search box (#ref-search). */

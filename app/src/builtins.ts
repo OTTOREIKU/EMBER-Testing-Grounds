@@ -41,8 +41,15 @@ export function hideBuiltIn(id: string): void {
 // squad away with it. The squads now carry 'builtin:squad-' ids; a hidden list
 // written before that is read as having meant the unit only.
 
-export function restoreBuiltIns(): void {
-  write([]);
+// A squad's id starts 'builtin:squad-'; every other built-in id is a unit.
+export type BuiltInKind = 'squad' | 'unit';
+export const builtInKind = (id: string): BuiltInKind => (id.startsWith('builtin:squad-') ? 'squad' : 'unit');
+
+// Brings back the hidden built-ins: all of them, or only the squads or only the
+// units (a player on the Squads tab expects only the squads back; reported by
+// a player 2026-11-15).
+export function restoreBuiltIns(kind?: BuiltInKind): void {
+  write(kind ? hiddenBuiltIns().filter((id) => builtInKind(id) !== kind) : []);
 }
 
 // The account's list replacing this device's.
