@@ -257,7 +257,7 @@
 .pp-cap-btns .pp-use { background: var(--use-tint, var(--accent)); color: var(--on-accent); }
 .pp-cap-btns .pp-use:hover { filter: brightness(1.08); background: var(--use-tint, var(--accent)); color: var(--on-accent); }
 /* Dimmed, never disabled: the squad can still take it and the Squads tab flags it. */
-.pp-cap-btns .pp-use.off-faction { background: var(--surface3); color: var(--text3); }
+.pp-cap-btns .pp-use.off-faction { background: var(--surface3); color: var(--text3); cursor: not-allowed; }
 .pp-cap-btns .pp-use.off-faction:hover { background: var(--border); color: var(--text2); filter: none; }
 .pp-cap-btns .off { display: none; }
 .pp-slot.chosen .pp-use::after { content: ' (in use)'; font-weight: 400; }

@@ -67,7 +67,8 @@ import { ICON_GEAR, ICON_ORDER, squadColour } from '../src/icons';
 import { BUILD_SLOTS, buildDefaultName, confirmLegalBuild, mechBuilderHtml, openMechSlot, slotPool, type BuildSlot } from '../src/mechbuilder';
 import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { bindCollection, builtOnlyOn, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setBuiltOnly, setCollectionOn, shortfalls, type Collection } from '../src/collection';
-import { choiceDialog, confirmDialog, openDialog, pickManyDialog, promptDialog } from '../src/dialog';
+import { alertDialog, choiceDialog, confirmDialog, openDialog, pickManyDialog, promptDialog } from '../src/dialog';
+import { cardFitsSquadFaction, legalSlotCards, squadFactionOf, unitFitsSquad, type SquadUnits } from '../src/buildrules';
 import { orderSheetHtml } from './order';
 import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updates';
 import { configureNotices, explainOnHold, notify, redrawNotice, speakInPlace, type NoticeKind } from '../src/notices';
@@ -979,6 +980,27 @@ function columnSide(el: Element): Side {
 
 // The first real card of a squad decides its colour, the way the board tints a
 // squad: a squad with no single allegiance takes the neutral.
+// A seat's squad as the shared build rules read it (buildrules.ts): its mechs'
+// loadouts and every other unit's cards, a Carrier's Load included.
+function seatUnits(s: Side): SquadUnits {
+  const ts = table.tokens.filter((t) => t.side === s);
+  return {
+    mechs: ts.flatMap((t) => (t.kind === 'mech' && t.mech ? [t.mech] : [])),
+    drones: ts.filter((t) => t.kind !== 'mech').flatMap((t) => [t.cardId, ...(t.droneBackpack ? [t.droneBackpack] : [])]),
+  };
+}
+
+// Whether a whole mech may join the seat's squad, and why not (rules 2 and 3
+// of buildrules.ts). Null when it may.
+function mechRefusal(d: GameData, s: Side, m: MechLoadout): string | null {
+  const units = seatUnits(s);
+  if (unitFitsSquad(d, units, m)) return null;
+  const pilot = m.pilot ? d.byId.get(m.pilot) : undefined;
+  if (pilot && units.mechs.some((x) => x.pilot === pilot.id)) return `${cardName(pilot)} already flies a mech in this squad. Each pilot flies one mech.`;
+  const sf = squadFactionOf(d, units);
+  return `This squad is ${sf ?? 'one faction'}, and that mech is not. A squad holds one faction, plus PD and Collaboration mercenaries.`;
+}
+
 function sideFaction(s: Side): string | null {
   if (!data) return null;
   const t = unitsOf(s)[0];
@@ -3824,7 +3846,10 @@ function openBuildSlot(slot: BuildSlot): void {
     data: d,
     loadout: build,
     slot,
-    cards: slotPool(d, slot, build[slot.key]),
+    // The build rules (buildrules.ts): one faction per mech and, when the
+    // build is going into this seat's squad rather than being a saved preset
+    // under edit, the squad's faction and its free pilots.
+    cards: legalSlotCards(d, build, slot, editing ? undefined : seatUnits(solo ? squadSide : mySeat()), slotPool(d, slot, build[slot.key])),
     // What the other slots of this build already took comes off the shelf too;
     // the slot being filled does not, so a card can be re-picked.
     remaining: (c) => {
@@ -4291,8 +4316,10 @@ async function playTactic(side: Side, cardId: string): Promise<void> {
 function openLoadPicker(carrier: Card, seat: Side, run: (load: Card) => void): void {
   const d = data;
   if (!d) return;
+  const sf = squadFactionOf(d, seatUnits(seat));
   const parts = d.cards
     .filter((c) => c.category === 'mech_part' && canBeLoad(c) && !isDiscardCard(c))
+    .filter((c) => cardFitsSquadFaction(d, sf, c))
     .sort((a, b) => cardName(a).localeCompare(cardName(b)));
   openPartPicker({
     data: d,
@@ -4564,8 +4591,12 @@ function openDronePicker(kind: 'drone' | 'projectile'): void {
   const d = data;
   if (!d) return;
   const seat = solo ? squadSide : mySeat();
+  // Only what the squad may take (buildrules.ts, OTTO 2026-11-16: "Block
+  // everywhere"): its own faction and the mercenaries.
+  const sf = squadFactionOf(d, seatUnits(seat));
   const pool = d.cards
     .filter((c) => c.category === kind && !isDiscardCard(c))
+    .filter((c) => cardFitsSquadFaction(d, sf, c))
     .sort((a, b) => cardName(a).localeCompare(cardName(b)));
   const add = (card: Card, load?: string): void => {
     if (sendSquad(cardName(card), [], [{ cardId: card.id, backpack: load }])) {
@@ -4587,12 +4618,6 @@ function openDronePicker(kind: 'drone' | 'projectile'): void {
     remaining: leftOf,
     actions: [{
       label: 'Add to squad',
-      check: (card) => {
-        const a = squadAllegiance(d, table.tokens.filter((t) => t.side === seat));
-        return cardFitsSquad(d, a, card)
-          ? { ok: true, why: '' }
-          : { ok: false, why: `This squad is ${a.faction}, and this card is ${d.factionOf(card) ?? 'of no known faction'}.` };
-      },
       run: (card) => {
         if (!isCarrier(card)) { add(card); return; }
         // A carrier may take its Load on the way in.
@@ -6218,10 +6243,13 @@ function act(el: HTMLElement, ev: Event): void {
     case 'build-add': {
       const d = data;
       if (!d) return;
-      // The shared build rules (mechbuilder.ts): a missing Torso, Chassis or
-      // Arm is refused, a mixed faction is warned - as the tabletop does.
-      void confirmLegalBuild(d, build, 'Add it anyway').then((ok) => {
+      // The shared build rules (mechbuilder.ts, buildrules.ts): a missing
+      // Torso, Chassis or Arm is refused, and so is a mixed faction, a mech
+      // of another faction than the squad, or a pilot already flying in it.
+      void confirmLegalBuild(d, build, 'Add it anyway').then(async (ok) => {
         if (!ok) return;
+        const why = mechRefusal(d, solo ? squadSide : mySeat(), build);
+        if (why) { await alertDialog({ title: "That mech can't join", body: why }); return; }
         const torso = build.torso ? d.byId.get(build.torso) : undefined;
         const label = buildName.trim();
         if (sendSquad(label || (torso ? cardName(torso) : 'Mech'), [{ ...(label ? { name: label } : {}), loadout: build }], [])) {
@@ -6239,7 +6267,9 @@ function act(el: HTMLElement, ev: Event): void {
     case 'preset': {
       if (heldSaved) { heldSaved = false; return; }
       const preset = loadMechPresets().find((m: MechPreset) => m.id === el.dataset.id);
-      if (!preset) return;
+      if (!preset || !data) return;
+      const why = mechRefusal(data, solo ? squadSide : mySeat(), preset.mech);
+      if (why) { void alertDialog({ title: `${preset.name} can't join`, body: why }); return; }
       if (sendSquad(preset.name, [{ name: preset.name, loadout: preset.mech }], [])) {
         error = null;
         panel = null;

@@ -6,6 +6,7 @@ import { hiddenBuiltIns, restoreBuiltIns } from './builtins';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset } from './presets';
 import { deleteSquad, isBuiltInSquad, loadoutFaction, loadoutPoints, loadSquads, savedSquadPoints } from './squadstore';
 import { canBeLoad, cardFitsSquad, isCarrier, type SquadAllegiance } from './units';
+import { cardFitsSquadFaction, legalSlotCards, mechFitsSquadFaction, pilotsInUse, squadFactionOf, type SquadUnits } from './buildrules';
 import { ICON_EXPAND, squadColour } from './icons';
 import { groupByFaction, openPartPicker } from './partpicker';
 import { BUILD_SLOTS, buildDefaultName, confirmLegalBuild, mechBuilderHtml, openMechSlot, slotPool, type BuildSlot } from './mechbuilder';
@@ -23,6 +24,10 @@ const mineFirst = <T extends { id: string }>(list: T[]): T[] =>
 
 export interface RosterCallbacks {
   squadAllegiance(side: Side): SquadAllegiance;
+  // The squad's units as the shared build rules read them (buildrules.ts),
+  // leaving out the unit `skipUid` (the one being edited). Without it the
+  // faction test falls back to squadAllegiance and pilots are not checked.
+  squadUnits?(side: Side, skipUid?: number): SquadUnits;
   // `load` is the Part a Carrier drone carries onto the board (FAQ O3-O8). Only
   // a Carrier ever passes one, and it may be left off - a Tarantula is allowed
   // to stand there with nothing on its back (O8).
@@ -104,18 +109,27 @@ export class Roster {
     // The side's colour (ui.css --side-s1/--side-s2), as on the board's outlines.
     b.classList.add(`side-${side}`);
     const fits = card ? this.squadTakes(side, card) : { ok: true, why: '' };
+    return this.blockIfNot(b, side, fits);
+  }
+
+  // THE BUILD RULES BLOCK (OTTO, 2026-11-16: "Block everywhere"): a button
+  // whose card or mech would break the squad stays visible, so the player can
+  // see why, but does nothing. This listener is the button's first, so it
+  // stops the caller's own click listener at the target.
+  private blockIfNot(b: HTMLButtonElement, side: Side, fits: { ok: boolean; why: string }): HTMLButtonElement {
     if (!fits.ok) {
       b.classList.add('off-faction');
+      b.setAttribute('aria-disabled', 'true');
+      b.addEventListener('click', (ev) => { ev.stopImmediatePropagation(); ev.preventDefault(); });
       // The reason is three sentences of rules, which is too much for a cursor
       // tooltip. The button says what is wrong and the details panel explains.
-      b.title = `Off-faction for ${squadLabel(side)}`;
+      b.title = `Can't join ${squadLabel(side)}`;
       inspectOnHover(b, {
-        title: `${squadLabel(side)} would mix factions`,
+        title: `Can't join ${squadLabel(side)}`,
         sub: 'Rulebook 5.1, squad composition',
         lines: [
           fits.why,
-          'A squad may only hold one faction, and mercenaries (PD, Collaboration) may join any of them.',
-          'Nothing is blocked. Add it and the Squads tab will flag the squad as illegal.',
+          'A squad may only hold one faction, and mercenaries (PD, Collaboration) may join any of them. Each pilot flies one mech.',
         ],
       });
     } else {
@@ -128,12 +142,36 @@ export class Roster {
   // put the rest — the details panel — add it; the part browser has only a
   // tooltip, because its own window covers that panel.
   private squadTakes(side: Side, card: Card): { ok: boolean; why: string } {
-    const a = this.cb.squadAllegiance(side);
-    if (cardFitsSquad(this.data, a, card)) return { ok: true, why: '' };
-    const theirs = FACTION_LABEL[a.faction!] ?? a.faction;
+    const units = this.cb.squadUnits?.(side);
+    const sf = units ? squadFactionOf(this.data, units) : null;
+    if (units ? cardFitsSquadFaction(this.data, sf, card) : cardFitsSquad(this.data, this.cb.squadAllegiance(side), card)) {
+      return { ok: true, why: '' };
+    }
+    const fac = sf ?? this.cb.squadAllegiance(side).faction;
+    const theirs = fac ? (FACTION_LABEL[fac] ?? fac) : 'another faction';
     const f = this.data.factionOf(card);
     const mine = f ? (FACTION_LABEL[f] ?? f) : 'of no known faction';
     return { ok: false, why: `${squadLabel(side)} is ${theirs}, and this is ${mine}.` };
+  }
+
+  // The whole build against one squad: every faction on it fits, and its
+  // pilot is not already flying another of the squad's mechs.
+  private mechTakes(side: Side, skipUid?: number): { ok: boolean; why: string } {
+    const units = this.cb.squadUnits?.(side, skipUid);
+    if (!units) {
+      const torso = this.mech.torso ? this.data.byId.get(this.mech.torso) : undefined;
+      return torso ? this.squadTakes(side, torso) : { ok: true, why: '' };
+    }
+    const sf = squadFactionOf(this.data, units);
+    if (!mechFitsSquadFaction(this.data, sf, this.mech)) {
+      const theirs = sf ? (FACTION_LABEL[sf] ?? sf) : sf;
+      return { ok: false, why: `${squadLabel(side)} is ${theirs}, and this mech is not.` };
+    }
+    const pilot = this.mech.pilot ? this.data.byId.get(this.mech.pilot) : undefined;
+    if (pilot && pilotsInUse(units).has(pilot.id)) {
+      return { ok: false, why: `${cardName(pilot)} already flies a mech in ${squadLabel(side)}.` };
+    }
+    return { ok: true, why: '' };
   }
 
   constructor(data: GameData, cb: RosterCallbacks) {
@@ -356,8 +394,12 @@ export class Roster {
   private slotCards(slot: BuildSlot): Card[] {
     // The shared pool (mechbuilder.ts slotPool: no Discard Cards, no zero-cost
     // Mode faces), narrowed to the collection; a card already chosen stays.
-    return slotPool(this.data, slot, this.mech[slot.key])
+    // Then the build rules (buildrules.ts): one faction per mech, and while
+    // editing a unit on the board, its squad's faction and free pilots.
+    const pool = slotPool(this.data, slot, this.mech[slot.key])
       .filter((c) => (this.cb.cardFilter?.(c) ?? true) || this.mech[slot.key] === c.id);
+    const squad = this.editing ? this.cb.squadUnits?.(this.editing.side, this.editing.uid) : undefined;
+    return legalSlotCards(this.data, this.mech, slot, squad, pool);
   }
 
   // Grouped by faction in a fixed order so the list does not reshuffle as parts
@@ -561,8 +603,10 @@ export class Roster {
       for (const side of SQUAD_ORDER) {
         // The built mech has a faction of its own, so the button can say whether
         // it would clash before the player commits to the build.
-        const torso = this.mech.torso ? this.data.byId.get(this.mech.torso) : undefined;
-        const b = this.squadButton(side, torso ?? null);
+        const b = document.createElement('button');
+        b.className = `add sq-add side-${side}`;
+        b.title = `Add to ${squadLabel(side)}`;
+        this.blockIfNot(b, side, this.mechTakes(side));
         b.classList.add('sq-wide');
         b.textContent = `Add mech to ${squadLabel(side)}`;
         b.addEventListener('click', () => {

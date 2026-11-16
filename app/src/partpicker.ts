@@ -37,9 +37,9 @@ export interface PickAction {
   label: string;
   // A squad button carries its squad's faction colour, the way the Add lists do.
   tint?: string;
-  // Whether this card may go there. A failure dims the button and explains
-  // itself in the title; it is never disabled, because the app warns rather
-  // than blocks.
+  // Whether this card may go there. A failure dims the button, explains
+  // itself in the title and does nothing when pressed (the build rules block,
+  // OTTO 2026-11-16; see buildrules.ts).
   check?(card: Card): { ok: boolean; why: string };
   run(card: Card): void;
 }
@@ -298,7 +298,8 @@ export function openPartPicker(o: PartPickerOpts): void {
         b.classList.toggle('off-faction', !verdict.ok);
         // This window covers the details panel in the corner, so the reason has
         // nowhere else to go and stays on the button. Kept to two short lines.
-        b.title = verdict.ok ? act.label : `${verdict.why} Allowed, but the squad will be flagged.`;
+        b.setAttribute('aria-disabled', verdict.ok ? 'false' : 'true');
+        b.title = verdict.ok ? act.label : `${verdict.why} It can't join that squad.`;
       });
       s.drop.dataset.drop = id;
       s.drop.classList.toggle('off', !pinned.includes(id));
@@ -459,6 +460,7 @@ export function openPartPicker(o: PartPickerOpts): void {
   const run = (id: string, act: PickAction): void => {
     const card = byId.get(id);
     if (!card) return;
+    if (act.check && !act.check(card).ok) return;
     close();
     act.run(card);
   };
@@ -486,8 +488,7 @@ export function openPartPicker(o: PartPickerOpts): void {
   });
 
   preview.addEventListener('click', (ev) => {
-    // An off-faction button is dimmed and still works: the app warns rather
-    // than blocks, and the Squads tab flags the result.
+    // An off-faction button is dimmed and does nothing (run checks it).
     const use = (ev.target as Element).closest<HTMLElement>('[data-use]');
     if (use) {
       run(use.dataset.use!, o.actions[Number(use.dataset.act ?? 0)]);

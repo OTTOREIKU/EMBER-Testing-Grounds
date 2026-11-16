@@ -2538,6 +2538,15 @@ async function init() {
   const roster = new Roster(data, {
     now: () => Date.now(),
     squadAllegiance: (side) => squadAllegiance(data, state.tokens.filter((t) => t.side === side)),
+    // The shared build rules' view of a squad (buildrules.ts): its mechs'
+    // loadouts and every other unit's cards, a Carrier's Load included.
+    squadUnits: (side, skipUid) => {
+      const ts = state.tokens.filter((t) => t.side === side && t.uid !== skipUid);
+      return {
+        mechs: ts.flatMap((t) => (t.kind === 'mech' && t.mech ? [t.mech] : [])),
+        drones: ts.filter((t) => t.kind !== 'mech').flatMap((t) => [t.cardId, ...(t.droneBackpack ? [t.droneBackpack] : [])]),
+      };
+    },
     cardFilter: (card) => {
       if (!inventory.passes(card)) return false;
       const left = stockLeft(card);

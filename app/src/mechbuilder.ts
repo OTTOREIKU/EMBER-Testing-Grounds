@@ -81,8 +81,9 @@ export function buildPoints(data: GameData, m: MechLoadout): number {
 }
 
 // The build rules, the same wherever a Mech is added, saved or edited. A
-// missing core Part is refused (rulebook 2.2.2); a mixed faction is warned and
-// may be taken anyway (warn, don't block - the house rule for legality).
+// missing core Part is refused (rulebook 2.2.2), and so is a mixed faction
+// (5.1; OTTO, 2026-11-16: "Block everywhere", see buildrules.ts). The pickers
+// never offer one, so this catches an old save or an import being re-saved.
 export async function confirmLegalBuild(data: GameData, m: MechLoadout, confirmLabel: string): Promise<boolean> {
   const missing = [
     m.torso ? '' : 'a Torso',
@@ -98,13 +99,11 @@ export async function confirmLegalBuild(data: GameData, m: MechLoadout, confirmL
   }
   const { factions } = buildFactions(data, m);
   if (factions.length > 1) {
-    return confirmDialog({
+    await alertDialog({
       title: 'That mech mixes factions',
-      body: `It uses ${factions.join(' and ')} parts. Rulebook 5.1 says a Mech can only be composed of Parts from a single faction, so this build is not legal.`,
-      confirmLabel,
-      cancelLabel: 'Let me fix it',
-      danger: true,
+      body: `It uses ${factions.join(' and ')} parts. Rulebook 5.1 says a Mech can only be composed of Parts from a single faction. Swap the parts that differ to keep one faction.`,
     });
+    return false;
   }
   // Asked, not refused: a sandbox may want a pilotless Mech, and it played
   // with an invented Link 3 and no Initiative without a word (audit Phase 6,

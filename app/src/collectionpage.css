@@ -276,8 +276,37 @@ body.cl-body {
 .cl-saved-as { flex: 1 1 auto; padding: 8px 10px; }
 .cl-btn.sm { min-height: 28px; padding: 0 10px; font-size: 11.5px; }
 /* "In your boxes, not marked built": one heading per owned box. */
-.cl-boxhead { margin: 14px 0 8px; font-size: 13px; color: var(--text2); }
-.cl-boxhead b { font-weight: 700; }
+/* Built pieces, design A "one shelf" (OTTO, 2026-11-16): filter rows, a
+   progress line, then one grid per part type. A piece is built (green
+   badge, steppers), in a box (dimmed, Mark built) or not owned (darker). */
+.cl-pcfilters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.cl-pcfilters .ref-facets { margin: 0; }
+/* On a desktop the two rows are chips at their own width, as on the
+   Reference; the phone keeps the even grid the other tabs use. */
+@media (min-width: 861px) {
+  .cl-pcfilters .cl-facets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cl-pcfilters .cl-facets > .ref-facet { flex: none; width: auto; min-width: 0; }
+  .cl-pcfind .cl-search { flex: 0 1 420px; }
+}
+.cl-pcfind { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.cl-pcfind .cl-search { flex: 1 1 220px; }
+.cl-pcfind .cl-seg button { white-space: nowrap; }
+.cl-pcsum { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; margin: 4px 0 2px; font: 11px var(--mono); color: var(--text3); }
+.cl-pcsum b { color: var(--text); font-size: 14px; margin-right: 3px; }
+.cl-pcbar { display: inline-block; width: 80px; height: 5px; margin-left: 6px; border-radius: 3px; background: var(--surface3); vertical-align: middle; overflow: hidden; }
+.cl-pcbar i { display: block; height: 100%; background: var(--green); }
+.cl-seccount { font: 10.5px var(--mono); letter-spacing: 0.06em; color: var(--text3); }
+.cl-pcwrap { position: relative; }
+.cl-pcbadge { position: absolute; top: 6px; left: 6px; z-index: 1; padding: 2px 6px; border-radius: 4px; font: 700 9.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; pointer-events: none; }
+.cl-pcbadge.built { background: var(--green); color: var(--bg); }
+.cl-pcbadge.box { background: rgba(15, 18, 22, 0.85); color: var(--text2); box-shadow: inset 0 0 0 1px var(--border); }
+.cl-pcbadge.none { background: rgba(15, 18, 22, 0.85); color: var(--text3); }
+.cl-piece.st-box .cl-cardimg { filter: grayscale(0.85) brightness(0.55); }
+.cl-piece.st-none .cl-cardimg { filter: grayscale(1) brightness(0.35); }
+.cl-piece { min-width: 0; }
+.cl-pcname { font-size: 11px; color: var(--text2); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cl-mark { color: var(--accent); }
+.cl-pchint { margin-top: 18px; }
 
 /* ---------- built pieces and boxes ---------- */
 /* The Reference's search box (#ref-search). */

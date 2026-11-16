@@ -1952,7 +1952,7 @@ button.add.sq-add:hover { background: color-mix(in srgb, var(--sq-tint, var(--te
    around"). */
 button.add.sq-add.has, button.add.sq-add.has:hover { background: var(--sq-tint, var(--accent)); color: var(--on-accent); }
 button.add.sq-add.sq-wide { min-width: 0; flex: 1; padding: 6px 10px; font-size: 12px; }
-button.add.off-faction { opacity: 0.4; }
+button.add.off-faction { opacity: 0.4; cursor: not-allowed; }
 /* Without a side colour a bare .add falls back to the browser button face, which
    reads as a bright white slab next to the coloured one. */
 button.add.grey { background: var(--surface3); color: var(--text2); }

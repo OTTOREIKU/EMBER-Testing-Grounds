@@ -24,6 +24,9 @@ for (const [name, src] of [['roster.ts', roster], ['pad.ts', pad]]) {
   check(`${name} opens a slot through the shared picker`, src.includes('openMechSlot('), true);
   check(`${name} checks a build with the shared rules`, src.includes('confirmLegalBuild('), true);
   check(`${name} takes its slot list from slotPool`, src.includes('slotPool('), true);
+  // THE BUILD RULES (buildrules.ts, OTTO 2026-11-16: "Block everywhere"):
+  // every builder narrows its slot list through the same rules.
+  check(`${name} narrows its slot list with the shared build rules`, src.includes('legalSlotCards('), true);
   // The pad's sheet has a SLOTS of its own for the Part rows it draws; that
   // one is not a builder list, so only BUILD_SLOTS is held against it.
   check(`${name} keeps no builder slot list of its own`, (name === 'pad.ts' ? /const BUILD_SLOTS\b/ : /const (BUILD_)?SLOTS\b/).test(src), false);
@@ -53,6 +56,17 @@ for (const act of ['build-slot', 'build-clear', 'build-rename', 'card']) {
 // ---------- its stylesheet reaches both ----------
 check('partpicker.css imports the builder\'s styles', read('../src/partpicker.css').includes("@import './mechbuilder.css';"), true);
 check('the board loads partpicker.css', read('../src/styles.css').includes("@import './partpicker.css';"), true);
+
+// ---------- the build rules block (OTTO, 2026-11-16: "Block everywhere") ----------
+const rules = read('../src/buildrules.ts');
+const legal = mb.slice(mb.indexOf('export async function confirmLegalBuild'), mb.indexOf('export function mechBuilderHtml'));
+check('a mixed-faction mech is refused, not confirmed', /mixes factions[\s\S]*?return false;/.test(legal) && !/mixes factions[\s\S]*?confirmDialog/.test(legal.slice(0, legal.indexOf('if (!m.pilot)'))), true);
+check('the Collection page narrows slots with the shared rules', read('../src/collectionpage.ts').includes('legalSlotCards('), true);
+check('the rules keep mercenaries in any squad', rules.includes('isMercenary(f)'), true);
+check('the rules hide a pilot already flying in the squad', rules.includes('pilotsInUse('), true);
+check('a squad button that breaks the rules does nothing', roster.includes('stopImmediatePropagation'), true);
+check('the part picker will not run a failed check', read('../src/partpicker.ts').includes('if (act.check && !act.check(card).ok) return;'), true);
+check('the pad refuses a mech that cannot join the seat', pad.includes('mechRefusal('), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -17,7 +17,7 @@ import './reference.css';
 import './partpicker.css';
 import './collectionpage.css';
 import type { Card, MechLoadout } from './types';
-import { boxCoverUrl, cardImageUrl, cardName, FACTION_LABEL, isDiscardCard, isListedBox, isModeFace, loadData, mechArtLayers, type GameData } from './data';
+import { boxCoverUrl, cardImageUrl, cardName, faceOf, FACTION_LABEL, isDiscardCard, isListedBox, isModeFace, loadData, mechArtLayers, type GameData } from './data';
 import { EmberApi } from './api';
 import { bindLibrary, librarySync, onLibrary } from './library';
 import { bindCollection, copiesOf, hasAny, loadCollection, onCollection, physicalKey, saveCollection, tracked } from './collection';
@@ -27,7 +27,7 @@ import {
 } from './squadstore';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, updateMechPreset, type MechPreset } from './presets';
 import { builtInKind, hiddenBuiltIns, restoreBuiltIns } from './builtins';
-import { BUILD_SLOTS, buildDefaultName, confirmLegalBuild, mechBuilderHtml, openMechSlot, slotPool } from './mechbuilder';
+import { BUILD_SLOTS, buildDefaultName, confirmLegalBuild, mechBuilderHtml, openMechSlot } from './mechbuilder';
 import { fillPortraits } from './cardart';
 import { openCardSheet, useSheetData } from './cardsheet';
 import { carryMechEdit, linksOf, linksSummary } from './mechlinks';
@@ -38,6 +38,7 @@ import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog
 import { printsWide } from './images';
 import { registerOffline } from './offline';
 import { MERCENARY_FACTIONS } from './units';
+import { cardFitsSquadFaction, legalSlotCards, squadFactionOf, unitFitsSquad, type SquadUnits } from './buildrules';
 
 type Tab = 'squads' | 'units' | 'built' | 'boxes';
 type PartsFrom = 'all' | 'own' | 'built';
@@ -68,6 +69,11 @@ const view = {
   // The phone shows a squad full screen; the desktop beside its list.
   phoneOpen: false,
   piecesQuery: '',
+  // The Built pieces tab's filters (OTTO, 2026-11-16): faction, part type,
+  // and which states show.
+  piecesFac: '',
+  piecesType: '',
+  piecesShow: 'all' as 'all' | 'built' | 'todo',
   boxFaction: '',
   // Which parts the builder offers (a player on a phone, 2026-11-15: "an
   // option of built parts only"): every card, what the boxes and built pieces
@@ -144,6 +150,32 @@ function squadFaction(d: GameData, sq: SavedSquad): { main: string | null; all: 
   const first = sq.mechs.map((m) => loadoutFaction(d, m.loadout)).find((f) => f && !MERCENARY_FACTIONS.includes(f));
   return { main: first ?? own[0] ?? [...all][0] ?? null, all: [...all] };
 }
+
+// THE BUILD RULES (buildrules.ts, shared with the Tabletop and the Pad): one
+// faction per mech, one faction per squad plus mercenaries (PD, the
+// Collaboration), one pilot per mech and never the same pilot twice in a
+// squad. A player, 2026-11-16: "I've added my first unit (UN for instance),
+// I'm given the options for GOF and RDL when I go to add my second unit."
+// What a squad is offered (parts for a mech built or edited in it, saved
+// units, drones) follows them. `skipMech` leaves out the mech being edited,
+// so a squad's only mech is not held to itself.
+function squadUnits(sqId: string | undefined, skipMech?: number): SquadUnits | undefined {
+  const sq = sqId ? findSquad(sqId) : undefined;
+  if (!sq) return undefined;
+  return { mechs: sq.mechs.filter((_, i) => i !== skipMech).map((m) => m.loadout), drones: sq.drones.map((x) => x.cardId) };
+}
+function squadOwnFaction(d: GameData, sqId: string | undefined, skipMech?: number): string | null {
+  const u = squadUnits(sqId, skipMech);
+  return u ? squadFactionOf(d, u) : null;
+}
+
+// The faction the drawer's build is held to: the squad it is being built for
+// or edited in. A unit built on the Units tab is held to nothing.
+function drawerFaction(d: GameData, u: NonNullable<typeof view.unit>): string | null {
+  if (u.edit) return squadOwnFaction(d, u.edit.squad, u.edit.index);
+  return squadOwnFaction(d, u.target?.squad);
+}
+const factionWords = (f: string): string => `${FAC_SHORT[f] ?? f} and mercenary (PD, Collaboration)`;
 
 function squadViews(d: GameData): SquadView[] {
   return loadSquads()
@@ -563,6 +595,7 @@ function unitDrawerHtml(d: GameData): string {
     <button type="button" class="dlg-close" data-act="unit-close" aria-label="Close">✕</button>
     <div class="cl-plate cl-drawer-art" data-fac="${esc(f ?? '')}">${mechArt(u.mech)}</div>
     ${partsFromHtml()}
+    ${(() => { const fac = drawerFaction(d, u); return fac ? `<p class="cl-drawer-also cl-facnote">For a ${esc(FAC_SHORT[fac] ?? fac)} squad: only ${esc(factionWords(fac))} parts are offered.</p>` : ''; })()}
     <div class="cl-drawer-body mech-bench">${mechBuilderHtml(d, u.mech, { name: u.name || buildDefaultName(d, u.mech) || (u.target ? 'New mech' : 'New unit') })}</div>
     <div class="cl-drawer-actions">
       ${u.edit ? editActionsHtml(u) : u.target ? `<div class="cl-drawer-for"><span class="cl-lbl">Building for</span><b>${esc(u.target.newName ?? loadSquads().find((s) => s.id === u.target!.squad)?.name ?? 'a squad')}</b></div>
@@ -602,60 +635,105 @@ function saveAsUnitHtml(u: NonNullable<typeof view.unit>): string {
 
 // ---------- built pieces ----------
 
-function piecesHtml(d: GameData): string {
+// ONE SHELF (OTTO picked design A from the mockups, 2026-11-16: the old tab
+// was "a chaotic mess"). Every Part and Drone the player owns appears once,
+// grouped by part type, in one of three states: BUILT (a built-pieces count,
+// with − and +), IN A BOX (owned through a box, not marked built: dimmed,
+// with Mark built) or NOT OWNED (only while searching, to add a single).
+// Filtered by faction and part type, as the Reference filters its cards.
+// Boxes are never turned into built pieces by themselves: a box carries three
+// Backpack cards but its sprue builds one at a time.
+const PIECE_TYPES: [string, string][] = [['torso', 'Torso'], ['chasis', 'Chassis'], ['leftHand', 'Left arm'], ['rightHand', 'Right arm'], ['backpack', 'Backpack'], ['drone', 'Drone'], ['other', 'Other']];
+const pieceType = (c: Card): string => (c.category === 'drone' ? 'drone' : c.category === 'mech_part' && PIECE_TYPES.some(([t]) => t === c.type) ? c.type! : 'other');
+interface Piece { card: Card; key: string; built: number; inBox: number; box: string; fac: string; type: string }
+
+function piecesOf(d: GameData): Piece[] {
   const col = loadCollection();
-  const held = Object.entries(col.cards)
-    .map(([id, n]) => ({ card: d.byId.get(id), id, n }))
-    .filter((e): e is { card: Card; id: string; n: number } => !!e.card && e.n > 0)
-    .sort((a, b) => cardName(a.card).localeCompare(cardName(b.card)));
-  const q = view.piecesQuery.trim().toLowerCase();
-  const found = q
-    ? d.cards.filter((c) => !(col.cards[c.id] > 0) && !c.referenceOnly && (cardName(c).toLowerCase().includes(q) || c.id.toLowerCase().includes(q))).slice(0, 12)
-    : [];
-  const piece = (id: string, n: number) => `<div class="cl-piece">
-      ${cardTile(d, id)}
-      <div class="cl-piece-ft">${n ? `<button type="button" class="cl-step" data-act="piece-step" data-id="${esc(id)}" data-d="-1" aria-label="One fewer">−</button><b>×${n}</b>` : ''}
-      <button type="button" class="cl-step" data-act="piece-step" data-id="${esc(id)}" data-d="1" aria-label="One more">+</button></div>
-    </div>`;
-  return `<div class="cl-pieces">
-    <p class="cl-note">The models you have actually assembled. Where a card is recorded here, this count is what the Pad and the Tabletop let you field, ahead of the boxes.</p>
-    <input type="search" class="cl-search" data-act="pieces-q" placeholder="Find a card to record…" value="${esc(view.piecesQuery)}">
-    ${found.length ? `<div class="cl-sec"><span class="cl-lbl">Add a piece</span></div><div class="cl-piecegrid">${found.map((c) => piece(c.id, 0)).join('')}</div>` : ''}
-    <div class="cl-sec"><span class="cl-lbl">${held.length ? `${held.reduce((a, e) => a + e.n, 0)} pieces recorded` : 'Nothing recorded yet'}</span></div>
-    ${held.length ? `<div class="cl-piecegrid">${held.map((e) => piece(e.id, e.n)).join('')}</div>` : ''}
-    ${fromBoxesHtml(d)}
-  </div>`;
+  const builtCol = { ...col, builtOnly: true };
+  const boxCol = { ...col, cards: {}, builtOnly: false };
+  const ownedBoxes = new Set(Object.keys(col.boxes).filter((k) => col.boxes[k] > 0));
+  const seen = new Set<string>();
+  const out: Piece[] = [];
+  const take = (c: Card): void => {
+    const k = physicalKey(d, c.id);
+    if (seen.has(k)) return;
+    seen.add(k);
+    const built = copiesOf(d, builtCol, c);
+    const inBox = copiesOf(d, boxCol, c);
+    if (!built && !inBox) return;
+    // The entry the steppers change: whichever face holds the count, else this one.
+    const other = faceOf(d.cards, c.id);
+    const key = (col.cards[c.id] ?? 0) > 0 || !other || !((col.cards[other] ?? 0) > 0) ? c.id : other;
+    out.push({ card: c, key, built, inBox, box: (c.containedIn ?? []).find((e) => ownedBoxes.has(e.box))?.box ?? '', fac: d.factionOf(c) ?? '', type: pieceType(c) });
+  };
+  // Assembled kinds first, then anything else recorded as built (a pilot or a
+  // card recorded before this tab narrowed to models).
+  d.cards.filter((c) => (c.category === 'mech_part' || c.category === 'drone') && !c.referenceOnly && !isModeFace(c) && !isDiscardCard(c)).forEach(take);
+  Object.keys(col.cards).forEach((id) => { const c = d.byId.get(id); if (c && col.cards[id] > 0) take(c); });
+  return out;
 }
 
-// What the owned boxes hold that is not marked built yet, box by box (a
-// player, 2026-11-15: "automatically added the built pieces from the boxes
-// when you say you've got a box"). Shown, never filled in by itself: a box
-// carries three Backpack cards but its sprue builds one at a time, so adding
-// all of them would claim models that do not exist (OTTO chose this,
-// 2026-11-16). One tap marks a card built at the copies the boxes hold. Only
-// what gets assembled is listed: Parts and Drones, one face per card.
-function fromBoxesHtml(d: GameData): string {
+function piecesHtml(d: GameData): string {
+  const all = piecesOf(d);
+  const q = view.piecesQuery.trim().toLowerCase();
+  const byFac = (p: Piece) => !view.piecesFac || p.fac === view.piecesFac;
+  const byType = (p: Piece) => !view.piecesType || p.type === view.piecesType;
+  const bySearch = (c: Card) => !q || cardName(c).toLowerCase().includes(q) || c.id.toLowerCase().includes(q);
+  const byShow = (p: Piece) => view.piecesShow === 'all' || (view.piecesShow === 'built' ? p.built > 0 : p.built === 0);
+  const shown = all.filter((p) => byFac(p) && byType(p) && bySearch(p.card) && byShow(p));
+  // The filter rows count what the OTHER row leaves, so the numbers add up.
+  const facPool = all.filter(byType);
+  const facs = ['RDL', 'UN', 'GOF', 'PD', 'COLLABORATION'].filter((f) => facPool.some((p) => p.fac === f) || view.piecesFac === f)
+    .map((f) => ({ f, n: facPool.filter((p) => p.fac === f).length }));
+  const typePool = all.filter(byFac);
+  const types = PIECE_TYPES.filter(([t]) => typePool.some((p) => p.type === t) || view.piecesType === t);
+  const typeRow = `<div class="ref-facets cl-facets cl-typefacets" role="group" aria-label="Part type">
+    <button type="button" class="ref-facet${view.piecesType ? '' : ' active'}" data-act="pieces-type" data-v="">All parts</button>
+    ${types.map(([t, l]) => `<button type="button" class="ref-facet${view.piecesType === t ? ' active' : ''}" data-act="pieces-type" data-v="${t}">${l} <span class="fc-n">${typePool.filter((p) => p.type === t).length}</span></button>`).join('')}</div>`;
+  const showSeg = `<div class="cl-seg" role="group">${([['all', 'Everything'], ['built', 'Built'], ['todo', 'Not built yet']] as const).map(([k, l]) => `<button type="button" class="${view.piecesShow === k ? 'on' : ''}" data-act="pieces-show" data-v="${k}" aria-pressed="${view.piecesShow === k}">${l}</button>`).join('')}</div>`;
+  // Cards you own none of, while searching: the way to record a single.
+  const singles = q
+    ? d.cards.filter((c) => (c.category === 'mech_part' || c.category === 'drone') && !c.referenceOnly && !isModeFace(c) && !isDiscardCard(c) && bySearch(c)
+      && !all.some((p) => p.key === c.id || physicalKey(d, p.card.id) === physicalKey(d, c.id))
+      && (!view.piecesFac || d.factionOf(c) === view.piecesFac) && (!view.piecesType || pieceType(c) === view.piecesType)).slice(0, 12)
+    : [];
+  // How far along the player is: overall and per owned box.
   const col = loadCollection();
-  const owned = d.boxes.filter((b) => (col.boxes[b.key] ?? 0) > 0).sort((a, b) => a.id - b.id);
-  if (!owned.length) return '';
-  const builtCol = { ...col, builtOnly: true };
-  const seen = new Set<string>();
-  const groups = owned.map((b) => {
-    const cards = d.cards
-      .filter((c) => (c.category === 'mech_part' || c.category === 'drone') && !c.referenceOnly && !isModeFace(c) && !isDiscardCard(c))
-      .filter((c) => (c.containedIn ?? []).some((e) => e.box === b.key))
-      .filter((c) => copiesOf(d, builtCol, c) === 0)
-      .filter((c) => { const k = physicalKey(d, c.id); if (seen.has(k)) return false; seen.add(k); return true; })
-      .sort((x, y) => cardName(x).localeCompare(cardName(y)));
-    return { box: b, cards };
-  }).filter((g) => g.cards.length);
-  if (!groups.length) return `<div class="cl-sec"><span class="cl-lbl">Your boxes</span></div><p class="cl-note">Everything in your boxes is marked built.</p>`;
-  const total = groups.reduce((n, g) => n + g.cards.length, 0);
-  return `<div class="cl-sec cl-frombox"><span class="cl-lbl">In your boxes, not marked built · ${total}</span></div>
-    <p class="cl-note">Your boxes already count on the Pad and the Tabletop. Mark a piece built once it is assembled; from then on its built count is the one used.</p>
-    ${groups.map((g) => `<div class="cl-boxhead"><b>${esc(g.box.name.en || g.box.key)}</b></div>
-      <div class="cl-piecegrid">${g.cards.map((c) => `<div class="cl-piece">${cardTile(d, c.id)}
-        <div class="cl-piece-ft"><button type="button" class="cl-btn sm" data-act="box-built" data-id="${esc(c.id)}">Mark built</button></div></div>`).join('')}</div>`).join('')}`;
+  const filt = all.filter((p) => byFac(p) && byType(p));
+  const builtN = filt.filter((p) => p.built > 0).length;
+  const pct = filt.length ? Math.round((builtN / filt.length) * 100) : 0;
+  const boxes = d.boxes.filter((b) => (col.boxes[b.key] ?? 0) > 0).sort((a, b) => a.id - b.id)
+    .map((b) => { const inb = filt.filter((p) => p.box === b.key); return inb.length ? `<span>${esc(b.name.en || b.key)} <b>${inb.filter((p) => p.built > 0).length}/${inb.length}</b></span>` : ''; }).join('');
+  const summary = filt.length ? `<div class="cl-pcsum"><span><b>${builtN}</b> of ${filt.length} owned pieces built <i class="cl-pcbar"><i style="width:${pct}%"></i></i></span>${boxes}</div>` : '';
+  const tile = (p: Piece): string => {
+    const s = p.built > 0 ? 'built' : 'box';
+    const badge = s === 'built' ? `<span class="cl-pcbadge built">Built ×${p.built}</span>` : `<span class="cl-pcbadge box">In box ×${p.inBox}</span>`;
+    const ft = s === 'built'
+      ? `<button type="button" class="cl-step" data-act="piece-step" data-id="${esc(p.key)}" data-d="-1" aria-label="One fewer">−</button><b>×${p.built}</b><button type="button" class="cl-step" data-act="piece-step" data-id="${esc(p.key)}" data-d="1" aria-label="One more">+</button>`
+      : `<button type="button" class="cl-btn sm cl-mark" data-act="box-built" data-id="${esc(p.card.id)}">Mark built</button>`;
+    return `<div class="cl-piece st-${s}"><div class="cl-pcwrap">${cardTile(d, p.card.id)}${badge}</div><div class="cl-pcname" title="${esc(cardName(p.card))}">${esc(cardName(p.card))}</div><div class="cl-piece-ft">${ft}</div></div>`;
+  };
+  const single = (c: Card): string => `<div class="cl-piece st-none"><div class="cl-pcwrap">${cardTile(d, c.id)}<span class="cl-pcbadge none">Not owned</span></div><div class="cl-pcname" title="${esc(cardName(c))}">${esc(cardName(c))}</div>
+    <div class="cl-piece-ft"><button type="button" class="cl-btn sm cl-mark" data-act="piece-step" data-id="${esc(c.id)}" data-d="1">+ Add single</button></div></div>`;
+  const order = (p: Piece) => PIECE_TYPES.findIndex(([t]) => t === p.type);
+  const sorted = shown.slice().sort((a, b) => order(a) - order(b) || a.fac.localeCompare(b.fac) || cardName(a.card).localeCompare(cardName(b.card)));
+  const groups = PIECE_TYPES.map(([t, l]) => ({ l, ps: sorted.filter((p) => p.type === t) })).filter((g) => g.ps.length);
+  const empty = !all.length
+    ? '<p class="cl-note">Nothing here yet. Tick the boxes you own on the Boxes tab and their pieces show up here to mark built, or search a card to record a single.</p>'
+    : !groups.length && !singles.length ? '<p class="cl-note">Nothing matches these filters.</p>' : '';
+  return `<div class="cl-pieces">
+    <div class="cl-pcfilters">
+      ${facetRow('pieces-fac', view.piecesFac, facPool.length, facs)}
+      ${typeRow}
+      <div class="cl-pcfind"><input type="search" class="cl-search" data-act="pieces-q" placeholder="Find a card…" value="${esc(view.piecesQuery)}">${showSeg}</div>
+    </div>
+    ${summary}
+    ${groups.map((g) => `<div class="cl-sec"><span class="cl-lbl">${g.l}</span><small class="cl-seccount">${g.ps.filter((p) => p.built > 0).length} built · ${g.ps.length} shown</small></div>
+      <div class="cl-piecegrid">${g.ps.map(tile).join('')}</div>`).join('')}
+    ${singles.length ? `<div class="cl-sec"><span class="cl-lbl">Not owned · add a single</span></div><div class="cl-piecegrid">${singles.map(single).join('')}</div>` : ''}
+    ${empty}
+    ${q ? '' : '<p class="cl-note cl-pchint">Bought a piece outside a box? Search for it to add it as a single.</p>'}
+  </div>`;
 }
 
 // ---------- boxes ----------
@@ -767,11 +845,16 @@ function partsFromHtml(): string {
 // Where a squad's next mech comes from (OTTO, 2026-11-11: "add a brand new
 // mech or a saved unit to a squad"): built from scratch in the drawer, or one
 // of the saved units. "new" opens the builder; a preset goes straight in.
-async function pickMech(d: GameData, title: string): Promise<'new' | MechPreset | null> {
-  const units = loadMechPresets();
+async function pickMech(d: GameData, title: string, sqId?: string): Promise<'new' | MechPreset | null> {
+  const fac = squadOwnFaction(d, sqId);
+  const all = loadMechPresets();
+  const su = squadUnits(sqId);
+  const units = su ? all.filter((u) => unitFitsSquad(d, su, u.mech)) : all;
+  const left = all.length - units.length;
   const picked = await choiceDialog({
     title,
-    body: units.length ? 'Build a new mech from its parts, or take one of your saved units.' : 'Build a new mech from its parts. Units you save show up here too.',
+    body: (units.length ? 'Build a new mech from its parts, or take one of your saved units.' : 'Build a new mech from its parts. Units you save show up here too.')
+      + (fac ? ` This is a ${FAC_SHORT[fac] ?? fac} squad, so only ${factionWords(fac)} units are listed.` : '') + (left ? ` ${left} unit${left === 1 ? ' is' : 's are'} hidden: another faction, or a pilot already in this squad.` : ''),
     stacked: true,
     choices: [
       { id: '__new', label: '+ Build a new mech', primary: true },
@@ -846,6 +929,9 @@ function addDroneOrTactic(d: GameData, sq: SavedSquad, kind: 'drone' | 'tactic')
     .filter((c) => (kind === 'drone' ? c.category === 'drone' : c.category === 'tactics_or_upgrade'))
     .filter((c) => !c.referenceOnly && !isModeFace(c) && !isDiscardCard(c))
     .filter((c) => kind === 'drone' || !held.has(c.id))
+    // Drones are units, so they follow the squad's faction; Tactics Cards are
+    // not held to it (the Tabletop's hand takes any).
+    .filter((c) => kind !== 'drone' || cardFitsSquadFaction(d, squadOwnFaction(d, sq.id), c))
     .sort((a, b) => cardName(a).localeCompare(cardName(b)));
   const base = kind === 'drone' ? partsLimit(d) : undefined;
   const limit = base
@@ -1107,7 +1193,7 @@ async function onClick(ev: MouseEvent): Promise<void> {
     case 'mech-add': {
       const sq = findSquad(id);
       if (!sq) return;
-      const u = await pickMech(d, `Add a mech to ${sq.name}`);
+      const u = await pickMech(d, `Add a mech to ${sq.name}`, sq.id);
       if (!u) return;
       if (u === 'new') { openBuilderFor({ squad: sq.id }); return; }
       addToSquad(d, { squad: sq.id }, u.name, u.mech);
@@ -1168,7 +1254,8 @@ async function onClick(ev: MouseEvent): Promise<void> {
       const slot = BUILD_SLOTS.find((s) => s.key === el.dataset.slot);
       if (!sq || !m || !slot) return;
       openMechSlot({
-        data: d, loadout: m.loadout, slot, cards: slotPool(d, slot, m.loadout[slot.key]), unitName: mechName(d, m),
+        data: d, loadout: m.loadout, slot, unitName: mechName(d, m),
+        cards: legalSlotCards(d, m.loadout, slot, squadUnits(sq.id, i)),
         ...withLimit(partsLimit(d, m.loadout, slot.key)),
         actionLabel: m.loadout[slot.key] ? `Swap in` : `Add ${slot.label}`,
         onPick: (card) => { editSquadMech(sq.id, i, { ...m.loadout, [slot.key]: card.id }); },
@@ -1203,7 +1290,8 @@ async function onClick(ev: MouseEvent): Promise<void> {
       const slot = BUILD_SLOTS.find((s) => s.key === el.dataset.slot);
       if (!u || !slot) return;
       openMechSlot({
-        data: d, loadout: u.mech, slot, cards: slotPool(d, slot, u.mech[slot.key]), unitName: u.name,
+        data: d, loadout: u.mech, slot, unitName: u.name,
+        cards: legalSlotCards(d, u.mech, slot, u.edit ? squadUnits(u.edit.squad, u.edit.index) : squadUnits(u.target?.squad)),
         ...withLimit(partsLimit(d, u.mech, slot.key)),
         onPick: (card) => { u.mech = { ...u.mech, [slot.key]: card.id }; render(); },
       });
@@ -1260,9 +1348,14 @@ async function onClick(ev: MouseEvent): Promise<void> {
     case 'unit-to-squad': {
       const u = view.unit;
       if (!u?.id) return;
-      const squads = loadSquads();
+      // Only the squads this unit may join: its faction's, or any squad if the
+      // unit is a mercenary.
+      const all = loadSquads();
+      const squads = all.filter((s) => unitFitsSquad(d, squadUnits(s.id)!, u.mech));
+      const off = all.length - squads.length;
       const picked = await choiceDialog({
         title: `Add ${u.name} to which squad?`,
+        ...(off ? { body: `${off} squad${off === 1 ? ' is' : 's are'} left off: a squad holds one faction plus mercenaries (PD, Collaboration), and a pilot can fly only one mech in it.` } : {}),
         stacked: true,
         choices: [...squads.map((s) => ({ id: s.id, label: s.name })), { id: 'new', label: 'A new squad…' }, { id: 'cancel', label: 'Cancel', cancel: true }],
       });
@@ -1303,6 +1396,9 @@ async function onClick(ev: MouseEvent): Promise<void> {
       return;
     }
     case 'box-fac': view.boxFaction = el.dataset.facPick ?? ''; render(); return;
+    case 'pieces-fac': view.piecesFac = el.dataset.facPick ?? ''; render(); return;
+    case 'pieces-type': view.piecesType = el.dataset.v ?? ''; render(); return;
+    case 'pieces-show': { const v = el.dataset.v; view.piecesShow = v === 'built' || v === 'todo' ? v : 'all'; render(); return; }
     case 'parts-from': {
       const v = el.dataset.v;
       if (v === 'all' || v === 'own' || v === 'built') view.partsFrom = v;
