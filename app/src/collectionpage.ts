@@ -37,6 +37,7 @@ import { squadImageName, squadImagePng } from './squadimage';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
 import { printsWide } from './images';
 import { registerOffline } from './offline';
+import { MERCENARY_FACTIONS } from './units';
 
 type Tab = 'squads' | 'units' | 'built' | 'boxes';
 type PartsFrom = 'all' | 'own' | 'built';
@@ -135,8 +136,13 @@ function squadFaction(d: GameData, sq: SavedSquad): { main: string | null; all: 
     const f = c ? d.factionOf(c) : null;
     if (f) all.add(f);
   }
-  const first = sq.mechs[0] ? loadoutFaction(d, sq.mechs[0].loadout) : null;
-  return { main: first ?? [...all][0] ?? null, all: [...all] };
+  // Mercenaries (PD, the Collaboration) join any squad, so they never set its
+  // faction while a real allegiance is there (units.ts MERCENARY_FACTIONS; OTTO,
+  // 2026-11-16: "PD parts (mechs/drones) are allowed to be mixed in with any of
+  // the factions").
+  const own = [...all].filter((f) => !MERCENARY_FACTIONS.includes(f));
+  const first = sq.mechs.map((m) => loadoutFaction(d, m.loadout)).find((f) => f && !MERCENARY_FACTIONS.includes(f));
+  return { main: first ?? own[0] ?? [...all][0] ?? null, all: [...all] };
 }
 
 function squadViews(d: GameData): SquadView[] {
@@ -155,7 +161,8 @@ function squadViews(d: GameData): SquadView[] {
 function squadIssues(d: GameData, v: SquadView): string[] {
   const out: string[] = [];
   if (v.points > v.cap) out.push(`${v.points - v.cap}p over ${v.cap}`);
-  if (v.factions.length > 1) out.push(`mixes ${v.factions.map((f) => FAC_SHORT[f] ?? f).join(' + ')}`);
+  const own = v.factions.filter((f) => !MERCENARY_FACTIONS.includes(f));
+  if (own.length > 1) out.push(`mixes ${own.map((f) => FAC_SHORT[f] ?? f).join(' + ')}`);
   for (const m of v.sq.mechs) {
     if (!m.loadout.torso || !m.loadout.chasis || !(m.loadout.leftHand || m.loadout.rightHand)) { out.push('a mech is missing a core part'); break; }
   }
@@ -834,7 +841,6 @@ function addToSquad(d: GameData, target: { squad?: string; newName?: string }, n
 // P2), so the ones already held are left off the list. The "parts to pick
 // from" switch narrows the drones the way it narrows a mech's parts.
 function addDroneOrTactic(d: GameData, sq: SavedSquad, kind: 'drone' | 'tactic'): void {
-  const v = squadViews(d).find((x) => x.sq.id === sq.id);
   const held = new Set(sq.tactics ?? []);
   const cards = d.cards
     .filter((c) => (kind === 'drone' ? c.category === 'drone' : c.category === 'tactics_or_upgrade'))
@@ -855,7 +861,8 @@ function addDroneOrTactic(d: GameData, sq: SavedSquad, kind: 'drone' | 'tactic')
     data: d,
     slotLabel: kind === 'drone' ? 'Drones' : 'Tactics cards',
     groups: groupByFaction(d, cards),
-    lockedFaction: kind === 'drone' ? v?.faction ?? null : null,
+    // No faction lock: it would hide the PD drones, which any squad may take.
+    lockedFaction: null,
     ...withLimit(limit),
     actions: [{
       label: `Add to ${sq.name}`,
