@@ -476,8 +476,8 @@ function squadDetailHtml(d: GameData, v: SquadView): string {
       <div class="cl-actions">${squadActions(v)}</div>
     </div>
     ${bays}
-    ${drones}${tactics}
-    <button type="button" class="cl-addbay" data-act="mech-add" data-id="${esc(sq.id)}">+ Add a mech <em>build a new one or pick a saved unit</em></button>`;
+    <button type="button" class="cl-addbay" data-act="mech-add" data-id="${esc(sq.id)}">+ Add a mech <em>build a new one or pick a saved unit</em></button>
+    ${drones}${tactics}`;
 }
 
 // ---------- squads: the phone ----------
