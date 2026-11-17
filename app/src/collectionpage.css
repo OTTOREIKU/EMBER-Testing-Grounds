@@ -29,7 +29,7 @@ body.cl-body {
   margin: 0; min-height: 100vh; background: none; color: var(--text); font-family: var(--font);
   font-size: 14px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%;
 }
-.cl-page { --g: var(--accent); position: relative; max-width: 1560px; margin: 0 auto; padding: 18px 28px 40px; }
+.cl-page { --g: var(--accent); position: relative; max-width: 1640px; margin: 0 auto; padding: 18px 28px 40px; }
 .cl-loading { color: var(--text3); font: 13px var(--mono); padding: 40px 0; }
 .cl-corner { position: fixed; width: 18px; height: 18px; border: 2px solid var(--accent); opacity: 0.75; pointer-events: none; }
 .cl-corner.tl { top: 10px; left: 10px; border-right: 0; border-bottom: 0; }
@@ -95,6 +95,13 @@ body.cl-body {
 .cl-pts { font: 700 14px var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
 .cl-pts i { font-style: normal; font-size: 0.75em; color: var(--text3); margin-left: 1px; }
 .cl-pts.over { color: var(--cl-red); }
+/* The mech's dice, stacked in their own column between the art and the
+   Torso (OTTO, 2026-11-17), as on the squad image. */
+/* As tall as a card and its Swap / Details row, the two tiles sharing it. */
+.cl-bay-dice { align-self: stretch; display: flex; }
+.cl-bay-dice .cl-dice { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.cl-bay-dice .cl-die { flex: 1; width: 100%; box-sizing: border-box; justify-content: center; padding: 10px 4px 9px; gap: 8px; font-size: 22px; border-radius: var(--radius); }
+.cl-bay-dice .cl-die img { width: 36px; height: 36px; }
 .cl-ok { color: var(--green); font: 600 11px var(--mono); }
 .cl-warn { color: var(--accent); font: 600 11px var(--mono); }
 .cl-page .cl-note { margin: 0 0 12px; color: var(--text2); font-size: 13.5px; line-height: 1.5; max-width: 760px; }
@@ -201,7 +208,7 @@ body.cl-body {
 .cl-stats b i { font-style: normal; font-size: 12px; color: var(--text3); }
 .cl-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 520px; }
 .cl-bay {
-  display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 16px; margin-top: 14px; padding: 14px;
+  display: grid; grid-template-columns: 210px 64px minmax(0, 1fr); gap: 16px; margin-top: 14px; padding: 14px;
   border-radius: var(--radius-lg); background: var(--cl-bay);
 }
 /* Three bands down the plate, the art in the middle one: the top line, the
@@ -245,7 +252,7 @@ body.cl-body {
 /* Below the tag line, so the art never sits on the faction tag or points. */
 .cl-unit > .cl-plate > .cl-mech { position: absolute; inset: 36px 20px 0; aspect-ratio: auto; }
 .cl-unit-tags { position: absolute; top: 10px; left: 10px; display: flex; gap: 5px; }
-.cl-unit > .cl-plate > .cl-pts { position: absolute; top: 8px; right: 10px; }
+.cl-unit > .cl-plate > .cl-unit-stats { position: absolute; top: 8px; right: 10px; display: flex; align-items: center; gap: 8px; }
 .cl-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; padding: 8px 8px 0; }
 .cl-strip img, .cl-strip i, .cl-strip .cl-cardph { display: block; width: 100%; aspect-ratio: 480 / 700; object-fit: cover; border-radius: 4px; background: var(--surface3); font-size: 0; padding: 0; }
 .cl-unit-meta { display: flex; flex-direction: column; gap: 4px; padding: 9px 12px 12px; }
@@ -392,7 +399,9 @@ body.cl-body {
 .cl-phone .cl-drawer { width: 100vw; }
 
 @media (max-width: 1180px) and (min-width: 861px) {
-  .cl-bay { grid-template-columns: 170px minmax(0, 1fr); }
+  .cl-bay { grid-template-columns: 170px 56px minmax(0, 1fr); gap: 12px; }
+  .cl-bay-dice .cl-die { width: 56px; font-size: 19px; }
+  .cl-bay-dice .cl-die img { width: 30px; height: 30px; }
   .cl-bay-cards { gap: 6px; }
   .cl-head { flex-direction: column; }
   .cl-actions { justify-content: flex-start; max-width: none; }
@@ -451,3 +460,14 @@ body.cl-busy, body.cl-busy * { cursor: progress !important; }
 .cl-tabwrap .cl-tabs.ref-tabs { margin: 0; }
 .cl-tabwrap .cl-facets { width: 0; min-width: 100%; margin: 10px 0 0; }
 .cl-phone .cl-tabwrap { display: grid; margin-bottom: 14px; }
+
+/* A mech's blue (Dodge) and yellow (Electronic) dice: the cut-out symbol
+   over the number, as on the squad image (OTTO, 2026-11-17). */
+.cl-dice { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.cl-die { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; min-width: 30px; padding: 4px 4px 3px; border-radius: var(--radius-sm); background: var(--surface2); font: 800 13px var(--mono); font-variant-numeric: tabular-nums; color: var(--text); letter-spacing: 0; line-height: 1; }
+.cl-die img { width: 18px; height: 18px; object-fit: contain; display: block; }
+.cl-bay-stats { display: inline-flex; align-items: center; gap: 10px; }
+/* On the Units tiles the symbols sit straight on the art, no plate. */
+.cl-unit-stats .cl-die { background: none; padding: 0 2px; }
+.cl-div .cl-die { flex-direction: row; gap: 4px; padding: 2px 6px; }
+.cl-div .cl-die img { width: 14px; height: 14px; }

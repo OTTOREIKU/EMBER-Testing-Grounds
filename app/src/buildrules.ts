@@ -17,9 +17,9 @@
 // The card already in a slot always stays on offer, so opening a broken
 // build never hides what it holds.
 import type { Card, MechLoadout } from './types';
-import type { GameData } from './data';
+import { isDiscardCard, type GameData } from './data';
 import { buildFactions, slotPool, type BuildSlot } from './mechbuilder';
-import { MERCENARY_FACTIONS } from './units';
+import { bitPortOf, canBeLoad, MERCENARY_FACTIONS } from './units';
 
 export const isMercenary = (f: string | null | undefined): boolean => !!f && MERCENARY_FACTIONS.includes(f);
 
@@ -79,4 +79,45 @@ export function legalSlotCards(data: GameData, mech: MechLoadout, slot: BuildSlo
     if (!cardFitsSquadFaction(data, squadFaction, c)) return false;
     return !flying.has(c.id);
   });
+}
+
+// 4. LOADS. A Carrier Tarantula carries one Backpack as its Load (FAQ O3-O8;
+//    units.ts canBeLoad). The Load is part of the squad, so it is held to the
+//    squad's faction like any other card (rule 2). Empty is a real answer: a
+//    Tarantula may go on with nothing on its back (O8). The Collection page,
+//    the Tabletop's roster and the Pad all take their Load list from here
+//    (OTTO, 2026-11-17: "we already have the load function for the tarantula
+//    inside of pad ... how we can show it in the collection").
+// 5. LAUNCHED UNITS ARE NOT BOUGHT. A Drone a Part puts on the board - the
+//    Unfolded Pholcus (Mine Rack), the Delphinium, the SU swarms, the
+//    Dragonfly, the KK9, the White Dwarf's Bits - comes with that Part and
+//    costs nothing, so the squad builders (Collection, Tabletop roster) do
+//    not offer it as a unit (OTTO, 2026-11-17: "should mostly just show up as
+//    projectiles when the appropriate launcher is used"). The Pad still lists
+//    them, marked, so a player can keep track of one on the table; the
+//    Reference and the Built pieces keep them as the cards and models they are.
+//    Read off the data: every card a Part names as its Projectile, plus the
+//    forms a Bit Port launches (its card names none).
+const launchedCache = new WeakMap<GameData, Set<string>>();
+export function launchedUnitIds(data: GameData): Set<string> {
+  let ids = launchedCache.get(data);
+  if (ids) return ids;
+  ids = new Set<string>();
+  for (const c of data.cards) {
+    if (Array.isArray(c.projectile)) c.projectile.forEach((id) => ids!.add(id));
+    for (const a of c.actions ?? []) bitPortOf(a)?.formIds.forEach((id) => ids!.add(id));
+  }
+  launchedCache.set(data, ids);
+  return ids;
+}
+export function isLaunchedUnit(data: GameData, card: Card): boolean {
+  return card.category === 'drone' && launchedUnitIds(data).has(card.id);
+}
+
+export function loadPool(data: GameData): Card[] {
+  return data.cards.filter((c) => canBeLoad(c) && !isDiscardCard(c) && !c.referenceOnly);
+}
+export function legalLoadCards(data: GameData, squad?: SquadUnits): Card[] {
+  const sf = squad ? squadFactionOf(data, squad) : null;
+  return loadPool(data).filter((c) => cardFitsSquadFaction(data, sf, c));
 }

@@ -489,7 +489,7 @@ M.L.setLocalSeat('s1');
   check('it takes one of the units it came up among, ALLY OR NOT (ruling I19): under its own squad\'s Mech, that Mech is the answer, and no jump goes before it',
     [fold.unfoldBlast, ids(q), q.options[0].tags, q.options[0].run.args.before], [true, [`blast:${fold.uid}:${U.Cat.uid}`], ['detonate', 'attack', 'explosion', 'ally'], []]);
   check('(the engine still refuses a jump at an allied unit; no page sends one for this blast since 2026-10-03, when the Match Centre\'s stopped on it: mechanics7.test drives that panel)',
-    M.C.check(data, s, { kind: 'flyToTarget', seat: 's1', uid: fold.uid, actionId: '167_A', targetUid: U.Cat.uid }), { ok: false, why: 'SGM-2 Pholcus Automatic Mine (Unfolded) jumps only at an Enemy Unit.' });
+    M.C.check(data, s, { kind: 'flyToTarget', seat: 's1', uid: fold.uid, actionId: '167_A', targetUid: U.Cat.uid }), { ok: false, why: 'SGM2 "Pholcus" Automatic Mine (Unfolded) jumps only at an Enemy Unit.' });
   // With both under it, its owner chooses.
   const both = stage(4);
   both.at(both.U.Cat, 5, 9, 2);

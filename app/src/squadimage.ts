@@ -13,7 +13,8 @@
 // our images and theirs alike. Card ids are the contract; names and points are
 // carried along for a reader that wants them.
 import type { Card, MechLoadout } from './types';
-import { cardImageUrl, cardName, isUnfolded, type GameData } from './data';
+import { assetUrl, cardImageUrl, cardName, isUnfolded, UNFOLDS_INTO, type GameData } from './data';
+import { loadoutDice, type UnitDice } from './squadstore';
 import { printsWide } from './images';
 import { factionColour } from './icons';
 
@@ -140,12 +141,18 @@ export function projectilesOf(d: GameData, s: Pick<SquadImage, 'mechs' | 'drones
 
 // ---------- the picture ----------
 
-const W = 1800;
+// One card on a Drones or Projectiles row, and the card drawn joined to it: a
+// Carrier's Load, or a folded Pholcus's Unfolded side.
+interface Unit { cardId: string; pair?: string; tag?: string }
+
+// Wide enough for the mech's dice column between its plate and the Torso.
+const W = 1920;
 const PAD = 64;
 const CARD_W = 206;
 const CARD_H = Math.round((CARD_W * 700) / 480);
 const GAP = 14;
 const PLATE_W = 300;
+const DICE_W = 100;
 // A drone or projectile card is the same physical card turned on its side, so
 // it is drawn as a part card's height wide (OTTO, 2026-11-12: "too large
 // compared to the parts cards").
@@ -325,15 +332,39 @@ export async function squadImagePng(d: GameData, s: SquadImage): Promise<Blob> {
     return c ? printsWide(c) : false;
   };
   const extras = [
-    { title: 'Drones', ids: s.drones.flatMap((x) => [x.cardId, ...(x.backpack ? [x.backpack] : [])]) },
-    { title: 'Projectiles', ids: projectilesOf(d, s) },
+    { title: 'Drones', ids: s.drones.map((x) => x.cardId), units: s.drones.map((x): Unit => ({ cardId: x.cardId, ...(x.backpack ? { pair: x.backpack, tag: `LOAD +${d.byId.get(x.backpack)?.score ?? 0}P` } : {}) })) },
+    // The folded Pholcus with its Unfolded side beside it, paired the way a
+    // Load is (OTTO, 2026-11-17: "using the new load style to showcase both").
+    { title: 'Projectiles', ids: projectilesOf(d, s), units: projectilesOf(d, s).map((id): Unit => { const u = UNFOLDS_INTO[id]; return { cardId: id, ...(u ? { pair: u, tag: 'UNFOLDED' } : {}) }; }) },
     { title: 'Tactics cards', ids: s.tactics },
-  ].filter((x) => x.ids.length);
+  ].filter((x) => x.ids.length) as { title: string; ids: string[]; units?: Unit[] }[];
+
+  // A Carrier Tarantula and its Load are one unit on the picture (OTTO,
+  // 2026-11-17, design "B2"): the Load card to the right of the drone at the
+  // drone's height, one faction-coloured border round both, and a LOAD +points
+  // tag on top of the Load.
+  // The paired card is drawn at the first card's height, upright or on its side.
+  const pairW = (id: string, h: number): number => Math.round(wideOf(id) ? (h * 700) / 514 : (h * 480) / 700);
+  const unitW = (u: Unit): number => {
+    const wide = wideOf(u.cardId);
+    const w = wide ? WIDE_W : CARD_W;
+    return u.pair ? w + 6 + pairW(u.pair, wide ? WIDE_H : CARD_H) : w;
+  };
+  const unitRows = (us: Unit[]): number => {
+    let x = 0;
+    let rows = 1;
+    for (const u of us) {
+      const w = unitW(u);
+      if (x && x + w > W - PAD * 2) { rows++; x = 0; }
+      x += w + GAP;
+    }
+    return rows;
+  };
 
   const HEAD = 250;
   const ROW = CARD_H + 2 * 24 + 34;
   const rowH = (ids: string[]): number => (ids.every(wideOf) ? WIDE_H : CARD_H);
-  const extraH = extras.reduce((n, e) => n + 56 + cardsOf(e.ids.map((id) => ({ id, wide: wideOf(id) }))) * (rowH(e.ids) + 44), 0);
+  const extraH = extras.reduce((n, e) => n + 56 + (e.units ? unitRows(e.units) : cardsOf(e.ids.map((id) => ({ id, wide: wideOf(id) })))) * (rowH(e.ids) + 44), 0);
   const FOOT = 96;
   const H = HEAD + s.mechs.length * (ROW + 20) + extraH + FOOT;
 
@@ -350,8 +381,44 @@ export async function squadImagePng(d: GameData, s: SquadImage): Promise<Blob> {
     m.layers.forEach((u) => urls.add(u));
   }
   extras.forEach((e) => e.ids.forEach((id) => urls.add(cardImageUrl(id))));
+  extras.forEach((e) => e.units?.forEach((u) => { if (u.pair) urls.add(cardImageUrl(u.pair)); }));
+  // The Dodge and Electronic symbols cut out of the card's stat plates
+  // (2026-11-17), so they can be drawn large on the page's own panel.
+  const ICON_DODGE = assetUrl('tokens/tab/glyph_dodge.png');
+  const ICON_EW = assetUrl('tokens/tab/glyph_electronic.png');
+  urls.add(ICON_DODGE);
+  urls.add(ICON_EW);
   const imgs = new Map<string, HTMLImageElement | null>();
   await Promise.all([...urls].map(async (u) => imgs.set(u, await loadImg(u))));
+
+  // A mech's blue (Dodge) and yellow (Electronic) dice, summed over its Parts
+  // (OTTO, 2026-11-17, design "v2-1"): two cells stacked on the plate, each a
+  // large symbol over its number. Drones are left without: their card prints
+  // the same numbers and nothing changes them.
+  const drawDice = (x: UnitDice, left: number, top: number, w: number, h: number): void => {
+    const ch = (h - 6) / 2;
+    ([[ICON_DODGE, String(x.dodge)], [ICON_EW, x.dash ? '–' : String(x.electronic)]] as const).forEach(([icon, n], k) => {
+      const cy = top + k * (ch + 6);
+      rr(g, left, cy, w, ch, 10);
+      g.fillStyle = L.surface2;
+      g.fill();
+      const im = imgs.get(icon);
+      if (im) {
+        // Symbol and number centred together in the tile.
+        const size = Math.min(w - 36, ch * 0.42);
+        const fs = Math.round(Math.min(ch * 0.24, 40));
+        const block = size + 10 + fs * 0.75;
+        const y0 = cy + (ch - block) / 2;
+        const f = Math.min(size / im.naturalWidth, size / im.naturalHeight);
+        g.drawImage(im, left + (w - im.naturalWidth * f) / 2, y0 + (size - im.naturalHeight * f) / 2, im.naturalWidth * f, im.naturalHeight * f);
+        g.fillStyle = L.text;
+        g.font = `800 ${fs}px ${L.mono}`;
+        g.textAlign = 'center';
+        g.fillText(n, left + w / 2, y0 + size + 10 + fs * 0.75);
+      }
+    });
+    g.textAlign = 'left';
+  };
 
   // Page.
   g.fillStyle = L.bg;
@@ -470,6 +537,10 @@ export async function squadImagePng(d: GameData, s: SquadImage): Promise<Blob> {
     g.font = `600 14px ${L.mono}`;
     g.fillStyle = L.text3;
     spaced(g, `MECH ${i + 1}`, px + 16, py + 30, 3);
+    // The dice, stacked in their own column between the plate and the Torso.
+    // As tall as a card and its slot label under it (the Collection's card +
+    // Swap / Details row), the two tiles sharing it (OTTO, 2026-11-17).
+    drawDice(loadoutDice(d, m.loadout), px + PLATE_W + 20, top + 24, DICE_W, CARD_H + 30);
     g.textAlign = 'right';
     g.font = `700 24px ${L.mono}`;
     g.fillStyle = L.text;
@@ -488,7 +559,7 @@ export async function squadImagePng(d: GameData, s: SquadImage): Promise<Blob> {
     g.restore();
 
     // The six cards.
-    let cx = px + PLATE_W + 24;
+    let cx = px + PLATE_W + 20 + DICE_W + 20;
     const cy = top + 24;
     for (const k of SLOTS) {
       const id = m.loadout[k.key];
@@ -510,6 +581,42 @@ export async function squadImagePng(d: GameData, s: SquadImage): Promise<Blob> {
     y += 36;
     let cx = PAD;
     const rh = rowH(e.ids);
+    if (e.units) {
+      for (const u of e.units) {
+        const wide = wideOf(u.cardId);
+        const w = wide ? WIDE_W : CARD_W;
+        const h = wide ? WIDE_H : CARD_H;
+        const uw = unitW(u);
+        if (cx > PAD && cx + uw > W - PAD) { cx = PAD; y += rh + 44; }
+        await drawCard(g, L, imgs.get(cardImageUrl(u.cardId)) ?? null, cx, y, w, h, '');
+        if (u.pair) {
+          const lw = pairW(u.pair, h);
+          const lx = cx + w + 6;
+          await drawCard(g, L, imgs.get(cardImageUrl(u.pair)) ?? null, lx, y, lw, h, '');
+          rr(g, cx - 3, y - 3, uw + 6, h + 6, 14);
+          g.strokeStyle = L.fac;
+          g.lineWidth = 2.5;
+          g.stroke();
+          g.save();
+          g.globalAlpha = 0.6;
+          g.lineWidth = 1.5;
+          g.beginPath(); g.moveTo(lx - 3, y); g.lineTo(lx - 3, y + h); g.stroke();
+          g.restore();
+          g.font = `700 12px ${L.mono}`;
+          const tag = u.tag ?? '';
+          const tw = spacedWidth(g, tag, 1.6) + 16;
+          rr(g, lx + (lw - tw) / 2, y - 14, tw, 24, 6);
+          g.fillStyle = L.fac;
+          g.fill();
+          g.fillStyle = L.bg;
+          g.textAlign = 'left';
+          spaced(g, tag, lx + (lw - tw) / 2 + 8, y + 3, 1.6);
+        }
+        cx += uw + GAP;
+      }
+      y += rh + 44;
+      continue;
+    }
     for (const id of e.ids) {
       const wide = wideOf(id);
       const w = wide ? WIDE_W : CARD_W;

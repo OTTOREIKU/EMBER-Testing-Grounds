@@ -1,12 +1,12 @@
 import type { Card, MechLoadout, Side } from './types';
-import { cardName, FACTION_LABEL, isDiscardCard, SQUAD_ORDER, squadLabel, squadNumber, type GameData } from './data';
+import { cardName, FACTION_LABEL, SQUAD_ORDER, squadLabel, squadNumber, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { confirmDialog, promptDialog } from './dialog';
 import { hiddenBuiltIns, restoreBuiltIns } from './builtins';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset } from './presets';
 import { deleteSquad, isBuiltInSquad, loadoutFaction, loadoutPoints, loadSquads, savedSquadPoints } from './squadstore';
-import { canBeLoad, cardFitsSquad, isCarrier, type SquadAllegiance } from './units';
-import { cardFitsSquadFaction, legalSlotCards, mechFitsSquadFaction, pilotsInUse, squadFactionOf, type SquadUnits } from './buildrules';
+import { cardFitsSquad, isCarrier, type SquadAllegiance } from './units';
+import { cardFitsSquadFaction, isLaunchedUnit, legalSlotCards, loadPool, mechFitsSquadFaction, pilotsInUse, squadFactionOf, type SquadUnits } from './buildrules';
 import { ICON_EXPAND, squadColour } from './icons';
 import { groupByFaction, openPartPicker } from './partpicker';
 import { BUILD_SLOTS, buildDefaultName, confirmLegalBuild, mechBuilderHtml, openMechSlot, slotPool, type BuildSlot } from './mechbuilder';
@@ -231,6 +231,8 @@ export class Roster {
     const cards = this.data.cards
       .filter((c) => c.category === category)
       .filter((c) => this.cb.cardFilter?.(c) ?? true)
+      // Launched by a Part, never bought (buildrules.ts rule 5).
+      .filter((c) => !isLaunchedUnit(this.data, c))
       .filter((c) => !q || cardName(c).toLowerCase().includes(q) || c.id.toLowerCase().includes(q))
       .sort((a, b) => cardName(a).localeCompare(cardName(b)));
     return cards.map((c) => {
@@ -289,8 +291,9 @@ export class Roster {
 
   private openLoadPicker(carrier: Card): void {
     const faction = this.data.factionOf(carrier);
-    const parts = this.data.cards
-      .filter((c) => c.category === 'mech_part' && canBeLoad(c) && !isDiscardCard(c))
+    // The shared Load list (buildrules.ts). Not narrowed to one squad's
+    // faction: the Load is picked before the squad the Carrier joins.
+    const parts = loadPool(this.data)
       .filter((c) => this.cb.cardFilter?.(c) ?? true)
       .sort((a, b) => cardName(a).localeCompare(cardName(b)));
     openPartPicker({
@@ -472,6 +475,7 @@ export class Roster {
       groups: this.byFaction(
         this.data.cards
           .filter((c) => c.category === 'drone')
+          .filter((c) => !isLaunchedUnit(this.data, c))
           .filter((c) => this.cb.cardFilter?.(c) ?? true)
           .sort((a, b) => cardName(a).localeCompare(cardName(b))),
       ),

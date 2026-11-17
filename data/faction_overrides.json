@@ -61,6 +61,11 @@
    "was": null,
    "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
   },
+  "167": {
+   "faction": "UN",
+   "was": null,
+   "why": "The Unfolded face of the SGM2 Pholcus (156); the card front reads United Network in the printed header band. Its only box (Door Breaker) was taken off on 2026-11-04 (no SGM2 card there), which left it with no faction and showed it as 'Faction not recorded' in the Collection (OTTO, 2026-11-17)."
+  },
   "158": {
    "faction": "UN",
    "was": null,

@@ -68,7 +68,7 @@ import { BUILD_SLOTS, buildDefaultName, confirmLegalBuild, mechBuilderHtml, open
 import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { bindCollection, builtOnlyOn, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setBuiltOnly, setCollectionOn, shortfalls, type Collection } from '../src/collection';
 import { alertDialog, choiceDialog, confirmDialog, openDialog, pickManyDialog, promptDialog } from '../src/dialog';
-import { cardFitsSquadFaction, legalSlotCards, squadFactionOf, unitFitsSquad, type SquadUnits } from '../src/buildrules';
+import { cardFitsSquadFaction, isLaunchedUnit, legalLoadCards, legalSlotCards, squadFactionOf, unitFitsSquad, type SquadUnits } from '../src/buildrules';
 import { orderSheetHtml } from './order';
 import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updates';
 import { configureNotices, explainOnHold, notify, redrawNotice, speakInPlace, type NoticeKind } from '../src/notices';
@@ -79,7 +79,7 @@ import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfi
 import { shockWalk } from '../src/turn';
 import { gameResult } from '../src/tasks';
 import { GameTrack, gameReport, matchKey, squadWiped } from '../src/gamelog';
-import { isSilentAction, actionSilenceDenier, auraReach, auraEffectsOf, auraActionOf, auraCanReach, auraReachable, inAuraReach, aurasAtRoll, type AuraAtRoll, actionRange, manifestationRange, targetStatusTargets, activatesCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, discardSlots, commonActionStop, commonPartKey } from '../src/units';
+import { isSilentAction, actionSilenceDenier, auraReach, auraEffectsOf, auraActionOf, auraCanReach, auraReachable, inAuraReach, aurasAtRoll, type AuraAtRoll, actionRange, manifestationRange, targetStatusTargets, activatesCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, discardSlots, commonActionStop, commonPartKey } from '../src/units';
 import { canManeuver, canPerform, costOf, lengthOf, LENGTH_NAME, markAction, markExtra, markManeuver, spendAction, spendManeuver, tickBarState, timingOf } from '../src/ticks';
 import { actionIdleWhy, cardFitsSquad, extrasFor, factionProblems, squadPoints, startOpts } from '../src/units';
 import { tickBar, type CapsuleShort } from '../src/glyphs';
@@ -4316,10 +4316,7 @@ async function playTactic(side: Side, cardId: string): Promise<void> {
 function openLoadPicker(carrier: Card, seat: Side, run: (load: Card) => void): void {
   const d = data;
   if (!d) return;
-  const sf = squadFactionOf(d, seatUnits(seat));
-  const parts = d.cards
-    .filter((c) => c.category === 'mech_part' && canBeLoad(c) && !isDiscardCard(c))
-    .filter((c) => cardFitsSquadFaction(d, sf, c))
+  const parts = legalLoadCards(d, seatUnits(seat))
     .sort((a, b) => cardName(a).localeCompare(cardName(b)));
   openPartPicker({
     data: d,
@@ -4614,7 +4611,9 @@ function openDronePicker(kind: 'drone' | 'projectile'): void {
     // list to the first unit's faction dimmed every mercenary (audit Phase 6,
     // G5).
     lockedFaction: null,
-    badge: (c) => (kind === 'projectile' ? (isMine(c) ? 'Mine' : isDeployable(c) ? 'Deployable' : '') : isCarrier(c) ? 'Carrier' : ''),
+    // A launched Drone stays on offer here, marked, so a player can track one
+    // on the table (OTTO, 2026-11-17); the squad builders leave it out.
+    badge: (c) => (kind === 'projectile' ? (isMine(c) ? 'Mine' : isDeployable(c) ? 'Deployable' : '') : isCarrier(c) ? 'Carrier' : isLaunchedUnit(d, c) ? 'Launched' : ''),
     remaining: leftOf,
     actions: [{
       label: 'Add to squad',

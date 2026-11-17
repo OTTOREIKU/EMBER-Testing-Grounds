@@ -17,12 +17,12 @@ import './reference.css';
 import './partpicker.css';
 import './collectionpage.css';
 import type { Card, MechLoadout } from './types';
-import { boxCoverUrl, cardImageUrl, cardName, faceOf, FACTION_LABEL, isDiscardCard, isListedBox, isModeFace, loadData, mechArtLayers, type GameData } from './data';
+import { boxCoverUrl, cardImageUrl, cardName, faceOf, FACTION_LABEL, isDiscardCard, isListedBox, isModeFace, loadData, mechArtLayers, assetUrl, type GameData } from './data';
 import { EmberApi } from './api';
 import { bindLibrary, librarySync, onLibrary } from './library';
 import { bindCollection, copiesOf, hasAny, loadCollection, onCollection, physicalKey, saveCollection, tracked } from './collection';
 import {
-  deleteSquad, isBuiltInSquad, loadoutFaction, loadoutPoints, loadSquads, savedSquadPoints, squadCap, updateSquad,
+  deleteSquad, isBuiltInSquad, loadoutDice, loadoutFaction, loadoutPoints, type UnitDice, loadSquads, savedSquadPoints, squadCap, updateSquad,
   SQUAD_CAPS, type SavedSquad,
 } from './squadstore';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, updateMechPreset, type MechPreset } from './presets';
@@ -37,8 +37,8 @@ import { squadImageName, squadImagePng } from './squadimage';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
 import { printsWide } from './images';
 import { registerOffline } from './offline';
-import { MERCENARY_FACTIONS } from './units';
-import { cardFitsSquadFaction, legalSlotCards, squadFactionOf, unitFitsSquad, type SquadUnits } from './buildrules';
+import { isCarrier, MERCENARY_FACTIONS } from './units';
+import { cardFitsSquadFaction, isLaunchedUnit, legalLoadCards, legalSlotCards, squadFactionOf, unitFitsSquad, type SquadUnits } from './buildrules';
 
 type Tab = 'squads' | 'units' | 'built' | 'boxes';
 type PartsFrom = 'all' | 'own' | 'built';
@@ -246,6 +246,14 @@ function bayCard(d: GameData, sqId: string, i: number, k: keyof MechLoadout, id:
 // A squad's drones and Tactics Cards: each card with Details and Remove under
 // it, the way a mech's slots have, and an empty tile at the end to add one.
 // A Carrier's load shows beside it as it was imported or saved elsewhere.
+// A mech's blue (Dodge) and yellow (Electronic) dice, summed over its Parts,
+// as the cut-out symbols (OTTO, 2026-11-17). Mechs only: a drone's card
+// prints its own and nothing changes them.
+function diceHtml(x: UnitDice): string {
+  const ic = (f: string): string => `<img src="${esc(assetUrl(`tokens/tab/glyph_${f}.png`))}" alt="">`;
+  return `<span class="cl-dice" title="Dodge ${x.dodge} blue dice · Electronic ${x.dash ? '–' : x.electronic} yellow dice"><span class="cl-die">${ic('dodge')}${x.dodge}</span><span class="cl-die">${ic('electronic')}${x.dash ? '–' : x.electronic}</span></span>`;
+}
+
 function extraCard(d: GameData, id: string, rm: string): string {
   return `<div class="cl-bc">${cardTile(d, id)}
     <div class="cl-bc-acts">
@@ -256,8 +264,31 @@ function extraCard(d: GameData, id: string, rm: string): string {
 function addTile(act: string, sqId: string, label: string, wide: boolean): string {
   return `<div class="cl-bc"><button type="button" class="cl-card empty add${wide ? ' wide' : ''}" data-act="${act}" data-id="${esc(sqId)}" title="Add a ${esc(label.toLowerCase())}"><span class="cl-plus">+</span><span class="cl-slot">${esc(label)}</span></button></div>`;
 }
+// A Carrier Tarantula's Load sits right after it (OTTO, 2026-11-17: "no
+// option to give them any Loads"): the Backpack it carries, with Swap,
+// Details and Remove like a mech's slot, or an empty "+ Load" tile. Going on
+// empty is legal (FAQ O8), so the empty tile is an offer, not a warning.
+function loadTile(d: GameData, sqId: string, i: number, load: string | undefined): string {
+  const at = `data-id="${esc(sqId)}" data-i="${i}"`;
+  if (!load) {
+    return `<div class="cl-bc cl-load"><button type="button" class="cl-card empty add" data-act="load-pick" ${at} title="Give this Carrier a Backpack to carry. Optional: it may go on empty."><span class="cl-plus">+</span><span class="cl-slot">Load</span></button></div>`;
+  }
+  return `<div class="cl-bc cl-load">${cardTile(d, load, 'Load')}
+    <div class="cl-bc-acts">
+      <button type="button" data-act="load-pick" ${at} title="Swap this Load" aria-label="Swap">${ICON.swap}</button>
+      <button type="button" data-act="read" data-id="${esc(load)}" title="Card details, as on the Reference" aria-label="Card details">${ICON.info}</button>
+      <button type="button" class="rm" data-act="load-off" ${at} title="Take the Load off" aria-label="Remove">✕</button>
+    </div></div>`;
+}
 function dronesHtml(d: GameData, sq: SavedSquad): string {
-  return sq.drones.map((x, i) => extraCard(d, x.cardId, `data-act="drone-remove" data-id="${esc(sq.id)}" data-i="${i}"`) + (x.backpack ? `<div class="cl-bc">${cardTile(d, x.backpack, 'Load')}</div>` : '')).join('')
+  return sq.drones.map((x, i) => {
+    const c = d.byId.get(x.cardId);
+    const carrier = !!c && isCarrier(c);
+    const card = extraCard(d, x.cardId, `data-act="drone-remove" data-id="${esc(sq.id)}" data-i="${i}"`);
+    // A Load on a drone that is not a Carrier (an import) still shows, so it
+    // can be seen and taken off.
+    return card + (carrier || x.backpack ? loadTile(d, sq.id, i, x.backpack) : '');
+  }).join('')
     + addTile('drone-add', sq.id, 'Drone', true);
 }
 function tacticsHtml(d: GameData, sq: SavedSquad): string {
@@ -484,6 +515,7 @@ function squadDetailHtml(d: GameData, v: SquadView): string {
         <button type="button" class="cl-ico cl-bay-edit" data-act="mech-edit" data-id="${esc(sq.id)}" data-i="${i}" title="Edit this mech" aria-label="Edit ${esc(mechName(d, m))}">${ICON.edit}</button></div>
         <button type="button" class="ui-x cl-bay-x" data-act="mech-remove" data-id="${esc(sq.id)}" data-i="${i}" title="Take this mech out of the squad" aria-label="Take ${esc(mechName(d, m))} out">✕</button>
       </div>
+      <div class="cl-bay-dice">${diceHtml(loadoutDice(d, m.loadout))}</div>
       <div class="cl-bay-cards">${SLOTS.map((k) => bayCard(d, sq.id, i, k, m.loadout[k], true)).join('')}</div>
     </article>`;
   }).join('');
@@ -529,7 +561,7 @@ function phoneSquadListHtml(d: GameData, squads: SquadView[]): string {
 function phoneSquadHtml(d: GameData, v: SquadView): string {
   const sq = v.sq;
   const issues = squadIssues(d, v);
-  const mechs = sq.mechs.map((m, i) => `<div class="cl-div"><span>${esc(mechName(d, m))}</span><b>${loadoutPoints(d, m.loadout)}p</b>
+  const mechs = sq.mechs.map((m, i) => `<div class="cl-div"><span>${esc(mechName(d, m))}</span>${diceHtml(loadoutDice(d, m.loadout))}<b>${loadoutPoints(d, m.loadout)}p</b>
       <button type="button" class="ui-x" data-act="mech-remove" data-id="${esc(sq.id)}" data-i="${i}" aria-label="Take ${esc(mechName(d, m))} out">✕</button></div>
     <div class="cl-phmech" data-fac="${esc(loadoutFaction(d, m.loadout) ?? '')}">${mechArt(m.loadout)}
       <button type="button" class="cl-ico cl-phedit" data-act="mech-edit" data-id="${esc(sq.id)}" data-i="${i}" title="Edit this mech" aria-label="Edit ${esc(mechName(d, m))}">${ICON.edit}</button></div>
@@ -568,7 +600,7 @@ function unitsHtml(d: GameData, units: MechPreset[], squads: SquadView[]): strin
       return `<button type="button" class="cl-unit" data-act="unit-open" data-id="${esc(u.id)}">
         <span class="cl-plate" data-fac="${esc(f ?? '')}">${mechArt(u.mech)}
           <span class="cl-unit-tags">${facTag(f)}${isBuiltInPreset(u.id) ? '<span class="cl-tag">starter</span>' : ''}</span>
-          <span class="cl-pts">${loadoutPoints(d, u.mech)}<i>p</i></span></span>
+          <span class="cl-unit-stats">${diceHtml(loadoutDice(d, u.mech))}<span class="cl-pts">${loadoutPoints(d, u.mech)}<i>p</i></span></span></span>
         <span class="cl-strip">${SLOTS.map((k) => (u.mech[k] ? `<img class="cl-cardimg" src="${esc(cardImageUrl(u.mech[k]!))}" alt="" loading="lazy" data-name="">` : '<i></i>')).join('')}</span>
         <span class="cl-unit-meta"><b>${esc(u.name)}</b><span><span>${pilot ? esc(cardName(pilot)) : 'No pilot'}</span><span>${inSq ? `in ${inSq} squad${inSq === 1 ? '' : 's'}` : 'not in a squad'}</span></span></span>
       </button>`;
@@ -929,6 +961,8 @@ function addDroneOrTactic(d: GameData, sq: SavedSquad, kind: 'drone' | 'tactic')
     .filter((c) => (kind === 'drone' ? c.category === 'drone' : c.category === 'tactics_or_upgrade'))
     .filter((c) => !c.referenceOnly && !isModeFace(c) && !isDiscardCard(c))
     .filter((c) => kind === 'drone' || !held.has(c.id))
+    // Launched by a Part, never bought (buildrules.ts rule 5).
+    .filter((c) => kind !== 'drone' || !isLaunchedUnit(d, c))
     // Drones are units, so they follow the squad's faction; Tactics Cards are
     // not held to it (the Tabletop's hand takes any).
     .filter((c) => kind !== 'drone' || cardFitsSquadFaction(d, squadOwnFaction(d, sq.id), c))
@@ -959,6 +993,48 @@ function addDroneOrTactic(d: GameData, sq: SavedSquad, kind: 'drone' | 'tactic')
           ? updateSquad({ ...now_, drones: [...now_.drones, { cardId: card.id }] }, now())
           : updateSquad({ ...now_, tactics: [...new Set([...(now_.tactics ?? []), card.id])] }, now());
         id = saved.id;
+        view.squad = saved.id;
+        remember();
+        render();
+      },
+    }],
+  });
+}
+
+// A Carrier's Load: the shared Load list (buildrules.ts legalLoadCards, the
+// same one the Pad and the Tabletop use), held to the squad's faction. Under
+// the "parts to pick from" switch a Backpack already on a mech or another
+// Carrier in this squad uses up a copy.
+function pickLoad(d: GameData, sq: SavedSquad, i: number): void {
+  const carrier = d.byId.get(sq.drones[i]?.cardId ?? '');
+  if (!carrier) return;
+  const cards = legalLoadCards(d, squadUnits(sq.id)).sort((a, b) => cardName(a).localeCompare(cardName(b)));
+  const base = partsLimit(d);
+  const limit = base
+    ? (c: Card): number | null => {
+      const n = base(c);
+      if (n === null) return null;
+      const key = physicalKey(d, c.id);
+      const onMechs = sq.mechs.filter((m) => m.loadout.backpack && physicalKey(d, m.loadout.backpack) === key).length;
+      const onCarriers = sq.drones.filter((x, k) => k !== i && x.backpack && physicalKey(d, x.backpack) === key).length;
+      return Math.max(0, n - onMechs - onCarriers);
+    }
+    : undefined;
+  const id = sq.id;
+  openPartPicker({
+    data: d,
+    slotLabel: `Load for ${cardName(carrier)}`,
+    groups: groupByFaction(d, cards),
+    chosen: sq.drones[i]?.backpack,
+    lockedFaction: d.factionOf(carrier) ?? squadOwnFaction(d, sq.id),
+    ...withLimit(limit),
+    actions: [{
+      label: 'Carry this',
+      run: (card) => {
+        const now_ = findSquad(id);
+        if (!now_?.drones[i]) return;
+        const drones = now_.drones.map((x, k) => (k === i ? { cardId: x.cardId, backpack: card.id } : x));
+        const saved = updateSquad({ ...now_, drones }, now());
         view.squad = saved.id;
         remember();
         render();
@@ -1416,6 +1492,17 @@ async function onClick(ev: MouseEvent): Promise<void> {
       return;
     }
     case 'drone-add': { const sq = findSquad(id); if (sq) addDroneOrTactic(d, sq, 'drone'); return; }
+    case 'load-pick': { const sq = findSquad(id); if (sq) pickLoad(d, sq, Number(el.dataset.i)); return; }
+    case 'load-off': {
+      const sq = findSquad(id);
+      const i = Number(el.dataset.i);
+      if (!sq?.drones[i]) return;
+      const saved = updateSquad({ ...sq, drones: sq.drones.map((x, k) => (k === i ? { cardId: x.cardId } : x)) }, now());
+      view.squad = saved.id;
+      remember();
+      render();
+      return;
+    }
     case 'tactic-add': { const sq = findSquad(id); if (sq) addDroneOrTactic(d, sq, 'tactic'); return; }
     case 'drone-remove': {
       const sq = findSquad(id);

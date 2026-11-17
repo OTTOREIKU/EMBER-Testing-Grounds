@@ -140,6 +140,28 @@ export function loadSquads(): SavedSquad[] {
 export function loadoutPoints(data: GameData, m: MechLoadout): number {
   return Object.values(m).reduce((n, id) => n + (id ? data.byId.get(id)?.score ?? 0 : 0), 0);
 }
+// The dice a unit rolls the same way whatever it does (OTTO, 2026-11-17:
+// "totals for blue dice and electronic dice ... for things that are universal
+// on the units"): Dodge (blue) and Electronic (yellow), summed over the
+// mech's Parts as the table sums them (combat.ts, units.ts electronicValue),
+// the pilot left out. A drone is its own card: a Carrier's Load lends its
+// numbers to a Mech, never to the Tarantula (FAQ O4). A printed dash on
+// Electronic is not a number; `dash` is set when every card prints one.
+// White (Defense) dice depend on the Part hit, so they are not totalled.
+export interface UnitDice { dodge: number; electronic: number; dash: boolean }
+export function unitDice(data: GameData, ids: (string | undefined)[]): UnitDice {
+  const cards = ids.map((id) => (id ? data.byId.get(id) : undefined)).filter((c): c is NonNullable<typeof c> => !!c && c.category !== 'pilot');
+  const dashed = (c: (typeof cards)[number]): boolean => c.electronicDash === true || (c.electronic ?? 0) < 0;
+  return {
+    dodge: cards.reduce((n, c) => n + Math.max(0, c.dodge ?? 0), 0),
+    electronic: cards.reduce((n, c) => n + Math.max(0, c.electronic ?? 0), 0),
+    dash: cards.length > 0 && cards.every(dashed),
+  };
+}
+export function loadoutDice(data: GameData, m: MechLoadout): UnitDice {
+  return unitDice(data, SLOTS.filter((k) => k !== 'pilot').map((k) => m[k]));
+}
+
 export function loadoutFaction(data: GameData, m: MechLoadout): string | null {
   const core = m.torso ? data.byId.get(m.torso) : undefined;
   return core ? data.factionOf(core) : null;
