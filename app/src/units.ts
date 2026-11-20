@@ -3,7 +3,7 @@ import type { CommonAction, GameData } from './data';
 import { cardName, discardFaceOf, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
 import type { ExtraTick, Card, CardAction, CounterRoll, DiceData, GameRuleEffect, GameState, MechLoadout, PartSlot, ScriptState, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
 import type { Command } from './commands';
-import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseFreeTicks, normaliseScript, removableTokens, statusCount, STATUSES, TIMINGS } from './types';
+import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseDuelRecord, normaliseFreeTicks, normaliseScript,removableTokens, statusCount, STATUSES, TIMINGS } from './types';
 import { incompleteMechWhy, normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf, tetherCap } from './melee';
 import { boardGrids, firingSight, inArc, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
@@ -3771,6 +3771,29 @@ export function dodgeEnhanceOf(data: GameData, t: Token): { free: boolean } | nu
   return null;
 }
 
+// HALO with nothing to pay for it (PAD playtest 2.6): the defender carries a
+// ZYBP-302 Passive that consumes a Command Token, and has no face-up one, so
+// neither declare is offered. Said rather than left out, because a missing
+// button read as "HALO does not work". The mass-production Dodge Enhancement
+// is free and never needs saying; its Melee Evasion still pays.
+export function haloWithoutToken(data: GameData, t: Token): string | null {
+  if (t.kind !== 'mech' || t.stance === 'shutdown') return null;
+  if ((t.statuses ?? []).includes('command')) return null;
+  const paid: string[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      const en = a.description?.en ?? '';
+      if (!/Command Token/i.test(en)) continue;
+      if (/On Parry[^.]*additional\s*\{?Dodge/i.test(en)) paid.push('Melee Evasion');
+      else if (/\{?Dodge\}?\s*offset[s]?\s*1\s*Attack\s*die/i.test(en)) paid.push('Dodge Enhancement');
+    }
+  }
+  if (!paid.length) return null;
+  const what = [...new Set(paid)].join(' and ');
+  return `HALO: ${t.label} has no face-up Command Token, so ${what} cannot be used. Keep one back in the Command Phase to use ${paid.length > 1 ? 'them' : 'it'} (4.15.4).`;
+}
+
 export interface CommandRider {
   // A2 Data Link: the Commanded Drone may perform Automatic Actions, which the
   // Command Phase otherwise refuses (3.2.2 / 3.5).
@@ -6986,13 +7009,19 @@ function normaliseTactics(raw: unknown): Record<Side, string[]> {
 // them wherever they occur rather than listing every path. Nothing else a saved
 // game stores can hold those two words: board themes, marker kinds, deployment
 // edges and dice colours all use other vocabulary, and dice are never persisted.
+// Except in the attack records (the defence call, the published window and the
+// Counter-roll), which carry dice by colour: a `blue` pool and Blue faces. They
+// came long after the colour ids, so they never hold one, and renaming them
+// threw a waiting defence call away whenever a phone rejoined (PAD playtest
+// check 2.1, 2026-11-20). They are copied as they are.
+const NO_SIDE_IDS = new Set(['combat', 'combatView', 'counter']);
 function migrateSideIds(v: unknown): unknown {
   if (typeof v === 'string') return LEGACY_SIDE[v] ?? v;
   if (Array.isArray(v)) return v.map(migrateSideIds);
   if (!v || typeof v !== 'object') return v;
   const out: Record<string, unknown> = {};
   for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-    out[LEGACY_SIDE[k] ?? k] = migrateSideIds(val);
+    out[LEGACY_SIDE[k] ?? k] = NO_SIDE_IDS.has(k) ? val : migrateSideIds(val);
   }
   return out;
 }
@@ -7061,6 +7090,12 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     // absent (audit Phase 4, G7).
     ...(typeof (s as { smokeRound?: unknown }).smokeRound === 'number' ? { smokeRound: (s as { smokeRound: number }).smokeRound } : {}),
     script: normaliseScript((s as { script?: unknown }).script, sideOr(r.firstPlayer, 's1')),
+    // A Freeform room's shared attack (commands.ts duelOf), on the whitelist
+    // rule: absent stays absent.
+    ...(() => {
+      const duel = normaliseDuelRecord((s as { duel?: unknown }).duel);
+      return duel ? { duel } : {};
+    })(),
     // The board size, and it is written ONLY when it is a larger board.
     // migrateState rebuilds the state from a whitelist, so a field missing from
     // here is silently dropped on every load -- which is exactly how a saved
@@ -7105,6 +7140,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     ...((s as { blastLast?: unknown }).blastLast === 's1' || (s as { blastLast?: unknown }).blastLast === 's2'
       ? { blastLast: (s as { blastLast: Side }).blastLast } : {}),
     ...((s as { unlocked?: boolean }).unlocked ? { unlocked: true } : {}),
+    ...(Number.isInteger((s as { commandsDealt?: unknown }).commandsDealt) ? { commandsDealt: (s as { commandsDealt: number }).commandsDealt } : {}),
     ...((s as { noSecondary?: boolean }).noSecondary ? { noSecondary: true } : {}),
     roundLimit: int((s as { roundLimit?: unknown }).roundLimit, 5),
     sideNames: Object.fromEntries((['s1', 's2'] as const)

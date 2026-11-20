@@ -156,6 +156,8 @@ export const COMMANDS = {
   setTiming: ['table', 'a dial set on a table with no second seat: a computer commits a hash instead'],
   lockDials: ['table', 'the same table\'s dial lock'],
   noteRoll: ['table', 'the host\'s dice source marks a roll, which seals the Undo'],
+  showTimings: ['table', 'a Freeform pad table shares its dials once Planning ends: a computer seat reveals them instead'],
+  dealCommands: ['table', 'a Freeform pad table deals the Command Tokens: a computer seat plays a Guided or solo table'],
   onBehalf: ['table', 'a board-less table records for the other squad'],
   setRollbackCatalog: ['table', 'the Undo\'s catalogue'],
   restoreIntercept: ['table', 'an Interception Token taken back: a free table\'s correction, which a strict table refuses (4.9, M27; the Undo takes back a mistaken spend)'],

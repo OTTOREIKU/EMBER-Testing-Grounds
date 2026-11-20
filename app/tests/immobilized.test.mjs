@@ -71,9 +71,10 @@ check('and unrelated text does not trip it',
 
   // THE COMMAND IS THE RULE. Both boards' movers are courtesies on top of it;
   // this is the one that holds against a relayed command from a stale client.
-  // 2000, not 1400: the RWS gate (a Mech commanded in the Command Phase does
-  // not move) sits between the Shutdown line and the Immobilized one now.
-  const man = cmds.slice(cmds.indexOf("case 'maneuver': {"), cmds.indexOf("case 'maneuver': {") + 2000);
+  // 2600, not 1400: the RWS gate (a Mech commanded in the Command Phase does
+  // not move) and the Projectile's no-Maneuver line (PAD playtest 2.4) sit
+  // between the Shutdown line and the Immobilized one now.
+  const man = cmds.slice(cmds.indexOf("case 'maneuver': {"), cmds.indexOf("case 'maneuver': {") + 2600);
   check('the maneuver command refuses an Immobilized unit',
     /immobilizedStop\(t,/.test(man), true);
   // Judged off the Action that TRAVELLED, so a sender cannot claim Unstoppable

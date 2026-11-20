@@ -36,18 +36,19 @@ import '../src/partpicker.css';
 import '../src/combat.css';
 import { EmberApi, ApiError, type Account, type RegistrationInfo } from '../src/api';
 import { Relay, type NetView, type RolledDie } from '../src/net';
-import { ammoAvailable, applyRemote, check, rebootWhy, onBeforeApply, onPerformed, onRefused, perform, taskDesignations, type Command } from '../src/commands';
+import { ammoAvailable, applyRemote, check, gameRunning, heldCommands, readyCommands, rebootWhy, onBeforeApply, onPerformed, onRefused, perform, taskDesignations, type Command } from '../src/commands';
 import { glueAfter, idleWorldFor } from '../src/glue';
 import { askDesignation, askLinkSupport, askRemoteAccess, askTokenCleanup, designationsFor, activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
 import { countHits, normaliseSetup, tasksLocked } from '../src/setup';
-import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack, isAttackAction, mountAttack, refreshSplit, sweepView, syncMirror, type TableVerdict } from './attack';
+import { attackActive, attackFinished, attackOnCommand, attackWatching, beginAttack, initAttack, isAttackAction, mountAttack, refreshSplit, sweepView, syncMirror, type TableVerdict } from './attack';
 import { registerOffline } from '../src/offline';
 import { askTablePool, askTableRoll, askTargetPart } from './tabledice';
 import type { RollGroup } from '../src/combat';
 import { beginBlastScan, beginElectronic, beginElectronicAll, beginFreeScan, beginTerminal, beginTrace, ewActive, ewWatching, initEw, mountEw, syncContest } from './ew';
 import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot, snapshotBack, type Snapshot } from '../src/history';
 import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
-import { setLocalSeat } from '../src/loop';
+import { alive, setLocalSeat } from '../src/loop';
+import { offerCoordination } from '../src/commandpick';
 import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, discardFaceOf, environmentAllowance, environmentImageUrl, FACTION_LABEL, parseGridRef, isDiscardCard, isListedBox, isMine, loadData, mechArtLayers, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
 import { importSquadFile } from '../src/importer';
 import { barcodeSvg } from '../src/barcode';
@@ -75,7 +76,7 @@ import { configureNotices, explainOnHold, notify, redrawNotice, speakInPlace, ty
 import { boxHands, normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { gameEndsThisRound, lowValueOf, previewScore, vipFallen } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from '../src/tactics';
-import { launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, jumpsToTarget,explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, volleyFor } from '../src/units';
+import { coordinationFor, launchableCards, overwatchOf, martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, jumpsToTarget,explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, volleyFor } from '../src/units';
 import { shockWalk } from '../src/turn';
 import { gameResult } from '../src/tasks';
 import { GameTrack, gameReport, matchKey, squadWiped } from '../src/gamelog';
@@ -1218,12 +1219,77 @@ function send(cmd: Command): boolean {
   }
   perform(data, table, cmd);
   glueAfter(data, table, cmd);
+  // An attack or a launch paid here holds its Command Coordination until it
+  // is over (playtest 2.6).
+  if (cmd.kind === 'performAction') holdCoordination(unitOf(cmd.uid), cmd.actionId);
   seedTaskItems();
   saveSolo();
   trackAfter();
   render();
   queueMartyrs();
   return true;
+}
+
+// COMMAND COORDINATION AFTER AN ATTACK OR A LAUNCH (PAD playtest 2.6). The
+// Match Centre holds an attacking Action's Coordination until the attack is
+// over (matchhud.ts settleHeldCoordination; FAQ 1.04 C8/C9); the pad offered
+// Coordination only after Actions it routed itself (guided.ts performRouted),
+// and an attack, a Melee Action under the P7 core's grant (172_B) or a
+// launch (the Swift launcher, the Mortar) never goes that way. So the MR21 and
+// MR24 Railguns, the launchers and the P7's Melee never offered it at all.
+// Held here when the Action is paid, offered once nothing else is on screen.
+let coordHeld: { uid: number; upTo: number; round: number; phase: number } | null = null;
+let coordRunning = false;
+
+function holdCoordination(t: Token | null | undefined, actionId: string): void {
+  if (!data || !t || t.kind !== 'mech') return;
+  const a = actionOfUnit(t, actionId);
+  if (!a || (a.type !== 'Firing' && a.type !== 'Melee' && a.type !== 'Projectile')) return;
+  const upTo = coordinationFor(data, t, a);
+  if (upTo > 0) coordHeld = { uid: t.uid, upTo, round: table.round.n, phase: table.round.phase };
+}
+
+// What a held Coordination comes to now: 'wait' while the attack or a
+// question is still on screen, 'skip' (with the reason) when it lapsed or has
+// nothing to hand out, 'offer' when it is due.
+function coordinationDue(): { now: 'none' | 'wait' | 'skip' | 'offer'; why?: string } {
+  const p = coordHeld;
+  if (!p || !data) return { now: 'none' };
+  if (coordRunning || catchingUp || panel === 'combat' || panel === 'target' || document.querySelector('.dlg-back')) return { now: 'wait' };
+  const t = unitOf(p.uid);
+  if (!t || !alive(t)) return { now: 'skip' };
+  if (table.round.n !== p.round || table.round.phase !== p.phase) return { now: 'skip' };
+  if (guidedOn(table)) {
+    // C7: a Riposte the defender still owes is answered first.
+    if ((table.script?.reactions ?? []).some((r) => r.kind === 'riposte' && r.fromUid === p.uid)) return { now: 'wait' };
+    // C8: a Riposte ends the attacker's Opportunity at once, and with it the
+    // Coordination that would have come after the attack.
+    if (table.script?.opp?.uid !== p.uid) return { now: 'skip', why: `${t.label}'s Action Opportunity ended before its Command Coordination came due, so the Coordination is skipped (FAQ C8).` };
+  }
+  if (t.stance === 'shutdown') return { now: 'skip' };
+  if (readyCommands(t) <= 0) return { now: 'skip', why: `${t.label} has Command Coordination ${p.upTo}, but no face-up Command Token left to issue: keep one back in the Command Phase to use it (4.15.3).` };
+  const able = table.tokens.some((d) => d.side === t.side && d.kind === 'drone' && alive(d) && d.deployed !== false && heldCommands(d) === 0);
+  if (!able) return { now: 'skip', why: `${t.label} has Command Coordination ${p.upTo}, but no Ally Drone on the table can take a Command (4.15.2).` };
+  return { now: 'offer' };
+}
+
+function settleCoordination(): void {
+  const due = coordinationDue();
+  if (due.now === 'none' || due.now === 'wait') return;
+  const p = coordHeld!;
+  coordHeld = null;
+  if (due.now === 'skip') {
+    if (due.why) toast(due.why, 'event');
+    return;
+  }
+  const t = unitOf(p.uid)!;
+  coordRunning = true;
+  void offerCoordination(data!, table, t, p.upTo, (mechUid, targetUid) => {
+    send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid });
+  }, (_drone, text) => toast(text, 'event'), () => { send({ kind: 'endSwarm', seat: t.side }); }).finally(() => {
+    coordRunning = false;
+    render();
+  });
 }
 
 // Martyrdom (ZHDR-302) and the AS3-B's Self-Destruct: a unit that detonates as
@@ -1425,6 +1491,7 @@ initAttack({
   toast: (text, kind) => toast(text, kind),
   render: () => render(),
   openCombat: () => { if (panel !== 'combat') { panel = 'combat'; render(); } },
+  combatOpen: () => panel === 'combat',
   closeCombat: () => {
     if (panel === 'combat') { panel = null; render(); }
     // "Undo the whole attack": back to the table as it stood before the
@@ -2729,7 +2796,10 @@ function spendFree(t: Token, actionId: string, key: string = actionId): boolean 
   const o = freeOpp(t);
   if (fitShort(t, o, a, key)) return false;
   const priced = twoHandedUse(data!, t, a, boxHands(table.tasks, t.uid))?.action ?? a;
-  return storeTicks(t, spendAction(o, priced, key, startOpts(data!, table.tokens, t, priced)));
+  const paid = storeTicks(t, spendAction(o, priced, key, startOpts(data!, table.tokens, t, priced)));
+  // Freeform's payment, so its attacks and launches hold Coordination too.
+  if (paid) holdCoordination(t, actionId);
+  return paid;
 }
 
 // For a flow that pays through a `pay` hook (Stabilize): the spend when the
@@ -2892,9 +2962,15 @@ function actionList(t: Token, mine: boolean): string {
         if (a.type === 'Passive' || a.speed === 'passive') continue;
         const key = `${a.id}@${loan.from.uid}`;
         const open = sheetView[drawSide].action === key;
-        const go = mine ? `<button class="pad-chip on pad-perform" data-act="lent-use" data-uid="${t.uid}" data-id="${esc(a.id)}" data-key="${esc(key)}">Use</button>` : '';
+        // Greyed on the Ticks left exactly as the Mech's own Actions are, under
+        // the key the payment records the loan by (lentPay): it stayed live
+        // after the Ticks were spent (playtest 2.5).
+        const nofit = fo ? fitShort(t, fo, a, key) : null;
+        const short = nofit && fo ? capShort(t, fo, a, key) : undefined;
+        const chip = `<button class="pad-chip on pad-perform" data-act="lent-use" data-uid="${t.uid}" data-id="${esc(a.id)}" data-key="${esc(key)}">Use</button>`;
+        const go = mine ? (nofit ? inert(chip, nofit) : chip) : '';
         rows.push(`<div class="pad-act${open ? ' open' : ''}" data-act="open-action" data-id="${esc(key)}" role="button" aria-expanded="${open}">
-      ${actionBlock(loan.card, a)}
+      ${actionBlock(loan.card, a, short)}
       <div class="pad-act-meta">${esc(`Lent by ${loan.from.label} · if in Contact`)}${go ? `<span class="pad-act-go">${go}</span>` : ''}</div>
     </div>`);
       }
@@ -3774,9 +3850,9 @@ function morePanel(): string {
         ${gameOver() ? '' : `<button class="pad-chip on" data-act="phase">${room ? (readiness().me ? 'Waiting…' : 'Continue') : 'Next phase'}</button>`}
       </div>
     </div>
-    ${normaliseSetup(table.setup)?.stage === 'done' && !complete() ? '<button class="pad-btn primary" data-act="game-over" style="margin-top:8px">Game over</button>' : ''}
+    ${gameUnderway() && !complete() ? `<button class="pad-btn primary" data-act="game-over" style="margin-top:8px">Game over</button><p class="pad-note" data-note="log-plan">${esc(logPlanNote())}</p>` : ''}
     <button class="pad-btn" data-act="rounds-reset" style="margin-top:8px"${greyWhy(!!strictLock(), strictLock() ?? '')}>Start the rounds over</button>
-    ${normaliseSetup(table.setup)?.stage === 'done' && !gameOver() ? '<button class="pad-btn" data-act="concede" style="margin-top:8px">Concede the game</button>' : ''}
+    ${gameUnderway() && !gameOver() ? '<button class="pad-btn" data-act="concede" style="margin-top:8px">Concede the game</button>' : ''}
 
     <p class="pad-label pad-sec">Squads</p>
     ${solo ? `<div class="pad-chips pad-squad-pick" style="margin-bottom:8px">
@@ -4109,6 +4185,47 @@ function logNote(st: typeof logged): string {
     case 'off': return 'Game logging is off. It can be switched on from your account.';
     default: return '';
   }
+}
+
+// A game is under way: a Guided one past deployment, or a table with no
+// Guided setup (Freeform, or a Guided game switched to Freeform, which drops
+// the setup) with a Mech on each side. Game over and Concede are offered on
+// this. They used to need the Guided setup, so a Freeform table, and a game
+// switched to Freeform, had no way to end and be logged short of the round
+// limit or a wiped squad (PAD playtest 2.7).
+function gameUnderway(): boolean {
+  // A table waiting to start its Guided game has not begun.
+  if (wantsGuided() && !guidedOn(table)) return false;
+  return gameRunning(table);
+}
+
+// What will happen to this game's log, said BEFORE it ends (playtest 2.7).
+function logPlanNote(): string {
+  if (!account) return 'Not signed in, so this game will not be logged.';
+  if (!api.logs('games')) return 'Game logging is off, so this game will not be logged. It can be switched on from your account.';
+  return 'Logged to your account when the game ends: after the last round, when a squad is wiped, on a concession, or when Game over is pressed.';
+}
+
+// Leaving a game that has started but not ended: it is never logged, so the
+// player is told and offered Game over first (playtest 2.7). True to go on.
+async function leaveOk(): Promise<boolean> {
+  if (!data || !gameUnderway() || complete()) return true;
+  if (!account || !api.logs('games')) return true;
+  const tasks = normaliseTasks(table.tasks);
+  const started = table.round.n > 1 || table.round.phase > 0 || tasks.vp.s1 > 0 || tasks.vp.s2 > 0;
+  if (!started) return true;
+  const pick = await choiceDialog({
+    title: 'This game has not ended',
+    body: 'A game is only logged to your account once it ends. If it is over, press Game over first to log it.',
+    choices: [
+      { id: 'over', label: 'Game over, log it', primary: true },
+      { id: 'leave', label: 'Leave without logging' },
+      { id: 'stay', label: 'Stay', cancel: true },
+    ],
+    stacked: true,
+  });
+  if (pick === 'over') { await callGameOver(); return false; }
+  return pick === 'leave';
 }
 
 // GAME OVER (OTTO, 2026-10-10: "probably at the top of the group of buttons it
@@ -5046,6 +5163,14 @@ function toastRemote(cmd: Command): void {
   }
   const target = table.tokens.find((x) => x.uid === (c.targetUid ?? c.uid));
   if (!tableWide.has(cmd.kind) && !(target && target.side === mySeat())) return;
+  // Suppression moves one of OUR Mechs to another Stance without a word from
+  // us, so it is said plainly rather than as the ledger's "X: Suppression"
+  // (playtest 2.3).
+  if (cmd.kind === 'suppress' && target) {
+    const by = table.tokens.find((x) => x.uid === c.uid);
+    toast(`${target.label} was targeted by ${by ? `${by.label}'s ` : 'a '}Suppression attack and is now in Defensive Stance.`, 'event', true);
+    return;
+  }
   toast(labelFor(cmd, table, names()).label, 'event', true);
 }
 
@@ -5129,7 +5254,7 @@ const SKELETON = `<header class="pad-bar" id="pad-bar"></header>
 // been made.
 function resumeBlastScan(): void {
   const d = detonating;
-  if (!d?.scanning || ewActive() || table.script?.counter) return;
+  if (!d?.scanning || ewActive() || (table.script ?? table.duel)?.counter) return;
   if ((table.script?.reactions ?? []).some((r) => r.kind === 'manifest' && r.fromUid === d.uid)) return;
   detonating = { ...d, scanning: false };
   void continueDetonation();
@@ -5186,6 +5311,9 @@ function render(): void {
     const u = unitOf(act.uid);
     if (u) { picks[u.side] = u.uid; side = u.side; sheetView[u.side].action = null; }
   } else if (!act) shownOpp = null;
+  shareDials();
+  queueMicrotask(dealCommands);
+  queueMicrotask(settleCoordination);
   paint('pad-bar', barHtml());
   const turn = document.getElementById('pad-turn');
   if (turn) {
@@ -5231,7 +5359,8 @@ function render(): void {
       const ew = document.getElementById('ew-body');
       if (ew) mountEw(ew);
     }
-    if (data) { syncMirror(); syncContest(); refreshSplit(); }
+    if (data) { syncMirror(); sweepView(); syncContest(); refreshSplit(); }
+    guardEmptyCombat();
   } else if (panel) {
     if (paint('pad-panel', panelHtml())) {
       fillPortraits(p, true);
@@ -5244,6 +5373,57 @@ function render(): void {
     if (ta && ta.value !== notes) ta.value = notes;
   }
   redrawNotice();
+}
+
+// THE EMPTY COMBAT PANEL (OTTO's playtest, 2026-11-18: "One EC roll caused
+// everything on the PAD screen to vanish, except the bottom tabs"). The attack
+// and the Counter-roll windows share one panel, and some of their close paths
+// put the window away without closing the panel, which then covers the sheet
+// with nothing. Every caller opens the panel a moment BEFORE its window starts
+// (panel = 'combat'; render(); begin...()), so an empty panel is only closed
+// once it has stayed empty past that moment.
+function combatIdle(): boolean {
+  return !attackActive() && !attackWatching() && !attackFinished() && !ewActive() && !ewWatching();
+}
+let emptyCheck = 0;
+function guardEmptyCombat(): void {
+  if (emptyCheck || panel !== 'combat' || !data || !combatIdle()) return;
+  emptyCheck = window.setTimeout(() => {
+    emptyCheck = 0;
+    if (panel === 'combat' && combatIdle()) { panel = null; render(); }
+  }, 400);
+}
+
+// FREEFORM DIALS, SHOWN (OTTO's playtest, 2026-11-18: in Freeform "the order
+// menu didn't show us the timings of the other player"). A Freeform dial is a
+// secret note on its own phone; once the Planning Phase is over each phone in
+// a room shows its own squad's, once a round, so both turn orders match.
+let dialsShown = '';
+// A Freeform table's Command Tokens, dealt by the pad as each Command Phase
+// opens (OTTO, 2026-11-19), so HALO, Command Coordination and Target Tracing
+// have something to pay with. One phone deals for the table: the host in a
+// room, or the one phone of an Offline Game. A Mech that has commanded a Drone
+// on the table has its token tapped off by its player.
+function dealCommands(): void {
+  if (!data || catchingUp || guidedOn(table) || wantsGuided() || table.round.phase !== 0) return;
+  if (!solo && !(view.room && view.host)) return;
+  if (table.commandsDealt === table.round.n) return;
+  const cmd: Command = { kind: 'dealCommands', seat: solo ? 's1' : mySeat() };
+  if (check(data, table, cmd).ok && send(cmd)) toast('Command Tokens dealt for the Command Phase. Tap one off a Mech when it commands a Drone.', 'event');
+}
+
+function shareDials(): void {
+  if (!data || catchingUp || !view.room || !view.seat || guidedOn(table) || table.round.phase < 2) return;
+  const seat = mySeat();
+  const dials = table.tokens.filter((t) => t.side === seat && t.kind === 'mech').map((t) => ({ uid: t.uid, timing: t.timing }));
+  if (!dials.some((d) => d.timing)) return;
+  const key = `${view.room.id}:${table.round.n}:${JSON.stringify(dials)}`;
+  if (dialsShown === key) return;
+  // Marked before the send: the send redraws, and that redraw lands here. A
+  // refusal is not retried on every redraw, which would repeat its notice.
+  dialsShown = key;
+  const cmd: Command = { kind: 'showTimings', seat, dials };
+  if (check(data, table, cmd).ok) send(cmd);
 }
 
 // ---------- wiring: one delegated handler ----------
@@ -5375,13 +5555,16 @@ function act(el: HTMLElement, ev: Event): void {
     }
     case 'solo-leave':
     case 'solo-to-signin':
-      saveSolo();
-      solo = false;
-      soloId = null;
-      resetTable();
-      screen = account ? 'lobby' : 'signin';
-      error = null;
-      render();
+      void leaveOk().then((go) => {
+        if (!go) return;
+        saveSolo();
+        solo = false;
+        soloId = null;
+        resetTable();
+        screen = account ? 'lobby' : 'signin';
+        error = null;
+        render();
+      });
       return;
     case 'game-x':
     case 'solo-end':
@@ -5412,9 +5595,12 @@ function act(el: HTMLElement, ev: Event): void {
       render();
       return;
     case 'room-x': forgetRoom(el.dataset.id!); render(); return;
-    case 'leave': relay.leave(); resetTable(); screen = 'lobby'; render(); return;
+    case 'leave':
+      void leaveOk().then((go) => { if (go) { relay.leave(); resetTable(); screen = 'lobby'; render(); } });
+      return;
     case 'close-room':
       void (async () => {
+        if (!(await leaveOk())) return;
         const id = view.room?.id;
         const sure = await confirmDialog({
           title: 'Close the table for everyone?',

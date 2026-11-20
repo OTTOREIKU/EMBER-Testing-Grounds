@@ -5,7 +5,7 @@ import { ICON_BLOCKED, ICON_BOLT, ICON_BURST, ICON_DICE, ICON_PIERCE, ICON_SHIEL
 import { linkMechanics } from './inspector';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, Opportunity, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { fitViewLine, statusCount, STATUSES } from './types';
-import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, partUsable, dragPrinted, designationsOn, lockOnPenalty, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeChoice, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, tallyCounter, resolveCounterRoll, type AttackReaction, type MultiTarget, ignoresProtection } from './units';
+import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, haloWithoutToken, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, partUsable, dragPrinted, designationsOn, lockOnPenalty, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeChoice, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, tallyCounter, resolveCounterRoll, type AttackReaction, type MultiTarget, ignoresProtection } from './units';
 import { timingOf } from './ticks';
 import { isTerminalStandIn, TERMINAL_EV } from './tasks';
 import { lowValueOf } from './scoring';
@@ -175,6 +175,27 @@ export type CombatRole = 'attacker' | 'defender' | 'spectator';
 // faces deliberately do not appear: a watcher who closed the window wants it
 // to stay closed while that attack plays out, and every step publishes a new
 // view.
+// THE FELT'S SPLIT (OTTO's PAD playtest, 2026-11-18): the "hitting" and
+// "stopping" counts broken into the kinds that matter, since a {Defense} never
+// offsets a {Heavy Hit} and only a {Dodge} does (p.51). Pure, so it is tested.
+export function feltSplit(attack: { heavy: number; light: number }[], defense: { dodge: number; defense: number }[]): {
+  heavy: number; light: number; dodge: number; defense: number; attackText: string; defenseText: string;
+} {
+  const heavy = attack.reduce((n, x) => n + x.heavy, 0);
+  const light = attack.reduce((n, x) => n + x.light, 0);
+  const dodge = defense.reduce((n, x) => n + x.dodge, 0);
+  const def = defense.reduce((n, x) => n + x.defense, 0);
+  const said = (parts: [number, string][]) => parts.filter(([n]) => n > 0).map(([n, k]) => `${n} ${k}`).join(' · ');
+  return { heavy, light, dodge, defense: def, attackText: said([[heavy, 'Heavy'], [light, 'Light']]), defenseText: said([[dodge, 'Dodge'], [def, 'Defense']]) };
+}
+
+// The line under the defence when its Dodges cannot cover the Heavy Hits.
+export function feltHeavyWarning(s: { heavy: number; dodge: number }): string {
+  const short = s.heavy - s.dodge;
+  if (short <= 0) return '';
+  return `${short} Heavy Hit${short === 1 ? '' : 's'} with no Dodge to stop ${short === 1 ? 'it' : 'them'}: Defense cannot block Heavy Hits.`;
+}
+
 function mirrorKey(v: CombatView): string {
   return `${v.attackerUid}:${v.targetUid}:${v.actionId}:${v.mode ?? ''}`;
 }
@@ -1044,6 +1065,9 @@ interface Ctx {
   // other would be worse than the defender seeing none. Written by stepResolve,
   // which render() builds before it publishes.
   resolution?: { duel: Duel; text: string[] } | null;
+  // The "Attack resolved" box as plain lines, written by finish() so the last
+  // published view carries it to the other screen (OTTO's playtest, 2026-11-18).
+  summary?: { head: string; lines: string[] } | null;
   // WHAT THE ATTACK COST, one entry per Penetration applied. A LIST and not a
   // single record: an Action with Mutilation, Cleaving or Scatter-shot applies
   // a SECOND Penetration in its Surplus round (4.8), and overwriting would
@@ -1163,6 +1187,18 @@ export class AttackHelper {
   // it has no memory of its own: it recomputes from the published view every
   // render and would happily redraw what was just dismissed.
   private dismissed: string | null = null;
+  // finish() has drawn the "Attack resolved" box and its view, with the
+  // summary, is still published for the other screen. The window is no longer
+  // active (ctx is gone) but the page must not take the view back until the
+  // player closes it (finishedShown).
+  private summaryHeld = false;
+  // The summary a MIRROR last drew, so a page's every render does not redraw it.
+  private summaryDrawn = '';
+
+  // The attacking window is showing its finished attack's summary.
+  get finishedShown(): boolean {
+    return this.summaryHeld && !this.ctx && !this.mirroring;
+  }
   // Whether the attack this window last closed was cancelled before any die
   // was rolled. The tabletop reads it as "stop here" for an Interception chain
   // (notices review, 2026-09-28). Cleared as each attack starts.
@@ -1402,8 +1438,12 @@ export class AttackHelper {
     // attacking client for ever. viewAwaits names the blocking questions.
     // Falling through clears the dismissal rather than suspending it, so a
     // window brought back because it was needed then stays.
+    // The finished attack's summary is its own drawing, and its own dismissal:
+    // a watcher who closed the window mid-fight still gets the outcome.
+    if (view.summary) { this.showSummaryMirror(view, role); return; }
     if (this.dismissed && this.dismissed === mirrorKey(view) && !viewAwaits(view, role)) return;
     this.dismissed = null;
+    this.summaryDrawn = '';
     // The same Firing copy the attacking client's window runs on (B4).
     if (view.mode === 'intercept') action = asInterception(action);
     const had = this.mirroring ? this.ctx : null;
@@ -1543,6 +1583,7 @@ export class AttackHelper {
   // else, and this window was only ever a drawing of it.
   closeMirror(): void {
     if (!this.mirroring) return;
+    this.summaryDrawn = '';
     this.stopBlack();
     this.mirroring = null;
     this.ctx = null;
@@ -1572,8 +1613,44 @@ export class AttackHelper {
   // `mirroring`, and the key is what stops syncCombatMirror redrawing this
   // same attack on the very next render.
   dismissMirror(): void {
-    if (this.mirroring) this.dismissed = mirrorKey(this.mirroring);
+    if (this.mirroring) this.dismissed = this.mirroring.summary ? `done:${mirrorKey(this.mirroring)}` : mirrorKey(this.mirroring);
     this.closeMirror();
+  }
+
+  // The other screen's "Attack resolved" box (OTTO's playtest, 2026-11-18):
+  // the head and lines the attacking window drew, the whole log, and a Close
+  // that puts this drawing away. Plain text: a peer is not a trusted author of
+  // markup.
+  private showSummaryMirror(view: CombatView, role: CombatRole): void {
+    const key = `done:${mirrorKey(view)}`;
+    if (this.dismissed === key) return;
+    const drawn = JSON.stringify([view.summary, view.log]);
+    if (this.mirroring && this.summaryDrawn === drawn) return;
+    this.stopBlack();
+    this.mirroring = view;
+    this.role = role;
+    this.ctx = null;
+    this.multi = null;
+    this.summaryDrawn = drawn;
+    const sum = view.summary!;
+    const el = document.createElement('div');
+    el.className = 'attack-helper';
+    el.innerHTML = `<div class="ah-head"><b>Attack resolved</b> <span class="dim">${esc(sum.head)}</span></div>`
+      + sum.lines.map((l) => `<p class="ah-sum">${esc(l)}</p>`).join('')
+      + `<div class="ah-log">${view.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>`;
+    const close = document.createElement('button');
+    close.dataset.act = 'finish.close';
+    close.className = 'ah-primary';
+    close.textContent = 'Close';
+    close.addEventListener('click', () => this.closeSummaryMirror());
+    el.appendChild(close);
+    this.root.replaceChildren(el);
+  }
+
+  // What the summary's Close does, as a method so a test can drive it.
+  closeSummaryMirror(): void {
+    this.dismissMirror();
+    this.onClose();
   }
 
   private mirrorFaces(
@@ -1724,6 +1801,7 @@ export class AttackHelper {
     redirect = true,
   ): void {
     this.stopBlack();
+    this.summaryHeld = false;
     this.closedUnrolled = false;
     // An Interception is a Firing Action for its modifiers, whatever the card
     // prints (FAQ M26; ruling I9; audit Phase 5, B4).
@@ -1833,6 +1911,7 @@ export class AttackHelper {
   // the two cannot drift.
   startMulti(attacker: Token, action: CardAction, primary: Token, cap: MultiTarget): void {
     this.stopBlack();
+    this.summaryHeld = false;
     this.closedUnrolled = false;
     // The Coolers add to the pool the Multi-Target then SPLITS, not to each
     // sequence: one Firing Action is cooled once, however many targets it takes.
@@ -2000,6 +2079,7 @@ export class AttackHelper {
 
   cancel(): void {
     this.stopBlack();
+    this.summaryHeld = false;
     this.closedUnrolled = this.unrolled !== null;
     this.blackOffer = null;
     this.ctx = null;
@@ -2505,7 +2585,10 @@ export class AttackHelper {
     const c = this.ctx;
     if (!c || c.dodgeDieUsed) return;
     c.dodgeDieUsed = true;
-    this.note(`${c.defender.label} spends a Command Token for Dodge Enhancement: each [Dodge] now cancels a whole Attack die (ZYBP-302).`, [c.defender]);
+    // The mass-production HALO pays nothing (GoF 1.021), so it is not said to.
+    this.note(dodgeEnhanceOf(this.data, c.defender)?.free
+      ? `${c.defender.label} declares Dodge Enhancement: each [Dodge] now cancels a whole Attack die (ZYBP-302-MP, no Command Token).`
+      : `${c.defender.label} spends a Command Token for Dodge Enhancement: each [Dodge] now cancels a whole Attack die (ZYBP-302).`, [c.defender]);
     this.render();
   }
 
@@ -3689,6 +3772,8 @@ export class AttackHelper {
         // strip left over from the round before a Surplus would be a lie about
         // dice that have not been rolled yet.
         resolution: c.step === 'resolve' && c.resolution ? { ...c.resolution, text: c.resolution.text.map(fitViewLine) } : null,
+        // The finished attack's box (finish()), so the defender reads it too.
+        summary: c.summary ? { head: fitViewLine(c.summary.head), lines: c.summary.lines.map(fitViewLine) } : null,
       });
   }
 
@@ -3794,11 +3879,20 @@ export class AttackHelper {
       // rather than deriving a second answer.
       const per = which === 'attack' ? this.attackIconsPerDie(c) : this.defenseIconsPerDie(c);
       const doing = per.reduce((n, x) => n + Object.values(x).reduce((a, b) => a + b, 0), 0);
+      // WHAT KIND, not only how many (OTTO's PAD playtest, 2026-11-18: "you've
+      // got 2 hits, and I'm stopping 3, it's fine", not realising the 2 were
+      // Heavy and there were no Dodges). A {Defense} never offsets a Heavy Hit,
+      // only a {Dodge} does, so the split is what tells a player whether they
+      // are safe.
+      const split = feltSplit(which === 'attack' ? this.attackIconsPerDie(c) : [], c.defenseRoll ? this.defenseIconsPerDie(c) : []);
+      const kinds = which === 'attack' ? split.attackText : split.defenseText;
+      const warn = which === 'defense' && c.attackRoll ? feltHeavyWarning(feltSplit(this.attackIconsPerDie(c), this.defenseIconsPerDie(c))) : '';
       const head = document.createElement('div');
       head.className = 'ah-half-h';
       head.innerHTML = `<span class="eyebrow">${which === 'attack' ? 'Attack' : 'Defence'}</span>`
         + `<span class="nm ${who.side}">${esc(who.label)}</span>`
-        + `<span class="tot">${doing}<small>${which === 'attack' ? 'hitting' : 'stopping'}</small></span>`;
+        + `<span class="tot">${doing}<small>${which === 'attack' ? 'hitting' : 'stopping'}</small>${kinds ? `<small class="ah-kinds">${esc(kinds)}</small>` : ''}</span>`
+        + (warn ? `<span class="ah-heavywarn">${esc(warn)}</span>` : '');
       side.appendChild(head);
       side.appendChild(this.rollView(roll, which));
       return side;
@@ -5612,6 +5706,11 @@ export class AttackHelper {
       }${c.defender.stance === 'mobility' ? ' · MOB stance: + Blue = Dodge value' : ''}${
         c.defender.stance === 'defensive' ? ' · DEF stance: hollow Defense icons count as solid' : ''
       }${
+        // Named with the other passives as the roll is made, not only in the
+        // resolution (OTTO's PAD playtest, 2026-11-18: "Low profile isn't
+        // mentioned until the end of the damage rolls").
+        this.lowProfileOn(c).on ? ' · LOW PROFILE: each Eye counts as a Dodge against this Firing Attack' : ''
+      }${
         // 4.1: a Shutdown unit still rolls its Armor, but that is ALL it gets —
         // said out loud because "it can still defend" reads as a bug at the
         // table when the losses are silent.
@@ -5784,6 +5883,15 @@ export class AttackHelper {
       // that player sat at another screen, so nobody else could tell a
       // defender who was thinking from one with nothing to think about.
       const defMine = this.mayPress('defender');
+      // HALO printed but nothing to pay with: said, not left out (playtest 2.6).
+      const haloIdle = haloWithoutToken(this.data, c.defender);
+      if (haloIdle) {
+        const p = document.createElement('p');
+        p.className = 'ah-note';
+        p.dataset.note = 'halo-idle';
+        p.textContent = haloIdle;
+        wrap.appendChild(p);
+      }
       // The two ZYBP-302 Command Token spends.
       if (evadeOffer) {
         const b = document.createElement('button');
@@ -6566,6 +6674,16 @@ export class AttackHelper {
     el.innerHTML = `<div class="ah-head"><b>Attack resolved</b> <span class="dim">${esc(c.attacker.label)} to ${esc(struck.label)}, ${esc(c.action.name?.en ?? '')}</span></div>
       ${tally}${partLines}
       <div class="ah-log">${c.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>`;
+    // The same box for the other screen, as plain lines, published now while
+    // the context is still here (OTTO's playtest, 2026-11-18). The view stays
+    // up until this window closes (finishedShown).
+    const plain = (h: string): string => h.replace(/<[^>]*>/g, '').trim();
+    c.summary = {
+      head: `${c.attacker.label} to ${struck.label}, ${c.action.name?.en ?? ''}`,
+      lines: [plain(tally), ...partLines.split('</p>').map(plain)].filter(Boolean),
+    };
+    this.summaryHeld = true;
+    this.publishMirror();
     // "{Lightning} may make Target Mech switch into Shutdown Stance
     // immediately" (ZHDR-303, ZHDR-304). A may, so it is offered, and on the
     // terminal screen whichever way it ends, so the locals it needs are taken now.

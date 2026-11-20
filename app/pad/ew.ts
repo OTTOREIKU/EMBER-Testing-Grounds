@@ -37,6 +37,15 @@ let api: EwApi | null = null;
 let helper: ElectronicHelper | null = null;
 let root: HTMLElement | null = null;
 
+// Whether the exchange runs on the shared record both phones draw: a Guided
+// game, or a Freeform ROOM (OTTO, 2026-11-18: both phones play, as Guided).
+// The free Scan, a Projectile's Scan and Target Tracing still run on one phone
+// in Freeform: each hands its result to something only a Guided game queues.
+function shared(): boolean {
+  const a = api!;
+  return (!!a.state().script || a.inRoom()) && !a.solo;
+}
+
 export function initEw(a: EwApi): void {
   api = a;
 }
@@ -93,7 +102,7 @@ export function beginElectronic(attacker: Token, actionId: string, defender: Tok
   const a = api!;
   // Solo holds both hands on one phone, which is the local exchange's whole
   // shape; the shared record is for two phones.
-  if (a.state().script && !a.solo) {
+  if (shared()) {
     return a.send({ kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId, targetUid: defender.uid, ...(joined ? { chain: 'join' as const } : {}) });
   }
   if (!root) return false;
@@ -115,7 +124,7 @@ export function beginElectronic(attacker: Token, actionId: string, defender: Tok
 export function beginElectronicAll(attacker: Token, actionId: string, targets: Token[], joined = false): boolean {
   const a = api!;
   if (!targets.length) return false;
-  if (a.state().script && !a.solo) {
+  if (shared()) {
     return a.send({
       kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId,
       targetUid: targets[0].uid, also: targets.slice(1).map((t) => t.uid), ...(joined ? { chain: 'join' as const } : {}),
@@ -203,7 +212,7 @@ export function beginBlastScan(proj: Token, defender: Token): boolean {
 // off the page had gone (OTTO, 2026-09-28).
 export function beginTerminal(attacker: Token, actionId: string, item: TaskItem, zoneName: string, joined = false): boolean {
   const a = api!;
-  if (a.state().script && !a.solo) {
+  if (shared()) {
     return a.send({
       kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId,
       targetUid: TERMINAL_UID, terminal: item.id, ...(joined ? { chain: 'join' as const } : {}),
@@ -247,7 +256,7 @@ export function beginTrace(tracer: Token, actionId: string, attacker: Token): bo
 export function syncContest(): void {
   const a = api!;
   const s = a.state();
-  const c = s.script?.counter ?? null;
+  const c = (s.script ?? s.duel)?.counter ?? null;
   if (!c) {
     if (helper?.watching) { helper.closeContest(); a.closeCombat(); }
     return;

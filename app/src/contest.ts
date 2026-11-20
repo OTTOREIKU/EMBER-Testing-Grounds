@@ -100,7 +100,8 @@ export function contestAct(env: ContestEnv, act: EwAct, arg?: EwArg): void {
   const done = env.done ?? (() => {});
   const actionIn = env.actionOf ?? ((t: Token, id: string) => actionOf(data, s, t, id));
   const label = env.rollLabel ?? ((u: Token, what: 'roll' | 'focus' | 'terminal', n: number) => tableLabel(data, u, what, n));
-  const c = s.script?.counter;
+  // A Guided game's record, or a Freeform room's (commands.ts duelOf).
+  const c = (s.script ?? s.duel)?.counter;
   if (!c) return;
   const init = s.tokens.find((x) => x.uid === c.initiatorUid);
   const resp = counterResponder(data, s, c, init);

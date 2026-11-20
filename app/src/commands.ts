@@ -1,4 +1,4 @@
-import type { BoardGrids, CardAction, CombatView, Facing, FreeTicks, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
+import type { BoardGrids, CardAction, CombatView, DuelRecord, Facing, FreeTicks, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
 import { addStatus, ageTokens, cellsOf, isLineUnit, gridsOf, newOpportunity, normaliseCatalog, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces, VIEW_LINE_MAX } from './types';
 import { copyAsJson } from './jsoncopy';
 import type { GameData } from './data';
@@ -545,6 +545,12 @@ export type Command = (
   // are in, so neither player can see the other's before fixing their own.
   | { kind: 'commitTimings'; seat: Side; hash: string }
   | { kind: 'revealTimings'; seat: Side; salt: string; dials: { uid: number; timing?: Timing }[] }
+  // A FREEFORM room's dials, shown once the Planning Phase is over. Freeform
+  // keeps each dial a secret note on its own phone (setTiming is never sent),
+  // so the other phone's turn order never had them (OTTO's playtest,
+  // 2026-11-18). No commitment to check against: Freeform trusts the table.
+  | { kind: 'showTimings'; seat: Side; dials: { uid: number; timing?: Timing }[] }
+  | { kind: 'dealCommands'; seat: Side }
 ) & CommandChain;
 
 // `note` is an allowed command that still has something to say — the award of a
@@ -670,6 +676,27 @@ export function strictNow(state: GameState): boolean {
 // A strict guided game under way: the script's own Strict flag (the Match
 // Centre's and pad Guided's scripts are born strict) and a finished setup. A
 // sandbox or a Freeform pad keeps its correction tools (audit Phase 6, B5).
+// THE SHARED ATTACK RECORD (OTTO's PAD playtest, 2026-11-18: in Freeform "the
+// combat resolutions were only on the screen of the attacker", and an EC roll
+// waited on a defender whose phone never showed it). A Guided game keeps the
+// defence handshake, the published attack window and the Counter-roll on its
+// script. A Freeform ROOM has no script on purpose (a script is the Guided
+// loop, pad.ts migrated()), so it keeps the same three on `state.duel`, and
+// both phones play an attack and a Counter-roll as a Guided table does. A
+// table with no seat (the sandbox, one phone) has no other phone to share
+// with and keeps neither.
+export function duelOf(state: GameState): DuelRecord | null {
+  return state.script ?? state.duel ?? null;
+}
+function duelOn(state: GameState): boolean {
+  return !!state.script || !!getLocalSeat();
+}
+function duelFor(state: GameState): DuelRecord | null {
+  if (state.script) return state.script;
+  if (!getLocalSeat()) return null;
+  return (state.duel ??= { combat: null, combatView: null, counter: null });
+}
+
 function strictGuided(state: GameState): boolean {
   return !!state.script?.strict && normaliseSetup(state.setup)?.stage === 'done';
 }
@@ -902,7 +929,7 @@ type TableKind =
   // goes through the actor path and gets the "your units only" check free.
   | 'queueReactions'
   | 'clearCounterRoll' | 'rollTerminal'
-  | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
+  | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'showTimings' | 'dealCommands' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'placeTaskItem' | 'setTactics' | 'setInventory' | 'setReady' | 'designateTask'
   | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance' | 'riposte' | 'dodgeHold'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer'
@@ -914,7 +941,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'setEnvironment',
   'queueReactions',
   'clearCounterRoll', 'rollTerminal',
-  'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
+  'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'showTimings', 'dealCommands', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'placeTaskItem', 'setTactics', 'setInventory', 'setReady', 'designateTask',
   'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte', 'dodgeHold',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
@@ -1260,11 +1287,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'callDefense': {
-      const sc = state.script;
-      if (!sc) return no('There is no game running.');
+      const sc = duelOf(state);
+      if (!duelOn(state)) return no('There is no game running.');
       // One defence in the air at a time: a second call while one waits would
       // leave two clients answering different questions.
-      if (sc.combat) return no('A defence roll is already being waited on.');
+      if (sc?.combat) return no('A defence roll is already being waited on.');
       const at = state.tokens.find((x) => x.uid === cmd.uid);
       if (!at || at.side !== cmd.seat) return no('The attacker is not one of your units.');
       // "On the board" is the whole test, and deliberately so: Automatic Shield
@@ -1285,7 +1312,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'answerDefense': {
-      const sc = state.script;
+      const sc = duelOf(state);
       if (!sc?.combat) return no('No defence roll has been asked for.');
       if (sc.combat.faces) return no('The defence has already been rolled.');
       // Only the DEFENDING player answers: the dice belong to whoever owns the
@@ -1303,22 +1330,22 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'focusAnswer': {
-      if (!state.script) return no('There is no game running.');
+      if (!duelOn(state)) return no('There is no game running.');
       if (typeof cmd.use !== 'boolean') return no('That is not a Focus answer.');
       return ok;
     }
     case 'designateHit': {
-      if (!state.script) return no('There is no game running.');
+      if (!duelOn(state)) return no('There is no game running.');
       if (typeof cmd.slot !== 'string' || !cmd.slot) return no('That is not a Part.');
       return ok;
     }
     case 'meleeEvade':
     case 'dodgeEnhance': {
-      if (!state.script) return no('There is no game running.');
+      if (!duelOn(state)) return no('There is no game running.');
       return ok;
     }
     case 'dodgeHold': {
-      if (!state.script) return no('There is no game running.');
+      if (!duelOn(state)) return no('There is no game running.');
       if (!Number.isSafeInteger(cmd.n) || cmd.n < 0 || cmd.n > 40) return no('That is not a number of Dodges.');
       return ok;
     }
@@ -1337,11 +1364,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'kcArmor': {
-      if (!state.script) return no('There is no game running.');
+      if (!duelOn(state)) return no('There is no game running.');
       return ok;
     }
     case 'focusReroll': {
-      if (!state.script) return no('There is no game running.');
+      if (!duelOn(state)) return no('There is no game running.');
       if (!Array.isArray(cmd.indices) || !Array.isArray(cmd.faces) || cmd.indices.length !== cmd.faces.length) {
         return no('That is not a Focus reroll.');
       }
@@ -1354,7 +1381,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'setCombatView': {
-      if (!state.script) return no('There is no game running.');
+      if (!duelOn(state)) return no('There is no game running.');
       const view = cmd.view;
       if (view === null) return ok;
       const at = state.tokens.find((x) => x.uid === view.attackerUid);
@@ -1372,6 +1399,12 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
         return no('That is not a Part Die.');
       }
       if ((view.log ?? []).some((l) => typeof l !== 'string' || l.length > VIEW_LINE_MAX)) return no('That is not a combat log.');
+      // The finished attack's summary box, drawn as text on the other screen.
+      const sm = view.summary;
+      if (sm != null && (typeof sm !== 'object' || typeof sm.head !== 'string' || sm.head.length > VIEW_LINE_MAX
+        || !Array.isArray(sm.lines) || sm.lines.length > 60 || sm.lines.some((l) => typeof l !== 'string' || l.length > VIEW_LINE_MAX))) {
+        return no('That is not an attack summary.');
+      }
       // The Dodge question is drawn as a stepper on the defender's screen, its
       // numbers the stepper's bounds, so they are bounded here like the dice.
       const dh = view.dodgeHold;
@@ -1620,7 +1653,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'concede': {
-      if (normaliseSetup(state.setup)?.stage !== 'done') return no('There is no game running to concede.');
+      if (!gameRunning(state)) return no('There is no game running to concede.');
       if (normaliseTasks(state.tasks).conceded) return no('A squad has already conceded this game.');
       return ok;
     }
@@ -1753,7 +1786,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'clearCounterRoll': {
-      const c = state.script?.counter;
+      const c = duelOf(state)?.counter;
       if (!c) return no('No Electronic Counter-roll is open.');
       // Only the Initiator's seat closes it, at any stage, except that either
       // seat may once the verdict is in and the Initiator lost. The Responder's
@@ -1777,7 +1810,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'rollTerminal': {
-      const c = state.script?.counter;
+      const c = duelOf(state)?.counter;
       if (!c || c.terminal === undefined) return no('No Remote Access is rolling against a Terminal.');
       if (c.respRoll) return no('The Terminal has already rolled: it never Focuses, so it rolls once (ruling I25).');
       if (!c.initRoll) return no('The Initiator rolls first, then the Terminal (FAQ G4).');
@@ -1905,6 +1938,29 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (!sc.commits[cmd.seat]) return no('That squad never committed its dials, so there is nothing to check the reveal against.');
       if (sc.revealed.includes(cmd.seat)) return no('This squad has already revealed.');
       if (typeof cmd.salt !== 'string' || !Array.isArray(cmd.dials)) return no('That is not a reveal.');
+      return ok;
+    }
+    case 'dealCommands': {
+      // A FREEFORM table's Command Tokens, dealt as its Command Phase opens
+      // (3.2.1), once a round: a Guided game's glue deals its own (glue.ts
+      // enterPhase). Freeform dealt none, so nothing that consumes one (HALO,
+      // Command Coordination, Target Tracing) could ever be offered there
+      // (PAD playtest 2.6; OTTO picked "the pad deals them", 2026-11-19).
+      if (normaliseSetup(state.setup) || state.script) return no('A Guided game deals its Command Tokens itself.');
+      if (state.round.phase !== 0) return no('Command Tokens are dealt as the Command Phase opens (3.2.1).');
+      if (state.commandsDealt === state.round.n) return no('This round\'s Command Tokens are already dealt.');
+      if (!gameRunning(state)) return no('Command Tokens are dealt once both squads are on the table.');
+      return ok;
+    }
+    case 'showTimings': {
+      if (normaliseSetup(state.setup)) return no('A Guided game reveals its dials itself.');
+      if (state.round.phase < 2) return no('Dials are shown once the Planning Phase is over (3.3).');
+      if (!Array.isArray(cmd.dials) || cmd.dials.length > 40) return no('That is not a set of dials.');
+      for (const d of cmd.dials) {
+        const t = state.tokens.find((x) => x.uid === d?.uid);
+        if (!t || t.side !== cmd.seat || t.kind !== 'mech') return no('A squad shows only its own Mechs\' dials.');
+        if (d.timing !== undefined && !TIMINGS.some((x) => x.id === d.timing)) return no('That is not a Timing.');
+      }
       return ok;
     }
   }
@@ -2388,6 +2444,13 @@ function checkActed(
       // Reboot." Both panels used to draw the Maneuver row live for a Shutdown
       // Mech, and nothing here refused the walk.
       if (t.kind === 'mech' && t.stance === 'shutdown') return no('A Mech in Shutdown Stance cannot Maneuver or perform any Action other than Reboot (4.1.1).');
+      // A PROJECTILE has no Maneuver of its own: it travels only through its
+      // printed Action (its flight), and a bare walk would spend the activation
+      // its detonation needs (playtest 2.4). Its flight carries the Action,
+      // and the free, granted and resumed steps are someone else's movement.
+      if (t.kind === 'projectile' && !cmd.actionId && !cmd.free && !cmd.granted && !cmd.resume) {
+        return no(`${t.label} is a Projectile: it moves only by its own printed Action, never by a Maneuver.`);
+      }
       // RWS: a Command sent to a Mech buys the autocannon's shot and nothing
       // else (遥控武器) - a Mech's Movement belongs to its Action Opportunity.
       if (t.kind === 'mech' && PHASES[state.round.phase] === 'Command' && oppOf(state, cmd.uid)) {
@@ -3384,7 +3447,7 @@ function checkActed(
       // the Terminal's stand-in rather than a unit, so none of the target rules
       // below apply; the access rule does, since the Tick is already paid.
       if (cmd.terminal !== undefined) {
-        if (state.script?.counter) return no('An Electronic Counter-roll is already open.');
+        if (duelOf(state)?.counter) return no('An Electronic Counter-roll is already open.');
         if (cmd.actionId !== 'COMMON_REMOTE_ACCESS') return no('Only a Remote Access rolls against a Terminal (5.3.3).');
         const why = terminalAccessWhy(data, state, t, cmd.terminal);
         if (why) return no(why);
@@ -3399,7 +3462,7 @@ function checkActed(
       // targeted and simply rolls nothing. Gated here rather than only in
       // whoever drew the button, so a relayed command obeys it too.
       if (electronicDash(data, target)) return no(`${target.label} has no Electronic Value at all, so it cannot be the Responder of a Counter-roll (4.11.2).`);
-      if (state.script?.counter) return no('An Electronic Counter-roll is already open.');
+      if (duelOf(state)?.counter) return no('An Electronic Counter-roll is already open.');
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       if (!a) return no('This unit has no such Action.');
       // Only three things open a Counter-roll: an Electronic Attack, a Scan and
@@ -3499,7 +3562,7 @@ function checkActed(
       return ok;
     }
     case 'rollCounter': {
-      const c = state.script?.counter;
+      const c = duelOf(state)?.counter;
       if (!c) return no('No Electronic Counter-roll is open.');
       if (cmd.uid !== c.initiatorUid && cmd.uid !== c.responderUid) return no('That unit is not in this Counter-roll.');
       if (!Array.isArray(cmd.faces) || cmd.faces.some((f) => !Number.isInteger(f) || f < 0)) return no('That is not a roll.');
@@ -3529,7 +3592,7 @@ function checkActed(
       return ok;
     }
     case 'declareCounterFocus': {
-      const c = state.script?.counter;
+      const c = duelOf(state)?.counter;
       if (!c) return no('No Electronic Counter-roll is open.');
       if (cmd.uid !== c.initiatorUid && cmd.uid !== c.responderUid) return no('That unit is not in this Counter-roll.');
       if (counterStage(data, state.tokens, c) !== (cmd.uid === c.initiatorUid ? 'declareI' : 'declareR')) {
@@ -3602,7 +3665,7 @@ function checkActed(
       // faces (counterWon; ruled R2, audit Phase 7, P7C 2). What IS judged is
       // that the answer belongs to the exchange it claims: the Counter-roll
       // below, and Yoyu's own seat above.
-      const c = state.script?.counter;
+      const c = duelOf(state)?.counter;
       if (c) {
         // Yoyu answers in EITHER role (4.11.2: an on-success Passive fires
         // "regardless of whether the Unit was acting as the Initiator or
@@ -4123,7 +4186,7 @@ function checkActed(
       // since a shared window spent it opening the record. A Freeform table
       // keeps its own judgement. The access was accepted straight after the
       // Tick, with no roll at all.
-      const c = state.script?.counter;
+      const c = duelOf(state)?.counter;
       if (c && c.terminal === cmd.itemId) {
         if (c.initiatorUid !== t.uid) return no('That Counter-roll is not this Mech\'s.');
         const item = normaliseTasks(state.tasks).items.find((i) => i.id === cmd.itemId);
@@ -4576,6 +4639,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     // combat view are per-attack state; left standing, an attacker who
     // reloaded mid-attack could never clear them and every later callDefense
     // was refused for the rest of the game.
+    if (state.duel) state.duel = { combat: null, combatView: null, counter: null };
     if (state.script) {
       state.script.combat = null;
       state.script.combatView = null;
@@ -4935,7 +4999,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     return;
   }
   if (cmd.kind === 'callDefense') {
-    const sc = state.script;
+    const sc = duelFor(state);
     if (sc) sc.combat = { attackerUid: cmd.uid, targetUid: cmd.targetUid, actionId: cmd.actionId, white: cmd.white, blue: cmd.blue, faces: null };
     return;
   }
@@ -4943,12 +5007,12 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     // The faces ride in the command, never re-rolled by a receiver — the same
     // rule as the Counter-roll and the setup roll, so both boards hold the
     // identical dice whichever side rolled them.
-    const sc = state.script;
+    const sc = duelOf(state);
     if (sc?.combat) sc.combat.faces = cmd.faces.map((f) => ({ ...f }));
     return;
   }
   if (cmd.kind === 'clearDefense') {
-    const sc = state.script;
+    const sc = duelOf(state);
     if (sc) sc.combat = null;
     return;
   }
@@ -4960,7 +5024,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     return;
   }
   if (cmd.kind === 'setCombatView') {
-    const sc = state.script;
+    const sc = cmd.view ? duelFor(state) : duelOf(state);
     // The resolution is copied out too, not carried by the spread alone: on the
     // ATTACKER's own client this command is applied locally, and that object is
     // the one their open helper is holding. Shared, the board would keep a live
@@ -4975,6 +5039,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
             log: [...cmd.view.log],
             focus: cmd.view.focus ? { ...cmd.view.focus } : null,
             dodgeHold: cmd.view.dodgeHold ? { ...cmd.view.dodgeHold } : null,
+            summary: cmd.view.summary ? { head: cmd.view.summary.head, lines: [...cmd.view.summary.lines] } : null,
             resolution: res
               ? {
                   duel: {
@@ -5155,12 +5220,12 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     return;
   }
   if (cmd.kind === 'rollTerminal') {
-    const c = state.script?.counter;
+    const c = duelOf(state)?.counter;
     if (c && c.terminal !== undefined) c.respRoll = [...cmd.faces];
     return;
   }
   if (cmd.kind === 'clearCounterRoll') {
-    const sc = state.script;
+    const sc = duelOf(state);
     if (!sc) return;
     // The next Responder of an Action on every enemy in Range, as a fresh
     // exchange: its own rolls, its own Focus, its own verdict. One that has
@@ -5246,6 +5311,21 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (t && t.side === cmd.seat) t.timing = d.timing;
     }
     if (!sc.revealed.includes(cmd.seat)) sc.revealed = [...sc.revealed, cmd.seat];
+    return;
+  }
+  if (cmd.kind === 'dealCommands') {
+    // Every Mech's Command Generation, face-up, as Guided deals them; last
+    // round's were collected by the End Phase sweep.
+    seedCommandTokens(data, state);
+    state.commandsDealt = state.round.n;
+    return;
+  }
+  if (cmd.kind === 'showTimings') {
+    // Own Mechs only, as a reveal writes them.
+    for (const d of cmd.dials) {
+      const t = state.tokens.find((x) => x.uid === d.uid);
+      if (t && t.side === cmd.seat && t.kind === 'mech') t.timing = d.timing;
+    }
     return;
   }
   if (cmd.kind === 'handOver') {
@@ -6064,10 +6144,11 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       return;
     }
     case 'startCounterRoll': {
-      if (!sc) return;
+      const dc = duelFor(state);
+      if (!dc) return;
       // A Terminal never Focuses, so its declare is made as the record opens.
       const terminal = cmd.terminal !== undefined;
-      sc.counter = {
+      dc.counter = {
         initiatorUid: cmd.uid,
         responderUid: terminal ? TERMINAL_UID : cmd.targetUid,
         actionId: cmd.actionId,
@@ -6090,10 +6171,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // The roll its Action paid for is spent; a free Scan marks the unit its
       // attack has now Scanned, since that attack may designate others (ruled
       // R2; audit Phase 7, P7C 2).
-      const owed = sc.counterOwed;
+      const owed = sc?.counterOwed;
       if (owed && owed.uid === cmd.uid && !cmd.reaction) {
         if (cmd.thenAttack) owed.scanned = [...(owed.scanned ?? []), cmd.targetUid];
-        else if (owed.actionId === cmd.actionId) delete sc.counterOwed;
+        else if (owed.actionId === cmd.actionId) delete sc!.counterOwed;
       }
       // Target Tracing's Command Token, spent by the command that opens it. The
       // pages sent spendCommand first, and a Mech with one token then had none
@@ -6101,19 +6182,19 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // was gone (audit Phase 3, D8). The record keeps that it was the reaction.
       if (cmd.reaction) {
         flipCommand(state, t);
-        sc.counter.reaction = true;
+        dc.counter.reaction = true;
       }
       // The rest of an Action on every enemy in Range, in the order they come.
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       if (a && electronicAll(a) && !cmd.reaction) {
         const rest = (state.noBoard ? [...new Set(cmd.also ?? [])] : electronicAllTargets(data, state.tokens, t, a).map((x) => x.uid))
           .filter((u) => u !== cmd.targetUid);
-        if (rest.length) sc.counter.rest = rest;
+        if (rest.length) dc.counter.rest = rest;
       }
       return;
     }
     case 'rollCounter': {
-      const c = sc?.counter;
+      const c = duelOf(state)?.counter;
       if (!c) return;
       if (cmd.uid === c.initiatorUid) {
         c.initRoll = [...cmd.faces];
@@ -6130,7 +6211,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       return;
     }
     case 'declareCounterFocus': {
-      const c = sc?.counter;
+      const c = duelOf(state)?.counter;
       if (!c) return;
       if (cmd.uid === c.initiatorUid) c.initDeclare = cmd.use;
       else if (cmd.uid === c.responderUid) c.respDeclare = cmd.use;
@@ -6174,7 +6255,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // recorded a Responder's answer alone, so a Yoyu that opened the
       // Counter-roll was asked the same question for ever and the table stood
       // still (found by the computer games, 2026-10-03).
-      const c = sc?.counter;
+      const c = duelOf(state)?.counter;
       const pair = !!c && ((c.responderUid === cmd.uid && c.initiatorUid === cmd.targetUid)
         || (c.initiatorUid === cmd.uid && c.responderUid === cmd.targetUid));
       if (c && pair && !c.provoke) {
@@ -6850,6 +6931,17 @@ export function heldCommands(t: Token): number {
 
 // How many face-up Commands this Mech could still issue or spend. 4.15.4: a
 // face-down token is out of the economy until the End Phase collects it.
+// A game is running: a Guided one past deployment, or a table with no Guided
+// setup (a Freeform pad, or a Guided game switched to Freeform, which drops
+// the setup) with a Mech on each side. Concede, and the pad's Game over, need
+// one; they used to need the Guided setup alone, so a Freeform game could not
+// be ended and logged (PAD playtest 2.7).
+export function gameRunning(state: GameState): boolean {
+  const su = normaliseSetup(state.setup);
+  if (su) return su.stage === 'done';
+  return (['s1', 's2'] as const).every((s) => state.tokens.some((t) => t.side === s && t.kind === 'mech'));
+}
+
 export function readyCommands(t: Token): number {
   return statusCount(t.statuses, 'command');
 }

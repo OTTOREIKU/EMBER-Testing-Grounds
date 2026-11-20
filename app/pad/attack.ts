@@ -13,6 +13,8 @@ import type { Command, CheckResult } from '../src/commands';
 import { boxHands, normaliseTasks } from '../src/tasks';
 import { handsFor } from '../src/turn';
 import { AttackHelper, combatRoleFor, type MirrorAct } from '../src/combat';
+import { ignoresLowProfile, suppressionOn } from '../src/units';
+import { statusCount } from '../src/types';
 import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, coolingBonus, grantedAction, kcArmorReady, multiTargetLimit, pilotDiceBonus, tokenCards, loanedParts, reactionDebt } from '../src/units';
 import type { NoticeKind } from '../src/notices';
 import type { CardAction, DiceData, DieColor, GameState, Side, Token } from '../src/types';
@@ -31,6 +33,9 @@ export interface AttackApi {
   // The window's panel: shown while an attack is live here or mirrored here.
   openCombat(): void;
   closeCombat(): void;
+  // Whether the combat panel is on screen. A finished attack's summary stays
+  // published for the other phone only while its window is still up.
+  combatOpen(): boolean;
   // One door for every roll: the table's own dice, the server's in a room,
   // the pad's otherwise. `watch` is what the table should keep in mind while
   // it rolls; the answer says whether the dice were left to the table.
@@ -85,8 +90,12 @@ function englishOf(a: CardAction): string {
 // their printed names, and the Stance lines that change what a die is worth.
 // Names and numbers only - the cards and the book carry the rules.
 function watchFor(side: 'attack' | 'defense'): string[] {
-  if (!current) return [];
-  const { attacker, action, defender } = current;
+  // The defender's phone in a room holds no `current`: it rolls against the
+  // window the attacker published, so the list is read off that (OTTO's PAD
+  // playtest, 2026-11-18: the defender's roll named none of its passives).
+  const now = current ?? mirroredAttack();
+  if (!now) return [];
+  const { attacker, action, defender } = now;
   const out: string[] = [];
   const line = (key: string, note = ''): void => {
     const def = api!.data.keyword(key);
@@ -104,7 +113,7 @@ function watchFor(side: 'attack' | 'defense'): string[] {
   const charged = /\[Charged\]\s*gains\s+([^.·]+)/i.exec(englishOf(action))?.[1]?.trim();
   // Named only when the Charge was CONSUMED for this attack (4.14): a face-up
   // Token the player chose to keep gives the Action nothing.
-  const chargedOn = !!charged && !!current.verdict.chargeSpent;
+  const chargedOn = !!charged && !!now.verdict.chargeSpent;
   for (const k of action.keywords ?? []) {
     const key = k.key || k.inline || k.en || '';
     if (!key) continue;
@@ -122,11 +131,31 @@ function watchFor(side: 'attack' | 'defense'): string[] {
       out.push(`${eyeRerollName(api!.data, b).name} (${b.label}): may reroll {Eye}`);
     }
   } else {
-    if (defender.kind === 'mech' && defender.stance === 'defensive') out.push('Defensive Stance: hollow Defense counts');
+    // Suppression switched it there the moment it was declared a target, and
+    // the defender is the one who needs telling (playtest 2.3).
+    if (defender.kind === 'mech' && defender.stance === 'defensive') out.push(suppressionOn(action) ? 'Defensive Stance, switched by Suppression: hollow Defense counts' : 'Defensive Stance: hollow Defense counts');
     if (defender.kind === 'mech' && defender.stance === 'mobility') out.push('Mobility Stance: Blue dice are Dodge');
     if (defender.kind === 'mech' && defender.stance === 'shutdown') out.push('Shutdown: the attacker designates the Part, no Parry');
+    // Low Profile, from a Token or from an effect the table judged (J12).
+    const lp = statusCount(defender.statuses, 'lowProfile') > 0 || !!now.verdict.effectLowProfile;
+    if (lp && action.type === 'Firing' && !ignoresLowProfile(api!.data, attacker)) out.push('Low Profile: each {Eye} counts as a {Dodge} against this Firing Attack');
   }
   return out;
+}
+
+// The attack the other phone published, as `current` would hold it.
+function mirroredAttack(): typeof current {
+  const a = api!;
+  const s = a.state();
+  const view = duel(s)?.combatView;
+  if (!view) return null;
+  const attacker = s.tokens.find((t) => t.uid === view.attackerUid);
+  const defender = s.tokens.find((t) => t.uid === view.targetUid);
+  const verdict: TableVerdict = { protection: 0, backAttack: false, ...(view.twoHandedDeclined ? { twoHanded: 'declined' as const } : {}), ...(view.chargeSpent ? { chargeSpent: true } : {}) };
+  const built = attacker ? attackActionOf(attacker, view.actionId, verdict) : undefined;
+  const action = built && view.chargeSpent ? chargeAdjusted(built, true, view.chargeChoice) : built;
+  if (!attacker || !defender || !action) return null;
+  return { attacker, action, printed: printedActionOf(attacker, view.actionId) ?? action, defender, verdict };
 }
 
 // The table's answers to what the board used to read.
@@ -159,6 +188,9 @@ export interface TableVerdict {
 }
 
 let api: AttackApi | null = null;
+
+// The shared attack record: a Guided game's script, or a Freeform room's own.
+const duel = (s: GameState) => s.script ?? s.duel ?? null;
 let helper: AttackHelper | null = null;
 let root: HTMLElement | null = null;
 // The defender's dice, owed to the attacker's window: the promise is resolved
@@ -172,9 +204,11 @@ let publishedKey = '';
 // a Freeform table has no wire for them: there the attacker's phone presses
 // both sides, as the one-screen board does, and the defender answers across
 // the table. A Guided game has the script and gets the Match Centre's mirror.
+// A Freeform ROOM plays it the same way now, on its own shared record
+// (commands.ts duelOf; OTTO picked it, 2026-11-18): the playtesters expected to
+// roll their own defence on their own phone.
 function mirrored(): boolean {
-  const a = api!;
-  return a.inRoom() && !!a.state().script;
+  return api!.inRoom();
 }
 
 export function initAttack(a: AttackApi): void {
@@ -187,6 +221,11 @@ export function attackActive(): boolean {
 
 export function attackWatching(): boolean {
   return !!helper?.watching;
+}
+
+// The attacking window is showing its finished attack's "Attack resolved" box.
+export function attackFinished(): boolean {
+  return !!helper?.finishedShown;
 }
 
 // The action as the window should see it: the stationary bonus, then the
@@ -317,7 +356,7 @@ export function mountAttack(into: HTMLElement): AttackHelper | null {
     into,
     () => a.render(),
     () => {
-      if (pendingDefense && a.state().script?.combat) {
+      if (pendingDefense && duel(a.state())?.combat) {
         pendingDefense = null;
         a.send({ kind: 'clearDefense', seat: a.me() });
       }
@@ -471,7 +510,7 @@ export function refreshSplit(): void {
 export function syncMirror(): void {
   const a = api!;
   const s = a.state();
-  const view = s.script?.combatView ?? null;
+  const view = duel(s)?.combatView ?? null;
   if (helper?.active) return;
   if (!view) {
     if (helper?.watching) { helper.closeMirror(); a.closeCombat(); }
@@ -503,7 +542,10 @@ export function sweepView(): void {
   const a = api!;
   const s = a.state();
   if (!a.inRoom() || helper?.active) return;
-  const view = s.script?.combatView;
+  // The "Attack resolved" box stays on the other phone while this one shows it
+  // (OTTO's playtest, 2026-11-18). Closing the window takes it back.
+  if (helper?.finishedShown && a.combatOpen()) return;
+  const view = duel(s)?.combatView;
   if (!view) { publishedKey = ''; return; }
   const at = s.tokens.find((t) => t.uid === view.attackerUid);
   if (!at || at.side !== a.me()) return;
@@ -537,7 +579,7 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
   const a = api!;
   const s = a.state();
   const seat = a.me();
-  const view = s.script?.combatView;
+  const view = duel(s)?.combatView;
   const df = view ? s.tokens.find((t) => t.uid === view.targetUid) : undefined;
   if (!view || !df || df.side !== seat) return false;
   const pay = (cmd: Command): boolean => {
@@ -547,7 +589,7 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
   };
   switch (act) {
     case 'rolldefense': {
-      const call = s.script?.combat;
+      const call = duel(s)?.combat;
       if (!call || call.faces) return false;
       void rollDefensePool(call.white, call.blue).then((faces) => {
         a.send({ kind: 'answerDefense', seat, faces });

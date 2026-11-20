@@ -471,6 +471,11 @@
 /* What the dice are DOING, which is the number wanted mid-combat. */
 .ah-half-h .tot { margin-left: auto; font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--text); }
 .ah-half-h .tot small { font-family: var(--font); font-size: 9.5px; font-weight: 400; color: var(--text3); margin-left: 4px; }
+/* The kinds behind the count (OTTO's PAD playtest, 2026-11-18): Heavy and
+   Light, Dodge and Defense, since Defense never stops a Heavy Hit. */
+.ah-half-h { flex-wrap: wrap; }
+.ah-half-h .tot small.ah-kinds { display: block; margin-left: 0; text-align: right; font-weight: 600; color: var(--text2); }
+.ah-half-h .ah-heavywarn { flex-basis: 100%; font-size: 11px; font-weight: 600; color: var(--red); }
 .ah-half .ah-roll { margin: 0; }
 /* The Part Die's hand (combat.ts partDieHand): the Black Die and what it chose. */
 .ah-half-part .ah-partsaid { font-size: 11.5px; font-weight: 600; color: var(--accent); }

@@ -57,7 +57,7 @@ check('the Match Centre offers it in the reaction panel', /r\.kind === 'trace'/.
 // nothing face-up for the roll's check to find, so the roll was refused after
 // the Token had gone.
 check('and the command that opens the roll spends the Token, so a refusal costs nothing',
-  /if \(cmd\.reaction\) \{\s*\n\s*flipCommand\(state, t\);\s*\n\s*sc\.counter\.reaction = true;/.test(commands)
+  /if \(cmd\.reaction\) \{\s*\n\s*flipCommand\(state, t\);\s*\n\s*dc\.counter\.reaction = true;/.test(commands)
     && !/kind: 'spendCommand'[\s\S]{0,200}kind: 'startCounterRoll'[\s\S]{0,80}reaction: true/.test(hud), true);
 check('freeplay offers it too', /r\.kind === 'trace'/.test(main), true);
 // Freeplay runs the exchange locally, with no startCounterRoll, so it still

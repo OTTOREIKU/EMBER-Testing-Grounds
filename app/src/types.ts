@@ -1208,6 +1208,12 @@ export interface CombatView {
   // many could be held, how many are, and whether the attacking window waits
   // on the defender's answer (combat.ts stepResolve).
   dodgeHold?: { max: number; n: number; asked: boolean } | null;
+  // THE ATTACK IS OVER: the "Attack resolved" box the attacker's window draws
+  // at the end, as plain lines (OTTO's playtest, 2026-11-18: "the Attack
+  // Resolve screen ... only appears for the attacker"). Present only on the
+  // last view of an attack, which stays published until the attacker closes
+  // their window, so the defender reads the same outcome.
+  summary?: { head: string; lines: string[] } | null;
 }
 
 // A boundary a rollback can return to. `available` false means a die roll has
@@ -1588,6 +1594,19 @@ function normaliseSmokeOwed(raw: unknown): ScriptState['smokeOwed'] {
   return out.length ? out : undefined;
 }
 
+// A Freeform room's shared attack record, read back the way a script's three
+// fields are. Without it a phone that rejoined mid-attack lost the defence
+// call and the attacker waited for good (PAD playtest check 2.1, 2026-11-20).
+export function normaliseDuelRecord(raw: unknown): DuelRecord | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const d = raw as { combat?: unknown; combatView?: unknown; counter?: unknown };
+  return {
+    combat: normaliseDefenseCall(d.combat),
+    combatView: normaliseCombatView(d.combatView),
+    counter: normaliseCounter(d.counter),
+  };
+}
+
 export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
   const base = newScriptState(firstPlayer);
   const s = (raw ?? {}) as Partial<ScriptState>;
@@ -1818,6 +1837,8 @@ export interface SharedInventory {
   builtOnly?: boolean;
 }
 
+export type DuelRecord = Pick<ScriptState, 'combat' | 'combatView' | 'counter'>;
+
 export interface GameState {
   v: 3;
   map: string;
@@ -1850,6 +1871,10 @@ export interface GameState {
   // was done (audit Phase 4, G7).
   smokeRound?: number;
   script?: ScriptState;
+  // A Freeform ROOM's shared attack record (commands.ts duelOf): the defence
+  // handshake, the published attack window and the Counter-roll a Guided game
+  // keeps on its script, so both phones play an attack (OTTO, 2026-11-18).
+  duel?: DuelRecord;
   removedTerrain?: string[];
   scale?: BattleScale;
   roundLimit?: number;
@@ -1889,6 +1914,9 @@ export interface GameState {
   // something entered wrong without abandoning the game. On the table, so both
   // phones agree about what may be changed.
   unlocked?: boolean;
+  // A Freeform table's Command Tokens were dealt for this round (PAD playtest
+  // 2.6, OTTO 2026-11-19: the pad deals them each round, as Guided does).
+  commandsDealt?: number;
   sideNames?: Partial<Record<Side, string>>;
   // Lobby only: a seat saying it has finished reading and is happy to start.
   ready?: Partial<Record<Side, boolean>>;

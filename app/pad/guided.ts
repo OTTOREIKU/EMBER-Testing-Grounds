@@ -493,7 +493,9 @@ function loopHtml(api: GuideApi, phase: LoopPhase): string {
       const owner = mine(api, t.side);
       // "Moved" is offered only while the engine would take it: a Drone moves
       // INSTEAD of acting, never after, and not at all in the Automatic Phase.
-      const mayMove = t.kind !== 'mech'
+      // A Projectile is never offered it (playtest 2.4): the engine refuses
+      // its bare Maneuver too, so this is belt and braces.
+      const mayMove = t.kind === 'drone'
         && api.check({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: 0, row: 0 } }).ok;
       const what = phase === 'Command'
         ? t.kind === 'mech' ? 'Fire the commanded Part (RWS), then end.' : mayMove ? 'One Command Action, or moved.' : 'One Command Action, then end.'

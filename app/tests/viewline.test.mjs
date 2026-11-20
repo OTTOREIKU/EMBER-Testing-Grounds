@@ -93,8 +93,8 @@ M.L.setLocalSeat(null);
 {
   const { readFileSync } = await import('node:fs');
   const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-  check('check() refuses a longer line by the same bound the window cuts to (the log and the resolution alike)',
-    (src('commands.ts').match(/l\.length > VIEW_LINE_MAX/g) ?? []).length, 2);
+  check('check() refuses a longer line by the same bound the window cuts to (the log, the resolution and the finished attack summary alike)',
+    (src('commands.ts').match(/l\.length > VIEW_LINE_MAX/g) ?? []).length, 3);
   check('the window cuts its log and its resolution lines as it publishes them',
     [/log: c\.log\.map\(\(l\) => fitViewLine\(/.test(src('combat.ts')), /text: c\.resolution\.text\.map\(fitViewLine\)/.test(src('combat.ts'))], [true, true]);
 }
