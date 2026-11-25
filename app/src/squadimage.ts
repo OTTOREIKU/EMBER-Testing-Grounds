@@ -12,8 +12,8 @@
 // key and shape the builder site writes, so importer.ts (Tabletop, Pad) reads
 // our images and theirs alike. Card ids are the contract; names and points are
 // carried along for a reader that wants them.
-import type { Card, MechLoadout } from './types';
-import { assetUrl, cardImageUrl, cardName, isUnfolded, UNFOLDS_INTO, type GameData } from './data';
+import type { Card, LangText, MechLoadout } from './types';
+import { assetUrl, cardImageUrl, cardName, isUnfolded, mechPartUrl, partImageUrl, statIconUrl, tabImageUrl, UNFOLDS_INTO, type GameData } from './data';
 import { loadoutDice, type UnitDice } from './squadstore';
 import { printsWide } from './images';
 import { factionColour } from './icons';
@@ -195,6 +195,18 @@ function look(faction: string | null): Look & { fac: string } {
   return l;
 }
 
+// A CSS colour (a var() too) as the canvas can take it.
+function cssColour(v: string, fallback: string): string {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
+  document.body.appendChild(probe);
+  probe.style.color = fallback;
+  probe.style.color = v;
+  const out = getComputedStyle(probe).color || fallback;
+  probe.remove();
+  return out;
+}
+
 function loadImg(url: string): Promise<HTMLImageElement | null> {
   return new Promise((res) => {
     const im = new Image();
@@ -288,7 +300,7 @@ function gauge(g: CanvasRenderingContext2D, L: Look & { fac: string }, x: number
   }
 }
 
-async function drawCard(g: CanvasRenderingContext2D, L: Look, im: HTMLImageElement | null, x: number, y: number, w: number, h: number, label: string): Promise<void> {
+async function drawCard(g: CanvasRenderingContext2D, L: Look, im: HTMLImageElement | null, x: number, y: number, w: number, h: number, label: string, stand: StandIn | null = null): Promise<void> {
   g.save();
   rr(g, x, y, w, h, 12);
   g.fillStyle = L.surface2;
@@ -296,6 +308,8 @@ async function drawCard(g: CanvasRenderingContext2D, L: Look, im: HTMLImageEleme
   if (im) {
     g.clip();
     contain(g, im, x + 6, y + 6, w - 12, h - 12);
+  } else if (stand) {
+    drawStandIn(g, L, stand, x + 6, y + 6, w - 12, h - 12);
   } else {
     g.fillStyle = L.text3;
     g.font = `500 15px ${L.mono}`;
@@ -309,6 +323,288 @@ async function drawCard(g: CanvasRenderingContext2D, L: Look, im: HTMLImageEleme
     g.textAlign = 'left';
     spaced(g, label.toUpperCase(), x + 4, y + h + 24, 2.2);
   }
+}
+
+// ---------- a card we hold no image of ----------
+//
+// A Pilot or Part with no card image (Seagull, the H3-J Chance parts, ...) used
+// to leave an empty slot reading "No card", so a squad flying Seagull looked
+// like it had no pilot (OTTO, 2026-11-24). It now gets a stand-in drawn from
+// our data, design "C2" (OTTO, 2026-11-25): the picture we do hold across the
+// top, fading into the name, the stat chips and the trait or actions, with "NO
+// CARD IMAGE" at the foot. It is drawn in the export's own style on purpose
+// so it never passes for a printed card, and drawn, never stored, like the
+// app's other card placeholders (images.ts). Drones and Projectiles, which lie
+// on their side, put the picture on the left instead.
+export interface StandIn {
+  card: Card;
+  pic: HTMLImageElement | null;
+  colour: string;
+  icons: Map<string, HTMLImageElement | null>;
+  // Each Timing's own colour (styles.css --t-*), for the pilot's six symbols.
+  timing: Record<string, string>;
+}
+
+// A pilot's six numbers are its Timings, and each symbol keeps its Timing's
+// colour as on the printed card (OTTO, 2026-11-25).
+export const TIMING_VAR: Record<string, [string, string]> = {
+  swift: ['--t-swift', '#f2eb74'],
+  melee: ['--t-melee', '#edb246'],
+  projectile: ['--t-projectile', '#df6470'],
+  firing: ['--t-firing', '#da5643'],
+  moving: ['--t-movement', '#1aacdc'],
+  tactic: ['--t-tactical', '#37ad9e'],
+};
+
+const PILOT_STATS = ['swift', 'melee', 'projectile', 'firing', 'moving', 'tactic'] as const;
+const UNIT_STATS = ['armor', 'structure', 'parray', 'dodge', 'electronic'] as const;
+// Armor, Dodge and Electronic are always printed; Structure and Parry only
+// where a card has them.
+const ALWAYS = new Set(['armor', 'dodge', 'electronic']);
+
+export function standInStats(c: Card): { field: string; value: string }[] {
+  if (c.category === 'pilot') {
+    return PILOT_STATS.filter((f) => typeof c[f] === 'number').map((f) => ({ field: f, value: String(c[f]) }));
+  }
+  return UNIT_STATS.filter((f) => typeof c[f] === 'number' && ((c[f] as number) > 0 || ALWAYS.has(f)))
+    .map((f) => ({ field: f, value: f === 'electronic' && c.electronicDash ? '–' : String(c[f]) }));
+}
+
+const PART_KIND: Record<string, string> = { torso: 'TORSO', chasis: 'CHASSIS', leftHand: 'LEFT ARM', rightHand: 'RIGHT ARM', backpack: 'BACKPACK' };
+
+export function standInKind(c: Card): string {
+  // LV is the pilot's Link: how many Link tokens its mech can hold (the
+  // Reference prints it "Link").
+  if (c.category === 'pilot') return typeof c.LV === 'number' ? `PILOT · LINK ${c.LV}` : 'PILOT';
+  if (c.category === 'mech_part') return PART_KIND[c.type ?? ''] ?? 'PART';
+  if (c.category === 'drone') return 'DRONE';
+  if (c.category === 'projectile') return 'PROJECTILE';
+  if (c.category === 'tactics_or_upgrade') return 'TACTIC';
+  return '';
+}
+
+// Paragraphs of runs; a bold run is a name (the trait's label, an Action's).
+export type Run = { t: string; b?: boolean };
+
+const plain = (t: LangText | undefined): string =>
+  (t?.en ?? '').replace(/^\s*[·•]\s*/gm, '').replace(/\s*\n\s*/g, ' ').trim();
+
+export function standInText(c: Card): Run[][] {
+  if (c.category === 'pilot') {
+    const t = plain(c.traitDescription);
+    return t ? [[{ t: 'Trait:', b: true }, { t: ` ${t}` }]] : [];
+  }
+  const out: Run[][] = (c.actions ?? []).map((a) => {
+    const dice = `${a.yellowDice ? `${a.yellowDice}Y` : ''}${a.redDice ? `${a.redDice}R` : ''}`;
+    const bits = [(a.size ?? '').toUpperCase(), typeof a.range === 'number' && a.range > 0 ? `R${a.range}` : '', dice].filter(Boolean);
+    return [{ t: a.name.en || a.name.zh || '', b: true }, { t: bits.length ? ` · ${bits.join(' · ')}` : '' }];
+  });
+  const kw = (c.keywords ?? []).map((k) => k.en).filter(Boolean).join(', ');
+  if (kw) out.push([{ t: kw }]);
+  if (!out.length) {
+    const t = plain(c.description);
+    if (t) out.push([{ t }]);
+  }
+  return out;
+}
+
+// Where the picture comes from, best first: the cut-out part picture or pilot
+// headshot, the tab art, the picture the mech is built from. A picture under
+// MIN_PIC on its long side is a stand-in icon, not art (LHDR-KK9's 160px
+// pixel eye from the builder site), and is left out: no picture beats a made-up
+// one (OTTO, 2026-11-25).
+export const MIN_PIC = 300;
+export function standInPics(id: string): string[] {
+  return [partImageUrl(id), tabImageUrl(id), mechPartUrl(id)].filter((u): u is string => !!u);
+}
+
+// These four icons carry their printed box in the artwork and are drawn as
+// they are; the rest are silhouettes, drawn in the text colour (data.ts, WHICH
+// ICONS CAN BE MASKED).
+const BOXED = new Set(['armor', 'structure', 'parray', 'dodge', 'electronic']);
+const tinted = new Map<string, HTMLCanvasElement>();
+function tint(im: HTMLImageElement, colour: string): HTMLCanvasElement {
+  const key = `${im.src}|${colour}`;
+  const hit = tinted.get(key);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = im.naturalWidth;
+  c.height = im.naturalHeight;
+  const x = c.getContext('2d')!;
+  x.drawImage(im, 0, 0);
+  x.globalCompositeOperation = 'source-in';
+  x.fillStyle = colour;
+  x.fillRect(0, 0, c.width, c.height);
+  tinted.set(key, c);
+  return c;
+}
+
+function cover(g: CanvasRenderingContext2D, im: HTMLImageElement, x: number, y: number, w: number, h: number, fy: number): void {
+  const s = Math.max(w / im.naturalWidth, h / im.naturalHeight);
+  const sw = w / s;
+  const sh = h / s;
+  g.drawImage(im, (im.naturalWidth - sw) / 2, (im.naturalHeight - sh) * fy, sw, sh, x, y, w, h);
+}
+
+// Word-wrapped runs from (x, y) down to maxY; text that does not fit ends "…".
+function paras(g: CanvasRenderingContext2D, L: Look, ps: Run[][], x: number, y: number, w: number, size: number, maxY: number): void {
+  const lh = size * 1.32;
+  let base = y + size;
+  for (const p of ps) {
+    if (base > maxY) return;
+    let cx = x;
+    const toks = p.flatMap((r) => r.t.split(/(\s+)/).filter(Boolean).map((t) => ({ t, b: !!r.b })));
+    for (const k of toks) {
+      g.font = `${k.b ? 700 : 400} ${size}px ${L.font}`;
+      const space = /^\s+$/.test(k.t);
+      if (space && cx === x) continue;
+      const tw = g.measureText(k.t).width;
+      if (!space && cx > x && cx + tw > x + w) {
+        if (base + lh > maxY) {
+          g.fillStyle = L.text2;
+          g.fillText('…', cx, base);
+          return;
+        }
+        base += lh;
+        cx = x;
+      }
+      if (space && cx === x) continue;
+      g.fillStyle = k.b ? L.text : L.text2;
+      g.fillText(k.t, cx, base);
+      cx += tw;
+    }
+    base += lh;
+  }
+}
+
+function drawStandIn(g: CanvasRenderingContext2D, L: Look, s: StandIn, x: number, y: number, w: number, h: number): void {
+  const c = s.card;
+  const wide = w > h;
+  // One unit: the mock's card was 124 wide; an upright slot here is ~194.
+  const u = wide ? h / 150 : w / 124;
+  const pilot = c.category === 'pilot';
+  g.save();
+  rr(g, x, y, w, h, 8 * u);
+  g.fillStyle = L.bg;
+  g.fill();
+  g.clip();
+
+  // The picture: across the top, or down the left of a card on its side.
+  const hw = wide ? Math.round(h * 0.78) : w;
+  const hh = wide ? h : Math.round(h * 0.51);
+  // A headshot sits on its pale card stock; a part, or a pilot we hold no
+  // picture of, on the dark glow.
+  if (pilot && s.pic) {
+    g.fillStyle = '#e9ebed';
+    g.fillRect(x, y, hw, hh);
+  } else {
+    const bg = g.createRadialGradient(x + hw / 2, y + hh * 0.45, 0, x + hw / 2, y + hh * 0.45, Math.max(hw, hh) * 0.7);
+    bg.addColorStop(0, '#2c3746');
+    bg.addColorStop(1, '#151b23');
+    g.fillStyle = bg;
+    g.fillRect(x, y, hw, hh);
+  }
+  if (s.pic) {
+    if (pilot) cover(g, s.pic, x, y, hw, hh, 0.18);
+    else contain(g, s.pic, x + 8 * u, y + 6 * u, hw - 16 * u, hh - 12 * u);
+  }
+  const fade = wide
+    ? g.createLinearGradient(x + hw - 40 * u, 0, x + hw, 0)
+    : g.createLinearGradient(0, y + hh - 38 * u, 0, y + hh);
+  fade.addColorStop(0, 'rgba(0,0,0,0)');
+  fade.addColorStop(1, L.bg);
+  g.fillStyle = fade;
+  if (wide) g.fillRect(x + hw - 40 * u, y, 40 * u, h);
+  else g.fillRect(x, y + hh - 38 * u, w, 38 * u);
+
+  // Points, top right; none on a card that costs nothing (a launched drone,
+  // a projectile).
+  if (c.score) {
+    g.font = `800 ${10 * u}px ${L.mono}`;
+    const pts = `${c.score}p`;
+    const pw = g.measureText(pts).width + 10 * u;
+    rr(g, x + w - pw - 5 * u, y + 5 * u, pw, 15 * u, 4 * u);
+    g.fillStyle = 'rgba(18,24,32,0.88)';
+    g.fill();
+    g.fillStyle = L.text;
+    g.textAlign = 'center';
+    g.fillText(pts, x + w - 5 * u - pw / 2, y + 16 * u);
+    g.textAlign = 'left';
+  }
+
+  // Name and kind: over the fade, or at the top of the column beside it.
+  const ix = wide ? x + hw + 2 * u : x + 7 * u;
+  const iw = wide ? w - hw - 9 * u : w - 14 * u;
+  let ny = wide ? y + (c.score ? 46 : 34) * u : y + hh - 12 * u;
+  g.font = `800 ${12 * u}px ${L.font}`;
+  const name = cardName(c);
+  g.save();
+  g.shadowColor = 'rgba(0,0,0,0.8)';
+  g.shadowBlur = 3 * u;
+  g.fillStyle = L.text;
+  if (g.measureText(name).width > iw && name.includes(' ')) {
+    // Two lines before an ellipsis: the H3-J part names are long.
+    const words = name.split(' ');
+    let a = '';
+    while (words.length && g.measureText(`${a} ${words[0]}`.trim()).width <= iw) a = `${a} ${words.shift()}`.trim();
+    g.fillText(a || fit(g, name, iw), ix, ny - 13 * u);
+    if (a) g.fillText(fit(g, words.join(' '), iw), ix, ny);
+    else ny -= 13 * u;
+  } else {
+    g.fillText(fit(g, name, iw), ix, ny);
+  }
+  g.restore();
+  g.font = `600 ${6 * u}px ${L.mono}`;
+  g.fillStyle = L.accent;
+  spaced(g, standInKind(c), ix, ny + 9 * u, 0.9 * u);
+
+  // The stat chips, three to a row.
+  const stats = standInStats(c);
+  const gap = 2 * u;
+  const cw = (iw - gap * 2) / 3;
+  const chh = 13 * u;
+  let sy = ny + 16 * u;
+  stats.forEach((st, k) => {
+    const cx = ix + (k % 3) * (cw + gap);
+    const cy = sy + Math.floor(k / 3) * (chh + gap);
+    rr(g, cx, cy, cw, chh, 3 * u);
+    g.fillStyle = L.surface2;
+    g.fill();
+    g.font = `800 ${9.5 * u}px ${L.mono}`;
+    const nw = g.measureText(st.value).width;
+    const isz = 10 * u;
+    const url = statIconUrl(st.field);
+    const im = url ? s.icons.get(url) ?? null : null;
+    const bw = (im ? isz + 2 * u : 0) + nw;
+    let bx = cx + (cw - bw) / 2;
+    if (im) {
+      const src = BOXED.has(st.field) ? im : tint(im, s.timing[st.field] ?? L.text);
+      const f = Math.min(isz / im.naturalWidth, isz / im.naturalHeight);
+      g.drawImage(src, bx + (isz - im.naturalWidth * f) / 2, cy + (chh - im.naturalHeight * f) / 2, im.naturalWidth * f, im.naturalHeight * f);
+      bx += isz + 2 * u;
+    }
+    g.fillStyle = L.text;
+    g.fillText(st.value, bx, cy + chh / 2 + 3.4 * u);
+  });
+  sy += Math.ceil(stats.length / 3) * (chh + gap) + 3 * u;
+
+  // The trait, or the Actions.
+  paras(g, L, standInText(c), ix, sy, iw, 7 * u, y + h - 13 * u);
+
+  // Its foot.
+  g.font = `600 ${5.5 * u}px ${L.mono}`;
+  g.fillStyle = L.text3;
+  const foot = 'NO CARD IMAGE';
+  const fx = wide ? ix : x;
+  const fw = wide ? iw : w;
+  spaced(g, foot, fx + (fw - spacedWidth(g, foot, 1.2 * u)) / 2, y + h - 5 * u, 1.2 * u);
+  g.restore();
+
+  // The edge, in the card's faction colour.
+  rr(g, x + 0.75 * u, y + 0.75 * u, w - 1.5 * u, h - 1.5 * u, 8 * u);
+  g.strokeStyle = s.colour;
+  g.lineWidth = 1.5 * u;
+  g.stroke();
 }
 
 // Draws the squad and returns the PNG, with the squad inside it.
@@ -390,6 +686,30 @@ export async function squadImagePng(d: GameData, s: SquadImage): Promise<Blob> {
   urls.add(ICON_EW);
   const imgs = new Map<string, HTMLImageElement | null>();
   await Promise.all([...urls].map(async (u) => imgs.set(u, await loadImg(u))));
+
+  // A card whose image did not load gets a stand-in drawn from its data
+  // (OTTO, 2026-11-25, design "C2"): its picture, its faction's colour and
+  // the stat icons it shows, fetched now that we know which cards need them.
+  const shown = new Set<string>();
+  for (const m of s.mechs) for (const k of SLOTS) if (m.loadout[k.key]) shown.add(m.loadout[k.key]!);
+  extras.forEach((e) => { e.ids.forEach((id) => shown.add(id)); e.units?.forEach((u) => { if (u.pair) shown.add(u.pair); }); });
+  const stand = new Map<string, StandIn>();
+  const missing = [...shown].map((id) => d.byId.get(id)).filter((c): c is Card => !!c && !imgs.get(cardImageUrl(c.id)));
+  if (missing.length) {
+    const icons = new Map<string, HTMLImageElement | null>();
+    const timing = Object.fromEntries(Object.entries(TIMING_VAR).map(([f, [v, hex]]) => [f, cssColour(`var(${v})`, hex)]));
+    const iconUrls = new Set(missing.flatMap((c) => standInStats(c).map((x) => statIconUrl(x.field)).filter((u): u is string => !!u)));
+    await Promise.all([...iconUrls].map(async (u) => icons.set(u, await loadImg(u))));
+    await Promise.all(missing.map(async (c) => {
+      let pic: HTMLImageElement | null = null;
+      for (const u of standInPics(c.id)) {
+        const im = await loadImg(u);
+        if (im && Math.max(im.naturalWidth, im.naturalHeight) >= MIN_PIC) { pic = im; break; }
+      }
+      stand.set(c.id, { card: c, pic, icons, timing, colour: cssColour(factionColour(d.factionOf(c)), L.line) });
+    }));
+  }
+  const standOf = (id: string | undefined): StandIn | null => (id ? stand.get(id) ?? null : null);
 
   // A mech's blue (Dodge) and yellow (Electronic) dice, summed over its Parts
   // (OTTO, 2026-11-17, design "v2-1"): two cells stacked on the plate, each a
@@ -563,7 +883,7 @@ export async function squadImagePng(d: GameData, s: SquadImage): Promise<Blob> {
     const cy = top + 24;
     for (const k of SLOTS) {
       const id = m.loadout[k.key];
-      await drawCard(g, L, id ? imgs.get(cardImageUrl(id)) ?? null : null, cx, cy, CARD_W, CARD_H, k.label);
+      await drawCard(g, L, id ? imgs.get(cardImageUrl(id)) ?? null : null, cx, cy, CARD_W, CARD_H, k.label, standOf(id));
       cx += CARD_W + GAP;
     }
     y += h + 20;
@@ -588,11 +908,11 @@ export async function squadImagePng(d: GameData, s: SquadImage): Promise<Blob> {
         const h = wide ? WIDE_H : CARD_H;
         const uw = unitW(u);
         if (cx > PAD && cx + uw > W - PAD) { cx = PAD; y += rh + 44; }
-        await drawCard(g, L, imgs.get(cardImageUrl(u.cardId)) ?? null, cx, y, w, h, '');
+        await drawCard(g, L, imgs.get(cardImageUrl(u.cardId)) ?? null, cx, y, w, h, '', standOf(u.cardId));
         if (u.pair) {
           const lw = pairW(u.pair, h);
           const lx = cx + w + 6;
-          await drawCard(g, L, imgs.get(cardImageUrl(u.pair)) ?? null, lx, y, lw, h, '');
+          await drawCard(g, L, imgs.get(cardImageUrl(u.pair)) ?? null, lx, y, lw, h, '', standOf(u.pair));
           rr(g, cx - 3, y - 3, uw + 6, h + 6, 14);
           g.strokeStyle = L.fac;
           g.lineWidth = 2.5;
@@ -621,7 +941,7 @@ export async function squadImagePng(d: GameData, s: SquadImage): Promise<Blob> {
       const wide = wideOf(id);
       const w = wide ? WIDE_W : CARD_W;
       if (cx > PAD && cx + w > W - PAD) { cx = PAD; y += rh + 44; }
-      await drawCard(g, L, imgs.get(cardImageUrl(id)) ?? null, cx, y, w, wide ? WIDE_H : CARD_H, '');
+      await drawCard(g, L, imgs.get(cardImageUrl(id)) ?? null, cx, y, w, wide ? WIDE_H : CARD_H, '', standOf(id));
       cx += w + GAP;
     }
     y += rh + 44;

@@ -67,5 +67,20 @@ check('and the three Ranger portraits cut from the same art',
 check('while the Grenadiers keep theirs, the art on the watermarked Grenadier-72 card',
   ['46', '47', '48', '49', '72'].every((n) => existsSync(A(`tokens/tab/ZPA-${n}.webp`))), true);
 
+// The squad picture's stand-in (OTTO, 2026-11-25, design "C2"): a card with no
+// image is drawn from its data instead of an empty "No card" slot.
+const sq = src('../src/squadimage.ts');
+check('the squad picture draws a stand-in where the card image failed',
+  /\} else if \(stand\) \{\s*drawStandIn\(g, L, stand, x \+ 6, y \+ 6, w - 12, h - 12\);/.test(sq), true);
+check('every card the picture draws can take one: parts, pilot, units, pairs, extras',
+  (sq.match(/, standOf\((?:id|u\.cardId|u\.pair)\)\);/g) ?? []).length, 4);
+check('it says it is not the card', /const foot = 'NO CARD IMAGE';/.test(sq), true);
+check('no picture beats a made-up one: a stand-in icon under MIN_PIC is left out',
+  /export const MIN_PIC = 300;/.test(sq) && /Math\.max\(im\.naturalWidth, im\.naturalHeight\) >= MIN_PIC/.test(sq), true);
+check('a pilot\'s six symbols keep their Timing colours', /tint\(im, s\.timing\[st\.field\] \?\? L\.text\)/.test(sq), true);
+check('pilots show their six numbers, parts their Armor, Dodge and Electronic',
+  /PILOT_STATS = \['swift', 'melee', 'projectile', 'firing', 'moving', 'tactic'\]/.test(sq)
+    && /ALWAYS = new Set\(\['armor', 'dodge', 'electronic'\]\)/.test(sq), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
