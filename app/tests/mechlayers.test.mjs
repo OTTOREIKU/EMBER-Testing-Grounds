@@ -29,8 +29,8 @@ check('no left arm fitted: the same order',
   T.mechLayerOrder({}), ['leftHand', 'chasis', 'backpack', 'torso', 'rightHand']);
 check('the 552 shield is front-mounted and stays over the torso',
   T.mechLayerOrder({ leftHand: '552' }), ['chasis', 'backpack', 'torso', 'leftHand', 'rightHand']);
-check('the PDLH-201 launcher is front-mounted and stays over the torso',
-  T.mechLayerOrder({ leftHand: 'PDLH-201' }), ['chasis', 'backpack', 'torso', 'leftHand', 'rightHand']);
+check('the PDLH-201 launcher sits behind the torso like other left arms (2026-11-17)',
+  T.mechLayerOrder({ leftHand: 'PDLH-201' }), ['leftHand', 'chasis', 'backpack', 'torso', 'rightHand']);
 
 // ---------- one builder ----------
 // Sliced out of data.ts (its other imports need fetch and the DOM) and run on
@@ -45,7 +45,7 @@ check('the PDLH-201 launcher is front-mounted and stays over the torso',
   const { writeFileSync } = await import('node:fs');
   const tmp = new URL('./_mechart.slice.ts', import.meta.url);
   writeFileSync(tmp, `import { mechLayerOrder } from '../src/types.ts';\ntype MechLoadout = any; type PartState = any;\n`
-    + 'const mechPartUrl = (id: string) => id;\n' + src.slice(start, end));
+    + 'const mechLayerUrl = (id: string) => id;\n' + src.slice(start, end));
   const { mechArtLayers } = await import(tmp.href);
   const dune = { torso: '014', chasis: '534', leftHand: '535', rightHand: '025', backpack: '532' };
   check('the Dune stacks left arm, chassis, backpack, torso, right arm',

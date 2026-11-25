@@ -1,5 +1,5 @@
 import type { Card, MechLoadout } from './types';
-import { BASE_FACTIONS, cardImageUrl, cardName, FACTION_LABEL, mechArtLayers, mechPartUrl, traitName, type GameData } from './data';
+import { BASE_FACTIONS, cardImageUrl, cardName, FACTION_LABEL, mechArtLayers, mechLayerUrl, traitName, type GameData } from './data';
 import { factionColour, ICON_COMPARE, ICON_LOCK } from './icons';
 
 // The faction lock opened: the shackle lifted off one side.
@@ -234,7 +234,7 @@ export function openPartPicker(o: PartPickerOpts): void {
     benchShown = id;
     const m: MechLoadout = { ...b.loadout };
     if (id) m[b.slotKey] = id; else delete m[b.slotKey];
-    const lit = id && id !== o.chosen ? mechPartUrl(id) : '';
+    const lit = id && id !== o.chosen ? mechLayerUrl(id) : '';
     benchEl.querySelector<HTMLElement>('.pp-mech')!.innerHTML = mechArtLayers(m)
       .map((u) => `<img src="${esc(u)}" alt=""${u === lit ? ' class="lit"' : ''}>`).join('');
     benchEl.querySelectorAll<HTMLImageElement>('.pp-mech img').forEach((img) => img.addEventListener('error', () => img.remove()));

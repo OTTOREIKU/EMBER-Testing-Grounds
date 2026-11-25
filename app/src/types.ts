@@ -197,11 +197,11 @@ export type PartSlot = 'torso' | 'chasis' | 'leftHand' | 'rightHand' | 'backpack
 // draw this stack through mechLayerOrder() below; the landing page keeps its
 // own list in the same order.
 export const MECH_LAYER_ORDER = ['leftHand', 'chasis', 'backpack', 'torso', 'rightHand'] as const;
-// The exceptions: left arms that are FRONT-MOUNTED - a shield carried across
-// the body (552), a launcher slung in front (PDLH-201) - and vanish behind the
-// torso if drawn as the far arm. Found by their art sitting left of centre,
-// where every other left arm sits right of it; composited both ways to check.
-const FRONT_LEFT_ARMS = new Set(['552', 'PDLH-201']);
+// The exception: a left arm that is FRONT-MOUNTED - the shield carried beside
+// the body (552) - and vanishes behind the torso if drawn as the far arm.
+// PDLH-201 was one too until its build picture was redrawn (2026-11-17): it now
+// sits behind the torso like every other left arm (OTTO).
+const FRONT_LEFT_ARMS = new Set(['552']);
 const FRONT_LEFT_ORDER = ['chasis', 'backpack', 'torso', 'leftHand', 'rightHand'] as const;
 export function mechLayerOrder(mech: { leftHand?: string }): readonly PartSlot[] {
   return mech.leftHand && FRONT_LEFT_ARMS.has(mech.leftHand) ? FRONT_LEFT_ORDER : MECH_LAYER_ORDER;

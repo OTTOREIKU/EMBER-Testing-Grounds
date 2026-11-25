@@ -1389,6 +1389,25 @@ export function mechPartUrl(id: string): string {
   return assetUrl(`mech_parts/${id}.webp`);
 }
 
+// Parts whose full picture looks wrong stacked on a mech get a build-only
+// layer in mech_parts/build/. The Crisis I shield arms (552, 553) reach far out
+// to each side, so the built mech shows just the shields beside the torso
+// (OTTO, 2026-11-17). The H3-J Chance parts (PD*) came as full-size pictures
+// centred on the canvas, so they all piled up in the middle; their build layers
+// are scaled, placed by slot and mirrored to face right like the other mechs
+// (OTTO, 2026-11-17). The Collaboration backpacks (ZYBP-*) had no mech
+// picture at all, so a mech wearing one (MCP7 "Boomerang") showed no backpack;
+// theirs are cut from the tab art. Backpacks sit in the top-left corner, clear
+// of the arms. Reference and part art keep the full picture.
+const BUILD_LAYER = new Set([
+  '552', '553',
+  'PDCH-201', 'PDTR-201', 'PDBP-202', 'PDBP-203', 'PDBP-204', 'PDLH-201', 'PDRH-201',
+  'ZYBP-101', 'ZYBP-102', 'ZYBP-201', 'ZYBP-202', 'ZYBP-301', 'ZYBP-302',
+]);
+export function mechLayerUrl(id: string): string {
+  return BUILD_LAYER.has(id) ? assetUrl(`mech_parts/build/${id}.webp`) : mechPartUrl(id);
+}
+
 // THE ONE PLACE A MECH'S PICTURE IS BUILT from its Parts: the image URLs, back
 // to front, in mechLayerOrder (types.ts - the left arm is the far arm and goes
 // behind, bar the front-mounted exceptions). The board (so the tabletop and the
@@ -1403,7 +1422,7 @@ export function mechArtLayers(mech: MechLoadout, partStates: Partial<Record<stri
     const id = mech[slot];
     if (!id) continue;
     if (partStates[slot] === 'destroyed' && slot !== 'torso' && slot !== 'chasis') continue;
-    out.push(mechPartUrl(id));
+    out.push(mechLayerUrl(id));
   }
   return out;
 }
