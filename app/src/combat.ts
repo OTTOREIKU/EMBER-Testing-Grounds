@@ -1641,7 +1641,8 @@ export class AttackHelper {
     const close = document.createElement('button');
     close.dataset.act = 'finish.close';
     close.className = 'ah-primary';
-    close.textContent = 'Close';
+    // The same word as the attacking window's own button under this box.
+    close.textContent = 'Done';
     close.addEventListener('click', () => this.closeSummaryMirror());
     el.appendChild(close);
     this.root.replaceChildren(el);

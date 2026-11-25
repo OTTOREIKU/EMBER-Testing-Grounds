@@ -106,13 +106,13 @@ const press = (root, want) => {
   check('the defender sees "Attack resolved"', texts(wroot).includes('Attack resolved'), true);
   check('with the same lines', last.summary.lines.every((l) => texts(wroot).includes(l.replace(/&/g, '&amp;').replace(/</g, '&lt;')) || texts(wroot).includes(l)), true);
   check('and it counts as being watched, so the pad keeps the panel up', w.watching, true);
-  press(wroot, 'Close');
-  check('Close puts it away', [w.watching, closed], [false, 1]);
+  press(wroot, 'Done');
+  check('Done puts it away', [w.watching, closed], [false, 1]);
   w.showMirror(last, atk, def, firing, 'defender');
   check('and it stays away while that summary is still published', w.watching, false);
   const next = { ...last, summary: null, step: 'attack', attack: null, defense: null, resolution: null, log: [], logStep: [] };
   w.showMirror(next, atk, def, firing, 'defender');
-  check('the next attack still opens on the defender\'s phone', w.watching && !findButtons(wroot).some((b) => label(b) === 'Close'), true);
+  check('the next attack still opens on the defender\'s phone', w.watching && !findButtons(wroot).some((b) => b.dataset?.act === 'finish.close'), true);
 
   // A watcher who closed the window MID-attack still gets the outcome.
   const w2root = makeEl('div');
