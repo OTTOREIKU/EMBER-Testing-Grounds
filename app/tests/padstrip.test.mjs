@@ -21,7 +21,7 @@ const guided = src('../pad/guided.ts');
 console.log('The strip fold and the go chevron\n');
 
 check('the strip is painted through the fold, which marks the strip folded',
-  [/paint\('pad-turn', foldableTurn\(pending \? pendingGuidedHtml\(\) : turnHtml\(guide\)\)\);\s*turn\.classList\.toggle\('folded', turnFold !== null\);/.test(pad)], [true]);
+  [/paint\('pad-turn', foldableTurn\(pending \? pendingGuidedHtml\(\) : turnHtml\(guide\)\)( \+ reopen)?\);\s*turn\.classList\.toggle\('folded', turnFold !== null\);/.test(pad)], [true]);
 check('the head becomes a button that folds and opens, and says which it is',
   [/head\.dataset\.act = 'turn-fold';/.test(pad), /head\.setAttribute\('aria-expanded', String\(!folded\)\);/.test(pad), /case 'turn-fold':\s*turnFold = turnFold === null \? \(el\.textContent \?\? ''\)\.trim\(\) : null;/.test(pad)],
   [true, true, true]);
@@ -34,7 +34,7 @@ check('the head is styled as the pad fold: the width of the strip, the arrow at 
   [true, true, true]);
 
 check('the round chip wears the go chevron only while a tap turns the phase in a Guided game',
-  [/const go = guided && !stalled \? '<span class="ui-go" aria-hidden="true">›<\/span>' : '';/.test(pad), /\$\{roundLabel\}\$\{hint\}\$\{go\}/.test(pad)],
+  [/const go = guided && !stalled \? '<span class="ui-go" aria-hidden="true">›<\/span>' : '';/.test(pad), /\$\{roundLabel\}\$\{go\}/.test(pad) && /<span class="pad-bar-sub">\$\{seasonTag\}\$\{hint\}<\/span>/.test(pad)],
   [true, true]);
 check('solo Guided reads Continue on the chip too, where the strip\'s notes point',
   /const hint = !room \? \(guided && !stalled \? '<em>Continue<\/em>' : ''\) : rd\.me && !rd\.them/.test(pad), true);

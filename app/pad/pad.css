@@ -481,6 +481,15 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-bar-round b i { font-style: normal; font-size: 10.5px; color: var(--text3); font-weight: 600; }
 .pad-bar-round.over b { color: var(--text2); font-family: var(--font); font-size: 12.5px; }
 .pad-bar-round small { font: 10.5px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text2); }
+/* The phase on top, the Season tag and the Continue hint under it (player
+   feedback, 2026-11-25): side by side they pushed the chip, and the score,
+   off a phone's screen. The chip gives way before the score does. */
+.pad-bar-round { flex: 0 1 auto; min-width: 0; }
+.pad-bar-rt { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.2; }
+.pad-bar-rt small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pad-bar-sub { display: flex; gap: 6px; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.pad-bar-sub .pad-bar-season { font: 600 10px var(--mono); letter-spacing: 0.1em; }
+.pad-bar-sub em { overflow: hidden; text-overflow: ellipsis; }
 /* The agreement's state, in a room: Continue at rest, waiting once this player
    has pressed, and lit when the other player already has. */
 .pad-bar-round em { font-style: normal; font-size: 10.5px; color: var(--text3); white-space: nowrap; }
@@ -558,6 +567,19 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-bar-order svg { width: 15px; height: 15px; }
 /* The narrowest phones keep the icon; the word goes before the round chip's. */
 @media (max-width: 360px) { .pad-bar-order span { display: none; } }
+/* A phone shows the ORDER icon alone, so the round chip and the score fit. */
+@media (max-width: 440px) { .pad-bar-order span { display: none; } .pad-bar-order { padding: 0 9px; } }
+/* Narrower still: SOLO / MULTI gives way (the dot stays, and the More panel
+   says who is at the table), then the home chip keeps only its chevron. */
+@media (max-width: 400px) { .pad-bar-l .pad-bar-name { display: none; } .pad-bar-l { flex: 0 1 auto; } .pad-bar-round { margin-left: auto; } }
+@media (max-width: 440px) {
+  .pad-bar .ui-home { font-size: 0; padding-left: 10px; padding-right: 10px; }
+  .pad-bar .ui-home b { font-size: 13px; }
+  .pad-bar-vp { padding: 0 9px; }
+  .pad-bar-round { padding: 0 8px; gap: 5px; }
+  .pad-bar-round small { letter-spacing: 0.06em; }
+  .pad-bar-sub .pad-bar-season { letter-spacing: 0.02em; }
+}
 
 .pad-order-sheet .dlg-title { margin-bottom: 2px; }
 .pad-order-sub { margin: 0 0 4px; font-size: 12px; color: var(--text3); }
@@ -875,6 +897,10 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 /* Six numbers, three to a line, the same shape as the six dials under them. */
 .ref-stats.pad-stats { margin: 0 0 4px; display: grid; grid-template-columns: repeat(3, 1fr); }
 .ref-stats.pad-stats .ds { min-width: 0; flex: none; justify-content: center; padding: 7px 6px; }
+/* A Drone's seven (Armor added, player feedback 2026-11-25): four over three. */
+.ref-stats.pad-stats.pad-stats-7 { grid-template-columns: repeat(12, 1fr); }
+.pad-stats-7 .ds:nth-child(-n+4) { grid-column: span 3; }
+.pad-stats-7 .ds:nth-child(n+5) { grid-column: span 4; }
 
 /* The six Timing Dials, three to a line; the chosen one fills yellow. */
 .pad-dials { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; }
@@ -1648,3 +1674,15 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-item-name small { font-size: 12px; color: var(--text2); }
 .pad-score-line { display: flex; align-items: baseline; gap: 10px; padding: 6px 0; font-size: 13.5px; color: var(--text2); }
 .pad-score-line b { font-family: var(--mono); min-width: 2.2em; text-align: right; font-size: 15px; }
+
+/* ---------- the Game setup window (pad/setupwin.ts; OTTO's pick B, 2026-11-25) ----------
+   The attack window's cards (combat.css .ah-*): numbered steps, the open one
+   lit, a finished one folded to the line of what was decided. */
+.pad-setupwin .ah-card-h .t { flex-shrink: 0; }
+.pad-setupwin .ah-card-h .r { min-width: 0; margin-left: auto; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pad-setupwin .ah-step > * + * { margin-top: 8px; }
+.pad-setupwin .ah-step .pad-turn-row { margin-top: 4px; }
+.pad-setupwin .ah-step .pad-tasklist { margin-top: 8px; }
+.pad-setupwin .ah-step .ah-primary[disabled] { opacity: 0.45; cursor: default; }
+.pad-setupwin-foot { margin: 12px 2px 0; }
+.pad-setup-reopen { margin: 2px 0 4px; }

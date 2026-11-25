@@ -88,6 +88,8 @@ import { newOpportunity, newScriptState, PHASES, SCALES, statusCount, statusesFo
 import type { Card, CardAction, DieColor, GameState, ImportedSquad, MechLoadout, Opportunity, PartSlot, PartState, Side, Stance, Token } from '../src/types';
 import { syncSeason, tableSeason } from '../src/season';
 import { handCommand, handCount, handIds, saltFor } from '../src/tactichand';
+import { actionGroupOf, rangeMeta, seasonShort } from './padbits';
+import { setupWindowHtml, type SetupExtras } from './setupwin';
 
 const root = document.getElementById('pad-root')!;
 const api = new EmberApi();
@@ -306,7 +308,7 @@ onRefused((why) => {
 // set up ahead of sitting down with someone.
 type Screen = 'signin' | 'register' | 'lobby' | 'collection' | 'table';
 // The panels that slide over the sheet. Null is the resting state: the sheet.
-type Panel = 'tasks' | 'find' | 'more' | 'build' | 'setup' | 'target' | 'combat' | 'inventory' | 'aura' | null;
+type Panel = 'tasks' | 'find' | 'more' | 'build' | 'setup' | 'gsetup' | 'target' | 'combat' | 'inventory' | 'aura' | null;
 type FindScope = 'all' | 'table' | 'parts' | 'units' | 'pilots' | 'tactics' | 'keywords' | 'tasks' | 'rules';
 
 let account: Account | null = null;
@@ -1093,11 +1095,56 @@ function actorName(s: Side): string {
 // receives the squad however it was built here: a Watermelon file (JSON or the
 // builder's PNG), a built-in or saved preset, or a Mech built here.
 
+// ---------- swapping a squad before the game (player feedback, 2026-11-25) ----------
+//
+// A squad picked by mistake had no way off the table short of removing each
+// unit from its sheet, or starting the game again. Picking a squad for a side
+// that already has one now asks whether to replace it or add to it, and the
+// Squads section has a Remove this squad button. Both go only while squads may
+// still change (squadsLocked), and the removal and the new squad are one Undo.
+
+// The units a side brought: no Projectile, no carried Load.
+function sideUnits(seat: Side): Token[] {
+  return table.tokens.filter((x) => x.side === seat && x.kind !== 'projectile' && x.parentUid === undefined);
+}
+
+// Every token of the side off the table, carried ones first, and its Tactics
+// hand emptied. `joined`: the first command joins the one before it for Undo.
+function clearSide(seat: Side, joined = false): boolean {
+  const gone = table.tokens.filter((x) => x.side === seat)
+    .sort((a, b) => Number(b.parentUid !== undefined) - Number(a.parentUid !== undefined));
+  let chain = joined;
+  for (const t of gone) {
+    if (!table.tokens.some((x) => x.uid === t.uid)) continue;
+    if (!send({ kind: 'despawn', seat, uid: t.uid, targetUid: t.uid, ...(chain ? { chain: 'join' as const } : {}) })) return false;
+    chain = true;
+  }
+  if (handOf(seat).length) send({ ...handCommand(seat, [], roomKey()), ...(chain ? { chain: 'join' as const } : {}) });
+  picks[seat] = null;
+  return true;
+}
+
+// Asked before a whole squad joins a side that already has units.
+async function replaceOrAdd(seat: Side, name: string): Promise<'replace' | 'add' | null> {
+  if (!sideUnits(seat).length) return 'add';
+  const pick = await choiceDialog({
+    title: `${sideName(seat)} already has a squad`,
+    body: `Replace it with ${name}, or add ${name}'s units to it?`,
+    choices: [
+      { id: 'replace', label: `Replace with ${name}`, primary: true },
+      { id: 'add', label: 'Add to it' },
+      { id: 'no', label: 'Cancel', cancel: true },
+    ],
+    stacked: true,
+  });
+  return pick === 'replace' || pick === 'add' ? pick : null;
+}
+
 function sendSquad(name: string, mechs: { name?: string; loadout: MechLoadout }[],
-                   drones: { cardId: string; backpack?: string }[]): boolean {
+                   drones: { cardId: string; backpack?: string }[], chain = false): boolean {
   if (!data) return false;
   const seat = solo ? squadSide : mySeat();
-  const cmd: Command = { kind: 'importSquad', seat, name, mechs, drones };
+  const cmd: Command = { kind: 'importSquad', seat, name, mechs, drones, ...(chain ? { chain: 'join' as const } : {}) };
   const firstUid = table.nextUid;
   // No relay.publish here: onPerformed above sends it, and only once it has
   // actually applied.
@@ -1130,10 +1177,14 @@ async function importFromFile(file: File): Promise<void> {
     refuse((err as Error).message || 'That file could not be read.');
     return;
   }
+  const how = await replaceOrAdd(solo ? squadSide : mySeat(), squad.name);
+  if (!how) return;
+  if (how === 'replace' && !clearSide(solo ? squadSide : mySeat())) return;
   const ok = sendSquad(
     squad.name,
     squad.mechs.map((m) => ({ name: m.name, loadout: m.loadout })),
     squad.drones,
+    how === 'replace',
   );
   if (!ok) return;
   // The hand comes with the squad, merged into whatever the side already
@@ -1141,7 +1192,7 @@ async function importFromFile(file: File): Promise<void> {
   if (squad.tactics?.length) {
     const seat = solo ? squadSide : mySeat();
     const merged = [...new Set([...handOf(seat), ...squad.tactics])];
-    sendHand(seat, merged);
+    send({ ...handCommand(seat, merged, roomKey()), chain: 'join' });
   }
   // NEVER swallow unknownIds. A squad built in the community builder can name a
   // Part we do not ship; dropping those in silence hands a player a squad
@@ -2463,11 +2514,12 @@ function barHtml(): string {
       <b style="color:${sideColour(me)}">${vp[me]}</b><span>:</span><b style="color:${sideColour(them)}">${vp[them]}</b>
     </button>`;
   }
-  // A table on the Season Rules says so beside the phase, in the Season's blue,
-  // so a Stabilize System costing 2 Ticks is never a surprise.
+  // A table on the Season Rules says so under the phase, in the Season's blue,
+  // so a Stabilize System costing 2 Ticks is never a surprise. Short ("S1.04")
+  // and on a line of its own with the Continue hint: beside the phase it
+  // pushed the chip, and the score after it, off the side of a phone (player
+  // feedback, 2026-11-25).
   const season = data ? tableSeason(data, table) : undefined;
-  const roundLabel = `<b>R${r.n}<i>/${roundLimit()}</i></b><small>// ${esc(PHASES[r.phase] ?? '')}${
-    season ? `<span class="pad-bar-season" title="${esc(season.label)} rules: optional, not the main rules"> · ${esc(season.label)}</span>` : ''}</small>`;
   // In a room the chip is the Continue of a two-player agreement, and says
   // where the agreement stands; solo it simply turns the phase.
   const guided = guidedOn(table);
@@ -2477,6 +2529,11 @@ function barHtml(): string {
   const hint = !room ? (guided && !stalled ? '<em>Continue</em>' : '') : rd.me && !rd.them
     ? `<em>waiting for ${esc(sideName(them))}</em>`
     : rd.them && !rd.me ? `<em>${esc(sideName(them))} is ready</em>` : '<em>Continue</em>';
+  const seasonTag = season
+    ? `<span class="pad-bar-season" title="${esc(season.label)} rules: optional, not the main rules">${esc(seasonShort(season.label))}</span>`
+    : '';
+  const sub = seasonTag || hint ? `<span class="pad-bar-sub">${seasonTag}${hint}</span>` : '';
+  const roundLabel = `<b>R${r.n}<i>/${roundLimit()}</i></b><span class="pad-bar-rt"><small>// ${esc(PHASES[r.phase] ?? '')}</small>${sub}</span>`;
   // The way on is this chip, which a Guided player did not always find (OTTO,
   // 2026-09-29): while a tap turns the phase it wears the site's go chevron
   // (ui.css .ui-go), and loses it while the step on the sheet holds it.
@@ -2486,11 +2543,20 @@ function barHtml(): string {
     <div class="pad-bar-l" data-act="dock" data-dock="more" role="button">${who}</div>
     ${orderChip}
     <button class="pad-bar-round${state}" data-act="phase"${stalled ? greyWhy(true, 'Finish the step on the sheet first.') : ` title="${room ? (rd.me ? 'Waiting for the other player. Tap again to take it back.' : 'Ready to move on') : 'Next phase'}"`}>
-      ${roundLabel}${hint}${go}
+      ${roundLabel}${go}
     </button>
     <button class="pad-bar-vp" data-act="dock" data-dock="tasks" title="Tasks and score">
       <b style="color:${sideColour(me)}">${vp[me]}</b><span>:</span><b style="color:${sideColour(them)}">${vp[them]}</b>
     </button>`;
+}
+
+// A card that performs Two-Handed at a shorter length is charged that length,
+// which the printed capsule does not show: said on the row when it differs.
+function twoHandedLength(t: Token, a: CardAction): string {
+  if (!data) return '';
+  const used = twoHandedUse(data, t, a, boxHands(table.tasks, t.uid))?.action;
+  const len = used ? lengthOf(used) : undefined;
+  return len && len !== lengthOf(a) ? `Two-Handed: ${LENGTH_NAME[len]}` : '';
 }
 
 // ---------- the turn order (OTTO, 2026-10-17/22; order.ts) ----------
@@ -2668,8 +2734,12 @@ function statStrip(t: Token): string {
   const parry = t.kind === 'mech'
     ? parryParts(d, t, { melee: true, backAttack: false }).reduce((n, p) => n + p.value, 0)
     : autoParryValue(d, t, { melee: true, backAttack: false });
-  return `<div class="ref-stats pad-stats">
+  // A Drone is one Part, so its Armor is the unit's and belongs here; a
+  // Mech's stays on each Part row (player feedback, 2026-11-25).
+  const armor = t.kind === 'mech' ? null : live.reduce((n, c) => n + (c.card.armor ?? 0), 0);
+  return `<div class="ref-stats pad-stats${armor === null ? '' : ' pad-stats-7'}">
     ${chip('score', points, 'Points')}
+    ${armor === null ? '' : chip('armor', armor, 'Armor')}
     ${chip('structure', structure, 'Structure')}
     ${chip('dodge', dodge, 'Dodge')}
     ${chip('parray', parry, 'Parry')}
@@ -2833,8 +2903,8 @@ function ticksRow(t: Token, mine: boolean): string {
   }
   const o = freeOpp(t);
   const chips = mine
-    ? `<button class="pad-chip" data-act="tick-moved"${greyWhy(!canManeuver(o).ok, canManeuver(o).why ?? 'The Maneuver Tick is spent.')}>Moved</button>`
-      + `<button class="pad-chip" data-act="tick-new"${greyWhy(!t.freeTicks, 'Every Tick is still fresh.')}>New</button>`
+    // Moved is the Maneuver row's button now (player feedback, 2026-11-25).
+    ? `<button class="pad-chip" data-act="tick-new"${greyWhy(!t.freeTicks, 'Every Tick is still fresh.')}>New</button>`
     : '';
   return `<div class="pad-row wrap pad-ticks-row">
       <span class="pad-label">Ticks</span>
@@ -2859,31 +2929,48 @@ function actionList(t: Token, mine: boolean): string {
   // Read once for the whole list: what each row would cost against the Ticks
   // this Mech has left, on a free table only.
   const fo = mine && freeTicksOn(t) ? freeOpp(t) : null;
-  const order = new Map<string, number>(TIMINGS.map((x, i) => [x.id, i]));
-  const rank = (a: (typeof acts)[number]) => {
-    const dialless = a.action.speed === 'auto' || a.action.speed === 'command' || a.action.speed === 'passive';
-    const tm = dialless ? undefined : timingOf(a.action);
-    return (tm !== undefined ? order.get(tm) ?? 90 : 99) * 10 + (['short', 'medium', 'long'].indexOf(lengthOf(a.action) ?? 'long') + 1);
+  const groupOf = (a: CardAction) => {
+    const tm = timingOf(a);
+    const i = tm ? TIMINGS.findIndex((x) => x.id === tm) : -1;
+    return actionGroupOf(a, tm ? { index: i < 0 ? 90 : i, name: TIMINGS[i]?.name ?? tm } : undefined);
   };
+  const rank = (a: (typeof acts)[number]) =>
+    groupOf(a.action).rank * 10 + (['short', 'medium', 'long'].indexOf(lengthOf(a.action) ?? 'long') + 1);
   const sorted = [...acts].sort((x, y) => rank(x) - rank(y));
   let lastGroup = '';
   const rows: string[] = [];
+  // The Maneuver (a Mech's, above Swift) or the Move (a Drone's, first of its
+  // Command Actions), drawn as an Action row of its own (player feedback,
+  // 2026-11-25). It used to be only the Moved chip by the Ticks or the strip.
+  const move = moveRow(t, mine);
+  let moved = !move;
+  const addMove = () => {
+    if (moved || !move) return;
+    if (lastGroup !== move.group) rows.push(`<p class="pad-label pad-sec pad-act-group">${esc(move.group)}</p>`);
+    rows.push(move.html);
+    lastGroup = move.group;
+    moved = true;
+  };
+  if (move && move.rank < 0) addMove();
   for (const g of sorted) {
-    const dialless = g.action.speed === 'auto' || g.action.speed === 'command' || g.action.speed === 'passive';
-    const tm = dialless ? undefined : timingOf(g.action);
-    const group = tm ? (TIMINGS.find((x) => x.id === tm)?.name ?? tm) : 'Automatic and Command';
+    const { name: group, rank: gr } = groupOf(g.action);
+    if (move && !moved && gr >= move.rank) addMove();
     if (group !== lastGroup) {
       rows.push(`<p class="pad-label pad-sec pad-act-group">${esc(group)}</p>`);
       lastGroup = group;
     }
     const open = sheetView[drawSide].action === g.action.id;
-    const len = lengthOf(twoHandedUse(d, t, g.action, boxHands(table.tasks, t.uid))?.action ?? g.action);
     // The Part by NAME as well as slot: two arms can print the same "Single
     // Shot", and the Laser and the Ion one are told apart by the weapon.
+    // A Drone's or Projectile's one Part ("Unit") is not named: it said
+    // nothing (player feedback, 2026-11-25). The Range takes the length's
+    // place: the capsule on the bar already shows the length, and the Range
+    // was only seen by opening the row.
     const meta = [
-      SLOT_LABEL[g.slot] ?? g.slot,
+      g.slot === 'main' ? '' : SLOT_LABEL[g.slot] ?? g.slot,
       t.kind === 'mech' && g.slot !== 'pilot' ? cardName(g.card) : '',
-      len ? LENGTH_NAME[len] : '',
+      rangeMeta(g.action.range, actionRange(d, table.tokens, t, g.action)),
+      twoHandedLength(t, g.action),
       g.ammoLeft !== undefined ? `Ammo ${g.ammoLeft}` : '',
       g.intercept ? `Intercept ${g.intercept.left}` : '',
       g.charge ? (g.charge.charged ? 'Charged' : 'No Charge') : '',
@@ -2976,8 +3063,48 @@ function actionList(t: Token, mine: boolean): string {
       }
     }
   }
+  addMove();
   rows.push(...commonRows(t, mine));
   return `<div class="pad-acts">${rows.join('')}</div>`;
+}
+
+// A Mech's Maneuver or a Drone's Move as an Action row: the Movement bar, the
+// distance, and the button that records it where one did before (the Guided
+// Moved, a free table's Maneuver Tick). The table moves the model.
+function moveRow(t: Token, mine: boolean): { group: string; rank: number; html: string } | null {
+  if (!data || (t.kind !== 'mech' && t.kind !== 'drone')) return null;
+  const mech = t.kind === 'mech';
+  const card = mech
+    ? tokenCards(data, t).find((c) => c.slot === 'chasis')?.card ?? tokenCards(data, t)[0]?.card
+    : data.byId.get(t.cardId);
+  if (!card) return null;
+  const n = maneuverRange(data, t);
+  const id = mech ? '__MANEUVER' : '__MOVE';
+  const grids = `${n} Grid${n === 1 ? '' : 's'}`;
+  const a: CardAction = {
+    id, type: 'Moving', range: n,
+    name: { en: mech ? 'Maneuver' : 'Move' },
+    description: { en: mech
+      ? `Spend the Maneuver Tick to move up to ${grids}. A Long Action needs the Maneuver Tick too, so a Mech that Maneuvers cannot also perform one.`
+      : `A Commanded Drone may move up to ${grids} instead of performing a Command Action. A Drone never moves in the Automatic Phase.` },
+  };
+  let button = '';
+  if (guidedOn(table)) {
+    const opp = table.script?.opp;
+    const mayMove = mine && !!opp && opp.uid === t.uid && (!mech || canManeuver(opp).ok) && t.stance !== 'shutdown'
+      && check(data, table, { kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: 0, row: 0 } }).ok;
+    if (mayMove) button = `<button class="pad-chip on pad-perform" data-act="g-moved">${mech ? 'Maneuvered' : 'Moved'}</button>`;
+  } else if (mine && mech && freeTicksOn(t)) {
+    const o = freeOpp(t);
+    const chip = '<button class="pad-chip on pad-perform" data-act="tick-moved">Maneuvered</button>';
+    button = canManeuver(o).ok ? chip : inert(chip, canManeuver(o).why ?? 'The Maneuver Tick is spent.');
+  }
+  const open = sheetView[drawSide].action === id;
+  const html = `<div class="pad-act pad-act-move${open ? ' open' : ''}" data-act="open-action" data-id="${id}" role="button" aria-expanded="${open}">
+      ${actionBlock(card, a)}
+      <div class="pad-act-meta"><span>${esc(`Move ${n}${mech ? ' · Maneuver Tick' : ' · instead of a Command Action'}`)}</span>${button ? `<span class="pad-act-go">${button}</span>` : ''}</div>
+    </div>`;
+  return mech ? { group: 'Maneuver', rank: -1, html } : { group: 'Command Actions', rank: 95, html };
 }
 
 // The Common Actions (6.1) plus Remote Access (5.3.3): every Mech has them
@@ -3055,7 +3182,6 @@ function commonRows(t: Token, mine: boolean): string[] {
     // A Punch/Kick or a Crawl is paid under its Part (ruled R3; P7B 9).
     const key = commonKey(t, a) ?? a.id;
     const open = sheetView[drawSide].action === a.id;
-    const len = lengthOf(a);
     const tm = timingOf(a);
     // The Charge and the Discard are performed by the Part they act on, so the
     // row names those Parts rather than every slot the Action lists (audit
@@ -3065,7 +3191,8 @@ function commonRows(t: Token, mine: boolean): string[] {
     const meta = [
       performers.map((s) => SLOT_LABEL[s as PartSlot] ?? s).join(' / '),
       tm ? (TIMINGS.find((x) => x.id === tm)?.name ?? tm) : '',
-      len ? LENGTH_NAME[len] : '',
+      // The Range, not the length the capsule shows (player feedback, 2026-11-25).
+      rangeMeta(a.range, actionRange(d, table.tokens, t, a)),
     ].filter(Boolean).join(' · ');
     const perform = guidedOn(table)
       ? performButton(guide, t, a, a.id)
@@ -3366,6 +3493,7 @@ function dockHtml(): string {
 function panelHtml(): string {
   if (!data) return `<div class="pad-panel-in"><p class="pad-status">Loading the card database…</p></div>`;
   if (panel === 'setup') return setupPanel();
+  if (panel === 'gsetup') return setupWinPanel();
   if (panel === 'target') return targetPanel();
   if (panel === 'aura') return auraPanel();
   if (panel === 'combat') return combatPanel();
@@ -3489,6 +3617,98 @@ function drawThree(): void {
   const three: string[] = [];
   while (three.length < 3 && pool.length) three.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
   send({ kind: 'configureTable', seat: mySeat(), tasks: { ...normaliseTasks(table.tasks), draw: three, drawDiscards: {} } });
+}
+
+// The three Main Tasks dealt (3.1.3), each squad discarding one: the Tasks tab
+// and the Game setup window show the same list.
+function drawCardsHtml(): string {
+  const tasks = normaliseTasks(table.tasks);
+  const draw = tasks.draw ?? [];
+  const disc = tasks.drawDiscards ?? {};
+  const me = mySeat();
+  return `<div class="pad-tasklist">${draw.map((id) => {
+      const c = data!.missions.cards.find((x) => x.id === id);
+      if (!c) return '';
+      const by = disc.s1 === id ? 's1' : disc.s2 === id ? 's2' : null;
+      const canDiscard = !by && (solo ? true : !disc[me]);
+      return `<div class="pad-task${by ? ' discarded' : ''}">
+        <img class="pad-task-art" src="${esc(missionImageUrl(c.id))}" alt="" loading="lazy" data-mission="${esc(c.id)}" />
+        <span class="pad-task-body"><span class="pad-task-name">${esc(c.name)}</span>${by ? `<span class="pad-task-text">discarded by ${esc(sideName(by))}</span>` : ''}</span>
+        ${canDiscard ? `<button class="pad-chip" data-act="discard-task" data-id="${esc(c.id)}">Discard${solo && disc.s1 ? ` (${esc(sideName('s2'))})` : ''}</button>` : ''}
+      </div>`;
+    }).join('')}</div>
+    ${mainTaskLocked() ? '<p class="pad-note">The Main Task is settled once the table edge is picked (3.1.2), so this draw cannot finish.</p>' : ''}`;
+}
+
+// ---------- the Game setup window (pad/setupwin.ts; OTTO's pick B, 2026-11-25) ----------
+//
+// While a Guided game is being set up (from choosing Guided until Begin Round
+// 1) the window is what the pad shows when no other panel is open. Closing it,
+// or tapping a player tab, puts it away for this game until the strip's
+// "Setup steps" chip or a setup button on the strip brings it back.
+let setupClosedFor: string | null = null;
+let setupMainPick = false;
+const setupSecOpen: Partial<Record<Side, boolean>> = {};
+
+function setupRunning(): boolean {
+  if (!data) return false;
+  if (wantsGuided() && !guidedOn(table)) return true;
+  if (!guidedOn(table)) return false;
+  const su = normaliseSetup(table.setup);
+  return !!su && su.stage !== 'done';
+}
+
+function setupExtras(): SetupExtras {
+  const season = data ? tableSeason(data, table) : undefined;
+  const squadLine = (sd: Side) => {
+    const n = sideUnits(sd).length;
+    return n ? `${sideName(sd)} · ${table.sideNames?.[sd] ?? `${n} unit${n === 1 ? '' : 's'}`} · ${sidePoints(sd)} pts` : `${sideName(sd)} · no squad yet`;
+  };
+  const waiting = !!view.room && readiness().me;
+  const squadsBody = `<p class="ah-note">Each side adds its squad: a saved squad, a squad file or Mechs built here. A squad added by mistake can be replaced until deployment ends.</p>
+    ${(['s1', 's2'] as Side[]).map((sd) => {
+      const n = sideUnits(sd).length;
+      const canAdd = solo || sd === mySeat();
+      return `<div class="pad-turn-row"><span class="pad-turn-name">${esc(shortSide(sd))}</span>
+        <span class="pad-turn-val">${n ? `${esc(table.sideNames?.[sd] ?? `${n} units`)} · ${sidePoints(sd)} pts` : '—'}</span>
+        ${canAdd ? `<button class="pad-chip" data-act="add-squad" data-side="${sd}">${n ? 'Change' : 'Add a squad'}</button>` : ''}</div>`;
+    }).join('')}
+    <button class="ah-primary" data-act="g-start"${waiting ? ' disabled' : greyWhy(!table.tokens.length, 'Add the squads first.')}>${waiting ? 'Waiting for the other player…' : 'Start the guided game'}</button>
+    <button class="ah-alt" data-act="open-setup">Rounds, points and rules</button>`;
+  const draw = normaliseTasks(table.tasks).draw ?? [];
+  const mainBody = draw.length
+    ? `<p class="ah-note">Three dealt (3.1.3). ${solo ? `Discard one for ${esc(sideName('s1'))}, then one for ${esc(sideName('s2'))}` : 'Each player discards one'}; the last one is played.</p>
+       ${drawCardsHtml()}
+       <button class="ah-alt" data-act="draw-cancel">Cancel the draw</button>`
+    : setupMainPick || !table.mission
+      ? (setupMainPick
+        ? `<p class="ah-note">Tap the card the table is playing.</p>
+           <div class="pad-tasklist">${data!.missions.cards.map((c) =>
+             taskCard(`data-act="pick-task" data-kind="mission" data-id="${esc(c.id)}"`, missionImageUrl(c.id), c.name, c.scoring, `${c.vp ?? 0} VP`)).join('')}</div>
+           <button class="ah-alt" data-act="ws-choose-main">${table.mission ? 'Keep the current one' : 'Draw instead'}</button>`
+        : `<p class="ah-note">Deal three and each squad discards one, or choose the card the table is playing (3.1.3).</p>
+           <button class="ah-primary" data-act="ws-draw">Draw 3</button>
+           <button class="ah-alt" data-act="ws-choose-main">Choose one</button>`)
+      : '';
+  const secondaryCards = (sd: Side) => {
+    const theirs = normaliseTasks(table.tasks).secondary[sd === 's1' ? 's2' : 's1'];
+    return `<div class="pad-tasklist">${data!.secondary.map((c) =>
+      taskCard(`data-act="pick-task" data-kind="secondary" data-for="${sd}" data-id="${esc(c.id)}"${c.id === theirs ? ' disabled' : ''}`, secondaryImageUrl(c.id), c.name, c.scoring ?? '', c.id === theirs ? 'theirs' : `${c.vp ?? 0} VP`)).join('')}</div>`;
+  };
+  return {
+    pending: wantsGuided() && !guidedOn(table),
+    headline: `Guided · ${scaleOf().points} pts · ${roundLimit()} rounds${season ? ` · ${seasonShort(season.label)}` : ''}`,
+    squadLine,
+    squadsBody,
+    mainBody,
+    mainPicking: setupMainPick,
+    secondaryCards,
+    secondaryOpen: (sd) => !!setupSecOpen[sd],
+  };
+}
+
+function setupWinPanel(): string {
+  return setupWindowHtml(guide, setupExtras());
 }
 
 // The engine freezes the Main Task once the table edges are picked (FAQ P1).
@@ -3722,18 +3942,7 @@ function tasksPanel(): string {
   // Three dealt, each squad discards one, the last is played (3.1.3). Solo
   // takes both discards on one phone.
   const drawHtml = draw.length ? `<p class="pad-label pad-sec">Main Task</p>
-    <div class="pad-tasklist">${draw.map((id) => {
-      const c = data!.missions.cards.find((x) => x.id === id);
-      if (!c) return '';
-      const by = disc.s1 === id ? 's1' : disc.s2 === id ? 's2' : null;
-      const canDiscard = !by && (solo ? true : !disc[me]);
-      return `<div class="pad-task${by ? ' discarded' : ''}">
-        <img class="pad-task-art" src="${esc(missionImageUrl(c.id))}" alt="" loading="lazy" data-mission="${esc(c.id)}" />
-        <span class="pad-task-body"><span class="pad-task-name">${esc(c.name)}</span>${by ? `<span class="pad-task-text">discarded by ${esc(sideName(by))}</span>` : ''}</span>
-        ${canDiscard ? `<button class="pad-chip" data-act="discard-task" data-id="${esc(c.id)}">Discard${solo && disc.s1 ? ` (${esc(sideName('s2'))})` : ''}</button>` : ''}
-      </div>`;
-    }).join('')}</div>
-    ${mainTaskLocked() ? '<p class="pad-note">The Main Task is settled once the table edge is picked (3.1.2), so this draw cannot finish.</p>' : ''}
+    ${drawCardsHtml()}
     <button class="pad-btn" data-act="draw-cancel">Cancel the draw</button>` : '';
 
   const layout = data!.terrain.maps.find((m) => m.id === table.map);
@@ -3814,6 +4023,18 @@ function squadsClosed(): boolean {
   return normaliseSetup(table.setup)?.stage === 'done' && !table.unlocked;
 }
 
+// Squads may change until the game is under way (player feedback,
+// 2026-11-25): a Guided game closes them when deployment ends (3.1.4, which
+// the engine holds too); a Freeform table once the first phase has turned.
+// Freeform keeps a way round it, since nothing there enforces the setup.
+let squadsUnlocked: string | null = null; // the game it was unlocked for
+function squadsLocked(): string | null {
+  if (squadsClosed()) return 'The squads are set: deployment is finished (3.1.4). End the game to change them.';
+  if (squadsUnlocked === gameId() || normaliseSetup(table.setup) || wantsGuided() || gameOver()) return null;
+  if (table.round.n > 1 || table.round.phase > 0) return 'The game is under way, so the squads are set.';
+  return null;
+}
+
 function morePanel(): string {
   const room = view.room;
   const me = mySeat();
@@ -3861,14 +4082,15 @@ function morePanel(): string {
       <span class="pad-squad-pts">${sidePoints(squadSide)} pts</span>
     </div>` : `<p class="pad-label" style="margin-bottom:8px">${sidePoints(mySeat())} pts on the table</p>`}
     ${squadProblemsHtml(solo ? squadSide : mySeat())}
-    ${squadsClosed()
+    ${squadsLocked()
       // 3.1.4: a squad joins before deployment is finished. The engine refused
       // the add and said so in an error line that was easy to miss, while the
       // buttons went on looking usable.
-      ? '<p class="pad-note">The squads are set: deployment is finished (3.1.4). End the game to change them.</p>'
+      ? `<p class="pad-note" data-note="squads-locked">${esc(squadsLocked()!)}</p>${squadsClosed() ? '' : '<button class="pad-link" data-act="squads-unlock">Change them anyway</button>'}`
       : `<button class="pad-btn primary" data-act="file">Squad file…</button>
     <button class="pad-btn" data-act="build">Build a Mech</button>
-    <button class="pad-btn" data-act="drone">Add a Drone</button>`}
+    <button class="pad-btn" data-act="drone">Add a Drone</button>
+    ${sideUnits(solo ? squadSide : mySeat()).length ? '<button class="pad-btn" data-act="clear-side">Remove this squad</button>' : ''}`}
     <button class="pad-btn" data-act="projectile">Add a Projectile</button>
     ${collectionRows()}
     <p class="pad-label pad-sec">Tactics Cards</p>
@@ -4526,6 +4748,12 @@ function savedHtml(): string {
   const seat = solo ? squadSide : mySeat();
   const anyUnits = table.tokens.some((x) => x.side === seat && x.kind !== 'projectile' && x.parentUid === undefined);
   const hidden = hiddenBuiltIns().length;
+  // Once the game is under way the lists are hidden: a squad picked there
+  // joined mid-game on a Freeform table (player feedback, 2026-11-25). Saving
+  // the squad on the table stays.
+  if (squadsLocked()) {
+    return anyUnits ? '<p class="pad-label pad-sec">Saved squads</p><button class="pad-btn" data-act="save-squad">Save this squad</button>' : '';
+  }
   return `${fold('units', 'Saved units', units.length,
       units.length ? units.map((m) => row('preset', 'preset-del', m.id, m.name, m.saved ? 'saved' : 'default', loadoutPoints(m.mech), loadoutFaction(m.mech))).join('') : '<p class="pad-label">None yet. Save a Mech from its sheet.</p>')}
     ${fold('squads', 'Saved squads', squads.length,
@@ -5314,6 +5542,10 @@ function render(): void {
   shareDials();
   queueMicrotask(dealCommands);
   queueMicrotask(settleCoordination);
+  // The Game setup window is what shows while a Guided game is set up and
+  // nothing else is open, unless it was put away for this game.
+  if (setupRunning() && panel === null && setupClosedFor !== gameId()) panel = 'gsetup';
+  if (panel === 'gsetup' && !setupRunning()) panel = null;
   paint('pad-bar', barHtml());
   const turn = document.getElementById('pad-turn');
   if (turn) {
@@ -5324,7 +5556,9 @@ function render(): void {
     const on = (!!data && guidedOn(table)) || pending;
     turn.hidden = !on;
     if (on) {
-      paint('pad-turn', foldableTurn(pending ? pendingGuidedHtml() : turnHtml(guide)));
+      const reopen = setupRunning() && panel !== 'gsetup'
+        ? '<div class="pad-chips pad-setup-reopen"><button class="pad-chip" data-act="setup-open">Setup steps</button></div>' : '';
+      paint('pad-turn', foldableTurn(pending ? pendingGuidedHtml() : turnHtml(guide)) + reopen);
       turn.classList.toggle('folded', turnFold !== null);
     }
   }
@@ -5620,6 +5854,8 @@ function act(el: HTMLElement, ev: Event): void {
     // ----- the dock and the bar -----
     case 'dock': {
       const which = el.dataset.dock!;
+      // A player tab puts the Game setup window away for this game.
+      if ((which === 'yours' || which === 'theirs') && setupRunning()) setupClosedFor = gameId();
       if (which === 'yours') selectSide(mySeat());
       else if (which === 'theirs') selectSide(otherSeat());
       else openPanel(which as Panel);
@@ -5647,6 +5883,7 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     case 'close-panel':
       if (screen === 'collection') { screen = 'lobby'; error = null; render(); return; }
+      if (panel === 'gsetup') setupClosedFor = gameId();
       panel = null; picking = null; error = null; declaring = null; render(); return;
     case 'open-setup': panel = 'setup'; render(); return;
     case 'set-mode': send({ kind: 'configureTable', seat: mySeat(), guidedPlay: el.dataset.mode === 'guided' }); return;
@@ -5701,14 +5938,29 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'g-start':
-      if (!table.tokens.length) { toast('Add the squads first.', 'refused'); return; }
+      if (!table.tokens.length) {
+        // From the Game panel with no squads yet: the setup window's first
+        // step is where they are added.
+        if (setupRunning() && panel !== 'gsetup') { setupClosedFor = null; panel = 'gsetup'; render(); return; }
+        toast('Add the squads first.', 'refused');
+        return;
+      }
       startGuided(guide);
       panel = null;
       render();
       return;
     case 'g-main':
-      // From the Guided strip: draw three (the discards are made on Tasks), or
-      // pick one outright and come straight back.
+      // From the Guided strip: the Game setup window does the draw or the
+      // choosing in place; it used to send the player to the Tasks tab, away
+      // from the table edge that comes next (player feedback, 2026-11-25).
+      if (setupRunning()) {
+        setupClosedFor = null;
+        panel = 'gsetup';
+        if (el.dataset.how === 'draw') { setupMainPick = false; drawThree(); }
+        else setupMainPick = true;
+        render();
+        return;
+      }
       panel = 'tasks';
       if (el.dataset.how === 'draw') { pickFromGuide = false; drawThree(); return; }
       pickFromGuide = true;
@@ -5716,12 +5968,28 @@ function act(el: HTMLElement, ev: Event): void {
       render();
       return;
     case 'g-secondary':
+      if (setupRunning()) {
+        setupClosedFor = null;
+        panel = 'gsetup';
+        setupSecOpen[(el.dataset.side as Side) ?? mySeat()] = true;
+        render();
+        return;
+      }
       pickFromGuide = true;
       picking = 'secondary';
       pickFor = (el.dataset.side as Side) ?? mySeat();
       panel = 'tasks';
       render();
       return;
+    case 'setup-open': setupClosedFor = null; panel = 'gsetup'; render(); return;
+    case 'setup-close': setupClosedFor = gameId(); panel = null; render(); return;
+    case 'ws-draw': setupMainPick = false; drawThree(); return;
+    case 'ws-choose-main':
+    case 'ws-main-change':
+      setupMainPick = a === 'ws-main-change' ? true : !setupMainPick;
+      render();
+      return;
+    case 'ws-sec-change': setupSecOpen[el.dataset.side as Side] = true; render(); return;
     case 'set-rounds': send({ kind: 'configureTable', seat: mySeat(), roundLimit: Number(el.dataset.n) }); return;
     case 'set-scale': send({ kind: 'configureTable', seat: mySeat(), scale: el.dataset.id as GameState['scale'] }); return;
     case 'phase': pressContinue(); return;
@@ -6169,7 +6437,10 @@ function act(el: HTMLElement, ev: Event): void {
     case 'pick-task': {
       const id = el.dataset.id!;
       picking = null;
+      // The Game setup window names the side a Secondary is for on the card.
+      if (el.dataset.for === 's1' || el.dataset.for === 's2') pickFor = el.dataset.for;
       if (el.dataset.kind === 'mission') {
+        setupMainPick = false;
         if (!send({ kind: 'configureTable', seat: mySeat(), mission: id })) return;
         if (pickFromGuide) { pickFromGuide = false; panel = null; render(); }
         // VIP: Assassination needs each squad's Commander named; asked at once,
@@ -6203,6 +6474,7 @@ function act(el: HTMLElement, ev: Event): void {
         return;
       }
       if (!send({ kind: 'pickSecondary', seat: pickFor, cardId: id })) return;
+      setupSecOpen[pickFor] = false;
       // Picked from the turn strip: back to the game, and whatever the Task
       // needs named (a Bounty's Mech, a Leader, a Zone) is asked at once rather
       // than left behind a second Choose button.
@@ -6466,20 +6738,40 @@ function act(el: HTMLElement, ev: Event): void {
     case 'squad': {
       const sq = loadSquads().find((s) => s.id === el.dataset.id);
       if (!sq || !data) return;
-      if (sendSquad(sq.name, sq.mechs, sq.drones)) {
-        // The hand comes with the squad (5.4), merged the way a file import is.
-        if (sq.tactics?.length) {
-          const seat = solo ? squadSide : mySeat();
-          const merged = [...new Set([...handOf(seat), ...sq.tactics.filter((id) => data!.byId.get(id))])];
-          sendHand(seat, merged);
+      const seat = solo ? squadSide : mySeat();
+      void replaceOrAdd(seat, sq.name).then((how) => {
+        if (!how || !data) return;
+        if (how === 'replace' && !clearSide(seat)) { render(); return; }
+        if (sendSquad(sq.name, sq.mechs, sq.drones, how === 'replace')) {
+          // The hand comes with the squad (5.4), merged the way a file import is.
+          if (sq.tactics?.length) {
+            const merged = [...new Set([...handOf(seat), ...sq.tactics.filter((id) => data!.byId.get(id))])];
+            send({ ...handCommand(seat, merged, roomKey()), chain: 'join' });
+          }
+          error = null;
+          panel = null;
+          toast(how === 'replace' ? `${sq.name} replaced the squad.` : `${sq.name} added.`);
         }
-        error = null;
-        panel = null;
-        toast(`${sq.name} added.`);
-      }
-      render();
+        render();
+      });
       return;
     }
+    case 'clear-side': {
+      const seat = solo ? squadSide : mySeat();
+      if (!sideUnits(seat).length || squadsLocked()) return;
+      void confirmDialog({
+        title: `Remove ${sideName(seat)}'s squad?`,
+        body: 'Every unit on this side leaves the table, with its Tactics Cards. Undo brings them back.',
+        confirmLabel: 'Remove',
+        cancelLabel: 'Keep',
+      }).then((go) => {
+        if (!go) return;
+        if (clearSide(seat)) toast('Squad removed.');
+        render();
+      });
+      return;
+    }
+    case 'squads-unlock': squadsUnlocked = gameId(); render(); return;
     case 'preset-del':
     case 'squad-del': {
       const id = el.dataset.id!;

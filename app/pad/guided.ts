@@ -384,9 +384,28 @@ async function steerControlled(api: GuideApi, t: Token, targetUid: number): Prom
   });
 }
 
+// The Command question's rows: every living Mech of the side with its face-up
+// Command Tokens, a Mech with none greyed (4.15.2), then Cancel.
+export function commanderChoices(tokens: Token[], side: Side): { id: string; label: string; disabled?: boolean; note?: string; cancel?: boolean }[] {
+  const mechs = tokens.filter((x) => x.side === side && x.kind === 'mech' && alive(x));
+  return [
+    ...mechs.map((m) => {
+      const n = readyCommands(m);
+      return { id: String(m.uid), label: `${m.label} · ${n} Command Token${n === 1 ? '' : 's'} left`, ...(n > 0 ? {} : { disabled: true, note: 'No face-up Command Token left.' }) };
+    }),
+    { id: '', label: 'Cancel', cancel: true },
+  ];
+}
+
 // One phone may hold a side in a room, or both solo.
 function mine(api: GuideApi, side: Side): boolean {
   return api.solo || api.me() === side;
+}
+
+// A setup stage's rows and buttons without the strip's head, for the Game
+// setup window's open step (pad/setupwin.ts; OTTO's pick B, 2026-11-25).
+export function setupStepBody(api: GuideApi, stage: string): string {
+  return setupHtml(api, stage).replace(/^<div class="pad-turn-h[^>]*>[\s\S]*?<\/div>/, '');
 }
 
 function setupHtml(api: GuideApi, stage: string): string {
@@ -1204,8 +1223,10 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         const issuers = s.tokens.filter((x) => x.side === side && x.kind === 'mech' && readyCommands(x) > 0);
         if (issuers.length > 1) {
           void (async () => {
-            const pick = await choiceDialog({ title: `Which Mech commands ${t.label}?`, choices: issuers.map((m) => ({ id: String(m.uid), label: m.label })), stacked: true });
-            if (pick === null) return;
+            // Each Mech with the Command Tokens it has left (player feedback,
+            // 2026-11-25), the ones with none greyed, so the choice can be weighed.
+            const pick = await choiceDialog({ title: `Which Mech commands ${t.label}?`, choices: commanderChoices(s.tokens, side), stacked: true });
+            if (!pick) return;
             if (api.send({ kind: 'designate', seat: side, uid, fromUid: Number(pick) })) api.selectUnit(uid);
           })();
           return true;
