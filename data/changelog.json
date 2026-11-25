@@ -1,5 +1,5 @@
 {
- "_about": "How each card has changed across the publisher's list revisions, in the app's card and Action ids. Built by Project-Documents/PartsLists/tools/make_changelog.py: GoF from the championship 1.02 list (what its cards print) to 1.021; PD, RDL and UN from 1.02 to 1.04; and, under 1.02, the printed stats the card images show that the lists have since changed (OTTO: the images are the 1.0 stats). The Reference shows it in a card's Changelog section (refcards.ts), and tests/changelog.test.mjs checks that every number here ends where the card now stands. `rules` holds the Rules entries' changes, by mechanics.json id, shown at the top of an entry's Advanced section; `keywords` the glossary's, by keyword key, shown under the keyword's text.",
+ "_about": "How each card has changed across the publisher's list revisions, in the app's card and Action ids. Built by Project-Documents/PartsLists/tools/make_changelog.py: GoF from the championship 1.02 list (what its cards print) to 1.021; PD, RDL and UN from 1.02 to 1.04; UN's 1.04 V2 list (2026-11-03), filed under 1.04 with a note; and, under 1.02, the printed stats the card images show that the lists have since changed (OTTO: the images are the 1.0 stats). The Reference shows it in a card's Changelog section (refcards.ts), and tests/changelog.test.mjs checks that every number here ends where the card now stands. `rules` holds the Rules entries' changes, by mechanics.json id, shown at the top of an entry's Advanced section; `keywords` the glossary's, by keyword key, shown under the keyword's text.",
  "versions": [
   {
    "id": "1.02",
@@ -17,7 +17,7 @@
    "id": "1.04",
    "label": "1.04",
    "source": "{faction} parts list 1.04",
-   "note": "Received 2026-09-30: points across PD, RDL and UN, Direct Fire on two UN Backpacks, two RDL cards dropped; the FAQ and the Supplementary Rules 1.04."
+   "note": "Received 2026-09-30: points across PD, RDL and UN, Direct Fire on two UN Backpacks, two RDL cards dropped; the FAQ and the Supplementary Rules 1.04. UN reissued its list as 1.04 V2 on 2026-11-03: the TM39D \"Cobra\" Tactical Core's points, Electronic and Ammo, and two new parts, the IGX750 Ion Rifle and the JP3S Stealth Jetpack."
   }
  ],
  "cards": {
@@ -831,6 +831,22 @@
     "to": 62
    }
   ],
+  "IGX750": [
+   {
+    "v": "1.04",
+    "kind": "added",
+    "list": "UN",
+    "note": "UN 1.04 V2 list (2026-11-03)"
+   }
+  ],
+  "JP3S": [
+   {
+    "v": "1.04",
+    "kind": "added",
+    "list": "UN",
+    "note": "UN 1.04 V2 list (2026-11-03)"
+   }
+  ],
   "LPA-23-2": [
    {
     "v": "1.04",
@@ -947,6 +963,30 @@
     "field": "score",
     "from": 42,
     "to": 36
+   }
+  ],
+  "TM39D": [
+   {
+    "v": "1.04",
+    "field": "score",
+    "from": 63,
+    "to": 69,
+    "note": "UN 1.04 V2 list (2026-11-03)"
+   },
+   {
+    "v": "1.04",
+    "field": "electronic",
+    "from": 3,
+    "to": 5,
+    "note": "UN 1.04 V2 list (2026-11-03)"
+   },
+   {
+    "v": "1.04",
+    "action": "TM39D_B",
+    "field": "ammo",
+    "from": null,
+    "to": 6,
+    "note": "UN 1.04 V2 list (2026-11-03)"
    }
   ],
   "ZHAM-001A": [

@@ -479,7 +479,7 @@ const KEY_NAMES: Record<string, string> = {
 const KEY_ORDER = Object.keys(KEY_NAMES);
 const KEY_TONE: Record<string, string> = { NEW: ' new', REVERSED: ' warn', RETIRED: ' warn', OPTIONAL: ' opt' };
 const CARD_STATS = new Set(['armor', 'structure', 'parray', 'dodge', 'electronic', 'move']);
-const ACTION_FIELDS = new Set(['range', 'dice', 'length', 'timing']);
+const ACTION_FIELDS = new Set(['range', 'dice', 'length', 'timing', 'ammo']);
 // The phase order of the 1.04 record: GoF, PD, RDL, UN, Collab.
 const FACTION_ORDER = ['GOF', 'PD', 'RDL', 'UN', 'COLLABORATION'];
 
@@ -1026,7 +1026,7 @@ export function traitBlock(c: Card): string {
 const CHANGE_STAT: Record<string, string> = {
   score: 'Points', armor: 'Armor', structure: 'Structure', parray: 'Parry', dodge: 'Dodge', electronic: 'Electronic', move: 'Move',
 };
-const CHANGE_ACTION: Record<string, string> = { range: 'Range', dice: 'Dice', length: 'Length', timing: 'Timing' };
+const CHANGE_ACTION: Record<string, string> = { range: 'Range', dice: 'Dice', length: 'Length', timing: 'Timing', ammo: 'Ammo' };
 const LENGTH_WORD: Record<string, string> = { S: 'Short', M: 'Medium', L: 'Long' };
 
 function changeValue(field: string, v: string | number | null | undefined): string {

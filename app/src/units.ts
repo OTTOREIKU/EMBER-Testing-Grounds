@@ -610,9 +610,19 @@ export function stanceShaped(a: CardAction, stance: string | undefined): CardAct
 // re-armed the Multi-Target the Charge had not paid for.
 const CHARGED_LINE = /\[充能\]|【充能】|\[Charged\]|\[チャージ\]/i;
 export function chargeAdjusted(a: CardAction, spent: boolean, choice?: string): CardAction {
-  const zh = a.description?.zh ?? '';
-  if (!/\[充能\]|【充能】/.test(zh)) return a;
-  const strip = (s: string | undefined): string | undefined => (s === undefined ? s : s.split(/\r?\n/).filter((l) => !CHARGED_LINE.test(l)).join('\n'));
+  // The gate line in either language: a card added from an English-only list
+  // (IGX750, UN 1.04 V2, 2026-11-03) has no Chinese face, and OTTO wants the
+  // engine off Chinese text (2026-11-03). The Chinese still wins where present.
+  const zhGate = (a.description?.zh ?? '').split(/\r?\n/).find((l) => /\[充能\]|【充能】/.test(l));
+  // English bullets can share a line ("· [Charged] gains Mutilation. · Scatter-shot",
+  // 540_B), so the gate is the bullet, not the line.
+  const enGate = (a.description?.en ?? '').split(/\r?\n/).flatMap((l) => l.split(/(?=·)/)).find((l) => /\[Charged\]/i.test(l));
+  if (!zhGate && !enGate) return a;
+  // Only the [Charged] bullet goes: a line holding other bullets too keeps them
+  // (540_B's English is one line, and used to come out empty).
+  const strip = (s: string | undefined): string | undefined => (s === undefined ? s : s.split(/\r?\n/)
+    .map((l) => (CHARGED_LINE.test(l) ? l.split(/(?=·)/).filter((p) => !CHARGED_LINE.test(p)).join('').trim() || null : l))
+    .filter((l): l is string => l !== null).join('\n'));
   const description = { ...a.description, zh: strip(a.description?.zh), en: strip(a.description?.en), jp: strip(a.description?.jp) };
   // The Charge's own rules go with its line; a picked arm keeps its effect
   // and loses the condition it has now met.
@@ -620,8 +630,7 @@ export function chargeAdjusted(a: CardAction, spent: boolean, choice?: string): 
     g.consumesCharge === true || (g.conditions ?? []).some((c) => c.type === 'charge_available');
   const others = (a.gameRules ?? []).filter((g) => !charged(g));
   if (!spent) return { ...a, description, gameRules: others };
-  const gate = zh.split(/\r?\n/).find((l) => /\[充能\]|【充能】/.test(l)) ?? '';
-  if (/或/.test(gate)) {
+  if (zhGate ? /或/.test(zhGate) : /\bor\b/i.test(enGate ?? '')) {
     const pick = (a.gameRules ?? []).find((g) => charged(g) && (g as { choiceId?: string }).choiceId === choice);
     if (!pick) return a;
     const kept = { ...pick, conditions: (pick.conditions ?? []).filter((c) => c.type !== 'charge_available') };
@@ -629,9 +638,17 @@ export function chargeAdjusted(a: CardAction, spent: boolean, choice?: string): 
       .filter((e) => e.type === 'gain_keyword' && e.keyword).map((e) => ({ inline: e.keyword! }));
     return { ...a, description, gameRules: [...others, kept], keywords: [...(a.keywords ?? []), ...gains], chargeSpent: true, chargeChoice: choice };
   }
-  const gain = /[[【]充能[\]】]\s*获得\s*([^.。·;；或]+?)\s*[.。]?\s*$/.exec(gate.trim());
-  if (!gain) return a;
-  return { ...a, description, gameRules: others, keywords: [...(a.keywords ?? []), { inline: gain[1].trim() }], chargeSpent: true };
+  // The keyword gained, as the keyword key the readers match ("[Charged]
+  // gains Mutilation." gives 毁伤, the same key the Chinese line gives).
+  let gained: string | undefined;
+  if (zhGate) {
+    gained = /[[【]充能[\]】]\s*获得\s*([^.。·;；或]+?)\s*[.。]?\s*$/.exec(zhGate.trim())?.[1].trim();
+  } else {
+    const m = /\[Charged\]\s*gains?\s+([^.;·]+?)\s*\.?\s*$/i.exec((enGate ?? '').trim());
+    if (m) gained = TWO_HANDED_EN[m[1].trim().toLowerCase()] ?? m[1].trim();
+  }
+  if (!gained) return a;
+  return { ...a, description, gameRules: others, keywords: [...(a.keywords ?? []), { inline: gained }], chargeSpent: true };
 }
 
 // The arms of an either/or [Charged] line, for the question that consumes the
@@ -2315,9 +2332,17 @@ export function twoHandedRider(a: CardAction): TwoHanded | null {
   const lines = text.split(/\r?\n/).filter((l) => /【双手】|\[双手\]|\[Two-Hand(?:ed)?\]/i.test(l));
   if (!lines.length) return null;
   const out: TwoHanded = { range: 0, keywords: [], medium: false };
+  // Range from each language on its own, then the larger: a card printing both
+  // must not count its +2 twice. English "Range +2 grids" reads now too (OTTO,
+  // 2026-11-03: the engine moves off Chinese text; IGX750 has none).
+  let zhRange = 0, enRange = 0;
   for (const line of lines) {
     const r = /\+\s*(\d+)\s*(?:射程|Range)/i.exec(line);
-    if (r) out.range += Number(r[1]);
+    if (r) zhRange += Number(r[1]);
+    else {
+      const e = /\bRange\s*\+\s*(\d+)/i.exec(line);
+      if (e) enRange += Number(e[1]);
+    }
     if (/视为中动作/.test(line)) out.medium = true;
     // 获得A，B lists more than one on a single line (ZHRA-303 prints
     // "获得压制，毁伤"), so every term after the verb is taken.
@@ -2341,6 +2366,7 @@ export function twoHandedRider(a: CardAction): TwoHanded | null {
       }
     }
   }
+  out.range = Math.max(zhRange, enRange);
   // A card printing the grant in both languages names each keyword twice.
   out.keywords = [...new Set(out.keywords)];
   return out.range || out.keywords.length || out.medium ? out : null;

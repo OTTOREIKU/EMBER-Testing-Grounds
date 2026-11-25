@@ -74,6 +74,7 @@ for (const [id, es] of Object.entries(log.cards)) {
     if (field === 'range' && String(a.range) !== String(e.to)) off.push(`${aid} range: card ${a.range}, log ${e.to}`);
     if (field === 'dice' && dice(a) !== String(e.to).toUpperCase()) off.push(`${aid} dice: card ${dice(a)}, log ${e.to}`);
     if (field === 'length' && (a.size ?? '').toUpperCase() !== String(e.to ?? '').toUpperCase()) off.push(`${aid} length: card ${a.size}, log ${e.to}`);
+    if (field === 'ammo' && (a.storage ?? 0) !== (e.to ?? 0)) off.push(`${aid} ammo: card ${a.storage}, log ${e.to}`);
   }
 }
 check('every number the changelog ends on is the number the card shows', off, []);
@@ -88,7 +89,8 @@ const priced = Object.entries(stat)
 const logged = Object.entries(log.cards)
   .flatMap(([id, es]) => es.filter((e) => e.v === '1.04' && e.field === 'score').map((e) => `${id}:${e.from}>${e.to}`)).sort();
 check('every 1.04 price has its changelog line, and no line lacks its price', logged, priced);
-check('1.04: the PD, RDL and UN lists (8 + 31 + 31 prices)', priced.length, 70);
+// UN's 1.04 V2 list (2026-11-03) added the Cobra's price, filed under 1.04 (OTTO).
+check('1.04: the PD, RDL and UN lists (8 + 31 + 32 prices)', priced.length, 71);
 check('a PD Drone costs its 1.04 price', data.byId.get('PRDR-101').score, 84);
 check('the Avalanche costs its 1.04 price', data.byId.get('503').score, 51);
 check('the RT-15B Lava costs its 1.04 price', data.byId.get('017').score, 59);
@@ -161,11 +163,11 @@ const count = (t) => groups.filter((g) => g.title === t).reduce((s, g) => s + g.
 // which are their own kind and lead the list ("move the seasonal button and
 // items to the front"); the Pholcus and the White Dwarf joined with OTTO's
 // answers on 1.9 and 3.3 the same day.
-check('1.04 lists 2 Season Rules, 9 rules, 11 keywords and 74 cards',
-  [count('Season'), count('Rules'), count('Keywords'), count('Cards')], [2, 9, 11, 74]);
+check('1.04 lists 2 Season Rules, 9 rules, 11 keywords and 77 cards (3 from UN 1.04 V2)',
+  [count('Season'), count('Rules'), count('Keywords'), count('Cards')], [2, 9, 11, 77]);
 check('in that order', [...new Set(groups.map((g) => g.title))], ['Season', 'Rules', 'Keywords', 'Cards']);
 check('its cards come faction by faction, in the record\'s order',
-  groups.filter((g) => g.title === 'Cards').map((g) => `${g.fac}:${g.items.length}`), ['PD:8', 'RDL:31', 'UN:35']);
+  groups.filter((g) => g.title === 'Cards').map((g) => `${g.fac}:${g.items.length}`), ['PD:8', 'RDL:31', 'UN:38']);
 const targets = groups.flatMap((g) => g.items.map((i) => i.attr));
 const lost = targets.filter((a) => {
   const [, kind, key] = /data-log(card|kw|rule|season)="([^"]+)"/.exec(a) ?? [];
@@ -174,7 +176,7 @@ const lost = targets.filter((a) => {
   if (kind === 'season') return !data.seasons.some((s) => s.rules.some((r) => r.id === key));
   return !data.mechanics.some((m) => m.id === key);
 });
-check('every row opens something that exists', [targets.length, lost], [96, []]);
+check('every row opens something that exists', [targets.length, lost], [99, []]);
 check('no Rules line is a Season Rule any more: the Smoke Screens entry keeps no line for one',
   [Object.values(log.rules).flat().filter((e) => e.tags?.includes('OPTIONAL')).length, 'smoke_screen' in log.rules], [0, false]);
 const keysOf = (name) => groups.flatMap((g) => g.items).find((i) => i.name === name)?.keys;
@@ -193,11 +195,11 @@ check('the sheet picks its revision in the title from its own menu, 1.04 chosen,
   [/<button class="cl-ver-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Revision 1\.04">1\.04<span class="cl-ver-caret"/.test(sheetHtml),
     [...sheetHtml.matchAll(/aria-checked="(true|false)" data-clver="([^"]+)"><span>[^<]+<\/span><span class="fc-n">(\d+)<\/span>/g)].map((m) => `${m[2]}:${m[3]}${m[1] === 'true' ? '*' : ''}`),
     /<select/.test(sheetHtml)],
-  [true, ['1.04:96*', '1.021:56', '1.02:6'], false]);
+  [true, ['1.04:99*', '1.021:56', '1.02:6'], false]);
 check('its kinds carry their counts, and a revision with no Rules lines offers no Rules',
   [[...sheetHtml.matchAll(/data-clkind="([^"]+)">[^<]+<span class="fc-n">(\d+)<\/span>/g)].map((m) => `${m[1]}:${m[2]}`),
     [...M.R.changelogIndex('1.021').matchAll(/data-clkind="([^"]+)"/g)].map((m) => m[1])],
-  [['all:96', 'season:2', 'rules:9', 'keywords:11', 'cards:74'], ['all', 'keywords', 'cards']]);
+  [['all:99', 'season:2', 'rules:9', 'keywords:11', 'cards:77'], ['all', 'keywords', 'cards']]);
 check('the Season Rules wear their own chip, open the list on a line saying they are optional, and each is marked OPTIONAL',
   [/<button class="ref-facet season" data-clkind="season">/.test(sheetHtml),
     /<ul class="ui-list cl-list"><li class="cl-note" data-clk="season" data-cln="">Season Rules are optional: a trial beside the main rules, not part of them\.<\/li><li class="tap" data-logseason="smoke_dissipation"/.test(sheetHtml),
@@ -212,7 +214,7 @@ check('a price-only row shows the price, a row with more shows its keys',
     /data-logrule="mines"[^>]*>[\s\S]*?<span class="cl-keys"><span class="log-key[^"]*"[^>]*>NEW<\/span><span class="log-key"[^>]*>CHANGED<\/span><span class="log-key warn"[^>]*>REVERSED<\/span><\/span>/.test(sheetHtml)],
   [true, true]);
 check('the way in names the newest revision and its count',
-  /<button class="cl-entry" data-clv="1\.04">[\s\S]*What changed in 1\.04[\s\S]*74 cards · 11 keywords · 9 rules · 2 optional Season Rules[\s\S]*<span class="ui-badge">96<\/span>/.test(M.R.changelogEntry()), true);
+  /<button class="cl-entry" data-clv="1\.04">[\s\S]*What changed in 1\.04[\s\S]*77 cards · 11 keywords · 9 rules · 2 optional Season Rules[\s\S]*<span class="ui-badge">99<\/span>/.test(M.R.changelogEntry()), true);
 // A Rules entry as a sheet (OTTO, 2026-10-01): "When opening a mechanic link,
 // example is clicking on Ammo and Charge under the tokens, I noticed that the
 // advanced section always opens up automatically. Can we make it so when

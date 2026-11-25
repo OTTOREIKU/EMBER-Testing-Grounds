@@ -36,6 +36,7 @@
     "538": { "score": 42, "_source": "publisher UN parts list 1.04 (was 60 on 1.02)" },
     "162": { "score": 18, "_source": "publisher UN parts list 1.04 (was 12 on 1.02)" },
     "LPA-23-2": { "score": 18, "_source": "publisher UN parts list 1.04 (was 24 on 1.02)" },
+    "TM39D": { "score": 69, "electronic": 5, "_source": "publisher UN parts list 1.04 (was 63 on 1.02 and on the first 1.04 list; the reissued UN 1.04 V2 list of 2026-11-03, UN Torso EN row 11, sets 69 and Electronic 5, was 3)" },
     "PRDR-101": { "score": 84, "_source": "publisher PD parts list 1.04 (was 90 on 1.02)" },
     "PRDR-102": { "score": 93, "_source": "publisher PD parts list 1.04 (was 99 on 1.02)" },
     "PRDR-103": { "score": 99, "_source": "publisher PD parts list 1.04 (was 105 on 1.02)" },

@@ -1041,6 +1041,187 @@
    "_art_note": "No scan and no portrait: the Reference and the builders draw the placeholder (OTTO, 2026-09-30).",
    "category": "pilot",
    "keywords": []
+  },
+  {
+   "id": "IGX750",
+   "_source": "Publisher Part Data UN 1.04 V2 EN list (received 2026-11-03), UN Armaments EN sheet, row 59, new in V2. Every value is that row; the keyword keys follow how the IGX920 (122) reads the same words (Handheld = Two-Handed, Charge = Charged).",
+   "_id_note": "OUR id, not the publisher's: the 1.04 V2 row carries NO Serial Number and NO QR ID. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent: the parts lists carry no box column. The card carries its faction, which box membership would otherwise have derived.",
+   "_art_note": "No scan and no part art yet: the Reference and the builders draw the placeholder.",
+   "_hand_note": "The list marks this row R·右.",
+   "name": {
+    "en": "IGX750 Ion Rifle"
+   },
+   "type": "rightHand",
+   "category": "mech_part",
+   "faction": "UN",
+   "score": 54,
+   "armor": 3,
+   "structure": 0,
+   "parray": 0,
+   "dodge": 0,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [
+    {
+     "key": "双手",
+     "en": "Two-Handed"
+    },
+    {
+     "key": "充能",
+     "en": "Charged"
+    },
+    {
+     "key": "毁伤",
+     "en": "Mutilation"
+    },
+    {
+     "key": "离子武器",
+     "en": "Ion Weapon"
+    }
+   ],
+   "throwIndex": "IGX750-T",
+   "actions": [
+    {
+     "id": "IGX750_A",
+     "name": {
+      "en": "Single Shot"
+     },
+     "description": {
+      "en": "· [Charged] gains Mutilation.\n· [Two-Handed] Range +2 grids.\n· Ion Weapon"
+     },
+     "gameRules": [
+      {
+       "id": "charge_gain_mutilation",
+       "consumesCharge": true,
+       "conditions": [
+        {
+         "type": "charge_available"
+        }
+       ],
+       "effects": [
+        {
+         "type": "gain_keyword",
+         "keyword": "毁伤"
+        }
+       ]
+      },
+      {
+       "id": "freehand_range_plus_2",
+       "hookPoint": "pre_targeting",
+       "conditions": [
+        {
+         "type": "freehand_designated"
+        }
+       ],
+       "effects": [
+        {
+         "type": "modify_range",
+         "delta": 2
+        }
+       ]
+      }
+     ],
+     "type": "Firing",
+     "size": "m",
+     "range": 8,
+     "storage": 0,
+     "yellowDice": 3,
+     "redDice": 2,
+     "keywords": [
+      {
+       "inline": "离子武器"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "IGX750-T",
+   "_source": "Publisher Part Data UN 1.04 V2 EN list (received 2026-11-03), UN Armaments EN sheet, row 60.",
+   "_id_note": "OUR id, not the publisher's: the 1.04 V2 row carries NO Serial Number and NO QR ID. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent: the parts lists carry no box column. The card carries its faction, which box membership would otherwise have derived.",
+   "_art_note": "No scan and no part art yet: the Reference and the builders draw the placeholder.",
+   "_face_note": "The discard face: stats and NO actions. The list prints its keyword as Handheld, but every other (D) row on all five 1.04 lists (60+) prints Freehand, so this is taken as the publisher's copy slip and held as Freehand until OTTO or a printed card says otherwise.",
+   "name": {
+    "en": "IGX750 Ion Rifle (D)"
+   },
+   "type": "rightHand",
+   "category": "mech_part",
+   "faction": "UN",
+   "score": 0,
+   "armor": 3,
+   "structure": 0,
+   "parray": 0,
+   "dodge": 0,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [
+    {
+     "key": "空手",
+     "en": "Freehand"
+    }
+   ],
+   "actions": []
+  },
+  {
+   "id": "JP3S",
+   "_source": "Publisher Part Data UN 1.04 V2 EN list (received 2026-11-03), UN Backpack EN sheet, row 18, new in V2. Every value is that row; the keywords follow the JP1 Jetpack (088), which prints the same Airborne Movement and Load lines.",
+   "_id_note": "OUR id, not the publisher's: the 1.04 V2 row carries NO Serial Number and NO QR ID. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent: the parts lists carry no box column. The card carries its faction, which box membership would otherwise have derived.",
+   "_art_note": "No scan and no part art yet: the Reference and the builders draw the placeholder.",
+   "name": {
+    "en": "JP3S Stealth Jetpack"
+   },
+   "type": "backpack",
+   "category": "mech_part",
+   "faction": "UN",
+   "score": 54,
+   "armor": 2,
+   "structure": 0,
+   "parray": 0,
+   "dodge": 2,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [
+    {
+     "key": "空中移动",
+     "en": "Airborne Movement"
+    },
+    {
+     "key": "静默",
+     "en": "Silence"
+    },
+    {
+     "key": "负载",
+     "en": "Load"
+    }
+   ],
+   "actions": [
+    {
+     "id": "JP3S_A",
+     "name": {
+      "en": "Short Jump"
+     },
+     "description": {
+      "en": "· Airborne Movement\n· Silence\n· This part cannot be used as a Load."
+     },
+     "type": "Moving",
+     "size": "s",
+     "range": 3,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": [
+      {
+       "inline": "空中移动"
+      },
+      {
+       "inline": "静默"
+      }
+     ]
+    }
+   ]
   }
  ]
 }

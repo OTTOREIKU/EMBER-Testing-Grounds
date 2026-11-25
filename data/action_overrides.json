@@ -808,7 +808,8 @@
       "description": {
         "en": "· Fire in arc · Silence\n· Launch 1 KK9 Snake Eyes Micro Drone."
       },
-      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Fire in arc, Silence. English from the UN 1.02 list (2026-09-28): the card it launches is the KK9 Snake Eyes Micro Drone, as the Drones sheet names it."
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Fire in arc, Silence. English from the UN 1.02 list (2026-09-28): the card it launches is the KK9 Snake Eyes Micro Drone, as the Drones sheet names it. Ammo 6 from the UN 1.04 V2 list (2026-11-03), UN Torso EN row 11: the first 1.04 list and 1.02 printed no Ammo here.",
+      "storage": 6
     },
     "DLSP-2_A": {
       "keywords": [
